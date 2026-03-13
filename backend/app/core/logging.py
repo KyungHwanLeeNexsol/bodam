@@ -21,7 +21,5 @@ def setup_logging(debug: bool = False) -> None:
     )
 
     # 외부 라이브러리 로그 레벨 조정 (너무 많은 로그 방지)
-    logging.getLogger("sqlalchemy.engine").setLevel(
-        logging.DEBUG if debug else logging.WARNING
-    )
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG if debug else logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)

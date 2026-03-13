@@ -5,8 +5,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.v1.admin import admin_router
 from app.api.v1.health import router as health_router
+from app.api.v1.search import router as search_router
 from app.core.config import get_settings
+from app.core.database import init_database
 from app.core.logging import setup_logging
 
 
@@ -15,15 +18,22 @@ async def lifespan(app: FastAPI):
     """애플리케이션 라이프사이클 관리
 
     startup: 로깅 설정, 데이터베이스 연결 초기화
-    shutdown: 데이터베이스 연결 정리
+    shutdown: 데이터베이스 엔진 정리
     """
     # 시작 시 설정 및 로깅 초기화
     settings = get_settings()
     setup_logging(debug=settings.debug)
 
+    # 데이터베이스 엔진 및 세션 팩토리 초기화
+    await init_database(settings)
+
     yield
 
-    # 종료 시 정리 작업 (필요 시 데이터베이스 연결 종료)
+    # 종료 시 DB 엔진 리소스 정리
+    import app.core.database as db_module
+
+    if db_module.engine is not None:
+        await db_module.engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -42,6 +52,8 @@ def create_app() -> FastAPI:
 
     # API v1 라우터 등록
     app.include_router(health_router, prefix="/api/v1")
+    app.include_router(search_router, prefix="/api/v1")
+    app.include_router(admin_router, prefix="/api/v1/admin")
 
     return app
 

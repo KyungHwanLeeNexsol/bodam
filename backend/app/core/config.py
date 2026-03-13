@@ -20,6 +20,23 @@ class Settings(BaseSettings):
     # 보안 키 (필수)
     secret_key: str
 
+    # OpenAI API 설정 (임베딩 생성용)
+    # 테스트 환경에서는 빈 문자열로 설정 가능
+    openai_api_key: str = ""
+
+    # 임베딩 모델명 (text-embedding-3-small: 1536차원, 비용 효율적)
+    embedding_model: str = "text-embedding-3-small"
+
+    # 임베딩 벡터 차원 수 (pgvector Vector 타입과 일치해야 함)
+    embedding_dimensions: int = 1536
+
+    # RAG 청크 분할 설정
+    # 청크 최대 토큰 수 (tiktoken 기준)
+    chunk_size_tokens: int = 500
+
+    # 청크 간 겹치는 토큰 수 (문맥 연속성 보장)
+    chunk_overlap_tokens: int = 100
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
