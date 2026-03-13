@@ -37,6 +37,25 @@ class Settings(BaseSettings):
     # 청크 간 겹치는 토큰 수 (문맥 연속성 보장)
     chunk_overlap_tokens: int = 100
 
+    # Chat AI 설정
+    # 채팅에 사용할 OpenAI 모델명
+    chat_model: str = "gpt-4o-mini"
+
+    # 응답 최대 토큰 수
+    chat_max_tokens: int = 1024
+
+    # 응답 다양성 조절 (0.0 ~ 1.0, 낮을수록 일관성 높음)
+    chat_temperature: float = 0.3
+
+    # 컨텍스트로 사용할 이전 메시지 수 제한
+    chat_history_limit: int = 10
+
+    # RAG 검색 결과 최대 개수
+    chat_context_top_k: int = 5
+
+    # RAG 검색 유사도 임계값 (낮을수록 더 많은 결과)
+    chat_context_threshold: float = 0.3
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
