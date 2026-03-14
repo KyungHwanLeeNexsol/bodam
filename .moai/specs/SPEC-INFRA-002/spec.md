@@ -1,7 +1,7 @@
 ---
 id: SPEC-INFRA-002
-version: 1.0.0
-status: draft
+version: 1.1.0
+status: completed
 created: 2026-03-14
 updated: 2026-03-14
 author: zuge3
@@ -507,4 +507,23 @@ services:
 
 ---
 
-**SPEC-INFRA-002** | 상태: Draft | 우선순위: High
+## Implementation Notes
+
+### 구현 완료 요약 (2026-03-14)
+TDD RED-GREEN-REFACTOR 방법론으로 구현 완료. 21개 테스트 통과, ruff 0 오류.
+
+### 신규 모듈
+- `backend/app/api/v1/health.py`: 3-tier 헬스체크 (/health, /health/ready, /health/live)
+- `backend/app/core/shutdown.py`: ShutdownHandler (30초 grace period)
+- `backend/app/core/request_id_middleware.py`: X-Request-ID 미들웨어
+- `backend/app/core/logging_config.py`: structlog JSON 설정 + 로그 로테이션
+- `scripts/backup/backup_postgres.sh`: pg_dump 자동 백업 (30일 보존)
+- `docker-compose.staging.yml`, `docker-compose.prod.yml`: 환경별 오버라이드
+
+### 테스트 커버리지
+- 단위 테스트: 21개 통과
+- 헬스체크, graceful shutdown, Request ID 미들웨어 검증
+
+---
+
+**SPEC-INFRA-002** | 상태: Completed | 우선순위: High

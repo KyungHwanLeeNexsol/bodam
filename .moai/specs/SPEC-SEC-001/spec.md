@@ -1,7 +1,7 @@
 ---
 id: SPEC-SEC-001
-version: 1.0.0
-status: draft
+version: 1.1.0
+status: completed
 created: 2026-03-14
 updated: 2026-03-14
 author: zuge3
@@ -304,3 +304,19 @@ SensitiveDataFilter (structlog processor):
 | REQ-SEC-020~024 | M3: API Security Hardening | SC-020~024 |
 | REQ-SEC-030~033 | M4: Secret Management | SC-030~033 |
 | REQ-SEC-040~043 | M5: Security Audit | SC-040~043 |
+
+## Implementation Notes
+
+### 구현 완료 요약 (2026-03-14)
+TDD RED-GREEN-REFACTOR 방법론으로 구현 완료. 41개 테스트 통과, ruff 0 오류.
+
+### 신규 모듈
+- `backend/app/core/rate_limit.py`: Redis 슬라이딩 윈도우 Rate Limiter (IP별/사용자별)
+- `backend/app/core/security_headers.py`: SecurityHeadersMiddleware (HSTS, CSP, X-Frame-Options 등)
+- `backend/app/core/log_masking.py`: 민감 데이터 마스킹 (이메일, JWT, 전화번호)
+- `backend/app/services/privacy_service.py`: PIPA 데이터 삭제/내보내기
+- `backend/app/tasks/cleanup_tasks.py`: 데이터 보존 정책 자동화 Celery 태스크
+
+### 테스트 커버리지
+- 단위 테스트: 41개 통과
+- Rate limiting, 보안 헤더, 로그 마스킹, PIPA 엔드포인트 검증

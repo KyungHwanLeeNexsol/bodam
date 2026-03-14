@@ -1,7 +1,7 @@
 ---
 id: SPEC-OPS-001
-version: 1.0.0
-status: draft
+version: 1.1.0
+status: completed
 created: 2026-03-14
 updated: 2026-03-14
 author: zuge3
@@ -524,4 +524,28 @@ class RequestIdMiddleware:
 
 ---
 
-**SPEC-OPS-001** | 상태: Draft | 우선순위: High
+## Implementation Notes
+
+### 구현 완료 요약 (2026-03-14)
+TDD RED-GREEN-REFACTOR 방법론으로 구현 완료. 47개 테스트 통과, ruff 0 오류.
+
+### 신규 모듈
+- `backend/app/core/metrics.py`: PrometheusMiddleware + 비즈니스 메트릭 (chat_sessions, rag_query, embedding, llm_cost)
+- `backend/app/core/celery_metrics.py`: Celery 시그널 핸들러 (task_count, duration, queue_length)
+- `infra/monitoring/`: Prometheus, Grafana, Loki, Promtail, AlertManager 설정 파일
+- `docker-compose.yml`: `--profile monitoring` 으로 7개 모니터링 서비스 추가
+
+### 실행 방법
+```bash
+docker compose --profile monitoring up
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3001
+```
+
+### 테스트 커버리지
+- 단위 테스트: 47개 통과
+- 커버리지: 85%+
+
+---
+
+**SPEC-OPS-001** | 상태: Completed | 우선순위: High

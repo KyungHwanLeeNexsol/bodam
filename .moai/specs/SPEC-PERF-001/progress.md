@@ -142,6 +142,10 @@ tags: [SPEC-PERF-001, progress-tracking]
 |------|-----------|--------|
 | 2026-03-14 | 초기 진행 현황 문서 생성 | zuge3 |
 | 2026-03-14 | M1-M5 구현 완료 (TDD 방식, 31개 테스트 통과) | manager-tdd |
+| 2026-03-14 | Phase 2 complete: TDD 구현 - 31개 테스트, 85%+ 커버리지 | manager-tdd |
+| 2026-03-14 | Phase 2.5 complete: ruff 0 오류, 전체 테스트 통과 | quality-gate |
+| 2026-03-14 | Phase 3 complete: Git 커밋 8e1dfad | manager-git |
+| 2026-03-14 | Phase 4 complete: 동기화 완료 | manager-docs |
 
 ## Acceptance Criteria 완료율
 
