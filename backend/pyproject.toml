@@ -20,6 +20,10 @@ dependencies = [
     "pdfplumber>=0.11.0",
     "tenacity>=9.0.0",
     "playwright>=1.49.0",
+    "langchain-core>=0.3.0,<0.4.0",
+    "langchain-openai>=0.3.0,<0.4.0",
+    "langchain-google-genai>=2.0.0,<3.0.0",
+    "structlog>=24.0.0",
 ]
 
 [project.optional-dependencies]

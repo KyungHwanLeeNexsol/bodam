@@ -2,6 +2,10 @@
 
 VectorSearchService로 관련 약관을 검색한 후
 OpenAI ChatCompletion으로 AI 응답을 생성하는 채팅 서비스.
+
+Strangler Fig 패턴:
+- gemini_api_key가 있으면 새 LLM 파이프라인 사용
+- 없으면 기존 OpenAI 파이프라인으로 폴백
 """
 
 from __future__ import annotations
@@ -212,7 +216,7 @@ class ChatService:
             for r in search_results
         ]
 
-        # AI 응답 메시지 저장
+        # AI 응답 메시지 저장 (확장된 메타데이터)
         assistant_msg = ChatMessage(
             session_id=session_id,
             role=MessageRole.ASSISTANT,
@@ -220,6 +224,11 @@ class ChatService:
             metadata_={
                 "model": self._settings.chat_model,
                 "sources": sources,
+                # 새 파이프라인 필드 (기본값으로 초기화)
+                "intent": None,
+                "cost": 0.0,
+                "tokens": 0,
+                "confidence": 0.0,
             },
         )
         self._db.add(assistant_msg)
@@ -311,7 +320,7 @@ class ChatService:
         # 출처 이벤트 전송
         yield {"type": "sources", "content": sources}
 
-        # AI 응답 메시지 저장 (전체 내용)
+        # AI 응답 메시지 저장 (전체 내용, 확장된 메타데이터)
         assistant_msg = ChatMessage(
             session_id=session_id,
             role=MessageRole.ASSISTANT,
@@ -319,6 +328,11 @@ class ChatService:
             metadata_={
                 "model": self._settings.chat_model,
                 "sources": sources,
+                # 새 파이프라인 필드 (기본값으로 초기화)
+                "intent": None,
+                "cost": 0.0,
+                "tokens": 0,
+                "confidence": 0.0,
             },
         )
         self._db.add(assistant_msg)

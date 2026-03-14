@@ -37,6 +37,21 @@ class Settings(BaseSettings):
     # 청크 간 겹치는 토큰 수 (문맥 연속성 보장)
     chunk_overlap_tokens: int = 100
 
+    # Gemini API 설정
+    gemini_api_key: str = ""
+
+    # LLM 라우팅 설정
+    llm_primary_model: str = "gemini-2.0-flash"
+    llm_fallback_model: str = "gpt-4o"
+    llm_classifier_model: str = "gpt-4o-mini"
+
+    # 품질 설정
+    llm_confidence_threshold: float = 0.7
+    llm_fallback_on_low_confidence: bool = True
+
+    # 비용 추적
+    llm_cost_tracking_enabled: bool = True
+
     # Chat AI 설정
     # 채팅에 사용할 OpenAI 모델명
     chat_model: str = "gpt-4o-mini"
