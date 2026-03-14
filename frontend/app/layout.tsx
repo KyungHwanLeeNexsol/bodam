@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter, Newsreader, JetBrains_Mono } from 'next/font/google'
+import { AuthProvider } from '@/contexts/AuthContext'
 import './globals.css'
 
 /* 본문 폰트 - Inter */
@@ -47,7 +48,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${newsreader.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   )
