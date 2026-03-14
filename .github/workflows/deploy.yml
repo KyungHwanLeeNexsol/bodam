@@ -1,0 +1,55 @@
+name: Deploy to OCI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Oracle Cloud
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_SSH_HOST }}
+          username: ${{ secrets.OCI_SSH_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: 22
+          timeout: 300s
+          script: |
+            set -euo pipefail
+
+            cd /opt/bodam
+
+            echo "최신 코드 가져오는 중..."
+            git pull origin main
+
+            echo "Docker 이미지 빌드 및 컨테이너 시작 중..."
+            docker compose -f docker-compose.prod.yml up -d --build
+
+            echo "백엔드 서비스 준비 대기 중 (최대 60초)..."
+            MAX_WAIT=60
+            WAIT=0
+            until docker compose -f docker-compose.prod.yml exec -T backend curl -sf http://localhost:8000/health > /dev/null 2>&1; do
+              if [ "$WAIT" -ge "$MAX_WAIT" ]; then
+                echo "오류: 백엔드가 응답하지 않습니다."
+                docker compose -f docker-compose.prod.yml logs backend --tail=30
+                exit 1
+              fi
+              sleep 5
+              WAIT=$((WAIT + 5))
+            done
+
+            echo "데이터베이스 마이그레이션 실행 중..."
+            docker compose -f docker-compose.prod.yml exec -T backend uv run alembic upgrade head
+
+            echo "오래된 Docker 리소스 정리 중..."
+            docker system prune -f
+
+            echo "배포 완료! 커밋: $(git rev-parse --short HEAD)"

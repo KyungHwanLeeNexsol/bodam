@@ -1,107 +1,200 @@
 services:
   postgres:
     image: pgvector/pgvector:pg18
+    # 포트 미노출 - 내부 네트워크만 사용 (보안)
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    env_file: ./backend/.env.prod
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-bodam}
       POSTGRES_USER: ${POSTGRES_USER:-bodam}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - prod_postgres_data:/var/lib/postgresql/data
-    command: >
-      postgres
-        -c max_connections=100
-        -c shared_buffers=512MB
-        -c effective_cache_size=1536MB
-        -c work_mem=4MB
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 2G
-        reservations:
-          cpus: "0.5"
-          memory: 1G
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodam}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    networks:
+      - bodam-net
 
   redis:
     image: redis:7-alpine
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          cpus: "0.25"
-          memory: 256M
+    # 포트 미노출 - 내부 네트워크만 사용 (보안)
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - bodam-net
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    env_file: .env.production
+    # 소스코드 볼륨 마운트 없음 (프로덕션)
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file: ./backend/.env.prod
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    stop_grace_period: 30s
-    stop_signal: SIGTERM
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
-
-  celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: celery -A app.core.celery_app.celery_app worker --loglevel=info --concurrency=4 --prefetch-multiplier=1
-    env_file: .env.production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    stop_grace_period: 30s
-    stop_signal: SIGTERM
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
+    # --reload 없이 멀티 워커로 실행
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - bodam-net
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    env_file: .env.production
+      dockerfile: Dockerfile.prod
+    # 소스코드 볼륨 마운트 없음 (프로덕션)
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file: ./frontend/.env.prod
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+      - NODE_ENV=production
     depends_on:
       - backend
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          cpus: "0.25"
-          memory: 256M
+    # 프로덕션 빌드 실행 (dev 서버 아님)
+    command: pnpm start
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - bodam-net
+
+  # ---------------------------------------------------------------------------
+  # 모니터링 스택 (profiles: monitoring)
+  # 실행 방법: docker compose -f docker-compose.prod.yml --profile monitoring up -d
+  # ---------------------------------------------------------------------------
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["monitoring"]
+    ports: ["9090:9090"]
+    restart: always
+    volumes:
+      - ./infra/monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - bodam-net
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    profiles: ["monitoring"]
+    ports: ["3001:3000"]
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me_grafana_password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - bodam-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    profiles: ["monitoring"]
+    ports: ["3100:3100"]
+    restart: always
+    volumes:
+      - ./infra/monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - bodam-net
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    profiles: ["monitoring"]
+    restart: always
+    volumes:
+      - ./infra/monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - bodam-net
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    profiles: ["monitoring"]
+    ports: ["9093:9093"]
+    restart: always
+    volumes:
+      - ./infra/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks:
+      - bodam-net
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+    profiles: ["monitoring"]
+    ports: ["9187:9187"]
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-bodam}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bodam}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bodam-net
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    profiles: ["monitoring"]
+    ports: ["9121:9121"]
+    restart: always
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - bodam-net
+
+networks:
+  bodam-net:
+    driver: bridge
 
 volumes:
-  prod_postgres_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
