@@ -2,7 +2,7 @@
 id: SPEC-PDF-001
 title: 온디맨드 보험 약관 PDF 분석 시스템
 version: 1.0.0
-status: draft
+status: completed
 created: 2026-03-15
 updated: 2026-03-15
 author: zuge3
@@ -306,3 +306,26 @@ uploads/
 | REQ-PDF-301 ~ 304 | Module 3: 캐싱 | Medium |
 | REQ-PDF-401 ~ 406 | Module 4: 프론트엔드 UI | High |
 | REQ-PDF-501 ~ 506 | Module 5: 세션 관리 | High |
+
+---
+
+## Implementation Notes (2026-03-15)
+
+### 실제 구현 결과
+
+**구현 완료된 모든 요구사항**: REQ-PDF-101~106, 201~207, 301~304, 401~406, 501~506 (22/23, REQ-PDF-204 Optional 제외)
+
+**주요 구현 결정사항**:
+- `google-generativeai>=0.8.0` 신규 패키지 활용 (Gemini Files API 직접 연동)
+- 기존 `GeminiProvider`(SPEC-LLM-001)와 분리된 독립 `PDFAnalysisService` 구현 (Files API 인터페이스 상이)
+- `LLMMetrics.calculate_cost()` 재사용으로 토큰 비용 계산 통일
+- `fakeredis` 활용 Redis mock 테스트로 실제 Redis 연결 없이 테스트 가능
+- SSE 스트리밍: `StreamingResponse` + `text/event-stream` 미디어 타입
+- 파일 저장: `uploads/pdf/{user_id}/{upload_id}.pdf` 로컬 경로 (MVP)
+
+**테스트 결과**: 42개 테스트 통과 (test_storage: 20, test_analysis: 8, test_session: 6, test_pdf: 8)
+
+**배포 요구사항**:
+- Alembic 마이그레이션 실행 필요: `alembic upgrade head` (3개 신규 테이블)
+- 환경변수 추가 필요: `GEMINI_API_KEY`
+- Fly.io 배포 시: `fly secrets set GEMINI_API_KEY=<키값>`

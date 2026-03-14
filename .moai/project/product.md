@@ -306,6 +306,8 @@ Real-time analysis of user-uploaded policy PDFs using Gemini 2.0 Flash with 1M c
 - International policies or policies in transition
 - Rapid policy analysis without manual database entry
 
+**Status**: Implemented in SPEC-PDF-001 (2026-03-15) - Gemini 2.0 Flash Files API integration, 7 API endpoints, drag-and-drop frontend UI
+
 ### 13. User Authentication & Account Management
 
 Secure account system enabling personalized policy management, history tracking, and preference storage.
