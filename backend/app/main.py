@@ -4,6 +4,8 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.admin import admin_router
 from app.api.v1.auth import router as auth_router
@@ -14,6 +16,8 @@ from app.core.config import get_settings
 from app.core.database import init_database
 from app.core.logging import setup_logging
 from app.core.metrics import PrometheusMiddleware, metrics_endpoint
+from app.core.rate_limit import RateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
 
 @asynccontextmanager
@@ -53,8 +57,38 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # 보안 헤더 미들웨어 (SPEC-SEC-001 M3: 모든 응답에 보안 헤더 주입)
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # CORS 미들웨어 (SPEC-SEC-001 M3: 환경별 허용 도메인 제한)
+    allowed_origins = getattr(settings, "allowed_origins", "").split(",")
+    allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
+    if not allowed_origins or settings.debug:
+        allowed_origins = ["http://localhost:3000", "http://localhost:8000"]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=600,
+    )
+
+    # Rate Limit 미들웨어 (SPEC-SEC-001 M1: IP 기반 속도 제한)
+    app.add_middleware(RateLimitMiddleware)
+
     # Prometheus 미들웨어 등록 (HTTP 메트릭 자동 수집)
     app.add_middleware(PrometheusMiddleware)
+
+    # 429 예외 핸들러 등록
+    @app.exception_handler(429)
+    async def rate_limit_handler(request, exc):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."},
+            headers={"Retry-After": "60"},
+        )
 
     # /metrics 엔드포인트 등록 (Prometheus 스크레이핑용)
     app.add_route("/metrics", metrics_endpoint)

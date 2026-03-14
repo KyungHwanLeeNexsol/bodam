@@ -90,6 +90,17 @@ class Settings(BaseSettings):
     # JWT 서명 알고리즘
     jwt_algorithm: str = "HS256"
 
+    # SPEC-SEC-001: Rate Limiting 설정
+    # IP 기반 일반 API 제한 (요청/분)
+    rate_limit_general: int = 60
+    # IP 기반 인증 엔드포인트 제한 (요청/분)
+    rate_limit_auth: int = 10
+    # 사용자별 일일 채팅 제한 (Free Tier)
+    rate_limit_chat_daily: int = 100
+
+    # SPEC-SEC-001: CORS 허용 도메인 (쉼표 구분, 프로덕션용)
+    allowed_origins: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
