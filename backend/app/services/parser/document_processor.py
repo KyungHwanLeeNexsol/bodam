@@ -2,11 +2,13 @@
 
 텍스트 또는 PDF 파일을 입력받아 정제 → 청크 분할 → 임베딩 생성까지
 전체 파이프라인을 수행하는 DocumentProcessor 클래스 정의.
+메타데이터(토큰 수, 품질 점수, 임베딩 모델명, 임베딩 시각) 포함 지원.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -144,25 +146,57 @@ class DocumentProcessor:
     async def _embed_chunks(self, chunks: list[str]) -> list[dict]:
         """각 청크에 대해 임베딩 벡터를 생성하고 결과 딕셔너리 조합 (내부 메서드)
 
+        메타데이터(token_count, chunk_quality_score, embedding_model,
+        embedding_version, embedded_at)를 metadata 필드에 포함.
+        기존 키(chunk_text, embedding, chunk_index)는 하위 호환성 유지.
+
         Args:
             chunks: 임베딩할 청크 문자열 리스트
 
         Returns:
-            {"chunk_text": str, "embedding": list[float], "chunk_index": int} 딕셔너리 리스트
+            각 청크에 대한 딕셔너리 리스트. 각 항목:
+            - chunk_text: 청크 원문
+            - embedding: 임베딩 벡터
+            - chunk_index: 청크 순서
+            - metadata: 토큰 수, 품질 점수, 모델 정보, 임베딩 시각
 
         Raises:
             Exception: 임베딩 API 호출 실패 시 예외 전파
         """
+        from app.services.parser.text_chunker import calculate_chunk_quality
+
+        # 임베딩 모델 정보 가져오기
+        embedding_model = getattr(self._embedding_service, "_model", "text-embedding-3-small")
+        embedded_at = datetime.now(UTC).isoformat()
+
+        import tiktoken
+
+        enc = tiktoken.get_encoding("cl100k_base")
         results = []
+
         for chunk_index, chunk_text in enumerate(chunks):
             logger.debug("청크 %d 임베딩 생성 중...", chunk_index)
             # 임베딩 생성 (실패 시 예외 전파)
             embedding = await self._embedding_service.embed_text(chunk_text)
+
+            # 토큰 수 계산
+            token_count = len(enc.encode(chunk_text))
+
+            # 품질 점수 계산
+            quality_score = calculate_chunk_quality(chunk_text)
+
             results.append(
                 {
                     "chunk_text": chunk_text,
                     "embedding": embedding,
                     "chunk_index": chunk_index,
+                    "metadata": {
+                        "token_count": token_count,
+                        "chunk_quality_score": quality_score,
+                        "embedding_model": embedding_model,
+                        "embedding_version": "1",
+                        "embedded_at": embedded_at,
+                    },
                 }
             )
         return results
