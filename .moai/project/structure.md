@@ -20,9 +20,9 @@ bodam/
 ├── frontend/                    # Next.js 16 frontend application
 │   ├── app/                     # Next.js App Router (file-system routing)
 │   │   ├── (auth)/              # Authentication route group
-│   │   │   ├── login/           # User login page
-│   │   │   ├── register/        # User registration page
-│   │   │   └── layout.tsx       # Auth layout with navbar
+│   │   │   ├── login/           # User login page (LoginForm, redirect to /chat on success)
+│   │   │   ├── register/        # User registration page (RegisterForm, redirect to /login on success)
+│   │   │   └── layout.tsx       # Auth layout with navbar (no sidebar)
 │   │   │
 │   │   ├── (main)/              # Main application routes (protected)
 │   │   │   ├── chat/            # Chat interface (primary feature)
@@ -45,6 +45,7 @@ bodam/
 │   │   │   ├── button.tsx       # Button component
 │   │   │   ├── input.tsx        # Input component
 │   │   │   ├── dialog.tsx       # Dialog/modal component
+│   │   │   ├── form.tsx         # Form wrapper (react-hook-form integration)
 │   │   │   └── [...]            # Other UI primitives
 │   │   │
 │   │   ├── chat/                # Chat feature components
@@ -60,9 +61,9 @@ bodam/
 │   │   │   └── CoverageDetail.tsx # Coverage breakdown
 │   │   │
 │   │   ├── auth/                # Authentication components
-│   │   │   ├── LoginForm.tsx    # Login form
-│   │   │   ├── RegisterForm.tsx # Registration form
-│   │   │   └── ProtectedRoute.tsx # Route protection wrapper
+│   │   │   ├── LoginForm.tsx    # Login form (react-hook-form + zod)
+│   │   │   ├── RegisterForm.tsx # Registration form (react-hook-form + zod)
+│   │   │   └── ProtectedRoute.tsx # Route protection wrapper (redirect to /login if no token)
 │   │   │
 │   │   └── layout/              # Layout components
 │   │       ├── Navbar.tsx       # Navigation bar
@@ -70,22 +71,27 @@ bodam/
 │   │       └── Footer.tsx       # Footer component
 │   │
 │   ├── lib/                     # Utility functions and helpers
-│   │   ├── api-client.ts        # Axios instance for API calls
-│   │   ├── auth-utils.ts        # Authentication utilities
-│   │   ├── validation.ts        # Form validation schemas
+│   │   ├── api-client.ts        # Axios instance for API calls (with auth header injection)
+│   │   ├── auth.ts              # Auth utilities (getToken, setToken, removeToken)
+│   │   ├── validation.ts        # Form validation schemas (zod schemas for login/register)
 │   │   └── formatters.ts        # Data formatting utilities
 │   │
 │   ├── hooks/                   # Custom React hooks
-│   │   ├── useAuth.ts           # Authentication state hook
+│   │   ├── useAuth.ts           # Authentication state hook (uses AuthContext)
 │   │   ├── useChat.ts           # Chat state management
 │   │   ├── usePolicy.ts         # Policy management hook
 │   │   └── usePagination.ts     # Pagination logic
 │   │
+│   ├── contexts/                # React Context providers
+│   │   └── AuthContext.tsx      # User authentication context (user state, login, logout, isAuthenticated)
+│   │
 │   ├── types/                   # TypeScript type definitions
-│   │   ├── auth.ts              # Auth-related types
+│   │   ├── auth.ts              # Auth types (User, LoginRequest, TokenResponse)
 │   │   ├── chat.ts              # Chat types (Message, Conversation)
 │   │   ├── policy.ts            # Policy types
 │   │   └── api.ts               # API response types
+│   │
+│   ├── middleware.ts            # Next.js middleware for protected routes
 │   │
 │   ├── styles/                  # Global styles
 │   │   ├── globals.css          # Global CSS
@@ -110,20 +116,20 @@ bodam/
 │   │   │   ├── v1/              # API version 1 routes
 │   │   │   │   ├── chat.py      # Chat endpoints (POST, GET history)
 │   │   │   │   ├── policies.py  # Policy CRUD endpoints
-│   │   │   │   ├── auth.py      # Authentication endpoints
+│   │   │   │   ├── auth.py      # Authentication endpoints (register, login, me)
 │   │   │   │   ├── analysis.py  # Coverage analysis endpoints
 │   │   │   │   └── users.py     # User profile endpoints
 │   │   │   │
-│   │   │   └── deps.py          # Dependency injection (auth, db sessions)
+│   │   │   └── deps.py          # Dependency injection (get_current_user, db sessions)
 │   │   │
 │   │   ├── core/                # Core application configuration
 │   │   │   ├── config.py        # Environment and app settings
-│   │   │   ├── security.py      # JWT, password hashing, auth logic
+│   │   │   ├── security.py      # bcrypt hashing, JWT token generation/verification
 │   │   │   ├── database.py      # Database connection and session
 │   │   │   └── logging.py       # Logging configuration
 │   │   │
 │   │   ├── models/              # SQLAlchemy ORM models
-│   │   │   ├── user.py          # User model
+│   │   │   ├── user.py          # User model (id, email, hashed_password, full_name, is_active)
 │   │   │   ├── policy.py        # Policy model (extended with crawler metadata)
 │   │   │   ├── conversation.py  # Chat conversation model
 │   │   │   ├── message.py       # Chat message model
@@ -131,7 +137,7 @@ bodam/
 │   │   │   └── __init__.py      # Model exports
 │   │   │
 │   │   ├── schemas/             # Pydantic request/response schemas
-│   │   │   ├── auth.py          # Auth request/response schemas
+│   │   │   ├── auth.py          # Auth schemas (LoginRequest, RegisterRequest, TokenResponse, UserResponse)
 │   │   │   ├── policy.py        # Policy schemas
 │   │   │   ├── chat.py          # Chat message/conversation schemas
 │   │   │   ├── user.py          # User schemas
@@ -175,8 +181,8 @@ bodam/
 │   │   │   │   └── comparison.py         # Policy comparison logic
 │   │   │   │
 │   │   │   └── auth/            # Authentication service
-│   │   │       ├── auth_service.py  # User auth logic
-│   │   │       └── token_service.py # JWT token management
+│   │   │       ├── auth_service.py  # User registration, login, password verification
+│   │   │       └── token_service.py # JWT token generation and verification
 │   │   │
 │   │   ├── tasks/               # Background task processing (Celery)
 │   │   │   ├── __init__.py      # Task module exports

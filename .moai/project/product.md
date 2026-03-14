@@ -284,14 +284,25 @@ Real-time analysis of user-uploaded policy PDFs using Gemini 2.0 Flash with 1M c
 
 Secure account system enabling personalized policy management, history tracking, and preference storage.
 
-**Capabilities**:
-- Email and phone-based authentication
+**MVP Phase 1 Implementation**:
+- Email/password-based registration and login
+- JWT-based authentication with bcrypt password hashing
+- Protected chat endpoints with user session isolation
+- Frontend authentication UI using react-hook-form + zod validation
+- Frontend route protection with middleware
+
+**Status**: Implemented in SPEC-AUTH-001 (commit 210bbf8)
+
+**Capabilities (Phase 1)**:
+- User registration with email and password
+- Secure login with JWT token generation (30-minute expiration)
+- User profile retrieval via authenticated endpoint
+- Password hashing with bcrypt (no plain text storage)
+- Session isolation for chat conversations
+
+**Account Features (Phase 2+)**:
 - Social login integration (Kakao, Naver, Google)
 - Two-factor authentication for security
-- Encrypted password storage
-- Session management and logout controls
-
-**Account Features**:
 - Policy portfolio management (multiple policies)
 - Query history and saved searches
 - Claim guidance recommendations

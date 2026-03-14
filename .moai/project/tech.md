@@ -31,6 +31,9 @@ Bodam is an AI-powered insurance claims analysis platform designed to process po
 | **shadcn/ui** | CLI v4 (2026.03) | Pre-built component library on Radix UI primitives |
 | **Vercel AI SDK** | 6.x (`ai` package) | LLM streaming chat UI with `useChat` hook |
 | **Auth.js (NextAuth)** | v5 | OAuth, credentials, and session management |
+| **react-hook-form** | >=7.0.0 | Performant, flexible form state management |
+| **zod** | >=3.0.0 | TypeScript-first schema validation |
+| **@hookform/resolvers** | >=3.0.0 | Zod integration for react-hook-form |
 
 ### Frontend Design Rationale
 
@@ -75,6 +78,8 @@ Auth.js provides enterprise-grade authentication without forcing a monolithic au
 | **Python** | 3.13.x | Primary backend language with mature AI/ML ecosystem |
 | **FastAPI** | 0.135.x | Async web framework with auto-generated OpenAPI documentation |
 | **Pydantic** | 2.12.x | Type-safe data validation and serialization |
+| **bcrypt** | >=4.0.0 | Password hashing (used directly instead of passlib for Python 3.13 compatibility) |
+| **python-jose[cryptography]** | >=3.3.0 | JWT token generation and verification |
 | **LangChain** | 1.2.x | RAG pipeline orchestration and prompt management |
 | **langchain-core** | 0.3.x | Lightweight LLM framework (used instead of full langchain) |
 | **langchain-openai** | 1.1.x | OpenAI LLM integration |
@@ -85,6 +90,7 @@ Auth.js provides enterprise-grade authentication without forcing a monolithic au
 | **SQLAlchemy** | 2.x | ORM for database operations and relationships |
 | **Alembic** | 1.x | Database migration management |
 | **Playwright** | latest | Web scraping for insurance disclosure pages |
+| **pydantic[email]** | 2.12.x | Email validation support (EmailStr type) |
 
 ### Backend Design Rationale
 

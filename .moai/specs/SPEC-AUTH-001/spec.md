@@ -246,3 +246,30 @@ GET /api/v1/auth/me
 | REQ-M3-01~03 | ACC-06,08,13~15 | AuthAPI |
 | REQ-M4-01~04 | ACC-16~21 | AuthMiddleware |
 | REQ-M5-01~05 | ACC-22~27 | AuthFrontend |
+
+---
+
+## 5. 구현 기록 (Implementation Notes)
+
+**상태 변경**: draft → implemented
+
+**커밋**: 210bbf8
+
+**기술 선택사항**:
+- bcrypt: Python 3.13 호환성을 위해 passlib 대신 bcrypt를 직접 사용
+- JWT: python-jose[cryptography] 사용
+- 변경 내용: 32 파일 변경, +3,391 줄
+
+**테스트 커버리지**:
+- Backend: 500 테스트 (신규 63개)
+- Frontend: 116 테스트 (신규 15개)
+
+**구현 완료 항목**:
+- User SQLAlchemy 모델 및 데이터베이스 마이그레이션
+- bcrypt 해싱 및 JWT 토큰 발급
+- FastAPI 인증 엔드포인트 (register, login, me)
+- get_current_user FastAPI Dependency
+- 보호된 채팅 엔드포인트
+- 프론트엔드 로그인/회원가입 폼 (react-hook-form + zod)
+- AuthContext를 사용한 프론트엔드 인증 상태 관리
+- 미들웨어를 통한 보호된 라우트
