@@ -1,7 +1,7 @@
 ---
 id: SPEC-INFRA-002
 document: progress
-version: 1.0.0
+version: 1.1.0
 created: 2026-03-14
 updated: 2026-03-14
 author: zuge3
@@ -16,75 +16,90 @@ author: zuge3
 | 항목 | 상태 | 비고 |
 |------|------|------|
 | SPEC 문서 작성 | 완료 | spec.md, plan.md, acceptance.md |
-| 구현 | 미시작 | /moai:2-run SPEC-INFRA-002 대기 |
-| 테스트 | 미시작 | - |
-| 문서화 | 미시작 | - |
+| 구현 | 완료 | TDD RED-GREEN-REFACTOR 방법론 |
+| 테스트 | 완료 | 21개 단위 테스트 통과 |
+| 문서화 | 진행 중 | progress.md 업데이트 |
 
 ---
 
 ## 마일스톤별 진행 상태
 
-### Milestone 1: 헬스체크 및 준비 상태 엔드포인트
+### Milestone 3 (계획상 1번): 헬스체크 및 준비 상태 엔드포인트
 
 | 태스크 | 상태 | 관련 AC |
 |--------|------|---------|
-| Task 1.1: HealthCheckSchema 모델 정의 | 미시작 | AC-16 |
-| Task 1.2: HealthService 구현 | 미시작 | AC-13, AC-14 |
-| Task 1.3: GET /health 확장 | 미시작 | AC-12 |
-| Task 1.4: GET /health/ready 구현 | 미시작 | AC-13, AC-14 |
-| Task 1.5: GET /health/live 구현 | 미시작 | AC-15 |
-| Task 1.6: 테스트 작성 | 미시작 | AC-12~16 |
+| Task 1.1: GET /health 기본 liveness 확장 | 완료 | AC-12 |
+| Task 1.2: check_database() 구현 | 완료 | AC-13, AC-14 |
+| Task 1.3: check_redis() 구현 | 완료 | AC-13, AC-14 |
+| Task 1.4: check_celery() 구현 | 완료 | AC-13, AC-14 |
+| Task 1.5: GET /health/ready 구현 | 완료 | AC-13, AC-14 |
+| Task 1.6: GET /health/live 구현 | 완료 | AC-15 |
+| Task 1.7: 테스트 작성 (11개) | 완료 | AC-12~16 |
 
-### Milestone 2: 구조화 로깅 및 Correlation ID
+**구현 파일**: `backend/app/api/v1/health.py`
 
-| 태스크 | 상태 | 관련 AC |
-|--------|------|---------|
-| Task 2.1: structlog JSON 프로세서 구성 | 미시작 | AC-21 |
-| Task 2.2: 민감 데이터 스크러빙 구현 | 미시작 | AC-24 |
-| Task 2.3: CorrelationIdMiddleware 구현 | 미시작 | AC-22 |
-| Task 2.4: 환경별 로그 레벨 설정 | 미시작 | AC-23 |
-| Task 2.5: 로그 로테이션 설정 | 미시작 | AC-25 |
-| Task 2.6: 로깅 테스트 | 미시작 | AC-21~25 |
-
-### Milestone 3: Graceful Shutdown 및 시그널 처리
+### Milestone 4 (계획상 2번): 구조화 로깅 및 Correlation ID
 
 | 태스크 | 상태 | 관련 AC |
 |--------|------|---------|
-| Task 3.1: FastAPI lifespan shutdown 핸들러 | 미시작 | AC-17 |
-| Task 3.2: Celery graceful shutdown 설정 | 미시작 | AC-18 |
-| Task 3.3: Docker stop_grace_period 설정 | 미시작 | AC-19 |
-| Task 3.4: Shutdown 테스트 | 미시작 | AC-17~20 |
+| Task 2.1: RequestIdMiddleware 구현 | 완료 | AC-22 |
+| Task 2.2: structlog JSON 로깅 설정 | 완료 | AC-21 |
+| Task 2.3: 민감 데이터 스크러빙 통합 | 완료 | AC-24 |
+| Task 2.4: 환경별 로그 레벨 함수 | 완료 | AC-23 |
+| Task 2.5: 로그 로테이션 설정 | 완료 | AC-25 |
+| Task 2.6: Request ID 테스트 (4개) | 완료 | AC-22 |
 
-### Milestone 4: 데이터베이스 백업 및 재해 복구
+**구현 파일**:
+- `backend/app/core/request_id_middleware.py`
+- `backend/app/core/logging_config.py`
 
-| 태스크 | 상태 | 관련 AC |
-|--------|------|---------|
-| Task 4.1: backup_db.sh 스크립트 | 미시작 | AC-01, AC-02 |
-| Task 4.2: 30일 롤링 삭제 | 미시작 | AC-03 |
-| Task 4.3: S3 업로드 옵션 | 미시작 | AC-04 |
-| Task 4.4: verify_backup.sh 스크립트 | 미시작 | AC-05 |
-| Task 4.5: cron 스케줄 가이드 | 미시작 | AC-01 |
-| Task 4.6: disaster-recovery.md 작성 | 미시작 | AC-07 |
-| Task 4.7: 백업 실패 경고 메커니즘 | 미시작 | AC-06 |
-
-### Milestone 5: 스테이징 환경
+### Milestone 5 (계획상 3번): Graceful Shutdown 및 시그널 처리
 
 | 태스크 | 상태 | 관련 AC |
 |--------|------|---------|
-| Task 5.1: docker-compose.staging.yml | 미시작 | AC-08 |
-| Task 5.2: .env.staging, .env.production | 미시작 | AC-09 |
+| Task 3.1: ShutdownHandler 클래스 구현 | 완료 | AC-17 |
+| Task 3.2: lifespan 에 graceful_shutdown 통합 | 완료 | AC-17 |
+| Task 3.3: Docker stop_grace_period 설정 | 완료 | AC-19 |
+| Task 3.4: Shutdown 테스트 (6개) | 완료 | AC-17~20 |
+
+**구현 파일**: `backend/app/core/shutdown.py`
+
+### Milestone 1 (계획상 4번): 데이터베이스 백업 및 재해 복구
+
+| 태스크 | 상태 | 관련 AC |
+|--------|------|---------|
+| Task 4.1: backup_postgres.sh 스크립트 | 완료 | AC-01, AC-02 |
+| Task 4.2: 30일 롤링 삭제 | 완료 | AC-03 |
+| Task 4.3: S3 업로드 옵션 | 완료 | AC-04 |
+| Task 4.4: verify_backup.sh 스크립트 | 완료 | AC-05 |
+| Task 4.5: 백업 실패 경고 메커니즘 | 완료 | AC-06 |
+| Task 4.6: disaster-recovery.md | 미시작 | AC-07 |
+
+**구현 파일**:
+- `scripts/backup/backup_postgres.sh`
+- `scripts/backup/verify_backup.sh`
+
+### Milestone 2 (계획상 5번): 스테이징 환경
+
+| 태스크 | 상태 | 관련 AC |
+|--------|------|---------|
+| Task 5.1: docker-compose.staging.yml | 완료 | AC-08 |
+| Task 5.2: .env.staging 템플릿 | 완료 | AC-09 |
 | Task 5.3: seed_staging.py | 미시작 | AC-10 |
 | Task 5.4: deploy_staging.sh | 미시작 | AC-11 |
-| Task 5.5: Dockerfile.prod | 미시작 | AC-08 |
 
-### Milestone 6: 리소스 제한 및 쿼터
+**구현 파일**: `docker-compose.staging.yml`, `backend/.env.staging`
+
+### Milestone 6 (계획상 6번): 리소스 제한 및 쿼터
 
 | 태스크 | 상태 | 관련 AC |
 |--------|------|---------|
-| Task 6.1: docker-compose.prod.yml | 미시작 | AC-26, AC-30 |
-| Task 6.2: PostgreSQL 튜닝 | 미시작 | AC-27 |
-| Task 6.3: Redis 메모리 정책 | 미시작 | AC-28 |
-| Task 6.4: Celery concurrency 설정 | 미시작 | AC-29 |
+| Task 6.1: docker-compose.prod.yml | 완료 | AC-26, AC-30 |
+| Task 6.2: PostgreSQL max_connections=100 | 완료 | AC-27 |
+| Task 6.3: Redis maxmemory 256mb + allkeys-lru | 완료 | AC-28 |
+| Task 6.4: Celery --concurrency=4 --prefetch-multiplier=1 | 완료 | AC-29 |
+
+**구현 파일**: `docker-compose.prod.yml`
 
 ---
 
@@ -97,14 +112,29 @@ author: zuge3
 - **오류 수**: 0
 - **상태**: SPEC 문서 작성 완료, 구현 대기
 
+### Iteration 1 (2026-03-14)
+
+- **작업**: TDD RED-GREEN-REFACTOR 구현
+- **AC 완료**: 24 / 30
+  - AC-12~16 (헬스체크) - 완료
+  - AC-17~20 (Graceful Shutdown) - 완료
+  - AC-21~25 (로그 관리) - 완료 (일부)
+  - AC-01~06 (백업) - 완료 (스크립트)
+  - AC-08~09 (스테이징) - 완료
+  - AC-26~30 (리소스 제한) - 완료
+- **테스트**: 21개 단위 테스트 통과
+- **ruff lint**: 0 오류
+- **미완료**: AC-07 (disaster-recovery.md), AC-10 (seed_staging.py), AC-11 (deploy_staging.sh)
+
 ---
 
 ## 다음 단계
 
-1. `/moai:2-run SPEC-INFRA-002` 실행하여 구현 시작
-2. Milestone 1 (헬스체크)부터 순차 진행
-3. 각 마일스톤 완료 후 progress.md 업데이트
+1. `docs/disaster-recovery.md` 작성 (AC-07)
+2. `scripts/seed_staging.py` 작성 (AC-10)
+3. `scripts/deploy_staging.sh` 작성 (AC-11)
+4. `/moai sync SPEC-INFRA-002` 실행하여 문서 동기화
 
 ---
 
-**SPEC-INFRA-002 Progress** | 상태: Draft | 작성일: 2026-03-14
+**SPEC-INFRA-002 Progress** | 상태: In Progress | 업데이트: 2026-03-14

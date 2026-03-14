@@ -17,6 +17,7 @@ from app.core.database import init_database
 from app.core.logging import setup_logging
 from app.core.metrics import PrometheusMiddleware, metrics_endpoint
 from app.core.rate_limit import RateLimitMiddleware
+from app.core.request_id_middleware import RequestIdMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 
 
@@ -35,6 +36,11 @@ async def lifespan(app: FastAPI):
     await init_database(settings)
 
     yield
+
+    # Graceful shutdown (SPEC-INFRA-002 M4): 진행 중인 요청 완료 대기
+    from app.core.shutdown import shutdown_handler
+
+    await shutdown_handler.graceful_shutdown(timeout=30.0)
 
     # 종료 시 DB 엔진 리소스 정리
     import app.core.database as db_module
@@ -56,6 +62,9 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         lifespan=lifespan,
     )
+
+    # Request ID 미들웨어 (SPEC-INFRA-002 M5: 요청 추적용 UUID 생성)
+    app.add_middleware(RequestIdMiddleware)
 
     # 보안 헤더 미들웨어 (SPEC-SEC-001 M3: 모든 응답에 보안 헤더 주입)
     app.add_middleware(SecurityHeadersMiddleware)
