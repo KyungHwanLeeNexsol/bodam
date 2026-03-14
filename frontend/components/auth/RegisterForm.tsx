@@ -65,54 +65,70 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate>
-      <div>
-        <label htmlFor="email">이메일</label>
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+      <div className="space-y-1">
+        <label htmlFor="email" className="block text-sm font-medium text-[#1A1A1A]">
+          이메일
+        </label>
         <input
           id="email"
           type="email"
           autoComplete="email"
+          className="w-full rounded-md border border-[#E5E5E5] px-3 py-2 text-sm text-[#1A1A1A] placeholder-[#999] outline-none focus:border-[#1A1A1A] focus:ring-1 focus:ring-[#1A1A1A]"
+          placeholder="example@email.com"
           {...register('email')}
         />
         {errors.email && (
-          <p role="alert" className="error">
+          <p role="alert" className="text-xs text-red-500">
             {errors.email.message}
           </p>
         )}
       </div>
 
-      <div>
-        <label htmlFor="password">비밀번호</label>
+      <div className="space-y-1">
+        <label htmlFor="password" className="block text-sm font-medium text-[#1A1A1A]">
+          비밀번호
+        </label>
         <input
           id="password"
           type="password"
           autoComplete="new-password"
+          className="w-full rounded-md border border-[#E5E5E5] px-3 py-2 text-sm text-[#1A1A1A] outline-none focus:border-[#1A1A1A] focus:ring-1 focus:ring-[#1A1A1A]"
+          placeholder="8자 이상 입력"
           {...register('password')}
         />
         {errors.password && (
-          <p role="alert" className="error">
+          <p role="alert" className="text-xs text-red-500">
             {errors.password.message}
           </p>
         )}
       </div>
 
-      <div>
-        <label htmlFor="full_name">이름 (선택)</label>
+      <div className="space-y-1">
+        <label htmlFor="full_name" className="block text-sm font-medium text-[#1A1A1A]">
+          이름 <span className="text-[#999]">(선택)</span>
+        </label>
         <input
           id="full_name"
           type="text"
           autoComplete="name"
+          className="w-full rounded-md border border-[#E5E5E5] px-3 py-2 text-sm text-[#1A1A1A] placeholder-[#999] outline-none focus:border-[#1A1A1A] focus:ring-1 focus:ring-[#1A1A1A]"
+          placeholder="홍길동"
           {...register('full_name')}
         />
       </div>
 
       {serverError && (
-        <p role="alert" className="error">
+        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
           {serverError}
         </p>
       )}
 
-      <button type="submit" disabled={isLoading}>
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full rounded-md bg-[#1A1A1A] py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+      >
         {isLoading ? '가입 중...' : '회원가입'}
       </button>
     </form>
