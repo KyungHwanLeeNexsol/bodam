@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // standalone 빌드: Docker 프로덕션 이미지 최소화를 위한 설정
-  // Dockerfile.prod에서 .next/standalone 결과물 복사에 필요
-  output: "standalone",
+  // standalone 빌드: Docker 환경(Dockerfile.prod)에서만 활성화
+  // Vercel 배포 시에는 undefined (Vercel이 자체 최적화 적용)
+  ...(process.env.BUILD_STANDALONE === "true" ? { output: "standalone" } : {}),
 };
 
 export default nextConfig;

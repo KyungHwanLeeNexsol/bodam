@@ -1,4 +1,4 @@
-name: Deploy to OCI
+name: Deploy
 
 on:
   push:
@@ -6,50 +6,40 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Deploy to Oracle Cloud
+  # ── 백엔드: Fly.io 배포 ──────────────────────────────────────────────────
+  deploy-backend:
+    name: Backend → Fly.io
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.OCI_SSH_HOST }}
-          username: ${{ secrets.OCI_SSH_USER }}
-          key: ${{ secrets.OCI_SSH_KEY }}
-          port: 22
-          timeout: 300s
-          script: |
-            set -euo pipefail
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
 
-            cd /opt/bodam
+      - name: Deploy to Fly.io
+        run: flyctl deploy --config fly.toml --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-            echo "최신 코드 가져오는 중..."
-            git pull origin main
+      - name: Run database migrations
+        run: flyctl ssh console --command "uv run alembic upgrade head" --app bodam-backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-            echo "Docker 이미지 빌드 및 컨테이너 시작 중..."
-            docker compose -f docker-compose.prod.yml up -d --build
-
-            echo "백엔드 서비스 준비 대기 중 (최대 60초)..."
-            MAX_WAIT=60
-            WAIT=0
-            until docker compose -f docker-compose.prod.yml exec -T backend curl -sf http://localhost:8000/health > /dev/null 2>&1; do
-              if [ "$WAIT" -ge "$MAX_WAIT" ]; then
-                echo "오류: 백엔드가 응답하지 않습니다."
-                docker compose -f docker-compose.prod.yml logs backend --tail=30
-                exit 1
-              fi
-              sleep 5
-              WAIT=$((WAIT + 5))
-            done
-
-            echo "데이터베이스 마이그레이션 실행 중..."
-            docker compose -f docker-compose.prod.yml exec -T backend uv run alembic upgrade head
-
-            echo "오래된 Docker 리소스 정리 중..."
-            docker system prune -f
-
-            echo "배포 완료! 커밋: $(git rev-parse --short HEAD)"
+  # ── 프론트엔드: Vercel 자동 배포 (별도 설정 불필요) ────────────────────
+  # Vercel GitHub 통합을 사용하면 main 브랜치 push 시 자동으로 배포됩니다.
+  # Vercel 대시보드 → 프로젝트 연결 → GitHub 통합 활성화
+  #
+  # 또는 아래 주석을 해제하여 Vercel CLI를 통한 명시적 배포 사용:
+  # deploy-frontend:
+  #   name: Frontend → Vercel
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Deploy to Vercel
+  #       run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }}
+  #       env:
+  #         VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  #         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

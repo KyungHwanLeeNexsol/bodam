@@ -7,8 +7,9 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 # 애플리케이션 코드 복사
 COPY . .
-# 프로덕션 빌드 실행
+# 프로덕션 빌드 실행 (standalone 빌드 활성화: Docker 배포에 필요)
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV BUILD_STANDALONE=true
 RUN pnpm build
 
 # 프로덕션 런타임 이미지 (빌드 결과물만 복사)
