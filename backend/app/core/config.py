@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     # RAG 검색 유사도 임계값 (낮을수록 더 많은 결과)
     chat_context_threshold: float = 0.3
 
+    # 크롤러 스토리지 설정
+    # 스토리지 백엔드 유형 ('local' 또는 's3')
+    crawler_storage_backend: str = "local"
+
+    # 로컬 스토리지 기본 디렉토리
+    crawler_base_dir: str = "./data/crawled_pdfs"
+
+    # 크롤러 요청 간 대기 시간 (초, 서버 과부하 방지)
+    crawler_rate_limit_seconds: float = 2.0
+
+    # 크롤러 최대 재시도 횟수
+    crawler_max_retries: int = 3
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

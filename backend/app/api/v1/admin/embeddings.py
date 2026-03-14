@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Annotated
 
 import redis as redis_module
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.config import Settings, get_settings

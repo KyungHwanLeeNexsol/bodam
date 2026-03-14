@@ -47,6 +47,17 @@ def create_celery_app() -> Celery:
     # 작업 모듈 자동 탐색
     app.autodiscover_tasks(["app.tasks"])
 
+    # Celery Beat 주기적 태스크 스케줄 설정
+    from celery.schedules import crontab
+
+    app.conf.beat_schedule = {
+        # 매주 일요일 새벽 2시에 전체 크롤링 실행
+        "crawl-all-weekly": {
+            "task": "app.tasks.crawler_tasks.crawl_all",
+            "schedule": crontab(day_of_week=0, hour=2, minute=0),
+        },
+    }
+
     return app
 
 

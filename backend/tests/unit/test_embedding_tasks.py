@@ -7,7 +7,7 @@ bulk_embed_policies() Celery 태스크의 Redis 진행률 추적,
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 
 class TestBulkEmbedPoliciesTask:

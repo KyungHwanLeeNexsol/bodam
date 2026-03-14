@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 
 def _make_processor(mock_embedding: list[float] | None = None):
     """테스트용 DocumentProcessor 생성 헬퍼"""

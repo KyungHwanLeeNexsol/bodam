@@ -18,6 +18,8 @@ dependencies = [
     "openai>=1.60.0",
     "tiktoken>=0.8.0",
     "pdfplumber>=0.11.0",
+    "tenacity>=9.0.0",
+    "playwright>=1.49.0",
 ]
 
 [project.optional-dependencies]

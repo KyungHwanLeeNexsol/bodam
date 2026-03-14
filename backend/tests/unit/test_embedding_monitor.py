@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 def _make_monitor(mock_session=None):
     """테스트용 EmbeddingMonitorService 생성 헬퍼"""
@@ -147,8 +145,9 @@ class TestRegenerateMissing:
 
         chunk_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
 
+        mock_get_ids = "app.services.rag.embedding_monitor.EmbeddingMonitorService._get_policy_ids_for_chunks"
         with patch("app.tasks.embedding_tasks.bulk_embed_policies") as mock_task, \
-             patch("app.services.rag.embedding_monitor.EmbeddingMonitorService._get_policy_ids_for_chunks", new_callable=AsyncMock, return_value=["policy-1"]):
+             patch(mock_get_ids, new_callable=AsyncMock, return_value=["policy-1"]):
             mock_async_result = MagicMock()
             mock_async_result.id = "test-task-id-123"
             mock_task.apply_async = MagicMock(return_value=mock_async_result)
