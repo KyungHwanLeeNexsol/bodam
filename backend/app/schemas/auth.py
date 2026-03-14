@@ -9,6 +9,8 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, field_validator
 
+from app.core.sanitize import sanitize_input
+
 
 class RegisterRequest(BaseModel):
     """회원가입 요청 스키마"""
@@ -25,6 +27,12 @@ class RegisterRequest(BaseModel):
     def normalize_email(cls, v: str) -> str:
         """이메일을 소문자로 정규화"""
         return v.lower().strip()
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def validate_full_name_no_xss(cls, v: str | None) -> str | None:
+        """full_name에서 XSS 패턴을 검사한다"""
+        return sanitize_input(v)
 
 
 class LoginRequest(BaseModel):

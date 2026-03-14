@@ -41,8 +41,8 @@ author: zuge3
 
 - [x] Task 2.1: Grafana 데이터 소스 프로비저닝 (datasources.yml)
 - [x] Task 2.2: Application Performance 대시보드 (bodam-app.json)
-- [ ] Task 2.3: Infrastructure 대시보드 (향후 구현)
-- [ ] Task 2.4: Business Metrics 대시보드 (향후 구현)
+- [x] Task 2.3: Infrastructure 대시보드 (bodam-infra.json, 6 패널)
+- [x] Task 2.4: Business Metrics 대시보드 (bodam-business.json, 6 패널)
 - [x] Task 2.5: Celery Workers - bodam-app.json에 부분 포함
 - [x] Task 2.6: 대시보드 프로비저닝 설정 (dashboard.yml)
 
@@ -111,6 +111,7 @@ author: zuge3
 | Phase 2 | 2026-03-14 | 22/27 | 0 | TDD 구현 - 47개 테스트, 85%+ 커버리지 |
 | Phase 3 | 2026-03-14 | 22/27 | 0 | Git 커밋 49e242f |
 | Phase 4 | 2026-03-14 | 22/27 | 0 | 동기화 완료 |
+| Phase 2 (resumed) | 2026-03-14 | 27/27 | 0 | Grafana 대시보드 2개 추가 완료 |
 
 ---
 
@@ -137,6 +138,10 @@ author: zuge3
 - `infra/monitoring/grafana/provisioning/dashboards/dashboard.yml`
 - `infra/monitoring/grafana/dashboards/bodam-app.json`
 - `docker-compose.yml` - monitoring profile 추가 (수정)
+
+### Grafana 대시보드 (Phase 2 resumed)
+- `infra/monitoring/grafana/dashboards/bodam-infra.json` - Infrastructure 대시보드 (6 패널)
+- `infra/monitoring/grafana/dashboards/bodam-business.json` - Business Metrics 대시보드 (6 패널)
 
 ---
 

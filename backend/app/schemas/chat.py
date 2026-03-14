@@ -9,7 +9,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.sanitize import sanitize_input
 
 # ─────────────────────────────────────────────
 # ChatSession 스키마
@@ -62,6 +64,13 @@ class ChatMessageCreate(BaseModel):
 
     # 메시지 내용 (1자 이상, 5000자 이하)
     content: str = Field(..., min_length=1, max_length=5000)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def validate_content_no_xss(cls, v: str) -> str:
+        """content에서 XSS 패턴을 검사한다"""
+        result = sanitize_input(v)
+        return result if result is not None else v
 
 
 class ChatMessageResponse(BaseModel):

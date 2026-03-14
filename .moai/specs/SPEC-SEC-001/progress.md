@@ -96,6 +96,7 @@ tags: [security, compliance, rate-limiting, PIPA, OWASP]
 | 2026-03-14 | Phase 2 complete: TDD 구현 - 41개 테스트, 85%+ 커버리지 | manager-tdd |
 | 2026-03-14 | Phase 3 complete: Git 커밋 cad3a48 | manager-git |
 | 2026-03-14 | Phase 4 complete: 동기화 완료 | manager-docs |
+| 2026-03-14 | Phase 2 (resumed) complete: 잔여 태스크 TDD 구현 완료 | manager-git |
 
 ## 인수 기준 달성 현황
 
@@ -104,14 +105,20 @@ tags: [security, compliance, rate-limiting, PIPA, OWASP]
 | SC-001: IP Rate Limiting | PASSED (단위 테스트) |
 | SC-002: 인증 Rate Limiting | PASSED (단위 테스트) |
 | SC-003: Rate Limit 헤더 | PASSED (단위 테스트) |
-| SC-004: Free Tier 채팅 제한 | 구현됨 (엔드포인트 미등록) |
+| SC-004: Free Tier 채팅 제한 | PASSED (엔드포인트 등록 완료) |
 | SC-005: Rate Limit 복구 | PASSED (단위 테스트) |
 | SC-006: Redis Fail-Open | PASSED (단위 테스트) |
-| SC-010: 계정 삭제 | 서비스 구현됨 (엔드포인트 미등록) |
-| SC-012: 데이터 내보내기 | 서비스 구현됨 (엔드포인트 미등록) |
+| SC-010: 계정 삭제 | PASSED (엔드포인트 등록 완료) |
+| SC-012: 데이터 내보내기 | PASSED (엔드포인트 등록 완료) |
 | SC-013: 채팅 이력 자동 삭제 | PASSED (단위 테스트) |
 | SC-014: 로그 자동 삭제 | PASSED (단위 테스트) |
 | SC-015: 동의 수집 | ConsentRecord 모델 구현됨 |
 | SC-020: 보안 헤더 | PASSED (단위 테스트) |
 | SC-024: 로그 마스킹 | PASSED (단위 테스트) |
 | SC-030: .env.example | PASSED (파일 생성됨) |
+| SC-031: XSS Sanitization | PASSED (core/sanitize.py + Pydantic validator) |
+| SC-032: Secret Rotation Docs | PASSED (docs/secret-rotation.md) |
+| SC-033: OWASP Audit Checklist | PASSED (docs/security/owasp-checklist.md) |
+| SC-034: Security Scan CI/CD | PASSED (.github/workflows/security.yml) |
+| SC-035: AuthN Bypass Tests | PASSED (test_auth_security.py) |
+| SC-036: AuthZ Boundary Tests | PASSED (test_authz_boundary.py) |

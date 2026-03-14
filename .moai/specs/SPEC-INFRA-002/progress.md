@@ -73,11 +73,12 @@ author: zuge3
 | Task 4.3: S3 업로드 옵션 | 완료 | AC-04 |
 | Task 4.4: verify_backup.sh 스크립트 | 완료 | AC-05 |
 | Task 4.5: 백업 실패 경고 메커니즘 | 완료 | AC-06 |
-| Task 4.6: disaster-recovery.md | 미시작 | AC-07 |
+| Task 4.6: disaster-recovery.md | 완료 | AC-07 |
 
 **구현 파일**:
 - `scripts/backup/backup_postgres.sh`
 - `scripts/backup/verify_backup.sh`
+- `docs/disaster-recovery.md`
 
 ### Milestone 2 (계획상 5번): 스테이징 환경
 
@@ -85,10 +86,10 @@ author: zuge3
 |--------|------|---------|
 | Task 5.1: docker-compose.staging.yml | 완료 | AC-08 |
 | Task 5.2: .env.staging 템플릿 | 완료 | AC-09 |
-| Task 5.3: seed_staging.py | 미시작 | AC-10 |
-| Task 5.4: deploy_staging.sh | 미시작 | AC-11 |
+| Task 5.3: seed_staging.py | 완료 | AC-10 |
+| Task 5.4: deploy_staging.sh | 완료 | AC-11 |
 
-**구현 파일**: `docker-compose.staging.yml`, `backend/.env.staging`
+**구현 파일**: `docker-compose.staging.yml`, `backend/.env.staging`, `scripts/seed_staging.py`, `scripts/deploy_staging.sh`
 
 ### Milestone 6 (계획상 6번): 리소스 제한 및 쿼터
 
@@ -130,14 +131,16 @@ author: zuge3
 
 ## 다음 단계
 
-1. `docs/disaster-recovery.md` 작성 (AC-07)
-2. `scripts/seed_staging.py` 작성 (AC-10)
-3. `scripts/deploy_staging.sh` 작성 (AC-11)
+모든 태스크 완료되었습니다.
 
 ## Phase 진행 상황
 
 - Phase 2 complete: TDD 구현 - 21개 테스트, 85%+ 커버리지
 - Phase 2.5 complete: ruff 0 오류, 전체 테스트 통과
+- Phase 2 (resumed) complete: 잔여 태스크 3개 구현 완료
+  - docs/disaster-recovery.md 작성 (RTO 4h, RPO 1h 런북)
+  - scripts/seed_staging.py 작성 (테스트 사용자 2명, 보험사 2개)
+  - scripts/deploy_staging.sh 작성 (헬스체크 포함)
 - Phase 3 complete: Git 커밋 399ac28
 - Phase 4 complete: 동기화 완료
 
