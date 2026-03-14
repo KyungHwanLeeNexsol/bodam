@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     # 크롤러 최대 재시도 횟수
     crawler_max_retries: int = 3
 
+    # JWT 액세스 토큰 만료 시간 (분)
+    access_token_expire_minutes: int = 30
+
+    # JWT 서명 알고리즘
+    jwt_algorithm: str = "HS256"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
