@@ -40,6 +40,12 @@ export default function Header() {
             데이터
           </Link>
           <Link
+            href="/pdf"
+            className="text-sm text-[#666666] transition-colors hover:text-[#1A1A1A]"
+          >
+            약관 분석
+          </Link>
+          <Link
             href="/chat"
             className="text-sm font-medium text-[#0D6E6E] transition-colors hover:text-[#0a5a5a]"
           >

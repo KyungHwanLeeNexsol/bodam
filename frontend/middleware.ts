@@ -9,7 +9,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 
 // 인증이 필요한 경로 패턴
-const PROTECTED_PATHS = ['/chat']
+const PROTECTED_PATHS = ['/chat', '/pdf']
 
 // 인증 없이 접근 가능한 경로 패턴
 const PUBLIC_PATHS = ['/login', '/register', '/']
