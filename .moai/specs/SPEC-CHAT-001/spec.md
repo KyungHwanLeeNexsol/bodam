@@ -1,9 +1,9 @@
 ---
 id: SPEC-CHAT-001
-version: 0.1.0
-status: draft
+version: 1.1.0
+status: completed
 created: 2026-03-13
-updated: 2026-03-13
+updated: 2026-03-14
 author: zuge3
 priority: high
 issue_number: 0
@@ -355,6 +355,74 @@ data: {"type": "done", "message_id": "uuid"}
 | REQ-N-001 | M2 | services/chat_service.py (system prompt) |
 | REQ-N-002 | M2 | services/chat_service.py |
 | REQ-N-003 | M2 | core/config.py |
+
+---
+
+## 6. Implementation Notes (구현 노트)
+
+### Status
+
+✅ **Completed** - Commit f0c28f3 (2026-03-14)
+
+### Implementation Summary
+
+The AI chat interface backend has been successfully implemented with the following components:
+
+**Chat Data Models**:
+- `ChatSession` model with id (UUID), user_id (optional, nullable), title, created_at, updated_at
+- `ChatMessage` model with session_id FK, role (user/assistant/system), content (Text), metadata (JSONB), created_at
+- Cascade delete rules for session cleanup
+- Proper indexing on session_id, user_id, created_at for query performance
+
+**ChatService Implementation**:
+- Async message generation using OpenAI GPT-4o-mini
+- RAG chain integration with VectorSearchService for context retrieval
+- Conversation history management with configurable limit (default: 10 messages)
+- Context window awareness with automatic history compression
+- Sources extraction and formatting with similarity scores
+
+**RAG Chain Orchestration**:
+- Query embedding generation via EmbeddingService
+- Multi-step vector search with top_k=5 (configurable)
+- Relevance threshold filtering (0.3 default)
+- Context assembly with source metadata
+- Conversation history inclusion for multi-turn dialogue
+
+**System Prompts**:
+- Korean insurance domain expert persona
+- References to policy terms and coverage details
+- Guidance for users on claim procedures
+- Clear disclaimers for uncertain information
+
+**Chat API Endpoints**:
+- `POST /api/v1/chat/sessions` - Create new session (201)
+- `GET /api/v1/chat/sessions` - List sessions with pagination
+- `GET /api/v1/chat/sessions/{id}` - Get session with message history
+- `DELETE /api/v1/chat/sessions/{id}` - Delete session (cascade)
+- `POST /api/v1/chat/sessions/{id}/messages` - Send message + get response
+- `POST /api/v1/chat/sessions/{id}/messages/stream` - SSE streaming response
+
+**SSE Streaming Implementation**:
+- Token-level real-time streaming via Server-Sent Events
+- Event types: token, sources, done, error
+- Proper cleanup and error handling
+- Compatible with browser EventSource API
+
+**Test Coverage**:
+- 85+ unit and integration tests
+- Chat service integration tests
+- RAG chain retrieval tests
+- SSE streaming tests
+- Multi-turn conversation tests
+- Error handling validation
+
+### Known Limitations
+
+**User Authentication**: MVP does not require authentication. user_id is nullable and sessions are anonymous. User association implemented in SPEC-AUTH-001 Phase 2.
+
+**Response Caching**: Redis caching integration deferred to Phase 2 for performance optimization on repeated queries.
+
+---
 
 ### 5.2 의존성 관계
 

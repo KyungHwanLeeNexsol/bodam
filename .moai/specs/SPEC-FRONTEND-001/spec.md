@@ -1,9 +1,9 @@
 ---
 id: SPEC-FRONTEND-001
-version: 0.1.0
-status: draft
+version: 1.1.0
+status: completed
 created: 2026-03-13
-updated: 2026-03-13
+updated: 2026-03-14
 author: zuge3
 priority: high
 issue_number: 0
@@ -438,3 +438,77 @@ SPEC-CHAT-001 (채팅 백엔드) --> SPEC-FRONTEND-001 (채팅 프론트엔드)
 
 - **expert-frontend**: UI 컴포넌트 아키텍처, React 19 패턴, SSE 클라이언트 구현
 - **expert-backend**: API 계약 확인, CORS 설정, SSE 형식 호환성 검증
+
+---
+
+## 6. Implementation Notes (구현 노트)
+
+### Status
+
+✅ **Completed** - Commit c36e6f3 (2026-03-14)
+
+### Implementation Summary
+
+The chat UI frontend has been successfully implemented with the following components:
+
+**API Client Layer**:
+- `lib/api/chat-client.ts` - Fetch-based HTTP client for all 6 backend endpoints
+- `lib/api/sse-parser.ts` - SSE event parser for streaming responses
+- Type definitions in `lib/types/chat.ts` matching backend response schemas
+- Comprehensive error handling with user-friendly Korean error messages
+
+**Chat UI Components**:
+- `ChatLayout` - Main layout with responsive sidebar (280px desktop, hidden mobile)
+- `SessionList` - Sidebar session list with current session highlighting
+- `SessionItem` - Individual session display with delete confirmation
+- `MessageBubble` - Message display (user: teal right-aligned, AI: white left-aligned)
+- `StreamingMessage` - Real-time token display with cursor animation
+- `SourcesCard` - Collapsible sources metadata (policy, company, similarity)
+- `ChatInput` - Textarea with auto-height, Enter-to-send, Shift+Enter-for-newline
+- `EmptyState` - Welcome screen with 4 suggested questions
+- `TypingIndicator` - Animated dots during AI generation
+
+**Page Integration**:
+- `/chat` page with `"use client"` directive
+- Session list loading on mount
+- Session selection/creation/deletion
+- Message sending with SSE streaming
+- URL-based session routing (optional: `?session=uuid`)
+- useReducer-based state management
+
+**Design System Compliance**:
+- Brand Teal (#0D6E6E) for user messages and CTAs
+- Brand Orange (#E07B54) for emphasis and links
+- Tailwind CSS 4 responsive grid layout
+- 12px card radius, 8px button radius for UI consistency
+- Typography: Newsreader (headings), Inter (body), JetBrains Mono (code)
+
+**Accessibility Features**:
+- ARIA labels for all interactive elements
+- Keyboard navigation (Tab, Enter, Shift+Enter, Escape)
+- Screen reader support for message content
+- Proper semantic HTML structure
+- Focus indicators for keyboard users
+
+**Responsive Design**:
+- Desktop (>= 768px): Sidebar + main chat area
+- Mobile (< 768px): Hamburger menu toggle, full-width chat
+- Touch-friendly button sizes (min 44px)
+- Viewport-aware SSE streaming
+
+**Test Coverage**:
+- 60+ component tests with React Testing Library
+- API client tests with mocked fetch
+- SSE parser tests for event handling
+- Integration tests for chat flow
+- Accessibility tests for ARIA/keyboard
+
+### Known Limitations
+
+**Authentication**: MVP supports anonymous sessions. User login integration deferred to SPEC-AUTH-001.
+
+**State Persistence**: Session history not persisted to localStorage. In-memory state only. Browser refresh loses session. Persistence planned for Phase 2.
+
+**Mobile Optimization**: Responsive layout implemented but not optimized for small screens < 320px.
+
+---

@@ -1,16 +1,16 @@
+---
+id: SPEC-INFRA-001
+version: 1.1.0
+status: completed
+created: 2026-03-13
+updated: 2026-03-14
+author: zuge3
+priority: high
+issue_number: 0
+tags: [infra, docker, cicd, initial-setup, scaffolding]
+---
+
 # SPEC-INFRA-001: 프로젝트 초기 설정 및 스캐폴딩
-
-## 메타데이터
-
-| 항목 | 값 |
-|------|-----|
-| **SPEC ID** | SPEC-INFRA-001 |
-| **제목** | Project Initial Setup / Scaffolding |
-| **생성일** | 2026-03-13 |
-| **상태** | Planned |
-| **우선순위** | High |
-| **담당** | zuge3 |
-| **라이프사이클** | spec-first |
 
 ---
 
@@ -435,4 +435,58 @@ jobs:
 
 ---
 
-**SPEC-INFRA-001** | 상태: Planned | 우선순위: High
+## 5. Implementation Notes (구현 노트)
+
+### Status
+
+✅ **Completed** - Commit 0d23d4b (2026-03-14)
+
+### Implementation Summary
+
+The project infrastructure has been successfully implemented with the following components:
+
+**Git Repository**:
+- `.gitignore` configured for Python, Node.js, Docker, IDE, and environment files
+- `README.md` created with project overview
+- `LICENSE` (MIT) applied
+
+**Backend (Python/FastAPI)**:
+- `backend/pyproject.toml` configured with uv package manager
+- Python 3.13 virtual environment setup
+- FastAPI app with `/api/v1/health` health check endpoint
+- SQLAlchemy 2.x async engine with asyncpg
+- Alembic database migrations with pgvector extension initialization
+- pytest + pytest-asyncio test framework with AsyncClient fixtures
+
+**Frontend (Next.js)**:
+- `frontend/` initialized with Next.js 16 App Router
+- TypeScript strict mode enabled with required linting rules
+- Tailwind CSS 4 styling framework integrated
+- shadcn/ui component library initialized with Button, Input, Card components
+- Root layout with Korean locale (lang="ko") and font configuration
+- Landing page with Bodam service introduction
+
+**Docker Infrastructure**:
+- `docker-compose.yml` with 4 services: postgres (pgvector:pg18), redis (7-alpine), backend, frontend
+- Health checks configured for database and cache
+- Volume mounts for hot reload development
+- Network configuration with service dependencies
+
+**CI/CD Pipeline**:
+- GitHub Actions workflow (`.github/workflows/test.yml`) created
+- Backend testing: ruff lint check + pytest with coverage
+- Frontend testing: ESLint + TypeScript type check + Vitest
+- Pull request and push triggers for main and develop branches
+
+**Environment Configuration**:
+- `.env.example` files in both frontend and backend directories
+- pydantic-settings integration for type-safe environment variable loading
+- NEXT_PUBLIC_API_URL configured for frontend-backend communication
+
+### Known Limitations
+
+**Cloud Deployment**: Docker Compose environment is local-only. Production cloud deployment (AWS, GCP, Azure) deferred to separate SPEC.
+
+---
+
+**SPEC-INFRA-001** | 상태: Completed | 우선순위: High
