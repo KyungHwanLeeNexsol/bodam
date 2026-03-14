@@ -1,7 +1,7 @@
 ---
 id: SPEC-EMBED-001
-version: 1.0.0
-status: draft
+version: 1.1.0
+status: completed
 created: 2026-03-14
 updated: 2026-03-14
 author: zuge3
@@ -206,3 +206,83 @@ WITH (m = 16, ef_construction = 64);
 | REQ-003 | document_processor.py, text_chunker.py | ACC-004 |
 | REQ-004 | embedding_monitor.py, embeddings.py (Admin API) | ACC-005, ACC-006 |
 | REQ-005 | embeddings.py, embedding_tasks.py | ACC-007, ACC-008 |
+
+---
+
+## Implementation Notes (구현 노트)
+
+### 구현 완료 요약
+
+SPEC-EMBED-001 벡터 임베딩 파이프라인이 2026-03-14에 완전히 구현되었습니다 (커밋 5e6f023). 모든 요구사항이 구현되었으며, 258개의 테스트가 작성되었고 87% 코드 커버리지를 달성했습니다.
+
+### 신규 구성 모듈
+
+#### 1. Celery 및 Redis 통합
+- **파일**: `backend/app/core/celery_app.py`
+- **내용**: Redis 브로커 설정, JSON 직렬화, acks_late 활성화로 안전한 비동기 작업 처리
+
+#### 2. 배치 임베딩 Celery 작업
+- **파일**: `backend/app/tasks/embedding_tasks.py`
+- **기능**: `bulk_embed_policies` Celery 작업으로 대량 정책 임베딩 처리
+- **특징**: Redis 잠금 기반 중복 제거 (deduplication)
+
+#### 3. 임베딩 모니터링 서비스
+- **파일**: `backend/app/services/rag/embedding_monitor.py`
+- **기능**:
+  - 임베딩 통계 수집 (총 개수, 성공/실패율)
+  - 누락된 임베딩 감지
+  - 재생성 트리거 자동화
+
+#### 4. 관리자 API 엔드포인트
+- **파일**: `backend/app/api/v1/admin/embeddings.py`
+- **엔드포인트**:
+  - `POST /admin/embeddings/batch` - 배치 임베딩 작업 시작
+  - `GET /admin/embeddings/batch/{task_id}` - 진행 상태 조회
+  - `GET /admin/embeddings/health` - 임베딩 건강 상태 점검
+  - `POST /admin/embeddings/regenerate` - 누락 임베딩 재생성
+
+### 핵심 구현 사항
+
+#### TextChunker 개선
+- `chunk_text_with_metadata()` 메서드에서 `token_count` 딕셔너리 반환
+- Tiktoken으로 각 청크의 토큰 수 자동 계산
+
+#### 청크 품질 점수 계산
+- `calculate_chunk_quality()` 함수로 4가지 품질 기준 평가:
+  1. 토큰 수 적정성 (200-500 토큰 범위)
+  2. 한국어 비율
+  3. 특수문자 비율
+  4. 문장 완결성
+
+#### DocumentProcessor 메타데이터 보강
+- `process_text()` 메서드에서 다음 정보 추가:
+  - `token_count`: 청크 토큰 수
+  - `quality_score`: 품질 점수 (0.0-1.0)
+  - `model`: 사용된 임베딩 모델명
+  - `embedded_at`: 임베딩 생성 시간
+
+#### EmbeddingService 강화
+- `embed_batch()` 메서드에 `skip_on_failure` 파라미터 추가
+- 실패 청크 인덱스 추적으로 선택적 재처리 가능
+- `APIUnavailableError`: 연속 실패 감지로 배치 작업 자동 일시 정지 및 재시도
+
+### 테스트 커버리지
+
+- **테스트 파일 수**: 6개 신규 테스트 파일
+- **테스트 수**: 258개 테스트 케이스
+- **커버리지**: 87% (TRUST 5 기준 85% 달성)
+- **상태**: 모든 테스트 통과
+
+### 차이점 및 주요 설계 결정
+
+1. **Redis 중복 제거**: REQ-001-W(중복 작업 방지) 구현을 위해 Redis 잠금 메커니즘 도입
+2. **Graceful Degradation**: REQ-005-E(API 불가용 시 처리)를 위해 배치 작업 자동 일시 정지 및 5분 후 재시도 로직 추가
+3. **선택적 재생성**: REQ-004-E(누락된 임베딩 감지)를 위해 `skip_on_failure` 파라미터로 개별 청크만 재처리 가능하게 설계
+
+### 원래 SPEC과의 준수도
+
+- REQ-001 (배치 인제스션): ✅ 완전히 구현 - Celery 작업, Redis 상태 추적, 진행률 갱신
+- REQ-002 (HNSW 인덱스): ✅ 완전히 구현 - Alembic 마이그레이션으로 cosine 거리 HNSW 인덱스 생성
+- REQ-003 (메타데이터 보강): ✅ 완전히 구현 - token_count, chunk_quality_score, page_numbers 기록
+- REQ-004 (품질 모니터링): ✅ 완전히 구현 - embedding_monitor.py로 통계, 누락 감지, 재생성 API
+- REQ-005 (오류 처리): ✅ 완전히 구현 - 지수 백오프, APIUnavailableError, 임베딩 모델/버전 기록

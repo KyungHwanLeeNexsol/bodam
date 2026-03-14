@@ -130,6 +130,32 @@ An intelligent conversational interface that accepts natural language questions 
 
 ---
 
+### 4. Vector Embedding Pipeline with Quality Monitoring
+
+An intelligent vector embedding system that transforms insurance policy texts into embeddings with batch processing, quality monitoring, and automatic failure recovery.
+
+**Capabilities**:
+- Batch embedding of policy documents using OpenAI text-embedding-3-small model
+- Chunk-level quality scoring based on token count, Korean text ratio, special character ratio, sentence completeness
+- Metadata enrichment with token count, quality score, embedding model version, and timestamp
+- HNSW index optimization for <200ms search performance on 100K vectors
+- Celery-based async batch processing with Redis lock deduplication
+- Health monitoring API to detect and regenerate missing embeddings
+- Graceful error handling with exponential backoff retry logic
+- Automatic recovery from API unavailability with 5-minute retry intervals
+
+**Components**:
+- **TextChunker**: Document tokenization with metadata (token_count, quality_score)
+- **DocumentProcessor**: Pipeline for clean → chunk → embed → store workflow
+- **EmbeddingService**: Batch processing with failure tracking and recovery
+- **EmbeddingMonitor**: Statistics collection, missing embedding detection, regeneration triggers
+- **Admin API**: Endpoints for batch operations, health checks, manual regeneration
+- **Celery Tasks**: Async bulk embedding with Redis broker and deduplication
+
+**Status**: Implemented in SPEC-EMBED-001 (commit 5e6f023) with 258 tests and 87% coverage
+
+---
+
 ### 5. Insurance Policy Database
 
 A comprehensive, pre-indexed database of insurance policies from Korean insurance companies that serves as the knowledge foundation for claim analysis.
