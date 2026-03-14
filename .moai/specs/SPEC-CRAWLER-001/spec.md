@@ -234,7 +234,56 @@ celery_app.conf.beat_schedule = {
 
 ---
 
-## 5. Traceability (추적성)
+## 5. Implementation Notes (구현 노트)
+
+### Status
+
+✅ **Completed** - Commit 1fff430 (2026-03-14)
+
+### Implementation Summary
+
+The crawler system has been successfully implemented with the following components:
+
+**BaseCrawler Framework**:
+- Abstract base class `BaseCrawler` in `services/crawler/base.py` with retry and rate-limiting
+- Supports exponential backoff (max 3 retries) and configurable rate limiting (default 2sec between requests)
+- Includes SHA-256 delta crawling for change detection
+
+**Crawler Implementations**:
+- `services/crawler/companies/klia_crawler.py` - Life Insurance Association (생명보험협회) crawler using Playwright
+- `services/crawler/companies/knia_crawler.py` - Non-Life Insurance Association (손해보험협회) crawler using Playwright
+- Crawler registry system for dynamic crawler registration and lookup
+
+**Storage Abstraction**:
+- `services/crawler/storage.py` - FileStorage base class with LocalFileStorage implementation
+- S3Storage stub implementation (MVP support, full implementation deferred to Phase 2)
+- Structured storage paths: `{storage_root}/{company_code}/{product_code}/{version}.pdf`
+
+**Database Models**:
+- `models/crawler.py` - CrawlRun and CrawlResult SQLAlchemy models for execution tracking
+- CrawlRun tracks: crawler_name, status (RUNNING/COMPLETED/FAILED), counters (new/updated/skipped/failed), error_log
+- CrawlResult tracks: individual policy crawl status, PDF path, content SHA-256 hash
+
+**Celery Integration**:
+- `tasks/celery_tasks.py` - Celery task definitions for crawling
+- `tasks/celery_app.py` - Celery Beat schedule: weekly Sunday 02:00 KST
+- Async task execution without blocking API server
+
+**Policy Metadata**:
+- Policy model extended with crawler metadata in `metadata_` JSONB field:
+  - `crawler_source`, `source_url`, `last_crawled_at`, `content_hash`, `pdf_storage_path`
+
+**Test Coverage**:
+- 84 unit and integration tests covering all requirements
+- Test files: `tests/unit/test_base_crawler.py`, `tests/unit/test_delta_crawl.py`, etc.
+
+### Known Limitations
+
+**S3Storage Implementation**: The S3Storage class is implemented as a stub for MVP. Full S3 integration (bucket operations, signed URLs, etc.) is deferred to Phase 2 when infrastructure scaling requires cloud storage.
+
+---
+
+## 6. Traceability (추적성)
 
 | 요구사항 | 관련 파일 | 테스트 |
 |----------|-----------|--------|

@@ -76,8 +76,12 @@ Auth.js provides enterprise-grade authentication without forcing a monolithic au
 | **FastAPI** | 0.135.x | Async web framework with auto-generated OpenAPI documentation |
 | **Pydantic** | 2.12.x | Type-safe data validation and serialization |
 | **LangChain** | 1.2.x | RAG pipeline orchestration and prompt management |
-| **langchain-openai** | 1.1.x | LLM integrations (OpenAI, Google Gemini) |
+| **langchain-core** | 0.3.x | Lightweight LLM framework (used instead of full langchain) |
+| **langchain-openai** | 1.1.x | OpenAI LLM integration |
+| **langchain-google-genai** | 1.0.x | Google Gemini LLM integration |
 | **Celery** | 5.x | Async background task processing |
+| **structlog** | 24.x | Structured logging for LLM metrics and analytics |
+| **tenacity** | 9.x | Retry library for exponential backoff on API failures |
 | **SQLAlchemy** | 2.x | ORM for database operations and relationships |
 | **Alembic** | 1.x | Database migration management |
 | **Playwright** | latest | Web scraping for insurance disclosure pages |

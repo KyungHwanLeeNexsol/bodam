@@ -43,7 +43,75 @@ Bodam provides an intelligent, conversational platform that democratizes access 
 
 ## Core Features
 
-### 1. Claim Guidance Chatbot
+### 0. Insurance Document Crawler System
+
+An automated system that crawls insurance company disclosure pages and extracts policy documents for the knowledge base.
+
+**Capabilities**:
+- Automated crawling of Korean insurance association disclosure pages (KLIA, KNIA)
+- JavaScript-based web scraping using Playwright for dynamic content
+- Automatic PDF download and storage to local filesystem or S3
+- SHA-256 based delta crawling (only processes changed policies)
+- Celery Beat scheduled execution (weekly Sunday 02:00 KST)
+- Comprehensive error handling with exponential backoff retry logic
+- Policy metadata tracking with crawler source, URL, last crawled timestamp
+
+**Implementation**:
+- BaseCrawler framework with abstract interface for future crawler expansion
+- Company-specific crawlers: KLIA Crawler, KNIA Crawler
+- Storage abstraction supporting LocalFileStorage (MVP) and S3Storage (stub)
+- CrawlRun and CrawlResult database models for execution tracking
+- Automatic integration with existing DocumentProcessor for PDF ingestion
+
+**Status**: Implemented in SPEC-CRAWLER-001 (commit 1fff430)
+
+---
+
+### 1. Multi-LLM Router with Cost Optimization
+
+An intelligent LLM routing system that selects the optimal language model based on query complexity, cost, and performance characteristics.
+
+**Capabilities**:
+- Intent-based query classification (policy lookup, claim guidance, general Q&A)
+- Intelligent model selection: Gemini 2.0 Flash (primary), GPT-4o (fallback), GPT-4o-mini (classification)
+- Automatic failover chain: handles API timeouts, rate limits, and errors gracefully
+- Cost tracking and optimization: per-query token counting and USD cost estimation
+- Confidence scoring for response quality assurance
+- Structured logging with LLM metrics for analytics
+
+**Components**:
+- **IntentClassifier**: GPT-4o-mini based intent classification
+- **LLMRouter**: ModelSelector with FallbackChain for cost-optimized routing
+- **PromptManager**: Versioned templates for domain-specific prompts
+- **QualityGuard**: Confidence scoring, hallucination detection, source citation
+- **LLMMetrics**: Per-query and per-session cost/token tracking
+
+**Status**: Implemented in SPEC-LLM-001 (commit 4646501)
+
+---
+
+### 2. Enhanced RAG Chain with Query Rewriting
+
+An intelligent Retrieval-Augmented Generation pipeline that retrieves relevant insurance policy sections and generates accurate, context-aware responses.
+
+**Capabilities**:
+- Multi-step retrieval with query rewriting for improved accuracy
+- Korean insurance terminology expansion (실손 → 실손의료보험, etc.)
+- Deduplication of similar policy results
+- Context window awareness with automatic history compression
+- Result ranking and relevance scoring
+- Integration with VectorSearchService for semantic search
+
+**Components**:
+- **RAGChain**: Multi-step orchestration with retrieval refinement
+- **QueryRewriter**: Static dictionary-based term expansion (LLM-based expansion planned for Phase 2)
+- **ContextBuilder**: Automatic history compression for long conversations
+
+**Status**: Implemented in SPEC-LLM-001 (commit 4646501)
+
+---
+
+### 3. Claim Guidance Chatbot
 
 An intelligent conversational interface that accepts natural language questions about insurance coverage and provides comprehensive, well-sourced answers.
 
@@ -58,7 +126,11 @@ An intelligent conversational interface that accepts natural language questions 
 - "인공관절 수술을 할 예정인데, 보험에서 보상이 되나요?" (Will insurance cover my artificial joint surgery?)
 - "교통사고로 입원치료 받았어. 보상 뭐 받을 수 있어?" (I was hospitalized after a car accident. What compensation can I get?)
 
-### 2. Insurance Policy Database
+**Status**: Enhanced with SPEC-LLM-001 (commit 4646501) - Strangler Fig refactoring maintains backward compatibility
+
+---
+
+### 5. Insurance Policy Database
 
 A comprehensive, pre-indexed database of insurance policies from Korean insurance companies that serves as the knowledge foundation for claim analysis.
 
@@ -67,7 +139,7 @@ A comprehensive, pre-indexed database of insurance policies from Korean insuranc
 - Current insurance products actively sold
 - Discontinued products still in force (historical coverage)
 - Legally mandated policy disclosures from insurance association
-- Regular updates as new products are released
+- Regular updates as new products are released (automated via SPEC-CRAWLER-001)
 
 **Data Structure**:
 - Policy terms (약관) with complete legal text
@@ -78,15 +150,15 @@ A comprehensive, pre-indexed database of insurance policies from Korean insuranc
 
 **Data Strategy - Progressive Expansion**:
 
-Phase 1 (Months 1-3): Pre-index top 10 insurance companies covering approximately 80% of the market. Manually process publicly available policy documents and create structured database.
+Phase 1 (Months 1-3): Pre-index top 10 insurance companies covering approximately 80% of the market. Manually process publicly available policy documents and create structured database. Automated crawling via SPEC-CRAWLER-001 provides continuous updates.
 
 Phase 2 (Months 4-6): Implement on-demand Gemini 2.0 Flash analysis using 1M context window for user-uploaded policy PDFs. Allow users to register their specific policies for real-time analysis without database modification.
 
 Phase 3 (Months 7-12): Progressively accumulate new policies from user uploads (with consent) to expand database coverage. Prioritize policies with high claim frequency.
 
-Phase 4 (Months 13+): Implement automated crawling of insurance association disclosure pages for new products and updates. Establish data pipeline for continuous, automated updates.
+Phase 4 (Months 13+): Full automated crawling pipeline with intelligent policy processing. Establish data pipeline for continuous, automated updates.
 
-### 3. Coverage Eligibility Analysis
+### 7. Coverage Eligibility Analysis
 
 Intelligent analysis that determines which coverage types (담보) may apply to a specific situation.
 
@@ -105,9 +177,11 @@ Treatment & Prescription Analysis: User lists treatments received or medications
 
 Situation-Based Analysis: User describes a situation (accident, hospitalization, diagnosis). System maps situation to potentially applicable coverage and explains causation requirements.
 
-### 4. Ambiguous Case Guidance
+### 8. Ambiguous Case Guidance (Under Demand)
 
 For situations where policy terms are unclear or multiple interpretations exist, the platform provides probability-based guidance supported by precedent and trends.
+
+**Status**: Planned for Phase 2 implementation
 
 **Capabilities**:
 - Identify ambiguous policy language and multiple interpretation possibilities
@@ -121,7 +195,7 @@ For situations where policy terms are unclear or multiple interpretations exist,
 - Pre-existing condition classifications that depend on procedure timing
 - Causation requirements for accidents with multiple contributing factors
 
-### 5. Rejection Analysis
+### 9. Rejection Analysis
 
 When policyholders receive claim denials, Bodam explains the rejection cause and suggests countermeasures.
 
@@ -139,7 +213,7 @@ When policyholders receive claim denials, Bodam explains the rejection cause and
 - Legal remedies including litigation pathways
 - Recommended timeline and documentation for each approach
 
-### 6. Medical Procedure Query
+### 10. Medical Procedure Query
 
 Users can query specific medical treatments, surgeries, or prescriptions to discover all potentially compensable coverage items.
 
@@ -156,7 +230,7 @@ Users can query specific medical treatments, surgeries, or prescriptions to disc
 - Evaluating insurance products during annual open enrollment
 - Comparing coverage when shopping for new insurance policies
 
-### 7. Individual Policy Registration
+### 11. Individual Policy Registration
 
 Users can securely register their own insurance policies to enable personalized, exact claim amount calculation and coverage analysis.
 
@@ -183,7 +257,7 @@ Users can securely register their own insurance policies to enable personalized,
 - Right to deletion and data access requests
 - Regular security audits
 
-### 8. On-Demand Policy Analysis
+### 12. On-Demand Policy Analysis
 
 Real-time analysis of user-uploaded policy PDFs using Gemini 2.0 Flash with 1M context window capability.
 
@@ -206,7 +280,7 @@ Real-time analysis of user-uploaded policy PDFs using Gemini 2.0 Flash with 1M c
 - International policies or policies in transition
 - Rapid policy analysis without manual database entry
 
-### 9. User Authentication & Account Management
+### 13. User Authentication & Account Management
 
 Secure account system enabling personalized policy management, history tracking, and preference storage.
 

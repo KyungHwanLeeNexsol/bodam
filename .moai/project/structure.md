@@ -124,9 +124,10 @@ bodam/
 │   │   │
 │   │   ├── models/              # SQLAlchemy ORM models
 │   │   │   ├── user.py          # User model
-│   │   │   ├── policy.py        # Policy model
+│   │   │   ├── policy.py        # Policy model (extended with crawler metadata)
 │   │   │   ├── conversation.py  # Chat conversation model
 │   │   │   ├── message.py       # Chat message model
+│   │   │   ├── crawler.py       # CrawlRun and CrawlResult models for crawler tracking
 │   │   │   └── __init__.py      # Model exports
 │   │   │
 │   │   ├── schemas/             # Pydantic request/response schemas
@@ -141,19 +142,27 @@ bodam/
 │   │   │   │   ├── embeddings.py    # Vector embeddings generation
 │   │   │   │   ├── retriever.py     # Document retrieval logic
 │   │   │   │   ├── vector_store.py  # Vector database interface
-│   │   │   │   └── chain.py         # RAG chain orchestration
+│   │   │   │   ├── chain.py         # RAG chain orchestration (multi-step retrieval)
+│   │   │   │   └── rewriter.py      # Query rewriting with Korean term expansion
 │   │   │   │
 │   │   │   ├── llm/             # LLM integration and routing
-│   │   │   │   ├── router.py        # Multi-LLM router (cost optimization)
-│   │   │   │   ├── prompts.py       # Prompt templates and engineering
-│   │   │   │   ├── chat_service.py  # Chat completion service
-│   │   │   │   └── config.py        # LLM configuration
+│   │   │   │   ├── router.py        # LLMRouter with ModelSelector and FallbackChain
+│   │   │   │   ├── classifier.py    # IntentClassifier for query intent detection
+│   │   │   │   ├── prompts.py       # PromptManager with versioned templates
+│   │   │   │   ├── quality.py       # QualityGuard for confidence scoring
+│   │   │   │   ├── metrics.py       # LLMMetrics for cost and performance tracking
+│   │   │   │   ├── models.py        # Pydantic models (IntentResult, LLMResponse)
+│   │   │   │   └── __init__.py      # LLM service exports
 │   │   │   │
 │   │   │   ├── crawler/         # Insurance website crawlers
-│   │   │   │   ├── base_crawler.py  # Base crawler class
-│   │   │   │   ├── geico_crawler.py # GEICO-specific crawler
-│   │   │   │   ├── progressive_crawler.py # Progressive-specific
-│   │   │   │   └── state_farm_crawler.py  # StateFarm-specific
+│   │   │   │   ├── __init__.py      # Crawler service exports
+│   │   │   │   ├── base.py          # BaseCrawler abstract class with retry/rate-limit
+│   │   │   │   ├── registry.py      # CrawlerRegistry for dynamic registration
+│   │   │   │   ├── storage.py       # FileStorage abstraction (Local + S3 stub)
+│   │   │   │   └── companies/       # Insurance association crawlers
+│   │   │   │       ├── __init__.py
+│   │   │   │       ├── klia_crawler.py    # Life Insurance Association (생명보험협회)
+│   │   │   │       └── knia_crawler.py    # Non-Life Insurance Association (손해보험협회)
 │   │   │   │
 │   │   │   ├── parser/          # PDF and document parsing
 │   │   │   │   ├── pdf_parser.py    # PDF extraction and parsing
@@ -169,15 +178,20 @@ bodam/
 │   │   │       ├── auth_service.py  # User auth logic
 │   │   │       └── token_service.py # JWT token management
 │   │   │
-│   │   ├── workers/             # Background task processing
-│   │   │   ├── celery_app.py    # Celery configuration
-│   │   │   ├── tasks.py         # Background job definitions
-│   │   │   │   ├── crawl_policies # Scheduled crawling task
-│   │   │   │   ├── process_documents # Document processing task
-│   │   │   │   └── generate_embeddings # Vector generation task
-│   │   │   │
-│   │   │   └── queue/           # Job queue interfaces
-│   │   │       └── base_queue.py
+│   │   ├── tasks/               # Background task processing (Celery)
+│   │   │   ├── __init__.py      # Task module exports
+│   │   │   ├── celery_app.py    # Celery app and Redis broker configuration
+│   │   │   └── crawler_tasks.py # Crawler Celery task definitions (weekly schedule)
+│   │   │
+│   │   └── workers/             # Background task processing (deprecated, use tasks/)
+│   │       ├── celery_app.py    # Celery configuration
+│   │       ├── tasks.py         # Background job definitions
+│   │       │   ├── crawl_policies # Scheduled crawling task
+│   │       │   ├── process_documents # Document processing task
+│   │       │   └── generate_embeddings # Vector generation task
+│   │       │
+│   │       └── queue/           # Job queue interfaces
+│   │           └── base_queue.py
 │   │   │
 │   │   ├── __init__.py          # App initialization
 │   │   └── main.py              # FastAPI app creation and startup
