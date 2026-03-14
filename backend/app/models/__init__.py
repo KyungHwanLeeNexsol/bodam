@@ -9,6 +9,14 @@ from __future__ import annotations
 from app.models.base import Base, TimestampMixin
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.models.crawler import CrawlResult, CrawlResultStatus, CrawlRun, CrawlStatus
+from app.models.pdf import (
+    PdfAnalysisMessage,
+    PdfAnalysisSession,
+    PdfMessageRole,
+    PdfSessionStatus,
+    PdfUpload,
+    PdfUploadStatus,
+)
 from app.models.insurance import (
     Coverage,
     InsuranceCategory,
@@ -32,4 +40,10 @@ __all__ = [
     "CrawlResultStatus",
     "CrawlRun",
     "CrawlResult",
+    "PdfUpload",
+    "PdfUploadStatus",
+    "PdfAnalysisSession",
+    "PdfSessionStatus",
+    "PdfAnalysisMessage",
+    "PdfMessageRole",
 ]
