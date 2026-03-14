@@ -1,0 +1,51 @@
+{
+  "_comment": "SLO baselines for Bodam platform. Values are placeholder (0) until measured against a live environment.",
+  "_updated": "2026-03-14",
+  "_environment": "production",
+  "api": {
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "target_p50_ms": 200,
+    "target_p95_ms": 1000,
+    "target_p99_ms": 3000
+  },
+  "auth_flow": {
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "target_p95_ms": 500
+  },
+  "chat_session_create": {
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "target_p95_ms": 500
+  },
+  "chat_message_rag": {
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "target_p95_ms": 3000
+  },
+  "vector_search": {
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "target_p99_ms": 200
+  },
+  "health_check": {
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "target_p99_ms": 50
+  },
+  "throughput": {
+    "requests_per_second": 0,
+    "target_concurrent_users": 100,
+    "error_rate_normal": 0,
+    "error_rate_stress": 0,
+    "target_error_rate_normal": 0.001,
+    "target_error_rate_stress": 0.01
+  }
+}

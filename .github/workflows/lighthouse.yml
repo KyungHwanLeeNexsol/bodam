@@ -1,0 +1,117 @@
+name: Lighthouse CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.lighthouserc.js'
+
+jobs:
+  lighthouse:
+    name: Lighthouse Performance Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Build production bundle
+        run: pnpm build
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+
+      - name: Start Next.js production server
+        run: pnpm start &
+        working-directory: frontend
+        env:
+          PORT: 3000
+
+      - name: Wait for Next.js to be ready
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "Next.js is ready!"
+              break
+            fi
+            if [ $i -eq 20 ]; then
+              echo "ERROR: Next.js did not start within 40 seconds"
+              exit 1
+            fi
+            echo "Waiting for Next.js... attempt $i/20"
+            sleep 2
+          done
+
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          configPath: .lighthouserc.js
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+      - name: Upload Lighthouse results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-results-${{ github.sha }}
+          path: .lighthouseci/
+          retention-days: 30
+
+      - name: Comment PR with Lighthouse results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Find the latest Lighthouse report
+            const lhciDir = '.lighthouseci';
+            let summary = 'Lighthouse CI ran but results could not be parsed.';
+
+            try {
+              const files = fs.readdirSync(lhciDir);
+              const manifestFile = files.find(f => f.endsWith('manifest.json'));
+              if (manifestFile) {
+                const manifest = JSON.parse(fs.readFileSync(path.join(lhciDir, manifestFile), 'utf8'));
+                const scores = manifest[0]?.summary;
+                if (scores) {
+                  const perf = Math.round(scores.performance * 100);
+                  const status = perf >= 90 ? '✅' : '❌';
+                  summary = `## ${status} Lighthouse Results
+
+| Category | Score |
+|----------|-------|
+| Performance | ${perf}/100 ${perf >= 90 ? '✅' : '❌'} |
+| Accessibility | ${Math.round((scores.accessibility || 0) * 100)}/100 |
+
+**Target:** Performance >= 90`;
+                }
+              }
+            } catch (e) {
+              console.error('Failed to parse Lighthouse results:', e.message);
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
