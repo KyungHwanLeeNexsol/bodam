@@ -26,48 +26,42 @@ down_revision: str | Sequence[str] | None = "e5f6g7h8i9j0"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# postgresql.ENUM 참조 (create_type=False: 타입 재생성 방지)
+_pdf_upload_status = postgresql.ENUM(
+    "uploaded", "analyzing", "completed", "failed", "expired",
+    name="pdf_upload_status_enum",
+    create_type=False,
+)
+_pdf_session_status = postgresql.ENUM(
+    "active", "expired", "deleted",
+    name="pdf_session_status_enum",
+    create_type=False,
+)
+_pdf_message_role = postgresql.ENUM(
+    "user", "assistant",
+    name="pdf_message_role_enum",
+    create_type=False,
+)
+
 
 def upgrade() -> None:
     """PDF 분석 테이블 및 enum 타입 생성"""
 
-    conn = op.get_bind()
+    # Enum 타입 생성 (duplicate_object 예외 무시)
+    op.execute("""DO $$ BEGIN
+    CREATE TYPE pdf_upload_status_enum AS ENUM ('uploaded', 'analyzing', 'completed', 'failed', 'expired');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$""")
 
-    # 이미 존재하는 enum 타입 조회
-    existing_types = {
-        row[0]
-        for row in conn.execute(
-            sa.text(
-                "SELECT typname FROM pg_type WHERE typname IN ("
-                "'pdf_upload_status_enum', 'pdf_session_status_enum', 'pdf_message_role_enum'"
-                ")"
-            )
-        ).fetchall()
-    }
+    op.execute("""DO $$ BEGIN
+    CREATE TYPE pdf_session_status_enum AS ENUM ('active', 'expired', 'deleted');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$""")
 
-    # Enum 타입 생성 (존재하지 않는 경우에만)
-    if "pdf_upload_status_enum" not in existing_types:
-        op.execute(
-            sa.text(
-                "CREATE TYPE pdf_upload_status_enum AS ENUM "
-                "('uploaded', 'analyzing', 'completed', 'failed', 'expired')"
-            )
-        )
-
-    if "pdf_session_status_enum" not in existing_types:
-        op.execute(
-            sa.text(
-                "CREATE TYPE pdf_session_status_enum AS ENUM "
-                "('active', 'expired', 'deleted')"
-            )
-        )
-
-    if "pdf_message_role_enum" not in existing_types:
-        op.execute(
-            sa.text(
-                "CREATE TYPE pdf_message_role_enum AS ENUM "
-                "('user', 'assistant')"
-            )
-        )
+    op.execute("""DO $$ BEGIN
+    CREATE TYPE pdf_message_role_enum AS ENUM ('user', 'assistant');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$""")
 
     # pdf_uploads 테이블 생성
     op.create_table(
@@ -81,7 +75,6 @@ def upgrade() -> None:
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column("original_filename", sa.Text(), nullable=False),
@@ -98,15 +91,7 @@ def upgrade() -> None:
         sa.Column("page_count", sa.Integer(), nullable=True),
         sa.Column(
             "status",
-            sa.Enum(
-                "uploaded",
-                "analyzing",
-                "completed",
-                "failed",
-                "expired",
-                name="pdf_upload_status_enum",
-                create_type=False,
-            ),
+            _pdf_upload_status,
             nullable=False,
             server_default=sa.text("'uploaded'"),
         ),
@@ -123,6 +108,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
+        sa.ForeignKeyConstraint(
+            ["user_id"], ["users.id"],
+            name="fk_pdf_uploads_user_id",
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_pdf_uploads_user_id", "pdf_uploads", ["user_id"])
     op.create_index("idx_pdf_uploads_file_hash", "pdf_uploads", ["file_hash"])
@@ -139,13 +130,11 @@ def upgrade() -> None:
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column(
             "upload_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("pdf_uploads.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column(
@@ -156,13 +145,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "status",
-            sa.Enum(
-                "active",
-                "expired",
-                "deleted",
-                name="pdf_session_status_enum",
-                create_type=False,
-            ),
+            _pdf_session_status,
             nullable=False,
             server_default=sa.text("'active'"),
         ),
@@ -182,6 +165,17 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
+        sa.ForeignKeyConstraint(
+            ["user_id"], ["users.id"],
+            name="fk_pdf_sessions_user_id",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["upload_id"], ["pdf_uploads.id"],
+            name="fk_pdf_sessions_upload_id",
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         "idx_pdf_analysis_sessions_user_id", "pdf_analysis_sessions", ["user_id"]
@@ -202,17 +196,11 @@ def upgrade() -> None:
         sa.Column(
             "session_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("pdf_analysis_sessions.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column(
             "role",
-            sa.Enum(
-                "user",
-                "assistant",
-                name="pdf_message_role_enum",
-                create_type=False,
-            ),
+            _pdf_message_role,
             nullable=False,
         ),
         sa.Column("content", sa.Text(), nullable=False),
@@ -223,6 +211,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
+        sa.ForeignKeyConstraint(
+            ["session_id"], ["pdf_analysis_sessions.id"],
+            name="fk_pdf_messages_session_id",
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         "idx_pdf_analysis_messages_session_id",
