@@ -37,10 +37,10 @@ class PrivacyService:
         """
         import sqlalchemy as sa
 
-        # 채팅 세션 조회 (text 쿼리로 ORM import 의존성 최소화)
+        # 채팅 세션 조회 (asyncpg UUID 타입 명시적 지정 필요)
         stmt = sa.text(
-            "SELECT id, title, created_at FROM chat_sessions WHERE user_id = :user_id"
-        ).bindparams(user_id=str(user.id))
+            "SELECT id, title, created_at FROM chat_sessions WHERE user_id = CAST(:user_id AS UUID)"
+        ).bindparams(sa.bindparam("user_id", value=str(user.id), type_=sa.Text()))
         result = await self._session.execute(stmt)
         raw_rows = result.fetchall() if hasattr(result, "fetchall") else []
         sessions = raw_rows

@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: bodam
       POSTGRES_PASSWORD: bodam_dev_password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bodam"]
       interval: 5s
@@ -36,7 +36,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:

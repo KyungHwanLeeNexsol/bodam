@@ -14,6 +14,7 @@ Create Date: 2026-03-14 00:00:00.000000
 from __future__ import annotations
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from alembic import op
@@ -29,18 +30,16 @@ def upgrade() -> None:
     """크롤러 테이블 및 enum 타입 생성"""
 
     # crawl_status_enum 생성
-    crawl_status_enum = sa.Enum(
-        "RUNNING", "COMPLETED", "FAILED",
-        name="crawl_status_enum",
-    )
-    crawl_status_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("""DO $$ BEGIN
+    CREATE TYPE crawl_status_enum AS ENUM ('RUNNING', 'COMPLETED', 'FAILED');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$""")
 
     # crawl_result_status_enum 생성
-    crawl_result_status_enum = sa.Enum(
-        "NEW", "UPDATED", "SKIPPED", "FAILED",
-        name="crawl_result_status_enum",
-    )
-    crawl_result_status_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("""DO $$ BEGIN
+    CREATE TYPE crawl_result_status_enum AS ENUM ('NEW', 'UPDATED', 'SKIPPED', 'FAILED');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$""")
 
     # crawl_runs 테이블 생성
     op.create_table(
@@ -54,7 +53,7 @@ def upgrade() -> None:
         sa.Column("crawler_name", sa.String(100), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("RUNNING", "COMPLETED", "FAILED", name="crawl_status_enum"),
+            postgresql.ENUM("RUNNING", "COMPLETED", "FAILED", name="crawl_status_enum", create_type=False),
             nullable=False,
             server_default="RUNNING",
         ),
@@ -110,7 +109,7 @@ def upgrade() -> None:
         sa.Column("company_code", sa.String(100), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("NEW", "UPDATED", "SKIPPED", "FAILED", name="crawl_result_status_enum"),
+            postgresql.ENUM("NEW", "UPDATED", "SKIPPED", "FAILED", name="crawl_result_status_enum", create_type=False),
             nullable=False,
         ),
         sa.Column("error_message", sa.Text(), nullable=True),

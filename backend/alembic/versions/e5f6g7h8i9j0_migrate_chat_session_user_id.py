@@ -46,8 +46,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
-    # 사용자별 세션 조회 인덱스 재생성
-    op.drop_index("idx_chat_sessions_user_id", table_name="chat_sessions")
+    # 사용자별 세션 조회 인덱스 생성 (이전 마이그레이션에서 생성되지 않았음)
     op.create_index("idx_chat_sessions_user_id", "chat_sessions", ["user_id"])
 
 

@@ -33,7 +33,10 @@ def upgrade() -> None:
     # InsuranceCategory enum 타입 생성
     # ─────────────────────────────────────────────
     op.execute(
-        "CREATE TYPE insurance_category_enum AS ENUM ('LIFE', 'NON_LIFE', 'THIRD_SECTOR')"
+        """DO $$ BEGIN
+            CREATE TYPE insurance_category_enum AS ENUM ('LIFE', 'NON_LIFE', 'THIRD_SECTOR');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$"""
     )
 
     # ─────────────────────────────────────────────
@@ -88,7 +91,7 @@ def upgrade() -> None:
         sa.Column("product_code", sa.String(100), nullable=False),
         sa.Column(
             "category",
-            sa.Enum("LIFE", "NON_LIFE", "THIRD_SECTOR", name="insurance_category_enum", create_type=False),
+            postgresql.ENUM("LIFE", "NON_LIFE", "THIRD_SECTOR", name="insurance_category_enum", create_type=False),
             nullable=False,
         ),
         sa.Column("effective_date", sa.Date(), nullable=True),
@@ -179,7 +182,7 @@ def upgrade() -> None:
         sa.Column("chunk_text", sa.Text(), nullable=False),
         sa.Column("chunk_index", sa.Integer(), nullable=False),
         # pgvector 1536차원 임베딩 (text-embedding-3-small 기준)
-        sa.Column("embedding", sa.UserDefinedType().with_variant(sa.Text(), "postgresql"), nullable=True),
+        sa.Column("embedding", sa.Text(), nullable=True),
         sa.Column("metadata_", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column(
             "created_at",

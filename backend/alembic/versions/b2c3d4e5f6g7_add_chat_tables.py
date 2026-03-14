@@ -30,9 +30,10 @@ def upgrade() -> None:
     # ─────────────────────────────────────────────
     # message_role_enum 타입 생성
     # ─────────────────────────────────────────────
-    op.execute(
-        "CREATE TYPE message_role_enum AS ENUM ('user', 'assistant', 'system')"
-    )
+    op.execute("""DO $$ BEGIN
+    CREATE TYPE message_role_enum AS ENUM ('user', 'assistant', 'system');
+EXCEPTION WHEN duplicate_object THEN null;
+END $$""")
 
     # ─────────────────────────────────────────────
     # chat_sessions 테이블 생성
@@ -94,7 +95,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "role",
-            sa.Enum("user", "assistant", "system", name="message_role_enum", create_type=False),
+            postgresql.ENUM("user", "assistant", "system", name="message_role_enum", create_type=False),
             nullable=False,
         ),
         sa.Column("content", sa.Text(), nullable=False),
