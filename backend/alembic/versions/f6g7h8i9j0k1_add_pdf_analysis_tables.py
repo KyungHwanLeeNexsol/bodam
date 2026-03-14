@@ -30,39 +30,44 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """PDF 분석 테이블 및 enum 타입 생성"""
 
-    # Enum 타입 생성 (이미 존재하면 스킵)
-    op.execute(
-        """
-        DO $$ BEGIN
-            CREATE TYPE pdf_upload_status_enum AS ENUM (
-                'uploaded', 'analyzing', 'completed', 'failed', 'expired'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-        """
-    )
+    conn = op.get_bind()
 
-    op.execute(
-        """
-        DO $$ BEGIN
-            CREATE TYPE pdf_session_status_enum AS ENUM (
-                'active', 'expired', 'deleted'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-        """
-    )
+    # 이미 존재하는 enum 타입 조회
+    existing_types = {
+        row[0]
+        for row in conn.execute(
+            sa.text(
+                "SELECT typname FROM pg_type WHERE typname IN ("
+                "'pdf_upload_status_enum', 'pdf_session_status_enum', 'pdf_message_role_enum'"
+                ")"
+            )
+        ).fetchall()
+    }
 
-    op.execute(
-        """
-        DO $$ BEGIN
-            CREATE TYPE pdf_message_role_enum AS ENUM (
-                'user', 'assistant'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-        """
-    )
+    # Enum 타입 생성 (존재하지 않는 경우에만)
+    if "pdf_upload_status_enum" not in existing_types:
+        op.execute(
+            sa.text(
+                "CREATE TYPE pdf_upload_status_enum AS ENUM "
+                "('uploaded', 'analyzing', 'completed', 'failed', 'expired')"
+            )
+        )
+
+    if "pdf_session_status_enum" not in existing_types:
+        op.execute(
+            sa.text(
+                "CREATE TYPE pdf_session_status_enum AS ENUM "
+                "('active', 'expired', 'deleted')"
+            )
+        )
+
+    if "pdf_message_role_enum" not in existing_types:
+        op.execute(
+            sa.text(
+                "CREATE TYPE pdf_message_role_enum AS ENUM "
+                "('user', 'assistant')"
+            )
+        )
 
     # pdf_uploads 테이블 생성
     op.create_table(
@@ -247,6 +252,6 @@ def downgrade() -> None:
     op.drop_table("pdf_uploads")
 
     # Enum 타입 삭제
-    op.execute("DROP TYPE IF EXISTS pdf_message_role_enum")
-    op.execute("DROP TYPE IF EXISTS pdf_session_status_enum")
-    op.execute("DROP TYPE IF EXISTS pdf_upload_status_enum")
+    op.execute(sa.text("DROP TYPE IF EXISTS pdf_message_role_enum"))
+    op.execute(sa.text("DROP TYPE IF EXISTS pdf_session_status_enum"))
+    op.execute(sa.text("DROP TYPE IF EXISTS pdf_upload_status_enum"))
