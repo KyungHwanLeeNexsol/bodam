@@ -1,0 +1,51 @@
+# 프론트엔드 (Vercel로 별도 배포)
+frontend/
+
+# 배포 스크립트 및 문서
+deploy/
+performance/
+docs/
+
+# 개발 도구 설정
+.moai/
+.claude/
+.github/
+
+# Git
+.git/
+
+# Python 가상환경 (소켓 등 특수 파일 포함 가능)
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.so
+
+# 환경변수 (보안)
+**/.env
+**/.env.*
+!**/.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# 로그
+*.log
+logs/
+
+# 테스트 캐시
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Node.js (혹시 있을 경우)
+node_modules/
+**/node_modules/
+
+# Docker
+docker-compose*.yml

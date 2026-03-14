@@ -1,12 +1,11 @@
 # Fly.io 백엔드 배포 설정 (SPEC-INFRA-003 대체: Fly.io + Vercel + Neon + Upstash)
 # 앱 이름은 fly launch 시 변경 가능
 
-app = "bodam-backend"
+app = "bodam"
 primary_region = "nrt"  # 도쿄 (한국에서 가장 가까운 Fly.io 리전)
 
 [build]
-  dockerfile = "backend/Dockerfile"
-  # Dockerfile 경로: 프로젝트 루트 기준
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = "8000"
