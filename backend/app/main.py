@@ -13,6 +13,7 @@ from app.api.v1.search import router as search_router
 from app.core.config import get_settings
 from app.core.database import init_database
 from app.core.logging import setup_logging
+from app.core.metrics import PrometheusMiddleware, metrics_endpoint
 
 
 @asynccontextmanager
@@ -51,6 +52,12 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         lifespan=lifespan,
     )
+
+    # Prometheus 미들웨어 등록 (HTTP 메트릭 자동 수집)
+    app.add_middleware(PrometheusMiddleware)
+
+    # /metrics 엔드포인트 등록 (Prometheus 스크레이핑용)
+    app.add_route("/metrics", metrics_endpoint)
 
     # API v1 라우터 등록
     app.include_router(health_router, prefix="/api/v1")
