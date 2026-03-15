@@ -15,6 +15,7 @@ import { z } from 'zod'
 
 import { useAuth } from '@/contexts/AuthContext'
 import { loginApi } from '@/lib/auth'
+import { SocialLoginButtons } from './SocialLoginButtons'
 
 // 로그인 폼 유효성 스키마
 const loginSchema = z.object({
@@ -114,6 +115,19 @@ export function LoginForm() {
       >
         {isLoading ? '로그인 중...' : '로그인'}
       </button>
+
+      {/* 소셜 로그인 구분선 */}
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-[#E5E5E5]" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-white px-2 text-[#999]">또는</span>
+        </div>
+      </div>
+
+      {/* 소셜 로그인 버튼 */}
+      <SocialLoginButtons />
     </form>
   )
 }

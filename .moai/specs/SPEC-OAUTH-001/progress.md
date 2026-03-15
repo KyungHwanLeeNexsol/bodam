@@ -38,8 +38,17 @@
 - test_oauth_api.py (14 tests)
 - test_auth_social_login.py (3 tests)
 
+**Frontend (Phase 4):**
+- SocialLoginButtons.tsx: 카카오(#FEE500), 네이버(#03C75A), 구글(흰색) 소셜 로그인 버튼
+- AccountMergeDialog.tsx: 409 충돌 시 비밀번호 확인 다이얼로그
+- EmailInputDialog.tsx: 카카오 이메일 미제공 시 이메일 입력 다이얼로그
+- callback/[provider]/page.tsx: OAuth 콜백 처리 페이지 (로딩/에러/병합 상태)
+- LoginForm.tsx: 소셜 로그인 버튼 구분선 + SocialLoginButtons 추가
+- RegisterForm.tsx: 소셜 로그인 버튼 구분선 + SocialLoginButtons 추가
+- lib/auth.ts: OAuth API 함수 (oauthCallbackApi, oauthMergeApi 등) 추가
+- Frontend tests: 116/116 passing
+
 ### Pending
 
-- Phase 4 (Frontend): SocialLoginButtons, callback page, AccountMergeDialog, EmailInputDialog
 - Phase 5: Integration tests, .env.example update
-- Phase 3 (Git): Commit changes
+- Phase 3 (Git): Frontend 커밋

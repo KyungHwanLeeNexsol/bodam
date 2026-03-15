@@ -14,6 +14,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { registerApi } from '@/lib/auth'
+import { SocialLoginButtons } from './SocialLoginButtons'
 
 // 회원가입 폼 유효성 스키마
 const registerSchema = z.object({
@@ -131,6 +132,19 @@ export function RegisterForm() {
       >
         {isLoading ? '가입 중...' : '회원가입'}
       </button>
+
+      {/* 소셜 로그인 구분선 */}
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-[#E5E5E5]" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-white px-2 text-[#999]">또는</span>
+        </div>
+      </div>
+
+      {/* 소셜 로그인 버튼 */}
+      <SocialLoginButtons />
     </form>
   )
 }

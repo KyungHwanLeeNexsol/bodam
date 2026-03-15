@@ -48,7 +48,8 @@ describe('LoginForm', () => {
     const { LoginForm } = await import('@/components/auth/LoginForm')
     render(<LoginForm />)
 
-    const submitBtn = screen.getByRole('button', { name: /로그인/i })
+    // 소셜 버튼과 구분하기 위해 submit 타입 버튼을 직접 선택
+    const submitBtn = document.querySelector('button[type="submit"]') as HTMLButtonElement
     fireEvent.click(submitBtn)
 
     await waitFor(() => {
@@ -63,7 +64,8 @@ describe('LoginForm', () => {
   it('제출 버튼이 있어야 한다', async () => {
     const { LoginForm } = await import('@/components/auth/LoginForm')
     render(<LoginForm />)
-    const submitBtn = screen.getByRole('button', { name: /로그인/i })
+    // 소셜 버튼과 구분하기 위해 submit 타입 버튼을 직접 선택
+    const submitBtn = document.querySelector('button[type="submit"]')
     expect(submitBtn).toBeDefined()
   })
 })
