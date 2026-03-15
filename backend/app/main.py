@@ -12,6 +12,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.b2b.api_keys import router as b2b_api_keys_router
 from app.api.v1.b2b.clients import router as b2b_clients_router
 from app.api.v1.b2b.organizations import router as b2b_org_router
+from app.api.v1.b2b.usage import router as b2b_usage_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.health import router as health_router
 from app.api.v1.oauth import router as oauth_router
@@ -25,6 +26,7 @@ from app.core.metrics import PrometheusMiddleware, metrics_endpoint
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.request_id_middleware import RequestIdMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.usage_tracking import UsageTrackingMiddleware
 
 
 @asynccontextmanager
@@ -93,6 +95,9 @@ def create_app() -> FastAPI:
     # Rate Limit 미들웨어 (SPEC-SEC-001 M1: IP 기반 속도 제한)
     app.add_middleware(RateLimitMiddleware)
 
+    # 사용량 추적 미들웨어 (SPEC-B2B-001 Phase 4: B2B API 사용량 추적)
+    app.add_middleware(UsageTrackingMiddleware)
+
     # Prometheus 미들웨어 등록 (HTTP 메트릭 자동 수집)
     app.add_middleware(PrometheusMiddleware)
 
@@ -120,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(b2b_org_router, prefix="/api/v1/b2b")
     app.include_router(b2b_api_keys_router, prefix="/api/v1/b2b")
     app.include_router(b2b_clients_router, prefix="/api/v1/b2b")
+    app.include_router(b2b_usage_router, prefix="/api/v1/b2b")
 
     return app
 

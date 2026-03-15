@@ -285,3 +285,89 @@ class AnalysisHistoryResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────
+# 사용량/과금 스키마 (SPEC-B2B-001 Phase 4)
+# ─────────────────────────────────────────────
+
+
+class UsageSummaryResponse(BaseModel):
+    """사용량 요약 응답 스키마 (AC-009)"""
+
+    # 전체 요청 수
+    total_requests: int
+    # 요금제 월간 한도
+    plan_limit: int
+    # 사용 비율 (%)
+    usage_percentage: float
+    # 엔드포인트별 요청 수 (엔드포인트 -> 요청 수)
+    by_endpoint: dict
+    # 에이전트별 요청 수 (에이전트 ID -> 요청 수)
+    by_agent: dict = {}
+
+
+class UsageRecordItem(BaseModel):
+    """개별 사용량 기록 스키마"""
+
+    # 기록 UUID
+    id: uuid.UUID
+    # 조직 UUID
+    organization_id: uuid.UUID
+    # API 키 UUID (선택)
+    api_key_id: uuid.UUID | None = None
+    # 사용자 UUID (선택)
+    user_id: uuid.UUID | None = None
+    # 엔드포인트
+    endpoint: str
+    # HTTP 메서드
+    method: str
+    # HTTP 응답 코드
+    status_code: int
+    # 소비된 토큰 수
+    tokens_consumed: int
+    # 응답 시간(밀리초)
+    response_time_ms: int
+    # 요청 IP
+    ip_address: str
+    # 기록 생성 일시
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class UsageDetailResponse(BaseModel):
+    """상세 사용량 페이지네이션 응답 스키마"""
+
+    # 사용량 기록 목록
+    items: list[UsageRecordItem]
+    # 전체 항목 수
+    total: int
+    # 현재 페이지 번호
+    page: int
+    # 페이지당 항목 수
+    page_size: int
+
+
+class UsageExportResponse(BaseModel):
+    """사용량 CSV 내보내기 응답 스키마 (AC-010)"""
+
+    # CSV 내용 문자열
+    csv_content: str
+    # 다운로드 파일명 (예: usage_2026-03.csv)
+    filename: str
+
+
+class BillingEstimateResponse(BaseModel):
+    """현재 월 청구 예상 응답 스키마"""
+
+    # 청구 기간 (YYYY-MM 형식)
+    period: str
+    # 현재 월 전체 요청 수
+    total_requests: int
+    # 요금제 월간 한도
+    plan_limit: int
+    # 사용 비율 (%)
+    usage_percentage: float
+    # 예상 청구 금액 (원, placeholder: 요청당 10원)
+    estimated_cost: int
