@@ -2,7 +2,7 @@
  * 푸터 컴포넌트 - 로고, 링크, 저작권
  */
 import Link from 'next/link'
-import { Shield } from 'lucide-react'
+import Image from 'next/image'
 
 /* 푸터 링크 */
 const footerLinks = [
@@ -20,11 +20,14 @@ export default function Footer() {
         <div className="mb-8 flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
           {/* 로고 */}
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10">
-                <Shield className="h-4 w-4 text-white" />
-              </div>
-              <span className="text-lg font-bold text-white">보담</span>
+            <div className="flex items-center">
+              <Image
+                src="/logo.png"
+                alt="보담 로고"
+                width={273}
+                height={108}
+                className="h-7 w-auto brightness-0 invert"
+              />
             </div>
             <p className="max-w-xs text-sm text-white/50">
               AI 기반 보험 보상 안내 플랫폼으로 복잡한 보험 절차를 쉽게 해결하세요.

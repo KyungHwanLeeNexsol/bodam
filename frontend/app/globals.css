@@ -64,8 +64,9 @@
   --color-bodam-trust-bg: #0D6E6E;
 
   /* 보담 폰트 */
-  --font-heading: 'Newsreader', serif;
-  --font-body: 'Inter', sans-serif;
+  --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+  --font-heading: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+  --font-body: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   /* 보담 보더 레디어스 */
