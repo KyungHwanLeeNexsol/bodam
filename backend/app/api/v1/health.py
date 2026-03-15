@@ -116,15 +116,25 @@ async def db_table_check() -> dict:
             ))
             results["tables"] = [row[0] for row in r]
 
-            # chat_sessions INSERT 테스트
+            # chat_sessions 컬럼 정보
+            r2 = await conn.execute(text(
+                "SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name='chat_sessions' ORDER BY ordinal_position"
+            ))
+            results["chat_sessions_columns"] = [{"col": row[0], "type": row[1], "udt": row[2]} for row in r2]
+
+            # ORM으로 INSERT 테스트
             try:
-                await conn.execute(text(
-                    "INSERT INTO chat_sessions (title) VALUES ('test') RETURNING id"
-                ))
-                results["chat_insert"] = "ok"
-                await conn.rollback()
+                from app.models.chat import ChatSession
+                from sqlalchemy.ext.asyncio import AsyncSession as AS
+                async_session = AS(bind=conn)
+                s = ChatSession(title="test")
+                async_session.add(s)
+                await async_session.flush()
+                results["orm_insert"] = "ok"
+                await async_session.rollback()
             except Exception as e:
-                results["chat_insert_error"] = str(e)
+                results["orm_insert_error"] = str(e)
+                await conn.rollback()
     except Exception as e:
         results["error"] = str(e)
     return results
