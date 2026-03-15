@@ -102,6 +102,34 @@ async def health_check() -> dict:
     }
 
 
+@router.get("/health/db-check")
+async def db_table_check() -> dict:
+    """임시 디버그: 테이블 존재 여부 및 INSERT 테스트"""
+    import app.core.database as db_module
+    from sqlalchemy import text
+    results = {}
+    try:
+        async with db_module.engine.connect() as conn:
+            # 테이블 목록
+            r = await conn.execute(text(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"
+            ))
+            results["tables"] = [row[0] for row in r]
+
+            # chat_sessions INSERT 테스트
+            try:
+                await conn.execute(text(
+                    "INSERT INTO chat_sessions (title) VALUES ('test') RETURNING id"
+                ))
+                results["chat_insert"] = "ok"
+                await conn.rollback()
+            except Exception as e:
+                results["chat_insert_error"] = str(e)
+    except Exception as e:
+        results["error"] = str(e)
+    return results
+
+
 @router.get("/health/live")
 async def health_live() -> dict:
     """컨테이너 오케스트레이션용 liveness 프로브
