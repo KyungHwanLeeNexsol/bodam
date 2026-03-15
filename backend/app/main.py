@@ -45,6 +45,21 @@ async def lifespan(app: FastAPI):
     # 데이터베이스 엔진 및 세션 팩토리 초기화
     await init_database(settings)
 
+    # 누락 테이블 자동 생성 (stamp head로 인한 스키마 불일치 복구)
+    try:
+        import app.core.database as _db
+        import app.models  # noqa: F401 - 모든 모델을 Base.metadata에 등록
+        from app.models.base import Base
+
+        if _db.engine is not None:
+            async with _db.engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            import logging
+            logging.getLogger(__name__).info("Schema auto-repair: create_all completed")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Schema auto-repair failed: %s", e)
+
     yield
 
     # Graceful shutdown (SPEC-INFRA-002 M4): 진행 중인 요청 완료 대기
