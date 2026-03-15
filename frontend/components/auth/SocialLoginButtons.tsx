@@ -41,7 +41,7 @@ const SOCIAL_BUTTONS: SocialButtonConfig[] = [
  * SocialLoginButtons 컴포넌트
  *
  * LoginForm / RegisterForm 하단에 렌더링.
- * 버튼 클릭 시 window.location.href로 백엔드 OAuth 인가 URL로 이동.
+ * 버튼 클릭 시 백엔드 OAuth 인가 URL로 전체 페이지 이동.
  */
 export function SocialLoginButtons() {
   // OAuth 인가 URL로 전체 페이지 이동 (window.location.assign 사용으로 immutability 규칙 준수)
