@@ -111,7 +111,7 @@ class Policy(Base, TimestampMixin):
 
     # 보험 분류
     category: Mapped[InsuranceCategory] = mapped_column(
-        Enum(InsuranceCategory, name="insurance_category_enum"),
+        Enum(InsuranceCategory, name="insurance_category_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
 

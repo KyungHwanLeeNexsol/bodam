@@ -125,7 +125,7 @@ class PdfUpload(TimestampMixin, Base):
 
     # 업로드 상태
     status: Mapped[PdfUploadStatus] = mapped_column(
-        Enum(PdfUploadStatus, name="pdf_upload_status_enum"),
+        Enum(PdfUploadStatus, name="pdf_upload_status_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         server_default=sa.text("'uploaded'"),
     )
@@ -189,7 +189,7 @@ class PdfAnalysisSession(TimestampMixin, Base):
 
     # 세션 상태
     status: Mapped[PdfSessionStatus] = mapped_column(
-        Enum(PdfSessionStatus, name="pdf_session_status_enum"),
+        Enum(PdfSessionStatus, name="pdf_session_status_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         server_default=sa.text("'active'"),
     )
@@ -260,7 +260,7 @@ class PdfAnalysisMessage(Base):
 
     # 메시지 역할 (user / assistant)
     role: Mapped[PdfMessageRole] = mapped_column(
-        Enum(PdfMessageRole, name="pdf_message_role_enum"),
+        Enum(PdfMessageRole, name="pdf_message_role_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
 

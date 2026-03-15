@@ -102,7 +102,7 @@ class ChatMessage(Base):
 
     # 메시지 역할 (user / assistant / system)
     role: Mapped[MessageRole] = mapped_column(
-        Enum(MessageRole, name="message_role_enum"),
+        Enum(MessageRole, name="message_role_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
 

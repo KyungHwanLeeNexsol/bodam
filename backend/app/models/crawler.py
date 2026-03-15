@@ -68,7 +68,7 @@ class CrawlRun(Base, TimestampMixin):
 
     # 실행 상태
     status: Mapped[CrawlStatus] = mapped_column(
-        Enum(CrawlStatus, name="crawl_status_enum"),
+        Enum(CrawlStatus, name="crawl_status_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=CrawlStatus.RUNNING,
     )
@@ -180,7 +180,7 @@ class CrawlResult(Base):
 
     # 처리 결과 상태
     status: Mapped[CrawlResultStatus] = mapped_column(
-        Enum(CrawlResultStatus, name="crawl_result_status_enum"),
+        Enum(CrawlResultStatus, name="crawl_result_status_enum", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
     )
 
