@@ -6,7 +6,7 @@ RED phase: 개인정보 처리 기능 구현 전 실패하는 테스트.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -119,7 +119,7 @@ class TestDataExport:
         mock_user.id = "user-uuid-123"
         mock_user.email = "test@example.com"
         mock_user.full_name = "테스트 사용자"
-        mock_user.created_at = datetime.now(timezone.utc)
+        mock_user.created_at = datetime.now(UTC)
 
         # 빈 대화 목록 반환 - fetchall이 동기 메서드임
         mock_result = MagicMock()

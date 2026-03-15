@@ -130,7 +130,7 @@ class TestCeleryTaskPrerunMetrics:
 
     def test_task_prerun_signal_starts_timing(self):
         """task_prerun 시그널이 타이밍을 시작해야 한다"""
-        from app.core.celery_metrics import on_task_prerun, _task_start_times
+        from app.core.celery_metrics import _task_start_times, on_task_prerun
 
         task_id = "timing-test-id"
         on_task_prerun(
@@ -167,7 +167,7 @@ class TestCeleryTaskPostrunMetrics:
 
     def test_task_postrun_records_success_duration(self):
         """task_postrun 시그널이 성공 지속 시간을 기록해야 한다"""
-        from app.core.celery_metrics import on_task_prerun, on_task_postrun, _task_start_times
+        from app.core.celery_metrics import _task_start_times, on_task_postrun, on_task_prerun
 
         task_id = "duration-test-id"
 
@@ -239,7 +239,7 @@ class TestCeleryTaskFailureMetrics:
 
     def test_task_failure_cleans_up_start_time(self):
         """task_failure 시그널이 시작 시간을 정리해야 한다"""
-        from app.core.celery_metrics import on_task_prerun, on_task_failure, _task_start_times
+        from app.core.celery_metrics import _task_start_times, on_task_failure, on_task_prerun
 
         task_id = "cleanup-fail-id"
 
@@ -256,7 +256,7 @@ class TestCeleryTaskFailureMetrics:
 
     def test_task_failure_records_duration_when_start_time_exists(self):
         """task_failure가 시작 시간이 있을 때 지속 시간을 기록해야 한다"""
-        from app.core.celery_metrics import on_task_prerun, on_task_failure, _task_start_times
+        from app.core.celery_metrics import _task_start_times, on_task_failure, on_task_prerun
 
         task_id = "fail-duration-id"
 
@@ -326,10 +326,10 @@ class TestCeleryMetricsSignalIntegration:
     def test_full_task_lifecycle(self):
         """태스크 전체 생명주기가 올바르게 추적되어야 한다"""
         from app.core.celery_metrics import (
-            on_task_sent,
-            on_task_prerun,
-            on_task_postrun,
             _task_start_times,
+            on_task_postrun,
+            on_task_prerun,
+            on_task_sent,
         )
 
         task_id = "lifecycle-test-id"

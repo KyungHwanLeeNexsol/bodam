@@ -12,13 +12,11 @@ SPEC-OAUTH-001:
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.schemas.oauth import OAuthToken, OAuthUserInfo
-
 
 # ─────────────────────────────────────────────
 # 공통 픽스처

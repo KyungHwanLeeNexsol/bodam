@@ -36,7 +36,7 @@ class KakaoOAuthProvider(OAuthProvider):
     # 요청 스코프 (이메일은 선택 동의)
     scopes = ["profile_nickname", "account_email"]
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         """카카오 프로바이더 초기화
 
         Args:

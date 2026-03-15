@@ -9,7 +9,6 @@ import hashlib
 import os
 import tempfile
 import uuid
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

@@ -1,0 +1,138 @@
+"""B2B 도메인 Pydantic 스키마 (SPEC-B2B-001 Phase 1)
+
+조직 생성/응답/업데이트, 조직 멤버, B2B 회원가입 스키마 정의.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel, EmailStr, field_validator
+
+from app.core.sanitize import sanitize_input
+from app.models.organization import OrgType, PlanType
+from app.models.organization_member import OrgMemberRole
+
+
+class OrganizationCreate(BaseModel):
+    """조직 생성 요청 스키마"""
+
+    # 조직명
+    name: str
+    # 사업자등록번호
+    business_number: str
+    # 조직 유형 (GA/INDEPENDENT/CORPORATE)
+    org_type: OrgType
+    # 요금제 유형
+    plan_type: PlanType
+    # 상위 조직 UUID (최상위 조직은 None)
+    parent_org_id: uuid.UUID | None = None
+    # 월간 API 호출 한도 (기본값: 1000)
+    monthly_api_limit: int = 1000
+
+
+class OrganizationResponse(BaseModel):
+    """조직 정보 응답 스키마"""
+
+    # 조직 UUID
+    id: uuid.UUID
+    # 조직명
+    name: str
+    # 사업자등록번호
+    business_number: str
+    # 조직 유형
+    org_type: OrgType
+    # 상위 조직 UUID (선택)
+    parent_org_id: uuid.UUID | None = None
+    # 요금제 유형
+    plan_type: PlanType
+    # 월간 API 호출 한도
+    monthly_api_limit: int
+    # 조직 활성 상태
+    is_active: bool
+    # 생성 일시
+    created_at: datetime
+    # 수정 일시
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrganizationUpdate(BaseModel):
+    """조직 정보 수정 요청 스키마 (부분 업데이트)"""
+
+    # 조직명 (선택)
+    name: str | None = None
+    # 요금제 유형 (선택)
+    plan_type: PlanType | None = None
+    # 월간 API 호출 한도 (선택)
+    monthly_api_limit: int | None = None
+    # 조직 활성 상태 (선택)
+    is_active: bool | None = None
+
+
+class OrganizationMemberResponse(BaseModel):
+    """조직 멤버 응답 스키마"""
+
+    # 멤버 UUID
+    id: uuid.UUID
+    # 조직 UUID
+    organization_id: uuid.UUID
+    # 사용자 UUID
+    user_id: uuid.UUID
+    # 조직 내 역할
+    role: OrgMemberRole
+    # 멤버 활성 상태
+    is_active: bool
+    # 가입 일시
+    joined_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrganizationMemberInvite(BaseModel):
+    """조직 멤버 초대 요청 스키마"""
+
+    # 초대할 사용자 이메일
+    email: EmailStr
+    # 부여할 역할
+    role: OrgMemberRole
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        """이메일을 소문자로 정규화"""
+        return v.lower().strip()
+
+
+class B2BRegistrationRequest(BaseModel):
+    """B2B 회원가입 요청 스키마 (설계사 등록)
+
+    RegisterRequest를 확장하여 사업자등록번호 및 조직 정보 포함.
+    """
+
+    # 이메일 (소문자로 정규화)
+    email: EmailStr
+    # 비밀번호 (평문, 서비스 레이어에서 해시 처리)
+    password: str
+    # 사용자 이름 (선택)
+    full_name: str | None = None
+    # 사업자등록번호 (필수)
+    business_number: str
+    # 조직명
+    organization_name: str
+    # 조직 유형
+    org_type: OrgType
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        """이메일을 소문자로 정규화"""
+        return v.lower().strip()
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def validate_full_name_no_xss(cls, v: str | None) -> str | None:
+        """full_name에서 XSS 패턴을 검사한다"""
+        return sanitize_input(v)

@@ -47,7 +47,7 @@ class OAuthProvider(ABC):
         ...
 
     @abstractmethod
-    async def exchange_code(self, code: str, redirect_uri: str) -> "OAuthToken":
+    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthToken:
         """인가 코드로 액세스 토큰 교환
 
         프로바이더에서 받은 일회용 코드를 액세스 토큰으로 교환.
@@ -62,7 +62,7 @@ class OAuthProvider(ABC):
         ...
 
     @abstractmethod
-    async def get_user_info(self, access_token: str) -> "OAuthUserInfo":
+    async def get_user_info(self, access_token: str) -> OAuthUserInfo:
         """액세스 토큰으로 사용자 정보 조회
 
         Args:

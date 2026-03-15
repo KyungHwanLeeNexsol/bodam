@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 import uuid
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient

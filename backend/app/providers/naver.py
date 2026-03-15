@@ -36,7 +36,7 @@ class NaverOAuthProvider(OAuthProvider):
     # 네이버는 스코프를 별도로 지정하지 않음
     scopes: list[str] = []
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         """네이버 프로바이더 초기화
 
         Args:

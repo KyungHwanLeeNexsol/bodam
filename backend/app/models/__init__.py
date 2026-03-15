@@ -16,6 +16,8 @@ from app.models.insurance import (
     Policy,
     PolicyChunk,
 )
+from app.models.organization import Organization, OrgType, PlanType
+from app.models.organization_member import OrganizationMember, OrgMemberRole
 from app.models.pdf import (
     PdfAnalysisMessage,
     PdfAnalysisSession,
@@ -25,7 +27,7 @@ from app.models.pdf import (
     PdfUploadStatus,
 )
 from app.models.social_account import SocialAccount
-from app.models.user import ConsentRecord, User
+from app.models.user import ConsentRecord, User, UserRole
 
 __all__ = [
     "Base",
@@ -49,6 +51,12 @@ __all__ = [
     "PdfAnalysisMessage",
     "PdfMessageRole",
     "User",
+    "UserRole",
     "ConsentRecord",
     "SocialAccount",
+    "Organization",
+    "OrgType",
+    "PlanType",
+    "OrganizationMember",
+    "OrgMemberRole",
 ]

@@ -152,7 +152,7 @@ class TestRagQueryMetrics:
 
     def test_observe_rag_query_duration_helper(self):
         """observe_rag_query_duration 헬퍼 함수가 존재해야 한다"""
-        from app.core.metrics import observe_rag_query_duration, RAG_QUERY_DURATION
+        from app.core.metrics import RAG_QUERY_DURATION, observe_rag_query_duration
 
         assert observe_rag_query_duration is not None
         assert RAG_QUERY_DURATION is not None
@@ -238,14 +238,14 @@ class TestLLMCostMetrics:
 
     def test_increment_llm_cost_helper_function(self):
         """increment_llm_cost 헬퍼 함수가 존재해야 한다"""
-        from app.core.metrics import increment_llm_cost, LLM_COST
+        from app.core.metrics import LLM_COST, increment_llm_cost
 
         assert increment_llm_cost is not None
         assert LLM_COST is not None
 
     def test_observe_llm_response_duration_helper(self):
         """observe_llm_response_duration 헬퍼 함수가 존재해야 한다"""
-        from app.core.metrics import observe_llm_response_duration, LLM_RESPONSE_DURATION
+        from app.core.metrics import LLM_RESPONSE_DURATION, observe_llm_response_duration
 
         assert observe_llm_response_duration is not None
         assert LLM_RESPONSE_DURATION is not None

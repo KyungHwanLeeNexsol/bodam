@@ -1,19 +1,39 @@
-"""사용자 도메인 SQLAlchemy 모델 (SPEC-AUTH-001 Module 1, SPEC-SEC-001 M2)
+"""사용자 도메인 SQLAlchemy 모델 (SPEC-AUTH-001 Module 1, SPEC-SEC-001 M2, SPEC-B2B-001)
 
 User 테이블 정의. 이메일 유니크, bcrypt 해시 비밀번호 저장.
 SPEC-SEC-001: ConsentRecord 모델 추가 (PIPA 동의 이력 관리).
+SPEC-B2B-001: UserRole enum 및 role 컬럼 추가 (RBAC 지원).
 """
 
 from __future__ import annotations
 
 import uuid
+from enum import StrEnum
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, ForeignKey, Text, func
+from sqlalchemy import Boolean, Enum, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
+
+
+class UserRole(StrEnum):
+    """사용자 역할 열거형 (SPEC-B2B-001 RBAC)
+
+    보담 플랫폼의 역할 기반 접근 제어를 위한 역할 정의.
+    """
+
+    # 일반 사용자 (기본값)
+    B2C_USER = "B2C_USER"
+    # 보험 설계사
+    AGENT = "AGENT"
+    # 설계사 관리자
+    AGENT_ADMIN = "AGENT_ADMIN"
+    # 조직 소유자
+    ORG_OWNER = "ORG_OWNER"
+    # 시스템 관리자
+    SYSTEM_ADMIN = "SYSTEM_ADMIN"
 
 
 class User(TimestampMixin, Base):
@@ -61,12 +81,22 @@ class User(TimestampMixin, Base):
         server_default=sa.text("true"),
     )
 
+    # 사용자 역할 (기본값: B2C_USER)
+    # @MX:NOTE: SPEC-B2B-001 RBAC - B2B 기능 접근 제어에 사용
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="userrole", create_type=False),
+        nullable=False,
+        default=UserRole.B2C_USER,
+        server_default=UserRole.B2C_USER.value,
+    )
+
     def __init__(
         self,
         email: str,
         hashed_password: str | None = None,
         full_name: str | None = None,
         is_active: bool = True,
+        role: UserRole = UserRole.B2C_USER,
         **kwargs,
     ) -> None:
         """User 초기화
@@ -76,12 +106,14 @@ class User(TimestampMixin, Base):
             hashed_password: bcrypt 해시된 비밀번호 (소셜 전용 계정은 None)
             full_name: 사용자 이름 (선택)
             is_active: 계정 활성 상태 (기본값: True)
+            role: 사용자 역할 (기본값: B2C_USER)
         """
         super().__init__(
             email=email,
             hashed_password=hashed_password,
             full_name=full_name,
             is_active=is_active,
+            role=role,
             **kwargs,
         )
 

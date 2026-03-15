@@ -78,10 +78,10 @@ def mock_db():
 @pytest.fixture
 async def authenticated_client(mock_current_user, mock_db):
     """인증된 테스트 클라이언트"""
-    from app.main import app
     from app.api.deps import get_current_user
+    from app.api.v1.pdf import get_analysis_service, get_session_service, get_storage_service
     from app.core.database import get_db
-    from app.api.v1.pdf import get_storage_service, get_session_service, get_analysis_service
+    from app.main import app
 
     mock_storage = MagicMock()
     mock_storage.validate_mime_type = MagicMock()
@@ -126,8 +126,8 @@ async def authenticated_client(mock_current_user, mock_db):
 @pytest.fixture
 async def unauthenticated_client():
     """인증되지 않은 테스트 클라이언트"""
-    from app.main import app
     from app.core.database import get_db
+    from app.main import app
 
     mock_db = AsyncMock()
     app.dependency_overrides[get_db] = lambda: mock_db
@@ -159,9 +159,10 @@ class TestUploadPDF:
     @pytest.mark.asyncio
     async def test_upload_non_pdf_returns_400(self, authenticated_client, mock_db):
         """PDF가 아닌 파일 업로드 시 400이 반환되어야 함"""
+        from fastapi import HTTPException as FHTTPException
+
         from app.api.v1.pdf import get_storage_service
         from app.main import app
-        from fastapi import HTTPException as FHTTPException
 
         # validate_mime_type이 예외를 던지도록 오버라이드
         mock_storage_400 = MagicMock()
@@ -183,9 +184,9 @@ class TestUploadPDF:
     @pytest.mark.asyncio
     async def test_upload_oversized_returns_413(self, authenticated_client):
         """50MB 초과 파일 업로드 시 413이 반환되어야 함"""
+
         from app.api.v1.pdf import get_storage_service
         from app.main import app
-        from fastapi import HTTPException as FHTTPException
 
         mock_storage_413 = MagicMock()
         mock_storage_413.validate_mime_type = MagicMock()
@@ -228,7 +229,7 @@ class TestAnalyzePDF:
         mock_db.execute = AsyncMock(return_value=mock_upload_result)
         mock_db.flush = AsyncMock()
 
-        from app.api.v1.pdf import get_session_service, get_analysis_service
+        from app.api.v1.pdf import get_analysis_service, get_session_service
         from app.main import app
 
         mock_analysis_svc = MagicMock()
@@ -261,7 +262,7 @@ class TestQueryPDF:
         mock_session_result.scalar_one_or_none.return_value = mock_session
         mock_db.execute = AsyncMock(side_effect=[mock_upload_result, mock_session_result])
 
-        from app.api.v1.pdf import get_session_service, get_analysis_service
+        from app.api.v1.pdf import get_analysis_service, get_session_service
         from app.main import app
 
         async def mock_stream(*args, **kwargs):

@@ -6,8 +6,6 @@ RED phase: LogMaskingProcessor 구현 전 실패하는 테스트.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestEmailMasking:
     """이메일 마스킹 테스트"""

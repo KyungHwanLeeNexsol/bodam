@@ -36,7 +36,7 @@ class GoogleOAuthProvider(OAuthProvider):
     # openid, email, profile 스코프
     scopes = ["openid", "email", "profile"]
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         """구글 프로바이더 초기화
 
         Args:

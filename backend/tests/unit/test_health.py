@@ -8,7 +8,7 @@ SPEC-INFRA-002 Milestone 3: 헬스체크 엔드포인트
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient

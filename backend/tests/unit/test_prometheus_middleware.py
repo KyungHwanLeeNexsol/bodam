@@ -9,8 +9,7 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
 
 def create_isolated_metrics(registry: CollectorRegistry) -> dict:
@@ -41,7 +40,8 @@ def create_isolated_metrics(registry: CollectorRegistry) -> dict:
 def create_test_app(registry: CollectorRegistry) -> FastAPI:
     """격리된 레지스트리를 사용하는 테스트용 FastAPI 앱 생성"""
     import time
-    from typing import Callable
+    from collections.abc import Callable
+
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
     from starlette.responses import Response

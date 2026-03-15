@@ -81,8 +81,9 @@ class TestOAuthProviderBase:
 
     def test_oauth_provider_base_is_abstract(self):
         """OAuthProvider가 ABC 추상 클래스인지 확인"""
-        from app.providers.base import OAuthProvider
         import inspect
+
+        from app.providers.base import OAuthProvider
         assert inspect.isabstract(OAuthProvider)
 
     def test_oauth_provider_has_get_authorize_url(self):
@@ -158,6 +159,7 @@ class TestOAuthSchemas:
     def test_social_account_response_schema(self):
         """SocialAccountResponse 스키마 생성 확인"""
         from datetime import datetime
+
         from app.schemas.oauth import SocialAccountResponse
         resp = SocialAccountResponse(
             provider="kakao",

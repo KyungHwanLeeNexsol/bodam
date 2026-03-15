@@ -7,7 +7,7 @@ RED phase: 구현 전 실패하는 테스트.
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -187,11 +187,11 @@ class TestRateLimitMiddlewareIntegration:
     @pytest.mark.asyncio
     async def test_middleware_adds_rate_limit_headers(self):
         """미들웨어가 응답에 Rate Limit 헤더를 추가해야 한다"""
-        from app.core.rate_limit import RateLimitMiddleware
-
         # FastAPI 테스트 앱 생성
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
+
+        from app.core.rate_limit import RateLimitMiddleware
 
         test_app = FastAPI()
 
@@ -219,10 +219,10 @@ class TestRateLimitMiddlewareIntegration:
     @pytest.mark.asyncio
     async def test_middleware_returns_429_when_exceeded(self):
         """제한 초과 시 미들웨어가 429를 반환해야 한다"""
-        from app.core.rate_limit import RateLimitMiddleware
-
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
+
+        from app.core.rate_limit import RateLimitMiddleware
 
         test_app = FastAPI()
 

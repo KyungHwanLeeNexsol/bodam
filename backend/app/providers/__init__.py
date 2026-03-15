@@ -8,7 +8,7 @@ from __future__ import annotations
 from app.providers.base import OAuthProvider
 
 
-def get_provider(provider_name: str, settings: "Settings") -> OAuthProvider:
+def get_provider(provider_name: str, settings: Settings) -> OAuthProvider:
     """프로바이더 이름으로 OAuthProvider 인스턴스 반환
 
     Args:
@@ -21,9 +21,9 @@ def get_provider(provider_name: str, settings: "Settings") -> OAuthProvider:
     Raises:
         ValueError: 지원하지 않는 프로바이더인 경우
     """
+    from app.providers.google import GoogleOAuthProvider
     from app.providers.kakao import KakaoOAuthProvider
     from app.providers.naver import NaverOAuthProvider
-    from app.providers.google import GoogleOAuthProvider
 
     providers: dict[str, type[OAuthProvider]] = {
         "kakao": KakaoOAuthProvider,

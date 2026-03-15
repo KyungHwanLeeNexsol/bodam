@@ -42,7 +42,7 @@ class OAuthService:
     # 병합 토큰 TTL (초)
     _MERGE_TTL = 600  # 10분
 
-    def __init__(self, db: AsyncSession, redis: "Redis", settings: Settings) -> None:
+    def __init__(self, db: AsyncSession, redis: Redis, settings: Settings) -> None:
         """OAuthService 초기화
 
         Args:
@@ -303,7 +303,7 @@ class OAuthService:
     # ─────────────────────────────────────────────
 
     @staticmethod
-    def _build_fernet(key: str) -> "Fernet | None":
+    def _build_fernet(key: str) -> Fernet | None:
         """Fernet 인스턴스 생성 (키가 없으면 None)"""
         if not key:
             return None
@@ -412,5 +412,5 @@ class OAuthService:
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from redis.asyncio import Redis
     from cryptography.fernet import Fernet
+    from redis.asyncio import Redis
