@@ -9,11 +9,12 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.admin import admin_router
 from app.api.v1.auth import router as auth_router
-from app.api.v1.users import router as users_router
 from app.api.v1.chat import router as chat_router
-from app.api.v1.pdf import router as pdf_router
 from app.api.v1.health import router as health_router
+from app.api.v1.oauth import router as oauth_router
+from app.api.v1.pdf import router as pdf_router
 from app.api.v1.search import router as search_router
+from app.api.v1.users import router as users_router
 from app.core.config import get_settings
 from app.core.database import init_database
 from app.core.logging import setup_logging
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     # API v1 라우터 등록
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(oauth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1/admin")

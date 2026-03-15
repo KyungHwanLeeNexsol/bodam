@@ -101,6 +101,25 @@ class Settings(BaseSettings):
     # SPEC-SEC-001: CORS 허용 도메인 (쉼표 구분, 프로덕션용)
     allowed_origins: str = ""
 
+    # SPEC-OAUTH-001: 카카오 OAuth2 설정 (ACC-04)
+    kakao_client_id: str = ""
+    kakao_client_secret: str = ""
+    kakao_redirect_uri: str = "http://localhost:8000/api/v1/auth/oauth/kakao/callback"
+
+    # SPEC-OAUTH-001: 네이버 OAuth2 설정 (ACC-07)
+    naver_client_id: str = ""
+    naver_client_secret: str = ""
+    naver_redirect_uri: str = "http://localhost:8000/api/v1/auth/oauth/naver/callback"
+
+    # SPEC-OAUTH-001: 구글 OAuth2 설정 (ACC-10)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/oauth/google/callback"
+
+    # SPEC-OAUTH-001: 소셜 토큰 암호화 키 (Fernet 대칭키, ACC-22)
+    # @MX:NOTE: Fernet 키는 base64url-encoded 32바이트여야 함. 빈 문자열이면 암호화 비활성화
+    social_token_encryption_key: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

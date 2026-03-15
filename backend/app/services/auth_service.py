@@ -96,8 +96,22 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
 
-        # 사용자 없거나 비밀번호 불일치 (보안: 동일 메시지)
-        if user is None or not verify_password(req.password, user.hashed_password):
+        # 사용자 없음
+        if user is None:
+            raise HTTPException(
+                status_code=401,
+                detail="이메일 또는 비밀번호가 올바르지 않습니다",
+            )
+
+        # ACC-21: 소셜 전용 계정 (비밀번호 없음) 로그인 시도 안내
+        if not user.hashed_password:
+            raise HTTPException(
+                status_code=401,
+                detail="소셜 로그인으로 가입된 계정입니다. 소셜 로그인을 이용해주세요.",
+            )
+
+        # 비밀번호 불일치 (보안: 동일 메시지)
+        if not verify_password(req.password, user.hashed_password):
             raise HTTPException(
                 status_code=401,
                 detail="이메일 또는 비밀번호가 올바르지 않습니다",

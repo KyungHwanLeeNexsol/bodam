@@ -62,12 +62,12 @@ class TestUserModelStructure:
         email_col = User.__mapper__.columns["email"]
         assert email_col.nullable is False
 
-    def test_user_model_hashed_password_not_nullable(self):
-        """User.hashed_password는 nullable이 아니어야 한다"""
+    def test_user_model_hashed_password_nullable(self):
+        """User.hashed_password는 nullable이어야 한다 (SPEC-OAUTH-001: 소셜 전용 계정 지원)"""
         from app.models.user import User
 
         col = User.__mapper__.columns["hashed_password"]
-        assert col.nullable is False
+        assert col.nullable is True
 
     def test_user_model_is_active_default_true(self):
         """User.is_active 기본값은 True여야 한다"""

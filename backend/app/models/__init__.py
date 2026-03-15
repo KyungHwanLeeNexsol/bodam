@@ -9,6 +9,13 @@ from __future__ import annotations
 from app.models.base import Base, TimestampMixin
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.models.crawler import CrawlResult, CrawlResultStatus, CrawlRun, CrawlStatus
+from app.models.insurance import (
+    Coverage,
+    InsuranceCategory,
+    InsuranceCompany,
+    Policy,
+    PolicyChunk,
+)
 from app.models.pdf import (
     PdfAnalysisMessage,
     PdfAnalysisSession,
@@ -17,13 +24,8 @@ from app.models.pdf import (
     PdfUpload,
     PdfUploadStatus,
 )
-from app.models.insurance import (
-    Coverage,
-    InsuranceCategory,
-    InsuranceCompany,
-    Policy,
-    PolicyChunk,
-)
+from app.models.social_account import SocialAccount
+from app.models.user import ConsentRecord, User
 
 __all__ = [
     "Base",
@@ -46,4 +48,7 @@ __all__ = [
     "PdfSessionStatus",
     "PdfAnalysisMessage",
     "PdfMessageRole",
+    "User",
+    "ConsentRecord",
+    "SocialAccount",
 ]

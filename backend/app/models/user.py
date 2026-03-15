@@ -41,9 +41,10 @@ class User(TimestampMixin, Base):
     )
 
     # bcrypt 해시 비밀번호 (평문 절대 저장 금지)
-    hashed_password: Mapped[str] = mapped_column(
+    # @MX:NOTE: 소셜 전용 계정은 None 허용 (SPEC-OAUTH-001 ACC-19)
+    hashed_password: Mapped[str | None] = mapped_column(
         Text,
-        nullable=False,
+        nullable=True,
     )
 
     # 사용자 이름 (선택)
@@ -63,7 +64,7 @@ class User(TimestampMixin, Base):
     def __init__(
         self,
         email: str,
-        hashed_password: str,
+        hashed_password: str | None = None,
         full_name: str | None = None,
         is_active: bool = True,
         **kwargs,
@@ -72,7 +73,7 @@ class User(TimestampMixin, Base):
 
         Args:
             email: 이메일 주소 (소문자로 정규화 필요)
-            hashed_password: bcrypt 해시된 비밀번호
+            hashed_password: bcrypt 해시된 비밀번호 (소셜 전용 계정은 None)
             full_name: 사용자 이름 (선택)
             is_active: 계정 활성 상태 (기본값: True)
         """
