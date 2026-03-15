@@ -91,6 +91,14 @@ class KakaoOAuthProvider(OAuthProvider):
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
+            if response.status_code != 200:
+                import logging
+                logging.getLogger(__name__).error(
+                    "카카오 토큰 교환 실패: status=%s body=%s redirect_uri=%s",
+                    response.status_code,
+                    response.text,
+                    redirect_uri,
+                )
             response.raise_for_status()
             token_data = response.json()
 
