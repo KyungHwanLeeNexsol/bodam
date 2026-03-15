@@ -15,6 +15,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 from alembic import op
 
@@ -65,7 +66,7 @@ def upgrade() -> None:
         "users",
         sa.Column(
             "role",
-            sa.Enum(
+            PG_ENUM(
                 "B2C_USER",
                 "AGENT",
                 "AGENT_ADMIN",
@@ -80,6 +81,8 @@ def upgrade() -> None:
     )
 
     # 6. organizations 테이블 생성
+    # PG_ENUM(create_type=False) 사용: sa.Enum은 create_type=False여도
+    # before_table_create 이벤트에서 중복 CREATE TYPE을 시도하는 버그 있음
     op.create_table(
         "organizations",
         sa.Column(
@@ -92,13 +95,13 @@ def upgrade() -> None:
         sa.Column("business_number", sa.Text(), nullable=False),
         sa.Column(
             "org_type",
-            sa.Enum("GA", "INDEPENDENT", "CORPORATE", name="orgtype", create_type=False),
+            PG_ENUM("GA", "INDEPENDENT", "CORPORATE", name="orgtype", create_type=False),
             nullable=False,
         ),
         sa.Column("parent_org_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column(
             "plan_type",
-            sa.Enum(
+            PG_ENUM(
                 "FREE_TRIAL",
                 "BASIC",
                 "PROFESSIONAL",
@@ -156,7 +159,7 @@ def upgrade() -> None:
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
             "role",
-            sa.Enum("ORG_OWNER", "AGENT_ADMIN", "AGENT", name="orgmemberrole", create_type=False),
+            PG_ENUM("ORG_OWNER", "AGENT_ADMIN", "AGENT", name="orgmemberrole", create_type=False),
             nullable=False,
         ),
         sa.Column(

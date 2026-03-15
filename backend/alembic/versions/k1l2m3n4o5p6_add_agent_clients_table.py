@@ -13,6 +13,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 from alembic import op
 
@@ -62,7 +63,7 @@ def upgrade() -> None:
         # 동의 상태 (기본값: PENDING)
         sa.Column(
             "consent_status",
-            sa.Enum("PENDING", "ACTIVE", "REVOKED", name="consentstatus", create_type=False),
+            PG_ENUM("PENDING", "ACTIVE", "REVOKED", name="consentstatus", create_type=False),
             nullable=False,
             server_default="PENDING",
         ),
