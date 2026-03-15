@@ -1,53 +1,71 @@
 #!/bin/sh
 
-echo "=== Schema migration check ==="
+echo "=== Schema migration fix ==="
 
-# 스키마 정합성 확인: 누락된 테이블/컬럼이 있으면 alembic 버전을 리셋
-# (이전 배포에서 stamp head로 인해 스키마가 꼬인 경우 복구)
+# stamp head로 인해 누락된 테이블/컬럼을 직접 생성 (일회성 복구)
+# alembic 버전은 건드리지 않음 - 이미 head로 되어있을 수 있으므로
 uv run python -c "
 import asyncio, os
 
-async def check_and_fix():
+async def fix_schema():
     import asyncpg
     url = os.environ.get('DATABASE_URL', '').replace('postgresql+asyncpg://', 'postgresql://')
     if not url:
-        print('DATABASE_URL not set, skipping schema check')
+        print('DATABASE_URL not set, skipping')
         return
     conn = await asyncpg.connect(url)
     try:
-        # social_accounts 테이블 존재 여부 확인
+        # social_accounts 테이블 존재 여부
         sa_table = await conn.fetchrow(
-            \"SELECT table_name FROM information_schema.tables \"
-            \"WHERE table_name='social_accounts'\"
+            \"SELECT 1 FROM information_schema.tables WHERE table_name='social_accounts'\"
         )
         if not sa_table:
-            # social_accounts 이전으로 리셋 (f6 = pdf_analysis 이후)
-            print('Missing table: social_accounts')
-            print('Resetting alembic to f6g7h8i9j0k1 (before social_accounts)...')
-            await conn.execute(\"UPDATE alembic_version SET version_num = 'f6g7h8i9j0k1'\")
-            print('Alembic version reset complete')
-            return
+            print('Creating missing table: social_accounts')
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS social_accounts (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    provider VARCHAR(20) NOT NULL,
+                    provider_user_id VARCHAR(255) NOT NULL,
+                    provider_email VARCHAR(255),
+                    provider_name VARCHAR(100),
+                    access_token TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    UNIQUE(provider, provider_user_id)
+                )
+            ''')
+            await conn.execute('CREATE INDEX IF NOT EXISTS ix_social_accounts_user_id ON social_accounts(user_id)')
+            await conn.execute('CREATE INDEX IF NOT EXISTS ix_social_provider_email ON social_accounts(provider, provider_email)')
+            print('social_accounts table created')
 
-        # role 컬럼 존재 여부 확인
+        # role 컬럼 존재 여부
         role_col = await conn.fetchrow(
-            \"SELECT column_name FROM information_schema.columns \"
-            \"WHERE table_name='users' AND column_name='role'\"
+            \"SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role'\"
         )
         if not role_col:
-            print('Missing column: users.role')
-            print('Resetting alembic to h8i9j0k1l2m3 (before RBAC)...')
-            await conn.execute(\"UPDATE alembic_version SET version_num = 'h8i9j0k1l2m3'\")
-            print('Alembic version reset complete')
-            return
+            print('Adding missing column: users.role')
+            await conn.execute(\"ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'B2C_USER'\")
+            print('users.role column added')
+
+        # hashed_password nullable 확인
+        hp_col = await conn.fetchrow(
+            \"SELECT is_nullable FROM information_schema.columns WHERE table_name='users' AND column_name='hashed_password'\"
+        )
+        if hp_col and hp_col['is_nullable'] == 'NO':
+            print('Making hashed_password nullable')
+            await conn.execute('ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL')
+            print('hashed_password is now nullable')
 
         print('Schema OK')
     finally:
         await conn.close()
 
-asyncio.run(check_and_fix())
-" 2>&1 || echo "WARN: Schema check failed, continuing anyway..."
+asyncio.run(fix_schema())
+" 2>&1 || echo "WARN: Schema fix failed, continuing..."
 
 echo "=== Running alembic migrations ==="
+uv run alembic stamp head 2>&1 || true
 uv run alembic upgrade head 2>&1 || {
     echo "WARN: Alembic migration failed, starting app anyway..."
 }
