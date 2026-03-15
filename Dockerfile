@@ -8,4 +8,5 @@ RUN uv sync --frozen --no-dev
 # 백엔드 애플리케이션 코드 복사
 COPY backend/ .
 EXPOSE 8000
-CMD ["sh", "-c", "uv run alembic upgrade head || echo 'Migration failed, continuing...' ; uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+RUN chmod +x startup.sh
+CMD ["sh", "startup.sh"]
