@@ -63,17 +63,22 @@ async def create_session(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionResponse:
     """새 채팅 세션을 생성합니다."""
-    session = await chat_service.create_session(
-        title=body.title,
-        user_id=body.user_id,
-    )
-    return ChatSessionResponse(
-        id=session.id,
-        title=session.title,
-        user_id=session.user_id,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
-    )
+    import logging
+    try:
+        session = await chat_service.create_session(
+            title=body.title,
+            user_id=body.user_id,
+        )
+        return ChatSessionResponse(
+            id=session.id,
+            title=session.title,
+            user_id=session.user_id,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
+    except Exception as e:
+        logging.getLogger(__name__).error("create_session failed: %s", e, exc_info=True)
+        raise
 
 
 @router.get(
