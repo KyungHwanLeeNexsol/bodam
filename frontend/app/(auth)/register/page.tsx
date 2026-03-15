@@ -5,6 +5,7 @@
  * 회원가입 탭이 활성 상태.
  */
 
+import Image from 'next/image'
 import Link from 'next/link'
 import React from 'react'
 
@@ -26,16 +27,7 @@ export default function RegisterPage() {
       >
         {/* 로고 섹션 */}
         <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex items-center gap-2">
-            {/* 로고 아이콘: 둥근 정사각형 */}
-            <div
-              className="flex items-center justify-center bg-[#0D6E6E] text-white"
-              style={{ width: 36, height: 36, borderRadius: 8, fontSize: 18, fontWeight: 700 }}
-            >
-              보
-            </div>
-            <span className="text-xl font-bold text-[#1A1A1A]">보담</span>
-          </div>
+          <Image src="/logo.png" alt="보담" width={120} height={40} priority />
           <p className="text-[13px] text-[#888888]">보험 보상 안내 플랫폼</p>
         </div>
 
