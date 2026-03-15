@@ -371,3 +371,73 @@ class BillingEstimateResponse(BaseModel):
     usage_percentage: float
     # 예상 청구 금액 (원, placeholder: 요청당 10원)
     estimated_cost: int
+
+
+# ─────────────────────────────────────────────
+# 대시보드 스키마 (SPEC-B2B-001 Phase 5)
+# ─────────────────────────────────────────────
+
+
+class AgentDashboardResponse(BaseModel):
+    """설계사 대시보드 응답 스키마 (AC-005)"""
+
+    # 담당 고객 수
+    total_clients: int
+    # 동의 완료 고객 수
+    active_clients: int
+    # 최근 분석 질의 이력 (최대 10건)
+    recent_queries: list[dict]
+    # 이번 달 API 호출 수
+    monthly_activity: int
+
+
+class AgentStatistic(BaseModel):
+    """설계사별 통계 스키마"""
+
+    # 설계사 UUID
+    agent_id: uuid.UUID
+    # 설계사 이름
+    agent_name: str
+    # 담당 고객 수
+    client_count: int
+    # 질의 수
+    query_count: int
+
+
+class UsageTrendItem(BaseModel):
+    """월별 사용량 추이 항목 스키마"""
+
+    # 기간 (YYYY-MM 형식)
+    period: str
+    # 요청 수
+    request_count: int
+
+
+class PlanInfo(BaseModel):
+    """요금제 정보 스키마"""
+
+    # 요금제 유형
+    plan_type: str
+    # 월간 한도
+    monthly_limit: int
+    # 현재 사용량
+    current_usage: int
+    # 사용 비율 (%)
+    usage_percentage: float
+
+
+class OrgDashboardResponse(BaseModel):
+    """조직 대시보드 응답 스키마 (AC-006)"""
+
+    # 소속 설계사 수
+    total_agents: int
+    # 전체 고객 수
+    total_clients: int
+    # 월별 API 호출 수
+    monthly_api_calls: int
+    # 설계사별 고객/질의 통계
+    agent_statistics: list[AgentStatistic]
+    # 최근 6개월 사용량 추이
+    usage_trend: list[UsageTrendItem]
+    # 현재 플랜 정보
+    plan_info: PlanInfo

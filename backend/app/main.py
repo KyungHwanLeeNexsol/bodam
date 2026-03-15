@@ -11,6 +11,7 @@ from app.api.v1.admin import admin_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.b2b.api_keys import router as b2b_api_keys_router
 from app.api.v1.b2b.clients import router as b2b_clients_router
+from app.api.v1.b2b.dashboard import router as b2b_dashboard_router
 from app.api.v1.b2b.organizations import router as b2b_org_router
 from app.api.v1.b2b.usage import router as b2b_usage_router
 from app.api.v1.chat import router as chat_router
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(b2b_api_keys_router, prefix="/api/v1/b2b")
     app.include_router(b2b_clients_router, prefix="/api/v1/b2b")
     app.include_router(b2b_usage_router, prefix="/api/v1/b2b")
+    app.include_router(b2b_dashboard_router, prefix="/api/v1/b2b")
 
     return app
 
