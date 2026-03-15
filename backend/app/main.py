@@ -73,35 +73,44 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Request ID 미들웨어 (SPEC-INFRA-002 M5: 요청 추적용 UUID 생성)
-    app.add_middleware(RequestIdMiddleware)
+    # 미들웨어 등록 순서: Starlette에서 마지막에 추가된 미들웨어가 outermost (요청 최초 진입점)
+    # 올바른 요청 흐름: CORS → Prometheus → RequestId → SecurityHeaders → RateLimit → UsageTracking → App
+
+    # 내부 미들웨어 (app에 가까운 순서)
+    # 사용량 추적 미들웨어 (SPEC-B2B-001 Phase 4: B2B API 사용량 추적)
+    app.add_middleware(UsageTrackingMiddleware)
+
+    # Rate Limit 미들웨어 (SPEC-SEC-001 M1: IP 기반 속도 제한)
+    app.add_middleware(RateLimitMiddleware)
 
     # 보안 헤더 미들웨어 (SPEC-SEC-001 M3: 모든 응답에 보안 헤더 주입)
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # CORS 미들웨어 (SPEC-SEC-001 M3: 환경별 허용 도메인 제한)
+    # Request ID 미들웨어 (SPEC-INFRA-002 M5: 요청 추적용 UUID 생성)
+    app.add_middleware(RequestIdMiddleware)
+
+    # Prometheus 미들웨어 등록 (HTTP 메트릭 자동 수집)
+    app.add_middleware(PrometheusMiddleware)
+
+    # CORS 미들웨어 - 반드시 outermost (가장 마지막에 추가)
+    # 모든 응답(429, 500 등)에 CORS 헤더가 포함되어야 함
     allowed_origins = getattr(settings, "allowed_origins", "").split(",")
     allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
-    if not allowed_origins or settings.debug:
+    if settings.debug:
+        # 개발 환경: localhost 허용
         allowed_origins = ["http://localhost:3000", "http://localhost:8000"]
+    elif not allowed_origins:
+        # 프로덕션에서 ALLOWED_ORIGINS 미설정 시 Vercel 도메인 기본 허용
+        allowed_origins = ["https://bodam-one.vercel.app"]
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
         max_age=600,
     )
-
-    # Rate Limit 미들웨어 (SPEC-SEC-001 M1: IP 기반 속도 제한)
-    app.add_middleware(RateLimitMiddleware)
-
-    # 사용량 추적 미들웨어 (SPEC-B2B-001 Phase 4: B2B API 사용량 추적)
-    app.add_middleware(UsageTrackingMiddleware)
-
-    # Prometheus 미들웨어 등록 (HTTP 메트릭 자동 수집)
-    app.add_middleware(PrometheusMiddleware)
 
     # 429 예외 핸들러 등록
     @app.exception_handler(429)
