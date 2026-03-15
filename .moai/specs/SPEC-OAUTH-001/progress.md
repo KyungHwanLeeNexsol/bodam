@@ -48,7 +48,9 @@
 - lib/auth.ts: OAuth API 함수 (oauthCallbackApi, oauthMergeApi 등) 추가
 - Frontend tests: 116/116 passing
 
-### Pending
+### Status: Complete
 
-- Phase 5: Integration tests, .env.example update
-- Phase 3 (Git): Frontend 커밋
+- Phase 2 (Backend): 커밋 e47924e
+- Phase 4 (Frontend): 커밋 e8a3b6d, 19e7f36
+- Phase 5: .env.example OAuth 변수 추가 완료
+- 통합 테스트는 배포 환경 구성 후 진행 (선택)
