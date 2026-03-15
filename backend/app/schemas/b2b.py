@@ -2,6 +2,7 @@
 
 조직 생성/응답/업데이트, 조직 멤버, B2B 회원가입 스키마 정의.
 API Key 생성/응답 스키마 포함.
+고객(AgentClient) 생성/응답/업데이트 및 동의 관리 스키마 포함 (Phase 3).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, field_validator
 
 from app.core.sanitize import sanitize_input
+from app.models.agent_client import ConsentStatus
 from app.models.organization import OrgType, PlanType
 from app.models.organization_member import OrgMemberRole
 
@@ -190,3 +192,96 @@ class APIKeyFullResponse(APIKeyResponse):
     # @MX:WARN: 이 값은 생성 응답에만 포함되며 DB에는 저장되지 않음
     # @MX:REASON: 보안 요구사항 - 전체 키는 한 번만 노출
     full_key: str
+
+
+# ─────────────────────────────────────────────
+# 고객(AgentClient) 스키마 (SPEC-B2B-001 Module 2 Phase 3)
+# ─────────────────────────────────────────────
+
+
+class ClientCreate(BaseModel):
+    """고객 등록 요청 스키마 (AC-003)
+
+    PII 필드는 서비스 레이어에서 암호화된 후 저장.
+    """
+
+    # 고객명 (서비스에서 암호화)
+    client_name: str
+    # 연락처 (서비스에서 암호화)
+    client_phone: str
+    # 이메일 (선택, 서비스에서 암호화)
+    client_email: str | None = None
+
+
+class ClientUpdate(BaseModel):
+    """고객 정보 수정 요청 스키마 (부분 업데이트)
+
+    변경된 PII 필드는 서비스 레이어에서 재암호화.
+    """
+
+    # 고객명 (선택)
+    client_name: str | None = None
+    # 연락처 (선택)
+    client_phone: str | None = None
+    # 이메일 (선택)
+    client_email: str | None = None
+    # 메모 (선택, 암호화 불필요)
+    notes: str | None = None
+
+
+class ClientResponse(BaseModel):
+    """고객 정보 응답 스키마 (복호화된 PII 포함)"""
+
+    # 고객 UUID
+    id: uuid.UUID
+    # 조직 UUID
+    org_id: uuid.UUID
+    # 담당 설계사 UUID
+    agent_id: uuid.UUID
+    # 고객명 (복호화된 값)
+    client_name: str
+    # 연락처 (복호화된 값)
+    client_phone: str
+    # 이메일 (복호화된 값, nullable)
+    client_email: str | None = None
+    # 동의 상태
+    consent_status: ConsentStatus
+    # 동의 일시 (nullable)
+    consent_date: datetime | None = None
+    # 메모
+    notes: str | None = None
+    # 생성 일시
+    created_at: datetime
+    # 수정 일시
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConsentUpdateRequest(BaseModel):
+    """동의 상태 업데이트 요청 스키마"""
+
+    # 변경할 동의 상태 (ACTIVE 또는 REVOKED)
+    consent_status: ConsentStatus
+
+
+class AnalyzeRequest(BaseModel):
+    """고객 분석 요청 스키마 (AC-003: ACTIVE 동의 필요)"""
+
+    # 분석 질의 텍스트
+    query: str
+
+
+class AnalysisHistoryResponse(BaseModel):
+    """분석 이력 응답 스키마"""
+
+    # 이력 UUID
+    id: uuid.UUID
+    # 분석 질의
+    query: str
+    # 분석 결과
+    result: str
+    # 분석 일시
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

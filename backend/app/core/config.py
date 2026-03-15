@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     # @MX:NOTE: Fernet 키는 base64url-encoded 32바이트여야 함. 빈 문자열이면 암호화 비활성화
     social_token_encryption_key: str = ""
 
+    # SPEC-B2B-001: B2B 고객 PII 암호화 키 (Fernet 대칭키, AC-003)
+    # @MX:WARN: 이 키를 분실하면 암호화된 고객 PII 복호화 불가 - 반드시 안전하게 보관
+    # @MX:REASON: PIPA(개인정보보호법) - 고객 PII 암호화 키 관리 의무
+    b2b_encryption_key: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

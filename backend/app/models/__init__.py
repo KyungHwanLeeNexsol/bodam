@@ -6,6 +6,7 @@ Alembic autogenerate 및 앱 전반에서 편리하게 임포트 가능.
 
 from __future__ import annotations
 
+from app.models.agent_client import AgentClient, ConsentStatus
 from app.models.api_key import APIKey
 from app.models.base import Base, TimestampMixin
 from app.models.chat import ChatMessage, ChatSession, MessageRole
@@ -61,4 +62,6 @@ __all__ = [
     "OrganizationMember",
     "OrgMemberRole",
     "APIKey",
+    "AgentClient",
+    "ConsentStatus",
 ]
