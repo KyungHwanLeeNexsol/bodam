@@ -16,8 +16,10 @@ interface SessionListProps {
   onSelectSession: (sessionId: string) => void
 }
 
+const DEFAULT_STATUS = { label: '활성', className: 'bg-green-100 text-green-700' } as const
+
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  active: { label: '활성', className: 'bg-green-100 text-green-700' },
+  active: DEFAULT_STATUS,
   expired: { label: '만료', className: 'bg-gray-100 text-gray-500' },
   deleted: { label: '삭제됨', className: 'bg-red-100 text-red-400 line-through' },
 }
@@ -121,7 +123,7 @@ export default function SessionList({ token, onSelectSession }: SessionListProps
       <h3 className="text-xs font-medium uppercase tracking-wide text-[#999]">이전 분석 세션</h3>
       <ul className="space-y-2" role="list" aria-label="분석 세션 목록">
         {sessions.map((session) => {
-          const statusInfo = STATUS_LABELS[session.status] ?? STATUS_LABELS.active
+          const statusInfo = STATUS_LABELS[session.status] ?? DEFAULT_STATUS
           const isDeleting = deletingId === session.id
           const isConfirming = confirmDeleteId === session.id
 

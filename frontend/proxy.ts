@@ -1,5 +1,5 @@
 /**
- * Next.js 미들웨어 - 인증 보호 라우트 (SPEC-AUTH-001 Module 5)
+ * Next.js Proxy - 인증 보호 라우트 (SPEC-AUTH-001 Module 5)
  *
  * /chat 경로는 인증이 필요함.
  * localStorage는 서버에서 접근 불가하므로 쿠키 기반 체크 사용.
@@ -14,7 +14,7 @@ const PROTECTED_PATHS = ['/chat', '/pdf']
 // 인증 없이 접근 가능한 경로 패턴
 const PUBLIC_PATHS = ['/login', '/register', '/']
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // 보호된 경로 확인
@@ -42,6 +42,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // 미들웨어 적용 경로 (정적 파일 제외)
+  // Proxy 적용 경로 (정적 파일 제외)
   matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
 }

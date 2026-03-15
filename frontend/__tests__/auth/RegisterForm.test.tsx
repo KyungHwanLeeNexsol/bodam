@@ -61,7 +61,7 @@ describe('RegisterForm', () => {
       fireEvent.change(emailInput, { target: { value: 'not-valid-email' } })
     }
 
-    const submitBtn = screen.getAllByRole('button')[0]
+    const submitBtn = screen.getAllByRole('button')[0]!
     fireEvent.click(submitBtn)
 
     await waitFor(() => {
