@@ -37,7 +37,7 @@ export default function EmptyState({ onSendQuestion }: EmptyStateProps) {
             key={question}
             onClick={() => onSendQuestion(question)}
             className={cn(
-              "rounded-[20px] border border-gray-200 bg-white px-4 py-2",
+              "cursor-pointer rounded-[20px] border border-gray-200 bg-white px-4 py-2",
               "text-sm text-[#1A1A1A] transition-colors",
               "hover:border-[#0D6E6E] hover:bg-[#0D6E6E]/5 hover:text-[#0D6E6E]",
               "focus:outline-none focus:ring-2 focus:ring-[#0D6E6E]/30"

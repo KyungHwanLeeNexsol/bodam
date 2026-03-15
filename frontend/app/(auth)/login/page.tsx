@@ -30,7 +30,9 @@ export default function LoginPage() {
       >
         {/* 로고 섹션 */}
         <div className="mb-6 flex flex-col items-center gap-2">
-          <Image src="/logo.png" alt="보담" width={120} height={40} priority />
+          <Link href="/" className="cursor-pointer">
+            <Image src="/logo.png" alt="보담" width={120} height={40} priority />
+          </Link>
           <p className="text-[13px] text-[#888888]">보험 보상 안내 플랫폼</p>
         </div>
 
@@ -57,7 +59,7 @@ export default function LoginPage() {
           {/* 회원가입 탭 (비활성) */}
           <Link
             href="/register"
-            className="flex-1 py-2 text-center text-sm font-medium text-[#AAAAAA] hover:text-[#1A1A1A] transition-colors"
+            className="flex-1 cursor-pointer py-2 text-center text-sm font-medium text-[#AAAAAA] hover:text-[#1A1A1A] transition-colors"
           >
             회원가입
           </Link>
@@ -69,7 +71,7 @@ export default function LoginPage() {
         {/* 하단 회원가입 링크 */}
         <p className="mt-6 text-center text-[13px] text-[#888888]">
           계정이 없으신가요?{' '}
-          <Link href="/register" className="font-semibold text-[#0D6E6E] hover:underline">
+          <Link href="/register" className="cursor-pointer font-semibold text-[#0D6E6E] hover:underline">
             회원가입
           </Link>
         </p>

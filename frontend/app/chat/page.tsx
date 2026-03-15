@@ -392,13 +392,14 @@ export default function ChatPage() {
           </MessageList>
         )}
 
-        {/* 채팅 입력창 (세션 선택 시만 표시) */}
-        {state.currentSessionId !== null && (
-          <ChatInput
-            onSend={(content) => void handleSendMessage(content)}
-            disabled={state.isStreaming}
-          />
-        )}
+        {/* 채팅 입력창 (항상 표시) */}
+        <ChatInput
+          onSend={(content) => state.currentSessionId !== null
+            ? void handleSendMessage(content)
+            : void handleSendQuestion(content)
+          }
+          disabled={state.isStreaming}
+        />
       </div>
     </ChatLayout>
   )

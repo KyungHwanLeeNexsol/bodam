@@ -56,7 +56,7 @@ export function SocialLoginButtons() {
           key={provider}
           type="button"
           onClick={() => handleSocialLogin(provider)}
-          className="w-full rounded-lg py-3 text-sm font-medium transition-opacity hover:opacity-80"
+          className="w-full cursor-pointer rounded-lg py-3 text-sm font-medium transition-opacity hover:opacity-80"
           style={{
             backgroundColor: bgColor,
             color: textColor,

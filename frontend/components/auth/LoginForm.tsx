@@ -127,14 +127,14 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full rounded-lg bg-[#0D6E6E] py-3 text-[15px] font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+        className="w-full cursor-pointer rounded-lg bg-[#0D6E6E] py-3 text-[15px] font-semibold text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isLoading ? '로그인 중...' : '로그인'}
       </button>
 
       {/* 비밀번호 찾기 */}
       <p className="text-center">
-        <a href="#" className="text-[13px] text-[#0D6E6E] hover:underline">
+        <a href="#" className="cursor-pointer text-[13px] text-[#0D6E6E] hover:underline">
           비밀번호를 잊으셨나요?
         </a>
       </p>
