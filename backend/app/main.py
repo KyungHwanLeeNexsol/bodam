@@ -55,10 +55,6 @@ async def lifespan(app: FastAPI):
         if _db.engine is not None:
             async with _db.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-                # create_all이 모델 타입과 다르게 생성한 컬럼 수정
-                await conn.execute(sa_text(
-                    "ALTER TABLE chat_sessions ALTER COLUMN user_id TYPE text USING user_id::text"
-                ))
             import logging
             logging.getLogger(__name__).info("Schema auto-repair: create_all completed")
     except Exception as e:

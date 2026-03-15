@@ -86,7 +86,7 @@ class ChatService:
             self._embedding_service = None
             self._vector_search = None
 
-    async def create_session(self, title: str = "새 대화", user_id: str | None = None) -> ChatSession:
+    async def create_session(self, title: str = "새 대화", user_id: str | uuid.UUID | None = None) -> ChatSession:
         """새 채팅 세션 생성
 
         Args:

@@ -53,12 +53,11 @@ class ChatSession(TimestampMixin, Base):
     )
 
     # 사용자 식별자 (nullable: 비로그인 사용자 지원)
-    user_id: Mapped[str | None] = mapped_column(
-        Text,
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
         nullable=True,
     )
 
-    def __init__(self, title: str = "새 대화", user_id: str | None = None, **kwargs):
+    def __init__(self, title: str = "새 대화", user_id: str | uuid.UUID | None = None, **kwargs):
         """ChatSession 초기화 (Python 레벨 기본값 설정)
 
         Args:
