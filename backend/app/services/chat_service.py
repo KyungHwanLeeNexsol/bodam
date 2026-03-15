@@ -15,12 +15,11 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-import openai
-from openai import AsyncOpenAI
 from sqlalchemy import select
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.services.llm.models import QueryIntent
+from app.services.llm.router import FallbackChain
 from app.services.rag.embeddings import EmbeddingService
 from app.services.rag.vector_store import VectorSearchService
 
@@ -73,7 +72,7 @@ class ChatService:
         self._settings = settings
         self._intent_classifier = intent_classifier
         self._guidance_service = guidance_service
-        self._openai_client = AsyncOpenAI(api_key=settings.openai_api_key or "dummy")
+        self._llm_chain = FallbackChain(settings)
         # API 키가 없는 경우 임베딩 서비스 초기화 스킵 (테스트 환경 등)
         if settings.openai_api_key:
             self._embedding_service = EmbeddingService(
@@ -200,23 +199,13 @@ class ChatService:
 
         messages.append({"role": "user", "content": user_content})
 
-        # OpenAI ChatCompletion 호출 (에러 처리 포함)
+        # LLM FallbackChain 호출 (Gemini → OpenAI 폴백)
         try:
-            response = await self._openai_client.chat.completions.create(
-                model=self._settings.chat_model,
-                messages=messages,
-                max_tokens=self._settings.chat_max_tokens,
-                temperature=self._settings.chat_temperature,
-            )
-            ai_content = response.choices[0].message.content or ""
-
-        except openai.APITimeoutError:
-            ai_content = "AI 서비스 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
-        except openai.AuthenticationError:
-            ai_content = "AI 서비스 연결에 실패했습니다."
-        except openai.APIError as e:
-            logger.error("OpenAI API 오류: %s", str(e))
-            ai_content = "AI 서비스에 일시적인 문제가 발생했습니다."
+            llm_response = await self._llm_chain.generate(messages)
+            ai_content = llm_response.content or ""
+        except Exception as e:
+            logger.error("LLM 호출 실패: %s", str(e))
+            ai_content = "AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요."
 
         # 출처 메타데이터 구성
         sources = [
@@ -322,19 +311,17 @@ class ChatService:
             for r in search_results
         ]
 
-        # 스트리밍 응답 생성
+        # LLM FallbackChain으로 응답 생성 (Gemini → OpenAI 폴백)
         full_content = ""
-        async with self._openai_client.chat.completions.stream(
-            model=self._settings.chat_model,
-            messages=messages,
-            max_tokens=self._settings.chat_max_tokens,
-            temperature=self._settings.chat_temperature,
-        ) as stream:
-            async for chunk in stream:
-                delta_content = chunk.choices[0].delta.content
-                if delta_content:
-                    full_content += delta_content
-                    yield {"type": "token", "content": delta_content}
+        try:
+            llm_response = await self._llm_chain.generate(messages)
+            full_content = llm_response.content or ""
+            # 전체 응답을 한번에 전송 (스트리밍 미지원 시)
+            yield {"type": "token", "content": full_content}
+        except Exception as e:
+            logger.error("LLM 스트리밍 호출 실패: %s", str(e))
+            full_content = "AI 서비스에 일시적인 문제가 발생했습니다."
+            yield {"type": "token", "content": full_content}
 
         # 의도 분류 및 분쟁 가이던스 분석
         intent_str_stream, confidence_stream = await self._classify_intent(content)
