@@ -1,4 +1,4 @@
-import type { SSEEvent } from "@/lib/types/chat"
+import type { GuidanceData, SSEEvent } from "@/lib/types/chat"
 
 /**
  * SSE(Server-Sent Events) 스트림을 파싱하여 이벤트 콜백을 호출합니다.
@@ -127,6 +127,13 @@ function parseSSEEvent(data: unknown): SSEEvent | null {
           typeof (s as Record<string, unknown>)["company_name"] === "string"
       )
       return { type: "sources", content: sources }
+    }
+
+    case "guidance": {
+      if (!obj["content"] || typeof obj["content"] !== "object") {
+        return null
+      }
+      return { type: "guidance", content: obj["content"] as GuidanceData }
     }
 
     case "done": {

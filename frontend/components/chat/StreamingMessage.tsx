@@ -1,16 +1,18 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import type { Source } from "@/lib/types/chat"
+import type { GuidanceData, Source } from "@/lib/types/chat"
+import GuidanceCard from "./GuidanceCard"
 
 interface StreamingMessageProps {
   content: string
   sources?: Source[]
+  guidance?: GuidanceData
 }
 
 // @MX:NOTE: 스트리밍 중인 어시스턴트 메시지를 표시하는 컴포넌트
 // 빈 content일 때는 타이핑 인디케이터(세 점)를 표시
-export default function StreamingMessage({ content, sources: _sources }: StreamingMessageProps) {
+export default function StreamingMessage({ content, sources: _sources, guidance }: StreamingMessageProps) {
   const isEmpty = content.length === 0
 
   return (
@@ -36,6 +38,9 @@ export default function StreamingMessage({ content, sources: _sources }: Streami
             </p>
           )}
         </div>
+
+        {/* 분쟁 가이던스 카드 (스트리밍 중 표시) */}
+        {guidance && <GuidanceCard guidance={guidance} />}
       </div>
     </div>
   )

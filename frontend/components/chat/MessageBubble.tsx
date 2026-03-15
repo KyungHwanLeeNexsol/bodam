@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/lib/types/chat"
 import SourcesCard from "./SourcesCard"
+import GuidanceCard from "./GuidanceCard"
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -32,6 +33,8 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     message.role === "assistant" &&
     message.metadata?.sources !== undefined &&
     message.metadata.sources.length > 0
+  const hasGuidance =
+    message.role === "assistant" && message.metadata?.guidance !== undefined
 
   return (
     <div
@@ -64,6 +67,11 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         {/* 참고 약관 출처 카드 (어시스턴트 메시지에만 표시) */}
         {hasSources && message.metadata?.sources && (
           <SourcesCard sources={message.metadata.sources} />
+        )}
+
+        {/* 분쟁 가이던스 카드 (어시스턴트 메시지에만 표시) */}
+        {hasGuidance && message.metadata?.guidance && (
+          <GuidanceCard guidance={message.metadata.guidance} />
         )}
 
         {/* 타임스탬프 */}

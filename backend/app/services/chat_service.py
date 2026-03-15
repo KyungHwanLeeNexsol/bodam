@@ -20,6 +20,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import select
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
+from app.services.llm.models import QueryIntent
 from app.services.rag.embeddings import EmbeddingService
 from app.services.rag.vector_store import VectorSearchService
 
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.core.config import Settings
+    from app.services.guidance.guidance_service import GuidanceService
+    from app.services.llm.classifier import IntentClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +54,25 @@ class ChatService:
     # # @MX:ANCHOR: [AUTO] ChatService는 채팅 API의 핵심 서비스
     # # @MX:REASON: 채팅 API 라우터, 스트리밍 엔드포인트 등 여러 호출자가 사용
 
-    def __init__(self, db: AsyncSession, settings: Settings) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        settings: Settings,
+        intent_classifier: IntentClassifier | None = None,
+        guidance_service: GuidanceService | None = None,
+    ) -> None:
         """ChatService 초기화
 
         Args:
             db: SQLAlchemy 비동기 세션
             settings: 애플리케이션 설정
+            intent_classifier: 의도 분류기 (선택, None이면 분류 미수행)
+            guidance_service: 분쟁 가이던스 서비스 (선택, None이면 가이던스 미수행)
         """
         self._db = db
         self._settings = settings
+        self._intent_classifier = intent_classifier
+        self._guidance_service = guidance_service
         self._openai_client = AsyncOpenAI(api_key=settings.openai_api_key or "dummy")
         # API 키가 없는 경우 임베딩 서비스 초기화 스킵 (테스트 환경 등)
         if settings.openai_api_key:
@@ -216,6 +229,10 @@ class ChatService:
             for r in search_results
         ]
 
+        # 의도 분류 및 분쟁 가이던스 분석
+        intent_str, confidence = await self._classify_intent(content)
+        guidance_data = await self._analyze_guidance(content, intent_str, confidence)
+
         # AI 응답 메시지 저장 (확장된 메타데이터)
         assistant_msg = ChatMessage(
             session_id=session_id,
@@ -224,11 +241,13 @@ class ChatService:
             metadata_={
                 "model": self._settings.chat_model,
                 "sources": sources,
-                # 새 파이프라인 필드 (기본값으로 초기화)
-                "intent": None,
+                # 의도 분류 결과
+                "intent": intent_str,
                 "cost": 0.0,
                 "tokens": 0,
-                "confidence": 0.0,
+                "confidence": confidence,
+                # 분쟁 가이던스 (해당하는 경우만 포함)
+                "guidance": guidance_data,
             },
         )
         self._db.add(assistant_msg)
@@ -317,8 +336,16 @@ class ChatService:
                     full_content += delta_content
                     yield {"type": "token", "content": delta_content}
 
+        # 의도 분류 및 분쟁 가이던스 분석
+        intent_str_stream, confidence_stream = await self._classify_intent(content)
+        guidance_data_stream = await self._analyze_guidance(content, intent_str_stream, confidence_stream)
+
         # 출처 이벤트 전송
         yield {"type": "sources", "content": sources}
+
+        # guidance 이벤트 전송 (sources 이후, done 이전)
+        if guidance_data_stream is not None:
+            yield {"type": "guidance", "content": guidance_data_stream}
 
         # AI 응답 메시지 저장 (전체 내용, 확장된 메타데이터)
         assistant_msg = ChatMessage(
@@ -328,11 +355,13 @@ class ChatService:
             metadata_={
                 "model": self._settings.chat_model,
                 "sources": sources,
-                # 새 파이프라인 필드 (기본값으로 초기화)
-                "intent": None,
+                # 의도 분류 결과
+                "intent": intent_str_stream,
                 "cost": 0.0,
                 "tokens": 0,
-                "confidence": 0.0,
+                "confidence": confidence_stream,
+                # 분쟁 가이던스 (해당하는 경우만 포함)
+                "guidance": guidance_data_stream,
             },
         )
         self._db.add(assistant_msg)
@@ -340,6 +369,56 @@ class ChatService:
 
         # 완료 이벤트 전송
         yield {"type": "done", "message_id": str(assistant_msg.id)}
+
+    async def _classify_intent(self, content: str) -> tuple[str | None, float]:
+        """쿼리 의도 분류 (classifier 미주입 시 None 반환)
+
+        Args:
+            content: 분류할 사용자 쿼리
+
+        Returns:
+            (intent_str, confidence) 튜플.
+            classifier 없으면 (None, 0.0) 반환.
+            오류 발생 시 (general_qa, 0.0) 폴백.
+        """
+        if self._intent_classifier is None:
+            return None, 0.0
+        try:
+            result = await self._intent_classifier.classify(content)
+            return str(result.intent), result.confidence
+        except Exception as e:
+            logger.error("의도 분류 오류 발생, general_qa로 폴백: %s", str(e))
+            return str(QueryIntent.GENERAL_QA), 0.0
+
+    async def _analyze_guidance(
+        self,
+        content: str,
+        intent_str: str | None,
+        confidence: float,
+    ) -> dict | None:
+        """분쟁 가이던스 분석 (dispute_guidance + confidence >= 0.6인 경우)
+
+        Args:
+            content: 분석할 사용자 쿼리
+            intent_str: 분류된 의도 문자열
+            confidence: 분류 신뢰도
+
+        Returns:
+            DisputeAnalysisResponse.model_dump() 딕셔너리 또는 None.
+            분석 불필요 또는 오류 시 None 반환.
+        """
+        if (
+            intent_str != str(QueryIntent.DISPUTE_GUIDANCE)
+            or confidence < 0.6
+            or self._guidance_service is None
+        ):
+            return None
+        try:
+            result = await self._guidance_service.analyze_dispute(content)
+            return result.model_dump()
+        except Exception as e:
+            logger.error("분쟁 가이던스 분석 오류 발생: %s", str(e))
+            return None
 
     def _get_chat_history(
         self,

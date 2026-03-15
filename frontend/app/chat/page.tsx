@@ -20,6 +20,8 @@ import {
 import type {
   ChatMessage,
   ChatSessionListItem,
+  GuidanceData,
+  MessageMetadata,
   Source,
   SSEEvent,
 } from "@/lib/types/chat"
@@ -36,6 +38,7 @@ interface ChatState {
   isStreaming: boolean
   streamingContent: string
   streamingSources: Source[]
+  streamingGuidance: GuidanceData | null
   error: string | null
   sidebarOpen: boolean
 }
@@ -48,6 +51,7 @@ type ChatAction =
   | { type: "START_STREAMING" }
   | { type: "APPEND_TOKEN"; token: string }
   | { type: "SET_SOURCES"; sources: Source[] }
+  | { type: "SET_GUIDANCE"; guidance: GuidanceData }
   | { type: "END_STREAMING"; message: ChatMessage }
   | { type: "SET_ERROR"; error: string }
   | { type: "CLEAR_ERROR" }
@@ -66,6 +70,7 @@ const initialState: ChatState = {
   isStreaming: false,
   streamingContent: "",
   streamingSources: [],
+  streamingGuidance: null,
   error: null,
   sidebarOpen: false,
 }
@@ -82,17 +87,20 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "ADD_MESSAGE":
       return { ...state, messages: [...state.messages, action.message] }
     case "START_STREAMING":
-      return { ...state, isStreaming: true, streamingContent: "", streamingSources: [] }
+      return { ...state, isStreaming: true, streamingContent: "", streamingSources: [], streamingGuidance: null }
     case "APPEND_TOKEN":
       return { ...state, streamingContent: state.streamingContent + action.token }
     case "SET_SOURCES":
       return { ...state, streamingSources: action.sources }
+    case "SET_GUIDANCE":
+      return { ...state, streamingGuidance: action.guidance }
     case "END_STREAMING":
       return {
         ...state,
         isStreaming: false,
         streamingContent: "",
         streamingSources: [],
+        streamingGuidance: null,
         messages: [...state.messages, action.message],
       }
     case "SET_ERROR":
@@ -125,6 +133,7 @@ export default function ChatPage() {
   // @MX:NOTE: stale closure 방지를 위해 ref로 스트리밍 진행 중 값 추적
   const streamingContentRef = useRef("")
   const streamingSourcesRef = useRef<Source[]>([])
+  const streamingGuidanceRef = useRef<GuidanceData | null>(null)
 
   // 메시지 또는 스트리밍 내용 변경 시 자동 스크롤
   useEffect(() => {
@@ -167,16 +176,27 @@ export default function ChatPage() {
             streamingSourcesRef.current = event.content
             dispatch({ type: "SET_SOURCES", sources: event.content })
             break
+          case "guidance":
+            streamingGuidanceRef.current = event.content
+            dispatch({ type: "SET_GUIDANCE", guidance: event.content })
+            break
           case "done": {
+            const metadata: MessageMetadata | null =
+              streamingSourcesRef.current.length > 0 || streamingGuidanceRef.current !== null
+                ? {
+                    sources:
+                      streamingSourcesRef.current.length > 0
+                        ? streamingSourcesRef.current
+                        : undefined,
+                    guidance: streamingGuidanceRef.current ?? undefined,
+                  }
+                : null
             const assistantMessage: ChatMessage = {
               id: event.message_id,
               session_id: sessionId,
               role: "assistant",
               content: streamingContentRef.current,
-              metadata:
-                streamingSourcesRef.current.length > 0
-                  ? { sources: streamingSourcesRef.current }
-                  : null,
+              metadata,
               created_at: new Date().toISOString(),
             }
             dispatch({ type: "END_STREAMING", message: assistantMessage })
@@ -196,6 +216,7 @@ export default function ChatPage() {
       // 스트리밍 ref 초기화
       streamingContentRef.current = ""
       streamingSourcesRef.current = []
+      streamingGuidanceRef.current = null
 
       // 사용자 메시지 낙관적 추가
       const userMessage: ChatMessage = {
@@ -364,6 +385,7 @@ export default function ChatPage() {
               <StreamingMessage
                 content={state.streamingContent}
                 sources={state.streamingSources}
+                guidance={state.streamingGuidance ?? undefined}
               />
             )}
             <div ref={messagesEndRef} />
