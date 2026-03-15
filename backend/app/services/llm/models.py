@@ -19,6 +19,8 @@ class QueryIntent(StrEnum):
     CLAIM_GUIDANCE = "claim_guidance"
     # 일반 질의응답 의도
     GENERAL_QA = "general_qa"
+    # 보험 분쟁 가이던스 의도
+    DISPUTE_GUIDANCE = "dispute_guidance"
 
 
 class LLMProviderType(StrEnum):

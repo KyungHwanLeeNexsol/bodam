@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.models.agent_client import AgentClient, ConsentStatus
 from app.models.api_key import APIKey
 from app.models.base import Base, TimestampMixin
+from app.models.case_precedent import CasePrecedent
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.models.crawler import CrawlResult, CrawlResultStatus, CrawlRun, CrawlStatus
 from app.models.insurance import (
@@ -66,4 +67,5 @@ __all__ = [
     "AgentClient",
     "ConsentStatus",
     "UsageRecord",
+    "CasePrecedent",
 ]
