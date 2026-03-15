@@ -1,6 +1,7 @@
-"""B2B 도메인 Pydantic 스키마 (SPEC-B2B-001 Phase 1)
+"""B2B 도메인 Pydantic 스키마 (SPEC-B2B-001 Phase 1, Module 4)
 
 조직 생성/응답/업데이트, 조직 멤버, B2B 회원가입 스키마 정의.
+API Key 생성/응답 스키마 포함.
 """
 
 from __future__ import annotations
@@ -136,3 +137,56 @@ class B2BRegistrationRequest(BaseModel):
     def validate_full_name_no_xss(cls, v: str | None) -> str | None:
         """full_name에서 XSS 패턴을 검사한다"""
         return sanitize_input(v)
+
+
+# ─────────────────────────────────────────────
+# API Key 스키마 (SPEC-B2B-001 Module 4)
+# ─────────────────────────────────────────────
+
+
+class APIKeyCreate(BaseModel):
+    """API 키 생성 요청 스키마 (AC-007)"""
+
+    # 키 이름/설명
+    name: str
+    # 허용할 스코프 목록 (예: ["read", "write", "analysis", "admin"])
+    scopes: list[str]
+
+
+class APIKeyResponse(BaseModel):
+    """API 키 응답 스키마 (마스킹된 키 정보만 포함)
+
+    AC-007: 목록 조회 시 마스킹된 키만 표시 (key_hash 미포함)
+    """
+
+    # 키 UUID
+    id: uuid.UUID
+    # 키 접두사 (예: "bdk_")
+    key_prefix: str
+    # 마지막 4자리 (사용자 확인용)
+    key_last4: str
+    # 키 이름/설명
+    name: str
+    # 허용된 스코프 목록
+    scopes: list[str]
+    # 활성 상태
+    is_active: bool
+    # 마지막 사용 시각 (nullable)
+    last_used_at: datetime | None = None
+    # 생성 일시
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class APIKeyFullResponse(APIKeyResponse):
+    """API 키 생성 응답 스키마 (전체 키 포함)
+
+    AC-007: 생성 시 한 번만 full_key 반환
+    이후 조회에서는 APIKeyResponse를 사용하여 마스킹된 정보만 제공
+    """
+
+    # 전체 API 키 (생성 시 한 번만 반환)
+    # @MX:WARN: 이 값은 생성 응답에만 포함되며 DB에는 저장되지 않음
+    # @MX:REASON: 보안 요구사항 - 전체 키는 한 번만 노출
+    full_key: str

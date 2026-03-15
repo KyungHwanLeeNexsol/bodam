@@ -1,6 +1,7 @@
 """API 의존성 함수 (SPEC-AUTH-001 Module 4, SPEC-B2B-001)
 
 FastAPI 의존성 주입: 현재 인증된 사용자 조회 및 역할 기반 접근 제어.
+API 키 인증 (X-API-Key 헤더) 지원 포함.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from fastapi import Depends, HTTPException
+from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,8 @@ from app.core.security import decode_access_token
 from app.models.user import User, UserRole
 
 if TYPE_CHECKING:
+    from app.models.api_key import APIKey
+    from app.models.organization import Organization
     from app.models.organization_member import OrganizationMember
 
 # Bearer 토큰 추출기 (auto_error=False: 401 자동 반환 대신 None 반환)
@@ -166,3 +169,95 @@ async def get_current_org_user(
         )
 
     return user, org_member
+
+
+# @MX:ANCHOR: JWT 또는 API 키 인증 의존성 - B2B API 엔드포인트에서 사용
+# @MX:REASON: X-API-Key 헤더와 Bearer JWT 두 가지 인증 방식 지원
+async def get_current_user_or_api_key(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> tuple[User | None, APIKey | None, Organization | None]:
+    """JWT 또는 API 키로 인증하는 의존성.
+
+    Bearer JWT를 먼저 확인하고, 없으면 X-API-Key 헤더를 확인한다.
+
+    Args:
+        credentials: HTTP Bearer 자격증명 (JWT)
+        x_api_key: X-API-Key 헤더 값
+        db: 비동기 DB 세션
+        settings: 애플리케이션 설정
+
+    Returns:
+        (User | None, APIKey | None, Organization | None) 튜플
+        JWT 인증 시: (User, None, None)
+        API 키 인증 시: (None, APIKey, Organization)
+
+    Raises:
+        HTTPException 401: 인증 수단이 없거나 유효하지 않음
+    """
+    # Bearer JWT 우선 확인
+    if credentials is not None:
+        user = await _get_user_from_token(
+            credentials=credentials,
+            db=db,
+            settings=settings,
+        )
+        return user, None, None
+
+    # X-API-Key 헤더 확인
+    if x_api_key is not None:
+        from app.services.b2b.api_key_service import APIKeyService
+
+        service = APIKeyService(db=db)
+        api_key, organization = await service.validate_api_key(raw_key=x_api_key)
+        return None, api_key, organization
+
+    # 인증 수단 없음
+    raise HTTPException(status_code=401, detail="인증이 필요합니다.")
+
+
+def require_scope(*scopes: str) -> Callable:
+    """스코프 기반 접근 제어 의존성 (SPEC-B2B-001 Module 4)
+
+    허용된 스코프 목록을 받아 API 키의 스코프를 검사하는 의존성을 반환한다.
+    JWT 인증 사용자의 경우 스코프 검사를 건너뛴다.
+
+    Args:
+        *scopes: 필요한 스코프 목록
+
+    Returns:
+        스코프 검사 의존성 함수
+
+    Example:
+        @router.get("/data", dependencies=[Depends(require_scope("read"))])
+    """
+
+    async def _check_scope(api_key: APIKey | None = None) -> APIKey | None:
+        """API 키의 스코프를 검사한다.
+
+        Args:
+            api_key: 현재 인증된 API 키 (None이면 JWT 인증으로 간주)
+
+        Returns:
+            스코프 검증을 통과한 APIKey 또는 None
+
+        Raises:
+            HTTPException 403: 필요한 스코프가 없음 (AC-008)
+        """
+        # API 키가 없으면 JWT 인증 사용자로 간주 -> 스코프 검사 건너뜀
+        if api_key is None:
+            return None
+
+        # 각 필요 스코프를 API 키 스코프에서 확인
+        for scope in scopes:
+            if scope not in api_key.scopes:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"해당 API 키에 '{scope}' 권한이 없습니다.",
+                )
+
+        return api_key
+
+    return _check_scope
