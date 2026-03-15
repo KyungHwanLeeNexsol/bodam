@@ -11,7 +11,7 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>(({ children }, 
   return (
     <div
       ref={ref}
-      className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4"
+      className="flex flex-1 flex-col gap-6 overflow-y-auto bg-[#F8FAFC] px-8 py-6"
     >
       {children}
     </div>

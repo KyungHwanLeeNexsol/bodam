@@ -350,11 +350,16 @@ export default function ChatPage() {
     </>
   )
 
+  const currentSessionTitle = state.currentSessionId
+    ? state.sessions.find((s) => s.id === state.currentSessionId)?.title ?? null
+    : null
+
   return (
     <ChatLayout
       sidebar={sidebarContent}
       sidebarOpen={state.sidebarOpen}
       onToggleSidebar={() => dispatch({ type: "TOGGLE_SIDEBAR" })}
+      sessionTitle={currentSessionTitle}
     >
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* 오류 배너 */}

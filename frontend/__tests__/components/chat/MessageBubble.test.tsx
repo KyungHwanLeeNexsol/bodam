@@ -19,16 +19,15 @@ describe('MessageBubble', () => {
     it('사용자 메시지를 오른쪽 정렬로 렌더링한다', () => {
       const message = makeMessage({ role: 'user', content: '안녕하세요!' })
       const { container } = render(<MessageBubble message={message} />)
-      // 사용자 메시지는 오른쪽 정렬 클래스를 가진다
       const wrapper = container.firstChild as HTMLElement
       expect(wrapper.className).toContain('justify-end')
     })
 
-    it('사용자 메시지 배경색은 브랜드 틸 색상이다', () => {
+    it('사용자 메시지 배경색은 브랜드 블루 색상이다', () => {
       const message = makeMessage({ role: 'user', content: '안녕하세요!' })
       render(<MessageBubble message={message} />)
       const bubble = screen.getByText('안녕하세요!').closest('div')
-      expect(bubble?.className).toContain('bg-[#0D6E6E]')
+      expect(bubble?.className).toContain('bg-[#2563EB]')
     })
 
     it('사용자 메시지 내용을 표시한다', () => {
@@ -39,11 +38,12 @@ describe('MessageBubble', () => {
   })
 
   describe('어시스턴트 메시지', () => {
-    it('어시스턴트 메시지를 왼쪽 정렬로 렌더링한다', () => {
+    it('어시스턴트 메시지에 AI 아바타를 표시한다', () => {
       const message = makeMessage({ role: 'assistant', content: '안녕하세요! 도움이 필요하신가요?' })
       const { container } = render(<MessageBubble message={message} />)
-      const wrapper = container.firstChild as HTMLElement
-      expect(wrapper.className).toContain('justify-start')
+      // AI 아바타 (bg-[#4F46E5] 원형)
+      const avatar = container.querySelector('.bg-\\[\\#4F46E5\\]')
+      expect(avatar).toBeInTheDocument()
     })
 
     it('어시스턴트 메시지 배경색은 흰색이다', () => {
@@ -70,7 +70,6 @@ describe('MessageBubble', () => {
         },
       })
       render(<MessageBubble message={message} />)
-      // SourcesCard는 "참고 약관" 텍스트를 포함한다
       expect(screen.getByText(/참고 약관/)).toBeInTheDocument()
     })
 
@@ -82,11 +81,12 @@ describe('MessageBubble', () => {
   })
 
   describe('타임스탬프', () => {
-    it('타임스탬프를 표시한다', () => {
-      const message = makeMessage({ created_at: new Date().toISOString() })
+    it('시간 형식으로 타임스탬프를 표시한다', () => {
+      const date = new Date()
+      date.setHours(14, 30, 0, 0)
+      const message = makeMessage({ created_at: date.toISOString() })
       render(<MessageBubble message={message} />)
-      // "방금 전" 텍스트가 나타나야 한다
-      expect(screen.getByText('방금 전')).toBeInTheDocument()
+      expect(screen.getByText('오후 2:30')).toBeInTheDocument()
     })
   })
 })

@@ -1,11 +1,17 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import { Paperclip, Send } from "lucide-react"
+import { Paperclip, Send, Bone, Car, Receipt } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const MAX_CHARS = 5000
 const COUNTER_THRESHOLD = 4000
+
+const QUICK_CHIPS = [
+  { label: "인공관절 수술", icon: Bone },
+  { label: "교통사고 입원", icon: Car },
+  { label: "실손보험 청구", icon: Receipt },
+] as const
 
 interface ChatInputProps {
   onSend: (content: string) => void
@@ -53,20 +59,36 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
   const canSend = value.trim().length > 0 && !disabled
 
   return (
-    <div className="border-t border-[#E5E5E5] bg-white px-8 pb-5 pt-3">
+    <div className="border-t border-[#E2E8F0] bg-white px-8 pb-5 pt-3">
+      {/* Quick Chips */}
+      <div className="flex gap-2 pb-3">
+        {QUICK_CHIPS.map(({ label, icon: Icon }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onSend(label)}
+            disabled={disabled}
+            className="flex items-center gap-1.5 rounded-[20px] border border-[#E2E8F0] px-3.5 py-2 text-[13px] text-[#475569] transition-colors hover:border-[#2563EB] hover:bg-[#EEF2FF] hover:text-[#2563EB] disabled:opacity-50"
+          >
+            <Icon className="h-3.5 w-3.5 text-[#2563EB]" />
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* 입력 행: 첨부 + 텍스트 + 전송 */}
       <div className="flex items-center gap-2.5">
         {/* 첨부 버튼 */}
         <button
           type="button"
-          className="flex h-[42px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-[10px] border border-[#E5E5E5] text-[#666666] transition-colors hover:bg-[#FAFAFA]"
+          className="flex h-[42px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-[10px] border border-[#E2E8F0] text-[#475569] transition-colors hover:bg-[#F8FAFC]"
           aria-label="파일 첨부"
         >
           <Paperclip className="h-5 w-5" />
         </button>
 
         {/* 텍스트 입력 */}
-        <div className="flex flex-1 items-center rounded-[10px] border border-[#E5E5E5] bg-[#FAFAFA] px-4">
+        <div className="flex flex-1 items-center rounded-[10px] border border-[#E2E8F0] bg-[#F8FAFC] px-4">
           <textarea
             ref={textareaRef}
             value={value}
@@ -76,7 +98,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
             placeholder="보험에 대해 궁금한 점을 물어보세요..."
             rows={1}
             className={cn(
-              "h-[42px] max-h-[136px] flex-1 resize-none bg-transparent py-2.5 text-sm text-[#1A1A1A] outline-none placeholder:text-[#999999]",
+              "h-[42px] max-h-[136px] flex-1 resize-none bg-transparent py-2.5 text-sm text-[#0F172A] outline-none placeholder:text-[#94A3B8]",
               disabled && "cursor-not-allowed opacity-50"
             )}
             aria-label="메시지 입력"
@@ -90,8 +112,8 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
           className={cn(
             "flex h-[42px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-[10px] transition-colors",
             canSend
-              ? "bg-[#0D6E6E] text-white hover:bg-[#0B5E5E]"
-              : "cursor-not-allowed bg-[#E5E5E5] text-[#999999]"
+              ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
+              : "cursor-not-allowed bg-[#E2E8F0] text-[#94A3B8]"
           )}
           aria-label="전송"
         >
@@ -104,7 +126,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
         <p
           className={cn(
             "mt-1 text-right text-xs",
-            value.length >= MAX_CHARS ? "text-red-500" : "text-[#666666]"
+            value.length >= MAX_CHARS ? "text-red-500" : "text-[#94A3B8]"
           )}
         >
           {value.length} / {MAX_CHARS}
@@ -112,7 +134,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
       )}
 
       {/* 면책 문구 */}
-      <p className="mt-3 text-center text-[11px] text-[#999999]">
+      <p className="mt-3 text-center text-[11px] text-[#94A3B8]">
         보담은 참고용 정보를 제공하며, 정확한 보상 여부는 보험사에 확인하세요.
       </p>
     </div>

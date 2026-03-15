@@ -11,7 +11,14 @@ describe('ChatInput', () => {
 
     it('전송 버튼을 렌더링한다', () => {
       render(<ChatInput onSend={vi.fn()} />)
-      expect(screen.getByRole('button')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '전송' })).toBeInTheDocument()
+    })
+
+    it('Quick Chips를 렌더링한다', () => {
+      render(<ChatInput onSend={vi.fn()} />)
+      expect(screen.getByText('인공관절 수술')).toBeInTheDocument()
+      expect(screen.getByText('교통사고 입원')).toBeInTheDocument()
+      expect(screen.getByText('실손보험 청구')).toBeInTheDocument()
     })
   })
 
@@ -57,8 +64,15 @@ describe('ChatInput', () => {
       render(<ChatInput onSend={onSend} />)
       const textarea = screen.getByRole('textbox')
       fireEvent.change(textarea, { target: { value: '버튼 전송 테스트' } })
-      fireEvent.click(screen.getByRole('button'))
+      fireEvent.click(screen.getByRole('button', { name: '전송' }))
       expect(onSend).toHaveBeenCalledWith('버튼 전송 테스트')
+    })
+
+    it('Quick Chip 클릭 시 onSend를 호출한다', () => {
+      const onSend = vi.fn()
+      render(<ChatInput onSend={onSend} />)
+      fireEvent.click(screen.getByText('인공관절 수술'))
+      expect(onSend).toHaveBeenCalledWith('인공관절 수술')
     })
   })
 
@@ -84,7 +98,6 @@ describe('ChatInput', () => {
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
       const tooLongText = 'a'.repeat(5001)
       fireEvent.change(textarea, { target: { value: tooLongText } })
-      // 5000자까지만 허용하거나 전송 불가
       expect(textarea.value.length).toBeLessThanOrEqual(5000)
     })
   })
@@ -98,7 +111,7 @@ describe('ChatInput', () => {
 
     it('disabled 시 전송 버튼이 비활성화된다', () => {
       render(<ChatInput onSend={vi.fn()} disabled />)
-      const button = screen.getByRole('button') as HTMLButtonElement
+      const button = screen.getByRole('button', { name: '전송' }) as HTMLButtonElement
       expect(button.disabled).toBe(true)
     })
 
