@@ -1,74 +1,63 @@
 #!/bin/sh
 
-echo "=== Schema migration fix ==="
+echo "=== Schema auto-repair ==="
 
-# stamp head로 인해 누락된 테이블/컬럼을 직접 생성 (일회성 복구)
-# alembic 버전은 건드리지 않음 - 이미 head로 되어있을 수 있으므로
+# SQLAlchemy create_all(checkfirst=True)로 누락된 테이블 자동 생성
+# 이미 존재하는 테이블은 건너뜀
 uv run python -c "
 import asyncio, os
 
-async def fix_schema():
-    import asyncpg
-    url = os.environ.get('DATABASE_URL', '').replace('postgresql+asyncpg://', 'postgresql://')
+async def repair_schema():
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    url = os.environ.get('DATABASE_URL', '')
     if not url:
         print('DATABASE_URL not set, skipping')
         return
-    conn = await asyncpg.connect(url)
+
+    # 모든 모델 임포트 (Base.metadata에 등록)
+    from app.models.base import Base
+    from app.models import user, social_account, chat, insurance, crawler, pdf
+    from app.models import organization, organization_member, case_precedent, usage_record
+
+    # ENUM 타입 먼저 생성 (IF NOT EXISTS)
+    import asyncpg
+    sync_url = url.replace('postgresql+asyncpg://', 'postgresql://')
+    conn = await asyncpg.connect(sync_url)
     try:
-        # social_accounts 테이블 존재 여부
-        sa_table = await conn.fetchrow(
-            \"SELECT 1 FROM information_schema.tables WHERE table_name='social_accounts'\"
-        )
-        if not sa_table:
-            print('Creating missing table: social_accounts')
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS social_accounts (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    provider VARCHAR(20) NOT NULL,
-                    provider_user_id VARCHAR(255) NOT NULL,
-                    provider_email VARCHAR(255),
-                    provider_name VARCHAR(100),
-                    access_token TEXT,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    UNIQUE(provider, provider_user_id)
-                )
-            ''')
-            await conn.execute('CREATE INDEX IF NOT EXISTS ix_social_accounts_user_id ON social_accounts(user_id)')
-            await conn.execute('CREATE INDEX IF NOT EXISTS ix_social_provider_email ON social_accounts(provider, provider_email)')
-            print('social_accounts table created')
+        for enum_sql in [
+            \"DO \$\$ BEGIN CREATE TYPE userrole AS ENUM ('B2C_USER','AGENT','AGENT_ADMIN','ORG_OWNER','SYSTEM_ADMIN'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE orgtype AS ENUM ('GA','INDEPENDENT','CORPORATE'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE plantype AS ENUM ('FREE_TRIAL','BASIC','PROFESSIONAL','ENTERPRISE'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE orgmemberrole AS ENUM ('ORG_OWNER','AGENT_ADMIN','AGENT'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE consentstatus AS ENUM ('PENDING','ACTIVE','REVOKED'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+        ]:
+            await conn.execute(enum_sql)
 
-        # role 컬럼 존재 여부
-        role_col = await conn.fetchrow(
-            \"SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role'\"
-        )
-        if not role_col:
-            print('Adding missing column: users.role')
-            await conn.execute(\"ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'B2C_USER'\")
-            print('users.role column added')
+        # hashed_password nullable 보장
+        await conn.execute('ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL')
 
-        # hashed_password nullable 확인
-        hp_col = await conn.fetchrow(
-            \"SELECT is_nullable FROM information_schema.columns WHERE table_name='users' AND column_name='hashed_password'\"
-        )
-        if hp_col and hp_col['is_nullable'] == 'NO':
-            print('Making hashed_password nullable')
-            await conn.execute('ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL')
-            print('hashed_password is now nullable')
-
-        print('Schema OK')
+        # role 컬럼 추가 (없으면)
+        role = await conn.fetchrow(\"SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role'\")
+        if not role:
+            await conn.execute(\"ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'B2C_USER'\")
+    except Exception as e:
+        print(f'Pre-fix warning: {e}')
     finally:
         await conn.close()
 
-asyncio.run(fix_schema())
-" 2>&1 || echo "WARN: Schema fix failed, continuing..."
+    # create_all: 누락 테이블 자동 생성 (checkfirst=True가 기본값)
+    engine = create_async_engine(url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    await engine.dispose()
+    print('All missing tables created')
 
-echo "=== Running alembic migrations ==="
+asyncio.run(repair_schema())
+" 2>&1 || echo "WARN: Schema repair failed, continuing..."
+
+echo "=== Alembic stamp head ==="
 uv run alembic stamp head 2>&1 || true
-uv run alembic upgrade head 2>&1 || {
-    echo "WARN: Alembic migration failed, starting app anyway..."
-}
 
 echo "=== Starting uvicorn ==="
 exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
