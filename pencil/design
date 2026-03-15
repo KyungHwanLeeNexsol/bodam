@@ -36,6 +36,10 @@
               "type": "ref",
               "ref": "ZLSdm",
               "name": "headerLogo",
+              "width": "fit_content",
+              "height": "fit_content",
+              "x": 80,
+              "y": 20,
               "descendants": {
                 "N2VMr": {
                   "width": 32,
@@ -44,10 +48,15 @@
                 },
                 "BIgTI": {
                   "width": 18,
-                  "height": 20
+                  "height": 20,
+                  "x": 7,
+                  "y": 6
                 },
                 "hJerW": {
-                  "fontSize": 22
+                  "fontSize": 22,
+                  "x": 42,
+                  "y": 0,
+                  "rotation": 0
                 }
               }
             },
@@ -228,7 +237,8 @@
                   "content": "복잡한 보험 약관을 보담이 분석하여 보상 가능 여부와 예상 금액을 빠르고 정확하게 안내해드립니다. 더 이상 어렵게 찾아보지 마세요.",
                   "lineHeight": 1.6,
                   "fontFamily": "Inter",
-                  "fontSize": 16
+                  "fontSize": 16,
+                  "fontWeight": "normal"
                 },
                 {
                   "type": "frame",
@@ -401,7 +411,8 @@
                               "fill": "#FFFFFF",
                               "content": "실비보험으로 MRI 비용 청구 가능한가요?",
                               "fontFamily": "Inter",
-                              "fontSize": 13
+                              "fontSize": 13,
+                              "fontWeight": "normal"
                             }
                           ]
                         }
@@ -465,7 +476,8 @@
                               "content": "네, 실손의료보험으로 MRI 비용 청구가 가능합니다.\n\n의사의 처방에 따른 MRI 검사는 급여 항목으로 분류되어 본인부담금을 제외한 나머지 금액을 보상받으실 수 있습니다.",
                               "lineHeight": 1.5,
                               "fontFamily": "Inter",
-                              "fontSize": 13
+                              "fontSize": 13,
+                              "fontWeight": "normal"
                             }
                           ]
                         }
@@ -527,7 +539,8 @@
                   "fill": "#666666",
                   "content": "보담이 복잡한 보험 문제를 간단하게 해결합니다",
                   "fontFamily": "Inter",
-                  "fontSize": 16
+                  "fontSize": 16,
+                  "fontWeight": "normal"
                 }
               ]
             },
@@ -597,7 +610,8 @@
                       "content": "보험 약관을 보담이 분석하여 보상 가능 여부를 즉시 확인해드립니다",
                       "lineHeight": 1.5,
                       "fontFamily": "Inter",
-                      "fontSize": 13
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -660,7 +674,8 @@
                       "content": "복잡한 보험 약관을 쉽고 명확한 언어로 풀어서 설명해드립니다",
                       "lineHeight": 1.5,
                       "fontFamily": "Inter",
-                      "fontSize": 13
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -723,7 +738,8 @@
                       "content": "보험금 거절 사유를 분석하고 이의 제기 방법을 안내해드립니다",
                       "lineHeight": 1.5,
                       "fontFamily": "Inter",
-                      "fontSize": 13
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -786,7 +802,8 @@
                       "content": "모든 보험사의 보상 조건을 한눈에 비교하여 최적의 선택을 도와드립니다",
                       "lineHeight": 1.5,
                       "fontFamily": "Inter",
-                      "fontSize": 13
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 }
@@ -908,7 +925,8 @@
                           "lineHeight": 1.5,
                           "textAlign": "center",
                           "fontFamily": "Inter",
-                          "fontSize": 14
+                          "fontSize": 14,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -976,7 +994,8 @@
                           "lineHeight": 1.5,
                           "textAlign": "center",
                           "fontFamily": "Inter",
-                          "fontSize": 14
+                          "fontSize": 14,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -1044,7 +1063,8 @@
                           "lineHeight": 1.5,
                           "textAlign": "center",
                           "fontFamily": "Inter",
-                          "fontSize": 14
+                          "fontSize": 14,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -1087,7 +1107,8 @@
               "content": "방대한 보험 데이터를 기반으로 정확하고 신뢰할 수 있는 보담 분석을 제공합니다",
               "textAlign": "center",
               "fontFamily": "Inter",
-              "fontSize": 16
+              "fontSize": 16,
+              "fontWeight": "normal"
             },
             {
               "type": "frame",
@@ -1226,7 +1247,8 @@
               "content": "무료로 시작하고, 보담이 여러분의 보험 보상을 안내해드립니다",
               "textAlign": "center",
               "fontFamily": "Inter",
-              "fontSize": 16
+              "fontSize": 16,
+              "fontWeight": "normal"
             },
             {
               "type": "frame",
@@ -1288,6 +1310,10 @@
                       "type": "ref",
                       "ref": "xV1sc",
                       "name": "footerLogo",
+                      "width": "fit_content",
+                      "height": "fit_content",
+                      "x": 0,
+                      "y": 0,
                       "descendants": {
                         "uDCAU": {
                           "width": 30,
@@ -1296,10 +1322,14 @@
                         },
                         "XqUh4": {
                           "width": 16,
-                          "height": 18
+                          "height": 18,
+                          "x": 7,
+                          "y": 6
                         },
                         "oYTQI": {
-                          "fontSize": 20
+                          "fontSize": 20,
+                          "x": 40,
+                          "y": 0.5
                         }
                       }
                     },
@@ -1313,7 +1343,8 @@
                       "content": "보험 보상 안내 플랫폼\n보험의 복잡함을 간단하게 풀어드립니다",
                       "lineHeight": 1.6,
                       "fontFamily": "Inter",
-                      "fontSize": 13
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -1348,7 +1379,8 @@
                           "fill": "#888888",
                           "content": "보담 보상 안내",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1357,7 +1389,8 @@
                           "fill": "#888888",
                           "content": "약관 분석",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1366,7 +1399,8 @@
                           "fill": "#888888",
                           "content": "보험사 비교",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1375,7 +1409,8 @@
                           "fill": "#888888",
                           "content": "거절 분석",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -1404,7 +1439,8 @@
                           "fill": "#888888",
                           "content": "회사 소개",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1413,7 +1449,8 @@
                           "fill": "#888888",
                           "content": "채용",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1422,7 +1459,8 @@
                           "fill": "#888888",
                           "content": "블로그",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1431,7 +1469,8 @@
                           "fill": "#888888",
                           "content": "문의하기",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -1460,7 +1499,8 @@
                           "fill": "#888888",
                           "content": "이용약관",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1469,7 +1509,8 @@
                           "fill": "#888888",
                           "content": "개인정보처리방침",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -1478,7 +1519,8 @@
                           "fill": "#888888",
                           "content": "쿠키 정책",
                           "fontFamily": "Inter",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -1501,7 +1543,8 @@
               "fill": "#666666",
               "content": "© 2026 보담(Bodam). All rights reserved.",
               "fontFamily": "Inter",
-              "fontSize": 12
+              "fontSize": 12,
+              "fontWeight": "normal"
             }
           ]
         }
@@ -1549,6 +1592,10 @@
                   "type": "ref",
                   "ref": "ZLSdm",
                   "name": "sidebarLogo",
+                  "width": "fit_content",
+                  "height": "fit_content",
+                  "x": 20,
+                  "y": 22.5,
                   "descendants": {
                     "N2VMr": {
                       "width": 30,
@@ -1557,10 +1604,14 @@
                     },
                     "BIgTI": {
                       "width": 16,
-                      "height": 18
+                      "height": 18,
+                      "x": 7,
+                      "y": 6
                     },
                     "hJerW": {
-                      "fontSize": 20
+                      "fontSize": 20,
+                      "x": 40,
+                      "y": 0.5
                     }
                   }
                 },
@@ -3214,18 +3265,26 @@
               "type": "ref",
               "ref": "ZLSdm",
               "name": "loginLogo",
+              "width": "fit_content",
+              "height": "fit_content",
+              "x": 154.5,
+              "y": 32,
               "descendants": {
                 "N2VMr": {
                   "width": 42,
                   "height": 42,
-                  "cornerRadius": 12
+                  "cornerRadius": 12,
+                  "y": 2
                 },
                 "BIgTI": {
                   "width": 24,
-                  "height": 26
+                  "height": 26,
+                  "x": 9,
+                  "y": 8
                 },
                 "hJerW": {
-                  "fontSize": 32
+                  "fontSize": 32,
+                  "x": 52
                 }
               }
             },
@@ -3696,7 +3755,7 @@
             ]
           },
           "content": "보담",
-          "fontFamily": "Inter",
+          "fontFamily": "Pretendard",
           "fontSize": 24,
           "fontWeight": "bold"
         }
@@ -3758,7 +3817,7 @@
           "name": "Logo Wordmark",
           "fill": "#FFFFFF",
           "content": "보담",
-          "fontFamily": "Inter",
+          "fontFamily": "Pretendard",
           "fontSize": 24,
           "fontWeight": "bold"
         }

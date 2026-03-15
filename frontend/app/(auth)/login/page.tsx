@@ -1,21 +1,85 @@
 /**
  * 로그인 페이지 (SPEC-AUTH-001 Module 5)
+ *
+ * Pencil 디자인(frame c43j1) 기준으로 구현:
+ * - 로고 + 서브타이틀
+ * - 탭 토글 (로그인/회원가입)
+ * - LoginForm (소셜 → 구분선 → 이메일/비밀번호)
+ * - 하단 회원가입 링크
  */
 
+import Link from 'next/link'
 import React from 'react'
+
 import { LoginForm } from '@/components/auth/LoginForm'
 
 export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAFA]">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-2xl font-bold text-[#1A1A1A]">로그인</h1>
-        <LoginForm />
-        <p className="mt-4 text-center text-sm text-[#666666]">
-          계정이 없으신가요?{' '}
-          <a href="/register" className="text-blue-600 hover:underline">
+      {/* 카드: cornerRadius 16, padding [32,36], width 420 */}
+      <div
+        className="w-full bg-white"
+        style={{
+          maxWidth: 420,
+          borderRadius: 16,
+          padding: '32px 36px',
+          boxShadow: '0 4px 24px 0 #00000008',
+          border: '1px solid #E5E5E5',
+        }}
+      >
+        {/* 로고 섹션 */}
+        <div className="mb-6 flex flex-col items-center gap-2">
+          <div className="flex items-center gap-2">
+            {/* 로고 아이콘: 둥근 정사각형 */}
+            <div
+              className="flex items-center justify-center bg-[#0D6E6E] text-white"
+              style={{ width: 36, height: 36, borderRadius: 8, fontSize: 18, fontWeight: 700 }}
+            >
+              보
+            </div>
+            <span className="text-xl font-bold text-[#1A1A1A]">보담</span>
+          </div>
+          <p className="text-[13px] text-[#888888]">보험 보상 안내 플랫폼</p>
+        </div>
+
+        {/* 탭 토글: 로그인/회원가입 */}
+        <div
+          className="mb-6 flex gap-1"
+          style={{
+            backgroundColor: '#F0F0F0',
+            borderRadius: 8,
+            padding: 4,
+          }}
+        >
+          {/* 로그인 탭 (활성) */}
+          <div
+            className="flex-1 py-2 text-center text-sm font-semibold text-[#1A1A1A]"
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 6,
+              boxShadow: '0 1px 4px 0 #00000010',
+            }}
+          >
+            로그인
+          </div>
+          {/* 회원가입 탭 (비활성) */}
+          <Link
+            href="/register"
+            className="flex-1 py-2 text-center text-sm font-medium text-[#AAAAAA] hover:text-[#1A1A1A] transition-colors"
+          >
             회원가입
-          </a>
+          </Link>
+        </div>
+
+        {/* 로그인 폼 */}
+        <LoginForm />
+
+        {/* 하단 회원가입 링크 */}
+        <p className="mt-6 text-center text-[13px] text-[#888888]">
+          계정이 없으신가요?{' '}
+          <Link href="/register" className="font-semibold text-[#0D6E6E] hover:underline">
+            회원가입
+          </Link>
         </p>
       </div>
     </div>

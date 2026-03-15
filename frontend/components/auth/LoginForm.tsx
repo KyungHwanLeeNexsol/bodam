@@ -64,16 +64,30 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+      {/* 소셜 로그인 버튼 */}
+      <SocialLoginButtons />
+
+      {/* 구분선 */}
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-[#E5E5E5]" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-white px-2 text-[#AAAAAA]">또는</span>
+        </div>
+      </div>
+
+      {/* 이메일 필드 */}
       <div className="space-y-1">
-        <label htmlFor="email" className="block text-sm font-medium text-[#1A1A1A]">
+        <label htmlFor="email" className="block text-[13px] font-medium text-[#1A1A1A]">
           이메일
         </label>
         <input
           id="email"
           type="email"
           autoComplete="email"
-          className="w-full rounded-md border border-[#E5E5E5] px-3 py-2 text-sm text-[#1A1A1A] placeholder-[#999] outline-none focus:border-[#1A1A1A] focus:ring-1 focus:ring-[#1A1A1A]"
-          placeholder="example@email.com"
+          className="w-full rounded-lg border border-[#E5E5E5] px-3.5 py-3 text-sm text-[#1A1A1A] placeholder-[#AAAAAA] outline-none focus:border-[#0D6E6E] focus:ring-1 focus:ring-[#0D6E6E]"
+          placeholder="name@example.com"
           {...register('email')}
         />
         {errors.email && (
@@ -83,16 +97,17 @@ export function LoginForm() {
         )}
       </div>
 
+      {/* 비밀번호 필드 */}
       <div className="space-y-1">
-        <label htmlFor="password" className="block text-sm font-medium text-[#1A1A1A]">
+        <label htmlFor="password" className="block text-[13px] font-medium text-[#1A1A1A]">
           비밀번호
         </label>
         <input
           id="password"
           type="password"
           autoComplete="current-password"
-          className="w-full rounded-md border border-[#E5E5E5] px-3 py-2 text-sm text-[#1A1A1A] outline-none focus:border-[#1A1A1A] focus:ring-1 focus:ring-[#1A1A1A]"
-          placeholder="비밀번호 입력"
+          className="w-full rounded-lg border border-[#E5E5E5] px-3.5 py-3 text-sm text-[#1A1A1A] placeholder-[#AAAAAA] outline-none focus:border-[#0D6E6E] focus:ring-1 focus:ring-[#0D6E6E]"
+          placeholder="비밀번호를 입력하세요"
           {...register('password')}
         />
         {errors.password && (
@@ -108,26 +123,21 @@ export function LoginForm() {
         </p>
       )}
 
+      {/* 로그인 버튼 */}
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full rounded-md bg-[#1A1A1A] py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+        className="w-full rounded-lg bg-[#0D6E6E] py-3 text-[15px] font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
       >
         {isLoading ? '로그인 중...' : '로그인'}
       </button>
 
-      {/* 소셜 로그인 구분선 */}
-      <div className="relative my-4">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-[#E5E5E5]" />
-        </div>
-        <div className="relative flex justify-center text-xs">
-          <span className="bg-white px-2 text-[#999]">또는</span>
-        </div>
-      </div>
-
-      {/* 소셜 로그인 버튼 */}
-      <SocialLoginButtons />
+      {/* 비밀번호 찾기 */}
+      <p className="text-center">
+        <a href="#" className="text-[13px] text-[#0D6E6E] hover:underline">
+          비밀번호를 잊으셨나요?
+        </a>
+      </p>
     </form>
   )
 }

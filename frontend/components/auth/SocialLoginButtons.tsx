@@ -26,11 +26,11 @@ interface SocialButtonConfig {
 
 // 소셜 로그인 버튼 설정 목록
 const SOCIAL_BUTTONS: SocialButtonConfig[] = [
-  { provider: 'kakao', label: '카카오로 로그인', bgColor: '#FEE500', textColor: '#000000' },
-  { provider: 'naver', label: '네이버로 로그인', bgColor: '#03C75A', textColor: '#FFFFFF' },
+  { provider: 'kakao', label: '카카오로 시작하기', bgColor: '#FEE500', textColor: '#1A1A1A' },
+  { provider: 'naver', label: '네이버로 시작하기', bgColor: '#03C75A', textColor: '#FFFFFF' },
   {
     provider: 'google',
-    label: '구글로 로그인',
+    label: 'Google로 시작하기',
     bgColor: '#FFFFFF',
     textColor: '#1A1A1A',
     borderColor: '#E5E5E5',
@@ -56,7 +56,7 @@ export function SocialLoginButtons() {
           key={provider}
           type="button"
           onClick={() => handleSocialLogin(provider)}
-          className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity hover:opacity-80"
+          className="w-full rounded-lg py-3 text-sm font-medium transition-opacity hover:opacity-80"
           style={{
             backgroundColor: bgColor,
             color: textColor,
