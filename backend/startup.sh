@@ -16,9 +16,7 @@ async def repair_schema():
         return
 
     # 모든 모델 임포트 (Base.metadata에 등록)
-    from app.models.base import Base
-    from app.models import user, social_account, chat, insurance, crawler, pdf
-    from app.models import organization, organization_member, case_precedent, usage_record
+    from app.models import Base  # __init__.py가 전체 모델을 임포트함
 
     # ENUM 타입 먼저 생성 (IF NOT EXISTS)
     import asyncpg
@@ -31,6 +29,13 @@ async def repair_schema():
             \"DO \$\$ BEGIN CREATE TYPE plantype AS ENUM ('FREE_TRIAL','BASIC','PROFESSIONAL','ENTERPRISE'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
             \"DO \$\$ BEGIN CREATE TYPE orgmemberrole AS ENUM ('ORG_OWNER','AGENT_ADMIN','AGENT'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
             \"DO \$\$ BEGIN CREATE TYPE consentstatus AS ENUM ('PENDING','ACTIVE','REVOKED'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE message_role_enum AS ENUM ('user','assistant','system'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE crawl_status_enum AS ENUM ('RUNNING','COMPLETED','FAILED'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE crawl_result_status_enum AS ENUM ('NEW','UPDATED','SKIPPED','FAILED'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE insurance_category_enum AS ENUM ('LIFE','NON_LIFE','THIRD_SECTOR'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE pdf_upload_status_enum AS ENUM ('UPLOADED','ANALYZING','COMPLETED','FAILED','EXPIRED'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE pdf_session_status_enum AS ENUM ('active','expired','deleted'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
+            \"DO \$\$ BEGIN CREATE TYPE pdf_message_role_enum AS ENUM ('user','assistant'); EXCEPTION WHEN duplicate_object THEN NULL; END \$\$\",
         ]:
             await conn.execute(enum_sql)
 

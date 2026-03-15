@@ -36,9 +36,11 @@ export default function SessionList({
   const userEmail = (() => {
     if (!token) return null
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
+      const parts = token.split('.')
+      if (parts.length < 2) return null
+      const payload = JSON.parse(atob(parts[1] as string))
       return payload.email || payload.sub || null
-    } catch { return null }
+    } catch (_) { return null }
   })()
 
   const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : '?'
