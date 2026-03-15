@@ -44,12 +44,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback((newToken: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, newToken)
+    document.cookie = `${AUTH_TOKEN_KEY}=${newToken}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`
     setToken(newToken)
     setIsAuthenticated(true)
   }, [])
 
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_TOKEN_KEY)
+    document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`
     setToken(null)
     setIsAuthenticated(false)
   }, [])
