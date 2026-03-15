@@ -28,44 +28,37 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """B2B RBAC 테이블 생성 및 users 테이블 role 컬럼 추가"""
 
-    # 1. userrole enum 타입 생성
-    userrole_enum = postgresql.ENUM(
-        "B2C_USER",
-        "AGENT",
-        "AGENT_ADMIN",
-        "ORG_OWNER",
-        "SYSTEM_ADMIN",
-        name="userrole",
-    )
-    userrole_enum.create(op.get_bind(), checkfirst=True)
+    # 1. userrole enum 타입 생성 (IF NOT EXISTS로 중복 방지)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE userrole AS ENUM ('B2C_USER', 'AGENT', 'AGENT_ADMIN', 'ORG_OWNER', 'SYSTEM_ADMIN');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # 2. orgtype enum 타입 생성
-    orgtype_enum = postgresql.ENUM(
-        "GA",
-        "INDEPENDENT",
-        "CORPORATE",
-        name="orgtype",
-    )
-    orgtype_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE orgtype AS ENUM ('GA', 'INDEPENDENT', 'CORPORATE');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # 3. plantype enum 타입 생성
-    plantype_enum = postgresql.ENUM(
-        "FREE_TRIAL",
-        "BASIC",
-        "PROFESSIONAL",
-        "ENTERPRISE",
-        name="plantype",
-    )
-    plantype_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE plantype AS ENUM ('FREE_TRIAL', 'BASIC', 'PROFESSIONAL', 'ENTERPRISE');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # 4. orgmemberrole enum 타입 생성
-    orgmemberrole_enum = postgresql.ENUM(
-        "ORG_OWNER",
-        "AGENT_ADMIN",
-        "AGENT",
-        name="orgmemberrole",
-    )
-    orgmemberrole_enum.create(op.get_bind(), checkfirst=True)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE orgmemberrole AS ENUM ('ORG_OWNER', 'AGENT_ADMIN', 'AGENT');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # 5. users 테이블에 role 컬럼 추가 (기본값: B2C_USER)
     op.add_column(

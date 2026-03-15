@@ -25,14 +25,13 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """agent_clients 테이블 및 consentstatus enum 타입 생성"""
-    # consentstatus ENUM 타입 생성 (Python 레벨 존재 확인 후)
-    consentstatus_enum = postgresql.ENUM(
-        "PENDING",
-        "ACTIVE",
-        "REVOKED",
-        name="consentstatus",
-    )
-    consentstatus_enum.create(op.get_bind(), checkfirst=True)
+    # consentstatus ENUM 타입 생성
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE consentstatus AS ENUM ('PENDING', 'ACTIVE', 'REVOKED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # agent_clients 테이블 생성
     op.create_table(
