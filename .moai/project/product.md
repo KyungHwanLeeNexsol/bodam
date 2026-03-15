@@ -203,15 +203,24 @@ Treatment & Prescription Analysis: User lists treatments received or medications
 
 Situation-Based Analysis: User describes a situation (accident, hospitalization, diagnosis). System maps situation to potentially applicable coverage and explains causation requirements.
 
-### 8. Ambiguous Case Guidance (Under Demand)
+### 8. Ambiguous Case Guidance (Insurance Dispute Guidance System)
 
-For situations where policy terms are unclear or multiple interpretations exist, the platform provides probability-based guidance supported by precedent and trends.
+For situations where policy terms are unclear or multiple interpretations exist, the platform provides probability-based guidance supported by precedent and trends using a 6-step orchestrator.
 
-**Status**: Planned for Phase 2 implementation
+**Status**: Implemented in SPEC-GUIDANCE-001 (2026-03-15)
 
-**Capabilities**:
+**Architecture - 6-Step Orchestrator**:
+- **DisputeDetector**: 분쟁 케이스 자동 감지 및 분류
+- **PrecedentService**: 유사 판례 검색 및 분석 (Vector embedding 기반)
+- **ProbabilityScorer**: 청구 성공 확률 예측 (머신러닝 기반)
+- **EvidenceAdvisor**: 필요한 증거 및 문서 전략 제시
+- **EscalationAdvisor**: 소송/항의 절차 추천
+- **Disclaimer**: 법적 책임 및 한계 명시
+
+**Core Capabilities**:
 - Identify ambiguous policy language and multiple interpretation possibilities
 - Research recent court precedents related to coverage disputes
+- Vector-based case precedent similarity search (CasePrecedent 모델)
 - Provide probability estimates for successful claims in ambiguous cases
 - Suggest evidence and documentation strategies
 - Recommend consultation with insurance professionals for edge cases
@@ -328,14 +337,115 @@ Secure account system enabling personalized policy management, history tracking,
 - Password hashing with bcrypt (no plain text storage)
 - Session isolation for chat conversations
 
+---
+
+### 14. Social Login (OAuth2)
+
+소셜 로그인 통합으로 사용자 가입 과정을 간소화하고 사용자 경험을 개선합니다.
+
+**Status**: Implemented in SPEC-OAUTH-001 (2026-03-15)
+
+**Backend Implementation**:
+- OAuth2 제공자 지원: Kakao, Naver, Google
+- backend/app/providers/ 디렉토리: 제공자별 클래스 구현
+- OAuth API 엔드포인트: /api/v1/oauth/authorize, /api/v1/oauth/callback
+- User 모델 확장: hashed_password 필드를 nullable로 변경 (소셜 로그인 사용자)
+- SocialAccount 모델: OAuth 계정 정보 저장 (provider_id, provider_user_id)
+- 기존 사용자 계정 병합 처리 (AccountMergeDialog)
+
+**Frontend Implementation**:
+- SocialLoginButtons 컴포넌트 (Kakao, Naver, Google 버튼)
+- OAuth callback 페이지: frontend/app/(auth)/callback/[provider]/page.tsx
+- AccountMergeDialog: 기존 사용자 계정과 소셜 계정 병합 처리
+- EmailInputDialog: 소셜 계정에서 이메일 없을 경우 사용자 입력
+
+**Database Changes**:
+- social_accounts 테이블 생성 (Alembic 마이그레이션)
+- user.hashed_password nullable로 변경
+
 **Account Features (Phase 2+)**:
-- Social login integration (Kakao, Naver, Google)
 - Two-factor authentication for security
 - Policy portfolio management (multiple policies)
 - Query history and saved searches
 - Claim guidance recommendations
 - Notification preferences
 - Data export and deletion requests
+
+---
+
+### 15. B2B Platform
+
+B2B 파트너용 API 기반 플랫폼으로 조직 관리, RBAC, API 키 인증, 에이전트 클라이언트 관리, 사용량 추적 및 청구를 제공합니다.
+
+**Status**: Implemented in SPEC-B2B-001 (2026-03-15)
+
+**Organization Management**:
+- Organization 모델: 조직명, 로고, 연락처 정보
+- RBAC (Role-Based Access Control): owner, admin, member, viewer 역할
+- OrganizationMember 모델: 역할 기반 권한 관리
+
+**API Key Authentication**:
+- ApiKey 모델: SHA-256 해싱, 스코프 기반 권한
+- 보안: 저장 시에만 해싱 (요청 시 비교 불가능)
+- 토큰 회전 및 만료 관리
+
+**Agent Client Management (CRM)**:
+- AgentClient 모델: 고객사 에이전트 정보 관리
+- Fernet 기반 PII 암호화 (backend/app/core/encryption.py)
+- 에이전트별 상담 기록 및 통화 노트 저장
+
+**Usage Tracking & Billing**:
+- UsageRecord 모델: API 호출, 청구 가능한 이벤트 추적
+- 사용량 집계: 일일, 월별 리포팅
+- 청구 메트릭: 조직별, 에이전트별 비용 계산
+
+**Dashboard API**:
+- 조직 통계: 에이전트 수, 총 상담 수
+- 사용량 분석: 시계열 차트, 트렌드 분석
+- billing API: 현재 청구 주기, 예상 비용
+
+**Directory Structure**:
+- backend/app/api/v1/b2b/: API 엔드포인트
+  - organizations.py: 조직 관리
+  - api_keys.py: API 키 관리
+  - clients.py: 에이전트 클라이언트
+  - usage.py: 사용량 추적
+  - dashboard.py: 대시보드
+- backend/app/services/b2b/: 비즈니스 로직
+- backend/app/core/encryption.py: Fernet 암호화 유틸리티
+- backend/app/core/usage_tracking.py: 사용량 추적 유틸리티
+- backend/app/schemas/b2b.py: 요청/응답 스키마 (443줄)
+
+---
+
+### 16. Guidance-Chat Hybrid Integration
+
+채팅 중 실시간 보험 분쟁 가이던스를 제공합니다.
+
+**Status**: Implemented in SPEC-GUIDANCE-002 (2026-03-15)
+
+**Backend Integration**:
+- ChatService 통합: IntentClassifier + GuidanceService 조합
+- 새로운 "guidance" SSE 이벤트 타입
+- 의도 감지: 사용자 질문이 분쟁 관련인 경우 가이던스 자동 실행
+- 실시간 스트리밍: 가이던스 결과를 SSE로 스트리밍
+
+**Frontend Components**:
+- GuidanceCard 컴포넌트: 앰버 테마, 접을 수 있는 UI
+- MessageBubble 업데이트: 가이던스 렌더링 지원
+- StreamingMessage 업데이트: guidance 이벤트 처리
+
+**Extended Chat Types**:
+- GuidanceData: 가이던스 6단계 결과 데이터
+- DisputeType: 분쟁 유형 분류
+- ProbabilityScore: 청구 성공 확률
+- EvidenceList: 필요 증거 목록
+
+**User Experience**:
+- 자연스러운 대화 흐름: 채팅 중 자동으로 분쟁 감지
+- 실시간 가이던스: 사용자가 기다리는 동안 결과 스트리밍
+- 접을 수 있는 UI: 가이던스 숨기고 다시 보기 가능
+- 참고문헌 표시: 판례, 확률 점수, 권장 증거
 
 ---
 
@@ -402,6 +512,14 @@ Secure account system enabling personalized policy management, history tracking,
 
 ---
 
+### Phase 2 Feature Implementation Complete
+
+**신규 기능 구현 (2026-03-15)**:
+- ✅ SPEC-OAUTH-001: Social Login (Kakao, Naver, Google)
+- ✅ SPEC-B2B-001: B2B Platform (조직 관리, RBAC, API 키, 사용량 추적)
+- ✅ SPEC-GUIDANCE-001: Insurance Dispute Guidance (6-step orchestrator, 판례 검색)
+- ✅ SPEC-GUIDANCE-002: Guidance-Chat Hybrid (실시간 채팅 중 가이던스)
+
 ### 배포 준비 상태
 
 **프로덕션 준비 완료 체크리스트**:
@@ -409,6 +527,9 @@ Secure account system enabling personalized policy management, history tracking,
 - ✅ 보안 강화 (SPEC-SEC-001)
 - ✅ 운영 인프라 (SPEC-INFRA-002)
 - ✅ 성능 검증 (SPEC-PERF-001)
+- ✅ 소셜 로그인 (SPEC-OAUTH-001)
+- ✅ B2B 플랫폼 (SPEC-B2B-001)
+- ✅ 분쟁 가이던스 (SPEC-GUIDANCE-001, SPEC-GUIDANCE-002)
 - ✅ 자동 백업 시스템
 - ✅ Graceful shutdown 및 헬스체크
 - ✅ API Rate limiting 및 보안 헤더
@@ -678,7 +799,7 @@ The platform's phased approach enables rapid market entry with an MVP while prog
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-03-13
-**Status**: Product Definition Complete
-**Next Phase**: Architecture Design & Development Planning
+**Document Version**: 1.1
+**Last Updated**: 2026-03-15
+**Status**: Phase 2 Features Implemented
+**Next Phase**: Production Deployment & Phase 3 Planning

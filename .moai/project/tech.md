@@ -1,8 +1,8 @@
 # Bodam Insurance AI Platform - Technology Stack
 
-**Document Version:** 1.0.0
-**Last Updated:** 2026-03-13
-**Status:** Active Development
+**Document Version:** 1.1.0
+**Last Updated:** 2026-03-15
+**Status:** Phase 2 Features Implemented
 
 ---
 
@@ -80,6 +80,7 @@ Auth.js provides enterprise-grade authentication without forcing a monolithic au
 | **Pydantic** | 2.12.x | Type-safe data validation and serialization |
 | **bcrypt** | >=4.0.0 | Password hashing (used directly instead of passlib for Python 3.13 compatibility) |
 | **python-jose[cryptography]** | >=3.3.0 | JWT token generation and verification |
+| **cryptography (Fernet)** | >=42.0.0 | Symmetric encryption for PII in B2B agent client management |
 | **LangChain** | 1.2.x | RAG pipeline orchestration and prompt management |
 | **langchain-core** | 0.3.x | Lightweight LLM framework (used instead of full langchain) |
 | **langchain-openai** | 1.1.x | OpenAI LLM integration |
@@ -149,7 +150,7 @@ This is critical for building the ground truth dataset of insurance policies to 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
 | **PostgreSQL** | 18.x | Primary relational database for structured data |
-| **pgvector** | 0.8.2 | Vector similarity search extension for RAG |
+| **pgvector** | 0.8.2 | Vector similarity search extension for RAG and case precedents |
 | **Redis** | 7.x | Caching, session store, Celery message broker |
 
 ### Database Design Rationale

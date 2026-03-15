@@ -22,6 +22,8 @@ bodam/
 │   │   ├── (auth)/              # Authentication route group
 │   │   │   ├── login/           # User login page (LoginForm, redirect to /chat on success)
 │   │   │   ├── register/        # User registration page (RegisterForm, redirect to /login on success)
+│   │   │   ├── callback/        # OAuth2 callback route group
+│   │   │   │   └── [provider]/page.tsx  # Dynamic OAuth provider callback handler
 │   │   │   └── layout.tsx       # Auth layout with navbar (no sidebar)
 │   │   │
 │   │   ├── (main)/              # Main application routes (protected)
@@ -52,7 +54,8 @@ bodam/
 │   │   │   ├── ChatMessage.tsx  # Individual message display
 │   │   │   ├── ChatInput.tsx    # Message input form
 │   │   │   ├── ChatHistory.tsx  # Conversation list
-│   │   │   └── ChatWindow.tsx   # Main chat container
+│   │   │   ├── ChatWindow.tsx   # Main chat container
+│   │   │   └── GuidanceCard.tsx # Guidance display (amber theme, collapsible)
 │   │   │
 │   │   ├── policy/              # Policy management components
 │   │   │   ├── PolicyCard.tsx   # Policy display card
@@ -63,7 +66,10 @@ bodam/
 │   │   ├── auth/                # Authentication components
 │   │   │   ├── LoginForm.tsx    # Login form (react-hook-form + zod)
 │   │   │   ├── RegisterForm.tsx # Registration form (react-hook-form + zod)
-│   │   │   └── ProtectedRoute.tsx # Route protection wrapper (redirect to /login if no token)
+│   │   │   ├── ProtectedRoute.tsx # Route protection wrapper (redirect to /login if no token)
+│   │   │   ├── SocialLoginButtons.tsx # OAuth2 provider buttons (Kakao, Naver, Google)
+│   │   │   ├── AccountMergeDialog.tsx # Account merge UI
+│   │   │   └── EmailInputDialog.tsx   # Email input for social login
 │   │   │
 │   │   └── layout/              # Layout components
 │   │       ├── Navbar.tsx       # Navigation bar
@@ -118,7 +124,15 @@ bodam/
 │   │   │   │   ├── policies.py  # Policy CRUD endpoints
 │   │   │   │   ├── auth.py      # Authentication endpoints (register, login, me)
 │   │   │   │   ├── analysis.py  # Coverage analysis endpoints
-│   │   │   │   └── users.py     # User profile endpoints
+│   │   │   │   ├── users.py     # User profile endpoints
+│   │   │   │   ├── oauth.py     # OAuth2 endpoints (authorize, callback)
+│   │   │   │   ├── guidance.py  # Guidance endpoints (dispute detection, analysis)
+│   │   │   │   └── b2b/         # B2B platform endpoints
+│   │   │   │       ├── organizations.py  # Organization CRUD
+│   │   │   │       ├── api_keys.py       # API key management
+│   │   │   │       ├── clients.py        # Agent client management
+│   │   │   │       ├── usage.py          # Usage tracking
+│   │   │   │       └── dashboard.py      # Dashboard analytics
 │   │   │   │
 │   │   │   └── deps.py          # Dependency injection (get_current_user, db sessions)
 │   │   │
@@ -126,14 +140,23 @@ bodam/
 │   │   │   ├── config.py        # Environment and app settings
 │   │   │   ├── security.py      # bcrypt hashing, JWT token generation/verification
 │   │   │   ├── database.py      # Database connection and session
-│   │   │   └── logging.py       # Logging configuration
+│   │   │   ├── logging.py       # Logging configuration
+│   │   │   ├── encryption.py    # Fernet-based PII encryption (B2B)
+│   │   │   └── usage_tracking.py # Usage tracking utilities (B2B)
 │   │   │
 │   │   ├── models/              # SQLAlchemy ORM models
-│   │   │   ├── user.py          # User model (id, email, hashed_password, full_name, is_active)
+│   │   │   ├── user.py          # User model (id, email, hashed_password nullable, full_name, is_active)
 │   │   │   ├── policy.py        # Policy model (extended with crawler metadata)
 │   │   │   ├── conversation.py  # Chat conversation model
 │   │   │   ├── message.py       # Chat message model
 │   │   │   ├── crawler.py       # CrawlRun and CrawlResult models for crawler tracking
+│   │   │   ├── social_account.py # SocialAccount model (provider, provider_user_id)
+│   │   │   ├── organization.py  # Organization model (name, logo, contact info)
+│   │   │   ├── organization_member.py # OrganizationMember model (RBAC roles)
+│   │   │   ├── api_key.py       # ApiKey model (SHA-256 hashed, scoped permissions)
+│   │   │   ├── agent_client.py  # AgentClient model (CRM with Fernet encryption)
+│   │   │   ├── usage_record.py  # UsageRecord model (usage tracking, billing)
+│   │   │   ├── case_precedent.py # CasePrecedent model (Vector(1536) embeddings)
 │   │   │   └── __init__.py      # Model exports
 │   │   │
 │   │   ├── schemas/             # Pydantic request/response schemas
@@ -141,6 +164,9 @@ bodam/
 │   │   │   ├── policy.py        # Policy schemas
 │   │   │   ├── chat.py          # Chat message/conversation schemas
 │   │   │   ├── user.py          # User schemas
+│   │   │   ├── oauth.py         # OAuth schemas (AuthorizeRequest, CallbackRequest, SocialAccountResponse)
+│   │   │   ├── b2b.py           # B2B schemas (OrganizationRequest, ApiKeyResponse, UsageRecord) (443 lines)
+│   │   │   ├── guidance.py      # Guidance schemas (DisputeDetection, ProbabilityScore, EvidenceList)
 │   │   │   └── __init__.py      # Schema exports
 │   │   │
 │   │   ├── services/            # Business logic layer
@@ -180,9 +206,28 @@ bodam/
 │   │   │   │   ├── policy_recommender.py # Policy recommendations
 │   │   │   │   └── comparison.py         # Policy comparison logic
 │   │   │   │
-│   │   │   └── auth/            # Authentication service
-│   │   │       ├── auth_service.py  # User registration, login, password verification
-│   │   │       └── token_service.py # JWT token generation and verification
+│   │   │   ├── auth/            # Authentication service
+│   │   │   │   ├── auth_service.py  # User registration, login, password verification
+│   │   │   │   └── token_service.py # JWT token generation and verification
+│   │   │   │
+│   │   │   ├── oauth/           # OAuth2 service
+│   │   │   │   └── oauth_service.py # OAuth provider integration
+│   │   │   │
+│   │   │   ├── b2b/             # B2B service layer
+│   │   │   │   ├── organization_service.py # Organization management
+│   │   │   │   ├── api_key_service.py      # API key management
+│   │   │   │   ├── client_service.py       # Agent client CRM
+│   │   │   │   ├── usage_service.py        # Usage tracking and billing
+│   │   │   │   └── dashboard_service.py    # Dashboard analytics
+│   │   │   │
+│   │   │   └── guidance/        # Insurance dispute guidance service
+│   │   │       ├── guidance_service.py     # Main guidance orchestrator
+│   │   │       ├── dispute_detector.py     # Dispute case detection
+│   │   │       ├── precedent_service.py    # Case precedent search
+│   │   │       ├── probability_scorer.py   # Probability estimation
+│   │   │       ├── evidence_advisor.py     # Evidence strategy
+│   │   │       ├── escalation_advisor.py   # Escalation recommendations
+│   │   │       └── disclaimer.py           # Legal disclaimer
 │   │   │
 │   │   ├── tasks/               # Background task processing (Celery)
 │   │   │   ├── __init__.py      # Task module exports
@@ -385,6 +430,9 @@ The backend follows a clean service layer pattern separating business logic from
 - **Parser Service**: Processes PDF and text documents
 - **Analysis Service**: Implements coverage analysis algorithms
 - **Auth Service**: Manages user authentication and authorization
+- **OAuth Service**: Manages OAuth2 provider integration
+- **B2B Services**: Organization management, API key management, client CRM, usage tracking, dashboard analytics
+- **Guidance Service**: 6-step dispute guidance orchestrator with precedent search and probability scoring
 
 ### 4. RAG (Retrieval-Augmented Generation) Pipeline
 
@@ -419,9 +467,52 @@ Models are configured in the LLM service with pricing tiers, latency specificati
 ### 6. Data Model Structure
 
 **User Entity:**
-- Authentication credentials (email, password hash)
+- Authentication credentials (email, password hash - nullable for OAuth)
 - Profile information (name, contact)
 - Preferences (language, notification settings)
+- Created/updated timestamps
+
+**SocialAccount Entity:**
+- User reference
+- Provider (Kakao, Naver, Google)
+- Provider user ID
+- Created/updated timestamps
+
+**Organization Entity** (B2B):
+- Organization metadata (name, logo, contact)
+- Created/updated timestamps
+- Billing information
+
+**OrganizationMember Entity** (B2B):
+- User reference
+- Organization reference
+- Role (owner, admin, member, viewer)
+- Created/updated timestamps
+
+**ApiKey Entity** (B2B):
+- Organization reference
+- SHA-256 hashed key
+- Scoped permissions
+- Expiration date
+- Created/updated timestamps
+
+**AgentClient Entity** (B2B):
+- Organization reference
+- Client metadata (name, contact - Fernet encrypted)
+- Interaction history
+- Created/updated timestamps
+
+**UsageRecord Entity** (B2B):
+- Organization reference
+- Event type, quantity
+- Cost calculation
+- Timestamp
+
+**CasePrecedent Entity**:
+- Case metadata (title, court, date, decision)
+- Full text content
+- Vector embedding (1536 dimensions)
+- Relevance metadata
 - Created/updated timestamps
 
 **Policy Entity:**
@@ -439,6 +530,7 @@ Models are configured in the LLM service with pricing tiers, latency specificati
 - Conversation reference
 - Role (user or assistant)
 - Content and metadata
+- Guidance data (if guidance was provided)
 - Timestamps
 
 ---
