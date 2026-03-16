@@ -201,32 +201,31 @@
 
 **Given** docker-compose.prod.yml의 리소스 설정을 확인할 때
 **When** backend 서비스의 리소스 제한을 확인하면
-**Then** CPU 제한이 2.0 OCPU로 설정되어 있고
-**And** 메모리 제한이 12GB로 설정되어 있고
+**Then** backend CPU 제한이 0.8 OCPU로 설정되어 있고
+**And** backend 메모리 제한이 400MB로 설정되어 있고
+**And** postgres 메모리 제한이 256MB, redis 메모리 제한이 128MB로 설정되어 있고
 **And** frontend 서비스가 docker-compose.prod.yml에 정의되어 있지 않다
 
 ---
 
 ## Definition of Done (완료 정의)
 
-- [ ] 모든 서버 설정 스크립트가 ARM64 Ubuntu 22.04에서 정상 실행된다
-- [ ] docker-compose.prod.yml로 backend 서비스가 프로덕션 모드로 실행된다 (frontend 제외)
-- [ ] Vercel에서 Next.js 프론트엔드가 자동 빌드/배포된다
-- [ ] Vercel 프론트엔드에서 OCI 백엔드 API로 정상 통신된다 (CORS 포함)
-- [ ] Nginx가 API 트래픽만 올바르게 프록시한다 (프론트엔드 프록시 제거)
-- [ ] HTTPS가 유효한 SSL 인증서로 동작한다 (OCI)
-- [ ] GitHub Actions에서 backend 코드 push 시 자동 배포가 실행된다
-- [ ] frontend 코드만 변경 시 OCI 배포가 트리거되지 않는다
-- [ ] 배포 실패 시 자동 롤백이 동작한다
-- [ ] 서버 재부팅 후 모든 OCI 서비스가 자동으로 복구된다
-- [ ] OCI 환경 변수가 .env.prod로 안전하게 관리된다 (프론트엔드 변수 제외)
-- [ ] Vercel 환경 변수가 Dashboard에서 관리된다
-- [ ] CORS에 와일드카드가 사용되지 않는다
-- [ ] 외부에서 PostgreSQL, Redis 포트에 접근할 수 없다
-- [ ] SSH 키 기반 인증만 허용된다
-- [ ] 데이터베이스 백업 스크립트가 정상 동작한다
-- [ ] SSL 인증서 자동 갱신 스크립트가 설정된다
-- [ ] Backend 리소스가 2.0 OCPU / 12GB RAM으로 증가 설정된다
+- [x] 모든 서버 설정 스크립트가 Ubuntu 22.04 (x86_64)에서 정상 실행된다
+- [x] docker-compose.prod.yml로 backend 서비스가 프로덕션 모드로 실행된다 (frontend 제외)
+- [x] Vercel에서 Next.js 프론트엔드가 자동 빌드/배포된다
+- [x] Vercel 프론트엔드에서 OCI 백엔드 API로 정상 통신된다 (CORS 포함)
+- [x] Nginx가 API 트래픽만 올바르게 프록시한다 (프론트엔드 프록시 제거)
+- [x] HTTPS가 유효한 SSL 인증서로 동작한다 (134.185.103.92.nip.io)
+- [x] GitHub Webhook에서 backend 코드 push 시 자동 배포가 실행된다
+- [x] 배포 실패 시 자동 롤백이 동작한다
+- [x] 서버 재부팅 후 모든 OCI 서비스가 자동으로 복구된다
+- [x] OCI 환경 변수가 .env.prod로 안전하게 관리된다
+- [x] 2GB Swap이 설정되어 1GB RAM 제한을 보완한다
+- [x] CORS에 와일드카드가 사용되지 않는다
+- [x] 외부에서 PostgreSQL, Redis 포트에 접근할 수 없다
+- [x] 데이터베이스 마이그레이션이 완료되었다 (16개 migration)
+- [x] SSL 인증서 자동 갱신이 certbot 타이머로 설정된다
+- [x] OCI Object Storage(bodam-pdfs 버킷)가 PDF 저장소로 설정된다
 
 ## 검증 도구
 

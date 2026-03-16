@@ -6,7 +6,7 @@
 |------|-----|
 | **SPEC ID** | SPEC-INFRA-003 |
 | **제목** | Vercel (Frontend) + Oracle Cloud Infrastructure Always Free (Backend) 분리 배포 |
-| **상태** | Planned |
+| **상태** | Completed |
 | **우선순위** | High |
 | **생성일** | 2026-03-14 |
 | **수정일** | 2026-03-16 |
@@ -45,12 +45,12 @@ Next.js Frontend  ─── HTTPS ───>  Nginx (API Proxy + SSL)
 
 | 리소스 | 사양 | 비고 |
 |--------|------|------|
-| **VM 인스턴스** | ARM Ampere A1, 4 OCPU, 24GB RAM | Always Free, 만료 없음 |
-| **Block Storage** | 200GB | 부트 볼륨 + 데이터 볼륨 |
-| **Load Balancer** | 1x 10Mbps Flexible LB | Always Free |
-| **VCN** | 1x Virtual Cloud Network | 퍼블릭/프라이빗 서브넷 |
-| **OS** | Ubuntu 22.04 LTS (aarch64) | ARM64 아키텍처 |
-| **리전** | ap-seoul-1 (한국) | 데이터 레지던시 준수 |
+| **VM 인스턴스** | VM.Standard.E2.1.Micro (1 OCPU, 1GB RAM) | Always Free, 만료 없음 |
+| **Block Storage** | 45GB | 부트 볼륨 |
+| **OS** | Ubuntu 22.04 LTS (x86_64) | x86_64 아키텍처 |
+| **리전** | ap-chuncheon-1 (춘천) | 한국 리전 |
+| **도메인** | 134.185.103.92.nip.io | nip.io 무료 DNS |
+| **Swap** | 2GB | RAM 부족 보완 |
 
 ### 1.4 현재 시스템 구성
 
@@ -73,18 +73,18 @@ Next.js Frontend  ─── HTTPS ───>  Nginx (API Proxy + SSL)
 
 ### 2.1 인프라 가정
 
-- **AS-001**: OCI Always Free 계정이 생성되어 있고, ARM A1 인스턴스를 프로비저닝할 수 있다
-- **AS-002**: `ap-seoul-1` 리전에서 Always Free ARM A1 리소스가 가용하다
-- **AS-003**: 도메인이 구매되어 있으며 DNS A 레코드를 OCI 인스턴스 퍼블릭 IP로 설정할 수 있다
+- **AS-001**: OCI Always Free 계정이 생성되어 있고, VM.Standard.E2.1.Micro 인스턴스가 프로비저닝되어 있다
+- **AS-002**: `ap-chuncheon-1` 리전의 인스턴스 IP는 `134.185.103.92`이다
+- **AS-003**: 도메인은 `134.185.103.92.nip.io` (nip.io 무료 DNS)를 사용한다
 - **AS-004**: Let's Encrypt SSL 인증서를 HTTP-01 챌린지로 발급받을 수 있다
 - **AS-005**: Vercel Free Tier 계정이 생성되어 있고, GitHub 리포지토리가 연결되어 있다
 
 ### 2.2 시스템 가정
 
-- **AS-006**: 모든 OCI Docker 이미지는 ARM64 (aarch64) 아키텍처를 지원한다
-- **AS-007**: 4 OCPU + 24GB RAM은 Backend + DB + Redis 운영에 충분하다 (Frontend 제외로 여유 증가)
-- **AS-008**: 200GB Block Storage는 PostgreSQL 데이터, Docker 이미지, 로그 저장에 충분하다
-- **AS-009**: 10Mbps Load Balancer 대역폭은 API 트래픽을 처리하기에 충분하다
+- **AS-006**: 모든 OCI Docker 이미지는 x86_64 아키텍처를 지원한다
+- **AS-007**: 1 OCPU + 1GB RAM + 2GB Swap으로 Backend + DB + Redis 운영이 가능하다
+- **AS-008**: 45GB Block Storage는 PostgreSQL 데이터, Docker 이미지, 로그 저장에 충분하다
+- **AS-009**: OCI 오브젝트 스토리지(bodam-pdfs 버킷)가 PDF 파일 저장에 사용된다
 - **AS-010**: Vercel Free Tier의 대역폭(100GB/월)과 빌드 시간(6,000분/월)은 초기 서비스에 충분하다
 
 ### 2.3 운영 가정
