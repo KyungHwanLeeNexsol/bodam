@@ -1,9 +1,9 @@
 ---
 id: SPEC-GUIDANCE-001
 version: 1.0.0
-status: draft
+status: completed
 created: 2026-03-15
-updated: 2026-03-15
+updated: 2026-03-16
 author: zuge3
 priority: medium
 issue_number: 0
