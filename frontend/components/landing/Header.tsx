@@ -2,8 +2,8 @@
  * 헤더 컴포넌트 - 로고, 네비게이션, 로그인/시작하기 버튼
  */
 import Link from 'next/link'
-import Image from 'next/image'
 import { Button } from '@/components/ui/button'
+import Logo from '@/components/ui/Logo'
 
 export default function Header() {
   return (
@@ -11,47 +11,11 @@ export default function Header() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         {/* 로고 */}
         <Link href="/" className="flex items-center">
-          <Image
-            src="/logo.png"
-            alt="보담 로고"
-            width={273}
-            height={108}
-            className="h-8 w-auto"
-          />
+          <Logo size="md" />
         </Link>
 
-        {/* 네비게이션 */}
-        <nav className="hidden items-center gap-8 md:flex">
-          <Link
-            href="#features"
-            className="text-sm text-[#666666] transition-colors hover:text-[#1A1A1A]"
-          >
-            기능
-          </Link>
-          <Link
-            href="#how-it-works"
-            className="text-sm text-[#666666] transition-colors hover:text-[#1A1A1A]"
-          >
-            이용 방법
-          </Link>
-          <Link
-            href="#trust"
-            className="text-sm text-[#666666] transition-colors hover:text-[#1A1A1A]"
-          >
-            데이터
-          </Link>
-        </nav>
-
         {/* 우측 버튼 */}
-        <div className="flex items-center gap-3">
-          <Link href="/login">
-            <Button
-              variant="ghost"
-              className="text-sm text-[#666666] hover:text-[#1A1A1A]"
-            >
-              로그인
-            </Button>
-          </Link>
+        <div className="flex items-center">
           <Link href="/chat">
             <Button
               className="rounded-[8px] bg-[#0D6E6E] px-5 text-sm text-white hover:bg-[#0a5a5a]"

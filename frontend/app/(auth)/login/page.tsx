@@ -8,11 +8,11 @@
  * - 하단 회원가입 링크
  */
 
-import Image from 'next/image'
 import Link from 'next/link'
 import React from 'react'
 
 import { LoginForm } from '@/components/auth/LoginForm'
+import Logo from '@/components/ui/Logo'
 
 export default function LoginPage() {
   return (
@@ -31,7 +31,7 @@ export default function LoginPage() {
         {/* 로고 섹션 */}
         <div className="mb-6 flex flex-col items-center">
           <Link href="/" className="cursor-pointer">
-            <Image src="/logo.png" alt="보담" width={90} height={30} priority />
+            <Logo size="md" />
           </Link>
         </div>
 
