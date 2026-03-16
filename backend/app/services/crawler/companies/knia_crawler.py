@@ -1,7 +1,8 @@
 """손해보험협회(KNIA) 크롤러 (SPEC-CRAWLER-001)
 
 한국손해보험협회(knia.or.kr)에서 약관 PDF 목록을 크롤링.
-Playwright를 사용한 JS 렌더링 지원.
+Playwright 네이티브 엘리먼트 선택을 사용한 강건한 파싱.
+페이지네이션 자동 처리 포함.
 """
 
 from __future__ import annotations
@@ -23,12 +24,42 @@ CRAWLER_NAME = "knia"
 # 손해보험협회 기본 URL
 BASE_URL = "https://www.knia.or.kr"
 
+# 약관 목록 페이지 경로 후보 (사이트 구조 변경 대비 다중 경로)
+LISTING_PATHS = [
+    "/consumer/policy",
+    "/consumer/policy/list",
+    "/disclosure/policy",
+    "/public/policy",
+]
+
+# 다음 페이지 버튼 선택자 후보
+NEXT_PAGE_SELECTORS = [
+    "a:has-text('다음')",
+    "button:has-text('다음')",
+    ".pagination .next",
+    ".paging .next",
+    "a.next",
+    "a[title='다음']",
+]
+
+# 아이템 컨테이너 선택자 후보 (사이트 구조 변경 대비)
+ITEM_SELECTORS = [
+    ".insurance-list .item",
+    ".product-list .item",
+    ".list-area .item",
+    "ul.list li",
+    ".product-item",
+    "table tbody tr",
+    ".tb_list tr",
+]
+
 
 class KNIACrawler(BaseCrawler):
     """한국손해보험협회 약관 크롤러
 
     knia.or.kr에서 손해보험 상품 목록과 약관 PDF를 크롤링.
     JavaScript 렌더링이 필요하여 Playwright 사용.
+    Playwright 네이티브 엘리먼트 선택으로 정확한 파싱.
     """
 
     def __init__(self, db_session: Any, storage: Any, **kwargs: Any) -> None:
@@ -50,6 +81,7 @@ class KNIACrawler(BaseCrawler):
         """KNIA 약관 목록 전체 크롤링
 
         Playwright로 목록 페이지를 렌더링 후 파싱.
+        페이지네이션 처리 포함.
         변경 감지 후 신규/변경 항목만 PDF 다운로드.
 
         Returns:
@@ -57,8 +89,8 @@ class KNIACrawler(BaseCrawler):
         """
         results = []
         try:
-            html = await self._fetch_listing_page()
-            listings = await self.parse_listing(html)
+            # Playwright 네이티브 선택으로 전체 목록 크롤링
+            listings = await self._fetch_all_listings_playwright()
             delta = await self.detect_changes(listings)
 
             new_count = 0
@@ -115,101 +147,318 @@ class KNIACrawler(BaseCrawler):
                 skipped_count=0, failed_count=1, results=[]
             )
 
-    async def _fetch_listing_page(self) -> str:
-        """Playwright로 KNIA 목록 페이지 HTML 가져오기
+    # @MX:ANCHOR: [AUTO] 전체 약관 목록 크롤링 핵심 메서드
+    # @MX:REASON: crawl()에서 직접 호출, Playwright 페이지네이션 처리 담당
+    async def _fetch_all_listings_playwright(self) -> list[PolicyListing]:
+        """Playwright로 전체 약관 목록 크롤링 (페이지네이션 포함)
+
+        page.query_selector_all()을 사용한 강건한 엘리먼트 선택.
+        '다음' 버튼이 있는 한 계속 페이지 이동.
 
         Returns:
-            렌더링된 HTML 문자열
+            전체 페이지에서 수집한 PolicyListing 목록
         """
         try:
             from playwright.async_api import async_playwright
-
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                await page.goto(f"{BASE_URL}/consumer/policy", wait_until="networkidle")
-                html = await page.content()
-                await browser.close()
-                return html
         except ImportError:
-            logger.warning("playwright 미설치, 빈 HTML 반환")
-            return ""
+            logger.warning("playwright 미설치, 빈 목록 반환")
+            return []
 
-    async def parse_listing(self, page: Any) -> list[PolicyListing]:
-        """HTML에서 손해보험 상품 목록 파싱
+        all_listings: list[PolicyListing] = []
 
-        div.insurance-list > div.item 구조에서 상품 정보 추출.
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+
+                # 접근 가능한 목록 페이지 URL 탐색
+                target_url = await self._find_listing_url(page)
+                if not target_url:
+                    logger.error("KNIA 목록 페이지를 찾을 수 없습니다")
+                    return all_listings
+
+                await page.goto(target_url, wait_until="networkidle", timeout=30000)
+
+                # 페이지네이션 루프 (최대 100페이지)
+                page_num = 1
+                max_pages = 100
+
+                while page_num <= max_pages:
+                    logger.info("KNIA 목록 페이지 %d 파싱 중...", page_num)
+
+                    # 현재 페이지의 목록 파싱
+                    page_listings = await self._parse_page_listings(page)
+                    all_listings.extend(page_listings)
+                    logger.info("KNIA 페이지 %d에서 %d개 항목 발견", page_num, len(page_listings))
+
+                    # 다음 페이지 버튼 탐색 및 클릭
+                    next_clicked = await self._click_next_page(page)
+                    if not next_clicked:
+                        logger.info("KNIA 마지막 페이지 도달 (총 %d페이지)", page_num)
+                        break
+
+                    # 페이지 로딩 대기
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    page_num += 1
+
+            finally:
+                await browser.close()
+
+        logger.info("KNIA 전체 크롤링 완료: %d개 항목", len(all_listings))
+        return all_listings
+
+    async def _find_listing_url(self, page: Any) -> str | None:
+        """접근 가능한 KNIA 목록 페이지 URL 탐색
+
+        여러 경로를 시도하여 실제로 작동하는 URL을 반환.
 
         Args:
-            page: HTML 문자열
+            page: Playwright 페이지 객체
+
+        Returns:
+            접근 가능한 URL 또는 None
+        """
+        for path in LISTING_PATHS:
+            url = f"{BASE_URL}{path}"
+            try:
+                response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                if response and response.status < 400:
+                    return url
+            except Exception as exc:
+                logger.debug("KNIA URL %s 접근 실패: %s", url, str(exc))
+
+        return None
+
+    async def _parse_page_listings(self, page: Any) -> list[PolicyListing]:
+        """현재 페이지에서 약관 목록 파싱
+
+        Playwright 네이티브 엘리먼트 선택으로 아이템 파싱.
+        div.item 구조와 table tr 구조 모두 지원.
+
+        Args:
+            page: Playwright 페이지 객체
 
         Returns:
             파싱된 PolicyListing 목록
         """
-        listings = []
+        listings: list[PolicyListing] = []
 
-        try:
-            # div.item 블록 추출
-            items = re.findall(
-                r'<div[^>]*class=["\'][^"\']*item[^"\']*["\'][^>]*>(.*?)</div>',
-                page,
-                re.DOTALL,
-            )
+        # 여러 아이템 선택자 시도
+        items = None
+        used_selector = ""
+        for selector in ITEM_SELECTORS:
+            try:
+                items = await page.query_selector_all(selector)
+                if items:
+                    used_selector = selector
+                    logger.debug("KNIA 선택자 '%s' 사용, %d개 항목 발견", selector, len(items))
+                    break
+            except Exception:
+                continue
 
-            for item in items:
-                # 텍스트에서 HTML 태그 제거
-                def strip_tags(text: str) -> str:
-                    return re.sub(r'<[^>]+>', '', text).strip()
+        if not items:
+            logger.warning("KNIA 목록 항목을 찾을 수 없습니다")
+            return listings
 
-                # company-name, product-name, code 스팬 추출
-                company_match = re.search(
-                    r'<span[^>]*class=["\'][^"\']*company-name[^"\']*["\'][^>]*>(.*?)</span>',
-                    item, re.DOTALL
-                )
-                product_match = re.search(
-                    r'<span[^>]*class=["\'][^"\']*product-name[^"\']*["\'][^>]*>(.*?)</span>',
-                    item, re.DOTALL
-                )
-                code_match = re.search(
-                    r'<span[^>]*class=["\'][^"\']*code[^"\']*["\'][^>]*>(.*?)</span>',
-                    item, re.DOTALL
-                )
-                pdf_match = re.search(
-                    r'href=["\']([^"\']*\.pdf[^"\']*)["\']',
-                    item, re.IGNORECASE
-                )
+        # 테이블 구조인지 div 구조인지 판별
+        is_table = "tr" in used_selector or "tbody" in used_selector
 
-                if not code_match or not pdf_match:
-                    continue
+        for item in items:
+            try:
+                if is_table:
+                    listing = await self._parse_table_row(item)
+                else:
+                    listing = await self._parse_div_item(item)
 
-                pdf_url = pdf_match.group(1)
-                if not pdf_url.startswith("http"):
-                    pdf_url = f"{BASE_URL}{pdf_url}"
-
-                company_name = strip_tags(company_match.group(1)) if company_match else ""
-                product_name = strip_tags(product_match.group(1)) if product_match else ""
-                product_code = strip_tags(code_match.group(1))
-
-                if not product_code:
-                    continue
-
-                company_code = re.sub(r'[^a-z0-9]', '-', company_name.lower()).strip('-')
-                if not company_code:
-                    company_code = f"company-{len(listings)}"
-
-                listings.append(PolicyListing(
-                    company_name=company_name,
-                    product_name=product_name,
-                    product_code=product_code,
-                    category=InsuranceCategory.NON_LIFE,
-                    pdf_url=pdf_url,
-                    company_code=company_code,
-                ))
-
-        except Exception as exc:
-            logger.error("KNIA 목록 파싱 실패: %s", str(exc))
+                if listing:
+                    listings.append(listing)
+            except Exception as exc:
+                logger.debug("KNIA 항목 파싱 실패: %s", str(exc))
 
         return listings
+
+    async def _parse_table_row(self, row: Any) -> PolicyListing | None:
+        """테이블 행에서 PolicyListing 추출
+
+        Args:
+            row: Playwright 테이블 행 엘리먼트
+
+        Returns:
+            파싱된 PolicyListing 또는 None
+        """
+        cells = await row.query_selector_all("td")
+        if len(cells) < 3:
+            return None
+
+        company_name = (await cells[0].inner_text()).strip()
+        product_name = (await cells[1].inner_text()).strip()
+        product_code = (await cells[2].inner_text()).strip()
+
+        if not product_code:
+            return None
+
+        pdf_url = await self._find_pdf_link(row)
+        if not pdf_url:
+            return None
+
+        company_code = re.sub(r"[^a-z0-9]", "-", company_name.lower()).strip("-")
+        if not company_code:
+            company_code = f"knia-{len(product_code)}"
+
+        return PolicyListing(
+            company_name=company_name,
+            product_name=product_name,
+            product_code=product_code,
+            category=InsuranceCategory.NON_LIFE,
+            pdf_url=pdf_url,
+            company_code=company_code,
+        )
+
+    async def _parse_div_item(self, item: Any) -> PolicyListing | None:
+        """div.item 구조에서 PolicyListing 추출
+
+        span.company-name, span.product-name, span.code 패턴 사용.
+
+        Args:
+            item: Playwright div 아이템 엘리먼트
+
+        Returns:
+            파싱된 PolicyListing 또는 None
+        """
+        # 회사명 추출 (다양한 클래스명 시도)
+        company_name = ""
+        for selector in [".company-name", ".company", "[class*='company']"]:
+            el = await item.query_selector(selector)
+            if el:
+                company_name = (await el.inner_text()).strip()
+                break
+
+        # 상품명 추출
+        product_name = ""
+        for selector in [".product-name", ".product", "[class*='product']", ".title"]:
+            el = await item.query_selector(selector)
+            if el:
+                product_name = (await el.inner_text()).strip()
+                break
+
+        # 상품코드 추출
+        product_code = ""
+        for selector in [".code", ".product-code", "[class*='code']", ".num"]:
+            el = await item.query_selector(selector)
+            if el:
+                product_code = (await el.inner_text()).strip()
+                break
+
+        if not product_code:
+            return None
+
+        pdf_url = await self._find_pdf_link(item)
+        if not pdf_url:
+            return None
+
+        company_code = re.sub(r"[^a-z0-9]", "-", company_name.lower()).strip("-")
+        if not company_code:
+            company_code = f"knia-{len(product_code)}"
+
+        return PolicyListing(
+            company_name=company_name,
+            product_name=product_name,
+            product_code=product_code,
+            category=InsuranceCategory.NON_LIFE,
+            pdf_url=pdf_url,
+            company_code=company_code,
+        )
+
+    async def _find_pdf_link(self, element: Any) -> str | None:
+        """엘리먼트 내에서 PDF 링크 탐색
+
+        다양한 방식으로 PDF URL 추출 시도.
+
+        Args:
+            element: Playwright 엘리먼트
+
+        Returns:
+            PDF URL 또는 None
+        """
+        # href 속성에서 .pdf 링크 탐색
+        pdf_links = await element.query_selector_all("a[href*='.pdf']")
+        if pdf_links:
+            href = await pdf_links[0].get_attribute("href")
+            if href:
+                return href if href.startswith("http") else f"{BASE_URL}{href}"
+
+        # JavaScript 다운로드 링크 탐색 (onclick 속성)
+        dl_links = await element.query_selector_all("a[onclick*='download']")
+        if dl_links:
+            onclick = await dl_links[0].get_attribute("onclick")
+            if onclick:
+                match = re.search(r"['\"]([^'\"]+\.pdf[^'\"]*)['\"]", onclick)
+                if match:
+                    path = match.group(1)
+                    return path if path.startswith("http") else f"{BASE_URL}{path}"
+
+        # 일반 다운로드 링크 탐색
+        all_links = await element.query_selector_all("a[href]")
+        for link in all_links:
+            href = await link.get_attribute("href") or ""
+            text = (await link.inner_text()).strip()
+            # 다운로드 텍스트 또는 PDF 관련 href 패턴
+            if "download" in href.lower() or "pdf" in href.lower() or text in ("약관", "다운로드", "PDF"):
+                if href not in ("#", "javascript:void(0)", ""):
+                    return href if href.startswith("http") else f"{BASE_URL}{href}"
+
+        return None
+
+    async def _click_next_page(self, page: Any) -> bool:
+        """다음 페이지 버튼 탐색 및 클릭
+
+        여러 선택자 패턴으로 '다음' 버튼을 찾아 클릭.
+
+        Args:
+            page: Playwright 페이지 객체
+
+        Returns:
+            클릭 성공 여부
+        """
+        for selector in NEXT_PAGE_SELECTORS:
+            try:
+                next_btn = await page.query_selector(selector)
+                if not next_btn:
+                    continue
+
+                # 버튼이 비활성화되어 있는지 확인
+                is_disabled = await next_btn.get_attribute("disabled")
+                class_attr = await next_btn.get_attribute("class") or ""
+
+                if is_disabled or "disabled" in class_attr:
+                    return False
+
+                await next_btn.click()
+                return True
+            except Exception:
+                continue
+
+        return False
+
+    async def parse_listing(self, page: Any) -> list[PolicyListing]:
+        """HTML에서 손해보험 상품 목록 파싱 (하위 호환성 유지)
+
+        새로운 구현은 _fetch_all_listings_playwright()를 직접 사용.
+        이 메서드는 BaseCrawler ABC 인터페이스 준수를 위해 유지.
+
+        Args:
+            page: HTML 문자열 또는 Playwright 페이지 객체
+
+        Returns:
+            파싱된 PolicyListing 목록
+        """
+        # 페이지 객체인 경우 Playwright 파싱 사용
+        if hasattr(page, "query_selector_all"):
+            return await self._parse_page_listings(page)
+
+        # HTML 문자열인 경우 빈 목록 반환 (레거시 지원)
+        logger.warning("KNIA parse_listing: HTML 문자열 파싱은 더 이상 지원되지 않습니다. _fetch_all_listings_playwright()를 사용하세요.")
+        return []
 
     async def download_pdf(self, listing: PolicyListing) -> bytes:
         """약관 PDF 다운로드
@@ -233,26 +482,40 @@ class KNIACrawler(BaseCrawler):
         """
         try:
             from playwright.async_api import async_playwright
+        except ImportError:
+            logger.warning("playwright 미설치, 빈 bytes 반환")
+            return b""
 
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                context = await browser.new_context()
+                page = await context.new_page()
 
                 response_data: list[bytes] = []
 
                 async def handle_response(response: Any) -> None:
-                    if url in response.url:
-                        body = await response.body()
-                        response_data.append(body)
+                    if url in response.url and response.status < 400:
+                        try:
+                            body = await response.body()
+                            response_data.append(body)
+                        except Exception:
+                            pass
 
                 page.on("response", handle_response)
-                await page.goto(url)
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+
+                if not response_data:
+                    await page.wait_for_timeout(2000)
+
+            finally:
                 await browser.close()
 
-                return response_data[0] if response_data else b""
-        except ImportError:
-            logger.warning("playwright 미설치, 빈 bytes 반환")
-            return b""
+        if response_data:
+            return response_data[0]
+
+        logger.warning("KNIA PDF 다운로드 데이터 없음: %s", url)
+        return b""
 
     async def detect_changes(self, listings: list[PolicyListing]) -> DeltaResult:
         """기존 Policy 데이터와 비교하여 변경 감지
@@ -265,9 +528,9 @@ class KNIACrawler(BaseCrawler):
         Returns:
             변경 감지 결과 (new, updated, unchanged)
         """
-        new_listings = []
-        updated_listings = []
-        unchanged_listings = []
+        new_listings: list[PolicyListing] = []
+        updated_listings: list[PolicyListing] = []
+        unchanged_listings: list[PolicyListing] = []
 
         try:
             product_codes = [listing.product_code for listing in listings]

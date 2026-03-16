@@ -1,0 +1,47 @@
+# Stage 1: Builder - install dependencies
+FROM python:3.13-slim AS builder
+
+WORKDIR /app
+
+# uv 패키지 매니저 설치
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# 의존성 파일 복사 (레이어 캐싱 최적화)
+COPY pyproject.toml uv.lock ./
+
+# 프로덕션 의존성만 설치 (dev 제외)
+RUN uv sync --frozen --no-dev
+
+# Stage 2: Runtime - minimal production image
+FROM python:3.13-slim AS runtime
+
+WORKDIR /app
+
+# 보안: curl 설치 (헬스체크용), 불필요한 캐시 제거
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 보안: 비루트 사용자 생성
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
+
+# builder 스테이지에서 의존성 복사
+COPY --from=builder /app/.venv /app/.venv
+
+# 애플리케이션 코드 복사
+COPY --chown=appuser:appuser . .
+
+# 비루트 사용자로 전환
+USER appuser
+
+# PATH에 가상환경 추가
+ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8000
+
+# 헬스체크
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+# 프로덕션 실행 (--reload 없음, 멀티 워커)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

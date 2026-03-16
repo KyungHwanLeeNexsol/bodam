@@ -3,15 +3,16 @@ services:
     image: pgvector/pgvector:pg18
     # 포트 미노출 - 내부 네트워크만 사용 (보안)
     restart: always
+    env_file: .env.prod
     volumes:
-      - postgres_data:/var/lib/postgresql
-    env_file: ./backend/.env.prod
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bodam}
-      POSTGRES_USER: ${POSTGRES_USER:-bodam}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 4G
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodam}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodam} -d ${POSTGRES_DB:-bodam}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,64 +24,72 @@ services:
     image: redis:7-alpine
     # 포트 미노출 - 내부 네트워크만 사용 (보안)
     restart: always
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --requirepass ${REDIS_PASSWORD} --save 60 1 --loglevel warning
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1G
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - bodam-net
 
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
-    # 소스코드 볼륨 마운트 없음 (프로덕션)
+      dockerfile: Dockerfile.prod
+    # 소스코드 볼륨 마운트 없음 (프로덕션 - 코드가 이미지에 포함)
     restart: always
-    ports:
-      - "8000:8000"
-    env_file: ./backend/.env.prod
+    env_file: .env.prod
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # --reload 없이 멀티 워커로 실행
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 12G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - bodam-net
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
-    # 소스코드 볼륨 마운트 없음 (프로덕션)
-    restart: always
-    ports:
-      - "3000:3000"
-    env_file: ./frontend/.env.prod
-    environment:
-      - NEXT_TELEMETRY_DISABLED=1
-      - NODE_ENV=production
-    depends_on:
-      - backend
-    # 프로덕션 빌드 실행 (dev 서버 아님)
-    command: pnpm start
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    networks:
+      - bodam-net
+
+  # [제거됨] frontend 서비스 - Vercel로 이전
+  # Frontend는 https://bodam.vercel.app 에서 호스팅됨
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./deploy/nginx/ssl:/etc/nginx/ssl:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
     networks:
       - bodam-net
 
@@ -92,7 +101,6 @@ services:
   prometheus:
     image: prom/prometheus:v2.53.0
     profiles: ["monitoring"]
-    ports: ["9090:9090"]
     restart: always
     volumes:
       - ./infra/monitoring/prometheus:/etc/prometheus
@@ -110,7 +118,6 @@ services:
   grafana:
     image: grafana/grafana:11.0.0
     profiles: ["monitoring"]
-    ports: ["3001:3000"]
     restart: always
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me_grafana_password}
@@ -129,7 +136,6 @@ services:
   loki:
     image: grafana/loki:3.0.0
     profiles: ["monitoring"]
-    ports: ["3100:3100"]
     restart: always
     volumes:
       - ./infra/monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
@@ -152,7 +158,6 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.28.0
     profiles: ["monitoring"]
-    ports: ["9093:9093"]
     restart: always
     volumes:
       - ./infra/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
@@ -165,7 +170,6 @@ services:
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
     profiles: ["monitoring"]
-    ports: ["9187:9187"]
     restart: always
     environment:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-bodam}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bodam}?sslmode=disable"
@@ -178,10 +182,10 @@ services:
   redis-exporter:
     image: oliver006/redis_exporter:v1.62.0
     profiles: ["monitoring"]
-    ports: ["9121:9121"]
     restart: always
     environment:
       REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     depends_on:
       redis:
         condition: service_healthy

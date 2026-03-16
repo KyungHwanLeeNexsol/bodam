@@ -164,21 +164,27 @@ class S3Storage(StorageBackend):
         access_key: str | None,
         secret_key: str | None,
         base_dir: str = "",
+        region_name: str = "auto",
     ) -> None:
-        """S3/MinIO 스토리지 초기화
+        """S3/MinIO/Cloudflare R2 스토리지 초기화
 
         Args:
             bucket: S3 버킷 이름
-            endpoint_url: S3 호환 엔드포인트 URL (MinIO: http://minio:9000, AWS S3: None)
-            access_key: AWS Access Key / MinIO 액세스 키
-            secret_key: AWS Secret Key / MinIO 시크릿 키
+            endpoint_url: S3 호환 엔드포인트 URL
+                - MinIO (로컬): http://minio:9000
+                - Cloudflare R2: https://{account_id}.r2.cloudflarestorage.com
+                - AWS S3: None (기본 엔드포인트 사용)
+            access_key: AWS Access Key ID / MinIO / R2 액세스 키
+            secret_key: AWS Secret Access Key / MinIO / R2 시크릿 키
             base_dir: S3 키 접두사 (prefix). 빈 문자열이면 접두사 없음
+            region_name: AWS 리전 (Cloudflare R2: 'auto', AWS S3: 'ap-northeast-2' 등)
         """
         self.bucket = bucket
         self.endpoint_url = endpoint_url
         self.access_key = access_key
         self.secret_key = secret_key
         self.base_dir = base_dir
+        self.region_name = region_name
 
     def _get_client(self) -> object:
         """boto3 S3 클라이언트 생성
@@ -197,8 +203,10 @@ class S3Storage(StorageBackend):
             raise NotImplementedError("S3Storage는 boto3가 필요합니다") from err
 
         kwargs: dict = {}
+        # 리전 설정: Cloudflare R2는 'auto', AWS S3는 'ap-northeast-2' 등
+        kwargs["region_name"] = self.region_name
         if self.endpoint_url:
-            # MinIO path-style addressing
+            # MinIO/R2 path-style addressing
             kwargs["endpoint_url"] = self.endpoint_url
             kwargs["config"] = __import__("botocore.config", fromlist=["Config"]).Config(
                 signature_version="s3v4"
@@ -207,9 +215,6 @@ class S3Storage(StorageBackend):
             kwargs["aws_access_key_id"] = self.access_key
         if self.secret_key:
             kwargs["aws_secret_access_key"] = self.secret_key
-        if not self.endpoint_url:
-            # AWS S3 표준 리전 설정
-            kwargs.setdefault("region_name", "us-east-1")
 
         return boto3.client("s3", **kwargs)
 
@@ -371,10 +376,11 @@ def get_storage_backend() -> StorageBackend:
     if backend == "s3":
         return S3Storage(
             bucket=os.getenv("MINIO_BUCKET", "bodam-pdfs"),
-            endpoint_url=os.getenv("MINIO_ENDPOINT", "http://localhost:9000"),
+            endpoint_url=os.getenv("MINIO_ENDPOINT"),
             access_key=os.getenv("MINIO_ACCESS_KEY"),
             secret_key=os.getenv("MINIO_SECRET_KEY"),
             base_dir="",
+            region_name=os.getenv("MINIO_REGION", "auto"),  # R2: 'auto', AWS: 'ap-northeast-2'
         )
 
     storage_path = os.getenv("PDF_STORAGE_PATH", "./data/crawled_pdfs")
