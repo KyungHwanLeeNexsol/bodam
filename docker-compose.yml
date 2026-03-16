@@ -30,6 +30,7 @@ services:
     ports: ["8000:8000"]
     volumes:
       - ./backend:/app
+    # 예시 파일: backend/.env.example (백엔드), frontend/.env.example (프론트엔드)
     env_file: ./backend/.env
     depends_on:
       postgres:

@@ -3,6 +3,7 @@ services:
     image: pgvector/pgvector:pg18
     # 포트 미노출 - 내부 네트워크만 사용 (보안)
     restart: always
+    # 예시 파일: .env.prod.example (루트 레벨)
     env_file: .env.prod
     volumes:
       - postgres_data:/var/lib/postgresql

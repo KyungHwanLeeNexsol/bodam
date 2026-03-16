@@ -26,6 +26,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # 예시 파일: .env.staging.example (루트 레벨)
     env_file: .env.staging
     depends_on:
       postgres:
