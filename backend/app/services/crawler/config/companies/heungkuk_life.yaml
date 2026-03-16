@@ -1,0 +1,16 @@
+company_name: 흥국생명
+company_code: heungkuk-life
+category: LIFE
+base_url: https://www.heungkuklife.co.kr
+listing_url: https://www.heungkuklife.co.kr/consumer/support/terms/termsList.do
+selectors:
+  listing_container: "table.tb_list tbody tr, .term-list .item"
+  product_name: "td:nth-child(2), .product-name"
+  product_code: "td:nth-child(1), .product-code"
+  pdf_link: "a[href*='.pdf'], a[onclick*='download']"
+  next_page: ".paging .next, a.btn-next"
+pagination:
+  type: numbered
+  max_pages: 30
+rate_limit_seconds: 3.0
+timeout_ms: 30000

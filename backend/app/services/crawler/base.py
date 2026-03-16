@@ -1,4 +1,4 @@
-"""크롤러 기본 클래스 및 데이터 모델 (SPEC-CRAWLER-001)
+"""크롤러 기본 클래스 및 데이터 모델 (SPEC-CRAWLER-001, SPEC-CRAWLER-002)
 
 BaseCrawler ABC와 공통 데이터클래스 정의.
 재시도, 레이트 리밋, 해시 계산 등 공통 기능 제공.
@@ -11,9 +11,23 @@ import dataclasses
 import hashlib
 import logging
 from abc import ABC, abstractmethod
+from datetime import date
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+class SaleStatus(StrEnum):
+    """보험 상품 판매 상태
+
+    판매 중인 상품과 판매 중지된 상품을 구분하기 위한 열거형.
+    StrEnum 상속으로 JSON 직렬화 및 문자열 비교에 친화적.
+    """
+
+    ON_SALE = "ON_SALE"           # 판매중
+    DISCONTINUED = "DISCONTINUED"  # 판매중지
+    UNKNOWN = "UNKNOWN"           # 미확인
 
 
 @dataclasses.dataclass
@@ -22,6 +36,7 @@ class PolicyListing:
 
     크롤러가 파싱한 개별 상품 항목.
     PDF URL 및 보험사/상품 식별 정보 포함.
+    SPEC-CRAWLER-002: 판매 상태 및 유효기간 필드 추가.
     """
 
     # 보험사 명칭 (예: 삼성생명)
@@ -36,6 +51,12 @@ class PolicyListing:
     pdf_url: str
     # 보험사 식별 코드 (예: samsung-life)
     company_code: str
+    # 판매 상태 (기본값: UNKNOWN으로 하위 호환성 유지)
+    sale_status: SaleStatus = dataclasses.field(default=SaleStatus.UNKNOWN)
+    # 효력 발생일 (판매 시작일)
+    effective_date: date | None = dataclasses.field(default=None)
+    # 판매 종료일 (판매 중지 기준일)
+    expiry_date: date | None = dataclasses.field(default=None)
 
 
 @dataclasses.dataclass
