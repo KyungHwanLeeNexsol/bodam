@@ -3822,6 +3822,245 @@
           "fontWeight": "bold"
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "IPm0D",
+      "x": 0,
+      "y": 3027,
+      "name": "OG Image - Light",
+      "clip": true,
+      "width": 1200,
+      "height": 630,
+      "fill": "#FFFFFF",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "WBSR7",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 150,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#F8FAFC",
+                "position": 0
+              },
+              {
+                "color": "#EEF2FF",
+                "position": 0.5
+              },
+              {
+                "color": "#F0F9FF",
+                "position": 1
+              }
+            ]
+          },
+          "width": 1200,
+          "height": 630
+        },
+        {
+          "type": "ellipse",
+          "id": "xkMjf",
+          "x": 850,
+          "y": -100,
+          "name": "deco1",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#2563EB12",
+                "position": 0
+              },
+              {
+                "color": "#2563EB00",
+                "position": 1
+              }
+            ]
+          },
+          "width": 380,
+          "height": 380
+        },
+        {
+          "type": "ellipse",
+          "id": "RAKkP",
+          "x": -80,
+          "y": 380,
+          "name": "deco2",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#4F46E510",
+                "position": 0
+              },
+              {
+                "color": "#4F46E500",
+                "position": 1
+              }
+            ]
+          },
+          "width": 300,
+          "height": 300
+        },
+        {
+          "type": "ellipse",
+          "id": "qAWyy",
+          "x": 500,
+          "y": 500,
+          "name": "deco3",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 1,
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#10B98110",
+                "position": 0
+              },
+              {
+                "color": "#10B98100",
+                "position": 1
+              }
+            ]
+          },
+          "width": 200,
+          "height": 200
+        },
+        {
+          "type": "rectangle",
+          "id": "1XyIY",
+          "x": 0,
+          "y": 624,
+          "name": "accent bottom",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 90,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#2563EB",
+                "position": 0
+              },
+              {
+                "color": "#4F46E5",
+                "position": 0.5
+              },
+              {
+                "color": "#10B981",
+                "position": 1
+              }
+            ]
+          },
+          "width": 1200,
+          "height": 6
+        },
+        {
+          "type": "frame",
+          "id": "6aBW1",
+          "x": 0,
+          "y": 0,
+          "name": "content",
+          "width": 1200,
+          "height": 630,
+          "layout": "vertical",
+          "gap": 28,
+          "padding": [
+            0,
+            100
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "id": "pgpqp",
+              "type": "ref",
+              "ref": "ZLSdm",
+              "name": "logo",
+              "x": 535.5,
+              "y": 196.5,
+              "descendants": {
+                "N2VMr": {
+                  "width": 52,
+                  "height": 52,
+                  "cornerRadius": 14
+                },
+                "BIgTI": {
+                  "width": 30,
+                  "height": 32
+                },
+                "hJerW": {
+                  "fontSize": 36
+                }
+              }
+            },
+            {
+              "type": "text",
+              "id": "4oK4x",
+              "name": "tagline",
+              "fill": "#1A1A1A",
+              "content": "보험 보상, 보담이 안내해드릴게요",
+              "textAlign": "center",
+              "fontFamily": "Newsreader",
+              "fontSize": 40,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "DGsif",
+              "name": "subtitle",
+              "fill": "#666666",
+              "content": "AI 기반 보험 약관 분석으로 정확한 보상 안내를 받아보세요",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 18,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "JVl1T",
+              "name": "url",
+              "fill": "#2563EB",
+              "content": "bodam.chat",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "500",
+              "letterSpacing": 2
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {
