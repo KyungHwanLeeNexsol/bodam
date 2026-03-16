@@ -158,6 +158,29 @@ describe("parseSSEStream", () => {
     expect(events[0]).toEqual({ type: "token", content: "유효한 이벤트" })
   })
 
+  // guidance 이벤트 파싱 테스트
+  it("guidance 이벤트를 올바르게 파싱한다", async () => {
+    const events: SSEEvent[] = []
+    const guidanceData = {
+      dispute_type: "claim_denial",
+      ambiguous_clauses: [],
+      precedents: [],
+      probability: { overall_score: 0.65, factors: [], confidence: 0.7, disclaimer: "" },
+      evidence_strategy: { required_documents: [], recommended_documents: [], preparation_tips: [], timeline_advice: "" },
+      escalation: { recommended_level: "fss_complaint", reason: "", next_steps: [], estimated_duration: "", cost_estimate: "" },
+      disclaimer: "본 정보는 교육적 목적이며...",
+      confidence: 0.7,
+    }
+    const response = createMockResponse([
+      `data: ${JSON.stringify({ type: "guidance", content: guidanceData })}\n\n`,
+    ])
+
+    await parseSSEStream(response, (event) => events.push(event))
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toEqual({ type: "guidance", content: guidanceData })
+  })
+
   // body가 null인 경우 에러 테스트
   it("response.body가 null이면 에러를 던진다", async () => {
     const events: SSEEvent[] = []

@@ -26,9 +26,8 @@ export default function RegisterPage() {
         }}
       >
         {/* 로고 섹션 */}
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <Image src="/logo.png" alt="보담" width={120} height={40} priority />
-          <p className="text-[13px] text-[#888888]">보험 보상 안내 플랫폼</p>
+        <div className="mb-6 flex flex-col items-center">
+          <Image src="/logo.png" alt="보담" width={90} height={30} priority />
         </div>
 
         {/* 탭 토글: 로그인/회원가입 */}
