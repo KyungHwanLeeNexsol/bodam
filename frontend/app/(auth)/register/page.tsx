@@ -5,11 +5,11 @@
  * 회원가입 탭이 활성 상태.
  */
 
+import Image from 'next/image'
 import Link from 'next/link'
 import React from 'react'
 
 import { RegisterForm } from '@/components/auth/RegisterForm'
-import Logo from '@/components/ui/Logo'
 
 export default function RegisterPage() {
   return (
@@ -27,7 +27,7 @@ export default function RegisterPage() {
       >
         {/* 로고 섹션 */}
         <div className="mb-6 flex flex-col items-center">
-          <Logo size="md" />
+          <Image src="/logo.png" alt="보담" width={90} height={30} priority />
         </div>
 
         {/* 탭 토글: 로그인/회원가입 */}

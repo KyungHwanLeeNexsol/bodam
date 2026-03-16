@@ -2,7 +2,7 @@
  * 푸터 컴포넌트 - 로고, 3컬럼 링크, 저작권
  */
 import Link from 'next/link'
-import Logo from '@/components/ui/Logo'
+import Image from 'next/image'
 
 const serviceLinks = [
   { label: '보담 보상 안내', href: '/chat' },
@@ -31,7 +31,7 @@ export default function Footer() {
       <div className="mb-10 flex items-start justify-between">
         {/* 브랜드 */}
         <div className="flex w-[300px] flex-col gap-3">
-          <Logo size="md" />
+          <Image src="/logo.png" alt="보담 로고" width={273} height={108} className="h-7 w-auto brightness-0 invert" />
           <p className="text-[13px] leading-relaxed text-[#888888]">
             보험 보상 안내 플랫폼<br />
             보험의 복잡함을 간단하게 풀어드립니다
