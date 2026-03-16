@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.models.insurance import InsuranceCategory, Policy
+from app.models.insurance import InsuranceCategory, InsuranceCompany, Policy
 from app.services.crawler.base import BaseCrawler, CrawlRunResult, DeltaResult, PolicyListing
 
 logger = logging.getLogger(__name__)
@@ -24,23 +24,14 @@ CRAWLER_NAME = "klia"
 # 생명보험협회 기본 URL
 BASE_URL = "https://www.klia.or.kr"
 
-# 약관 목록 페이지 경로 후보 (사이트 구조 변경 대비 다중 경로)
-LISTING_PATHS = [
-    "/consumer/policy/list",
-    "/consumer/policy",
-    "/disclosure/policy",
-]
+# 배타적 사용권 신약관 공시 목록 URL
+# www.klia.or.kr 에서 확인된 실제 약관 PDF 목록 페이지
+LISTING_URL = f"{BASE_URL}/member/exclUse/exclProduct/list.do"
 
-# 다음 페이지 버튼 선택자 후보
-NEXT_PAGE_SELECTORS = [
-    "a:has-text('다음')",
-    "button:has-text('다음')",
-    ".pagination .next",
-    ".paging .next",
-    "a.next",
-]
+# 파일 다운로드 URL 패턴: /FileDown.do?fileNo=XXXX&seq=N
+FILE_DOWN_URL = f"{BASE_URL}/FileDown.do"
 
-# 테이블 행 선택자 후보 (사이트 구조 변경 대비)
+# 테이블 행 선택자
 ROW_SELECTORS = [
     "table tbody tr",
     "table tr:not(:first-child)",
@@ -111,6 +102,9 @@ class KLIACrawler(BaseCrawler):
                     else:
                         updated_count += 1
 
+                    # DB에 InsuranceCompany + Policy upsert
+                    await self._upsert_policy(listing, path, content_hash)
+
                     results.append({
                         "product_code": listing.product_code,
                         "company_code": listing.company_code,
@@ -143,13 +137,50 @@ class KLIACrawler(BaseCrawler):
                 skipped_count=0, failed_count=1, results=[]
             )
 
-    # @MX:ANCHOR: [AUTO] 전체 약관 목록 크롤링 핵심 메서드
-    # @MX:REASON: crawl()에서 직접 호출, Playwright 페이지네이션 처리 담당
-    async def _fetch_all_listings_playwright(self) -> list[PolicyListing]:
-        """Playwright로 전체 약관 목록 크롤링 (페이지네이션 포함)
+    async def _upsert_policy(self, listing: PolicyListing, pdf_path: str, content_hash: str) -> None:
+        """InsuranceCompany + Policy를 DB에 upsert (없으면 생성, 있으면 유지)"""
+        import uuid as uuid_mod
+        # InsuranceCompany upsert
+        stmt = select(InsuranceCompany).where(InsuranceCompany.code == listing.company_code)
+        result = await self.db_session.execute(stmt)
+        company = result.scalar_one_or_none()
+        if company is None:
+            company = InsuranceCompany(
+                id=uuid_mod.uuid4(),
+                code=listing.company_code,
+                name=listing.company_name,
+            )
+            self.db_session.add(company)
+            await self.db_session.flush()
 
-        page.query_selector_all()을 사용한 강건한 엘리먼트 선택.
-        '다음' 버튼이 있는 한 계속 페이지 이동.
+        # Policy upsert
+        stmt2 = select(Policy).where(
+            Policy.company_id == company.id,
+            Policy.product_code == listing.product_code,
+        )
+        result2 = await self.db_session.execute(stmt2)
+        policy = result2.scalar_one_or_none()
+        if policy is None:
+            policy = Policy(
+                id=uuid_mod.uuid4(),
+                company_id=company.id,
+                name=listing.product_name,
+                product_code=listing.product_code,
+                category=listing.category,
+                metadata_={"pdf_path": pdf_path, "content_hash": content_hash, "source": "klia"},
+            )
+            self.db_session.add(policy)
+        else:
+            policy.metadata_ = {"pdf_path": pdf_path, "content_hash": content_hash, "source": "klia"}
+
+    # @MX:ANCHOR: [AUTO] 전체 약관 목록 크롤링 핵심 메서드
+    # @MX:REASON: crawl()에서 직접 호출, fn_page() 페이지네이션 처리 담당
+    async def _fetch_all_listings_playwright(self) -> list[PolicyListing]:
+        """Playwright로 전체 약관 목록 크롤링 (fn_page 페이지네이션 포함)
+
+        www.klia.or.kr/member/exclUse/exclProduct/list.do 에서
+        fn_page(N) onclick 방식 페이지네이션으로 전체 목록 수집.
+        파일 다운로드: /FileDown.do?fileNo=XXXX&seq=1
 
         Returns:
             전체 페이지에서 수집한 PolicyListing 목록
@@ -166,58 +197,25 @@ class KLIACrawler(BaseCrawler):
             browser = await p.chromium.launch(headless=True)
             try:
                 page = await browser.new_page()
+                await page.goto(LISTING_URL, wait_until="networkidle", timeout=30000)
 
-                # 접근 가능한 목록 페이지 URL 탐색
-                target_url = await self._find_listing_url(page)
-                if not target_url:
-                    logger.error("KLIA 목록 페이지를 찾을 수 없습니다")
-                    return all_listings
+                # 마지막 페이지 번호 파악
+                max_page = await self._get_max_page(page)
+                logger.info("KLIA 총 페이지 수: %d", max_page)
 
-                await page.goto(target_url, wait_until="networkidle", timeout=30000)
+                for page_num in range(1, max_page + 1):
+                    if page_num > 1:
+                        try:
+                            await page.evaluate(f"fn_page({page_num})")
+                            await page.wait_for_load_state("networkidle", timeout=15000)
+                        except Exception as exc:
+                            logger.warning("KLIA 페이지 %d 이동 실패: %s", page_num, str(exc))
+                            break
 
-                # SPA 콘텐츠 렌더링 대기
-                try:
-                    await page.wait_for_selector(
-                        ".term-list, table, .product-list, table tbody tr",
-                        timeout=30000,
-                    )
-                except Exception:
-                    logger.warning("KLIA SPA 선택자 대기 실패 (계속 진행)")
-
-                # 네트워크 유휴 상태 추가 대기
-                try:
-                    await page.wait_for_load_state("networkidle", timeout=30000)
-                except Exception:
-                    logger.debug("KLIA networkidle 타임아웃 (계속 진행)")
-
-                # 지연 로딩 트리거를 위해 스크롤
-                try:
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await page.wait_for_timeout(1000)
-                except Exception:
-                    logger.debug("KLIA 스크롤 실패 (계속 진행)")
-
-                # 페이지네이션 루프 (최대 100페이지)
-                page_num = 1
-                max_pages = 100
-
-                while page_num <= max_pages:
-                    logger.info("KLIA 목록 페이지 %d 파싱 중...", page_num)
-
-                    # 현재 페이지의 목록 파싱
+                    logger.info("KLIA 페이지 %d/%d 파싱 중...", page_num, max_page)
                     page_listings = await self._parse_page_listings(page)
                     all_listings.extend(page_listings)
                     logger.info("KLIA 페이지 %d에서 %d개 항목 발견", page_num, len(page_listings))
-
-                    # 다음 페이지 버튼 탐색 및 클릭
-                    next_clicked = await self._click_next_page(page)
-                    if not next_clicked:
-                        logger.info("KLIA 마지막 페이지 도달 (총 %d페이지)", page_num)
-                        break
-
-                    # 페이지 로딩 대기
-                    await page.wait_for_load_state("networkidle", timeout=15000)
-                    page_num += 1
 
             finally:
                 await browser.close()
@@ -225,27 +223,28 @@ class KLIACrawler(BaseCrawler):
         logger.info("KLIA 전체 크롤링 완료: %d개 항목", len(all_listings))
         return all_listings
 
-    async def _find_listing_url(self, page: Any) -> str | None:
-        """접근 가능한 KLIA 목록 페이지 URL 탐색
-
-        여러 경로를 시도하여 실제로 작동하는 URL을 반환.
+    async def _get_max_page(self, page: Any) -> int:
+        """페이지네이션에서 마지막 페이지 번호 추출
 
         Args:
             page: Playwright 페이지 객체
 
         Returns:
-            접근 가능한 URL 또는 None
+            마지막 페이지 번호 (기본값 1)
         """
-        for path in LISTING_PATHS:
-            url = f"{BASE_URL}{path}"
-            try:
-                response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                if response and response.status < 400:
-                    return url
-            except Exception as exc:
-                logger.debug("KLIA URL %s 접근 실패: %s", url, str(exc))
-
-        return None
+        try:
+            paging_links = await page.query_selector_all("a[onclick*='fn_page']")
+            max_page = 1
+            for link in paging_links:
+                onclick = await link.get_attribute("onclick") or ""
+                import re
+                m = re.search(r"fn_page\((\d+)\)", onclick)
+                if m:
+                    max_page = max(max_page, int(m.group(1)))
+            return max_page
+        except Exception as exc:
+            logger.warning("KLIA 최대 페이지 파악 실패: %s", str(exc))
+            return 1
 
     async def _parse_page_listings(self, page: Any) -> list[PolicyListing]:
         """현재 페이지에서 약관 목록 파싱
@@ -288,7 +287,10 @@ class KLIACrawler(BaseCrawler):
     async def _parse_row(self, row: Any) -> PolicyListing | None:
         """테이블 행에서 PolicyListing 추출
 
-        셀에서 텍스트를 직접 추출하고 PDF 링크를 탐색.
+        KLIA exclProduct 테이블 구조:
+        [번호, 보험사명, 등록일, 상품명, 배타적사용권 기간, 다운로드]
+        다운로드: onclick="gfn_fileDown('XXXX', '1')"
+        실제 URL: /FileDown.do?fileNo=XXXX&seq=1
 
         Args:
             row: Playwright 테이블 행 엘리먼트
@@ -296,28 +298,28 @@ class KLIACrawler(BaseCrawler):
         Returns:
             파싱된 PolicyListing 또는 None
         """
-        # 셀 텍스트 추출
         cells = await row.query_selector_all("td")
-        if len(cells) < 3:
+        if len(cells) < 5:
             return None
 
-        # 각 셀에서 직접 텍스트 추출 (HTML 파싱 없음)
-        company_name = (await cells[0].inner_text()).strip()
-        product_name = (await cells[1].inner_text()).strip()
-        product_code = (await cells[2].inner_text()).strip()
+        # [0]=번호, [1]=보험사, [2]=등록일, [3]=상품명, [4]=기간, [5]=다운로드
+        company_name = (await cells[1].inner_text()).strip()
+        product_name = (await cells[3].inner_text()).strip()
+        row_num = (await cells[0].inner_text()).strip()
 
-        if not product_code:
+        if not company_name or not product_name:
             return None
 
-        # PDF 링크 탐색 (행 내에서)
+        # gfn_fileDown('XXXX', '1') 패턴에서 fileNo 추출
         pdf_url = await self._find_pdf_link(row)
         if not pdf_url:
             return None
 
-        # 보험사 코드 생성 (영문 소문자, 숫자, 하이픈만 허용)
+        # 상품 코드: 행 번호 + 상품명 해시
+        product_code = f"klia-{row_num}-{re.sub(r'[^a-z0-9]', '', product_name.lower())[:20]}"
         company_code = re.sub(r"[^a-z0-9]", "-", company_name.lower()).strip("-")
         if not company_code:
-            company_code = f"klia-{len(product_code)}"
+            company_code = f"klia-unknown"
 
         return PolicyListing(
             company_name=company_name,
@@ -329,72 +331,52 @@ class KLIACrawler(BaseCrawler):
         )
 
     async def _find_pdf_link(self, element: Any) -> str | None:
-        """엘리먼트 내에서 PDF 링크 탐색
+        """엘리먼트 내에서 PDF 다운로드 URL 추출
 
-        다양한 방식으로 PDF URL 추출 시도.
+        KLIA gfn_fileDown('XXXX', 'N') 패턴:
+        onclick에서 fileNo, seq 추출 후 /FileDown.do?fileNo=XXXX&seq=N 생성
 
         Args:
             element: Playwright 엘리먼트
 
         Returns:
-            PDF URL 또는 None
+            PDF 다운로드 URL 또는 None
         """
-        # href 속성에서 .pdf 링크 탐색
+        # gfn_fileDown('fileNo', 'seq') 패턴 탐색
+        dl_links = await element.query_selector_all("a[onclick*='gfn_fileDown']")
+        for link in dl_links:
+            onclick = await link.get_attribute("onclick") or ""
+            match = re.search(r"gfn_fileDown\(['\"]?(\d+)['\"]?,\s*['\"]?(\d+)['\"]?\)", onclick)
+            if match:
+                file_no = match.group(1)
+                seq = match.group(2)
+                return f"{FILE_DOWN_URL}?fileNo={file_no}&seq={seq}"
+
+        # 직접 href .pdf 링크
         pdf_links = await element.query_selector_all("a[href*='.pdf']")
         if pdf_links:
             href = await pdf_links[0].get_attribute("href")
             if href:
                 return href if href.startswith("http") else f"{BASE_URL}{href}"
 
-        # JavaScript 다운로드 링크 탐색 (onclick 속성)
-        dl_links = await element.query_selector_all("a[onclick*='download']")
-        if dl_links:
-            onclick = await dl_links[0].get_attribute("onclick")
-            if onclick:
-                # onclick="downloadFile('/path/to/file.pdf')" 패턴 추출
-                match = re.search(r"['\"]([^'\"]+\.pdf[^'\"]*)['\"]", onclick)
-                if match:
-                    path = match.group(1)
-                    return path if path.startswith("http") else f"{BASE_URL}{path}"
-
-        # 다운로드 버튼 탐색
-        dl_buttons = await element.query_selector_all("a[href*='download'], button[onclick*='download']")
-        for btn in dl_buttons:
-            href = await btn.get_attribute("href")
-            if href and href not in ("#", "javascript:void(0)"):
+        # FileDown.do 직접 링크
+        filedown_links = await element.query_selector_all("a[href*='FileDown.do']")
+        if filedown_links:
+            href = await filedown_links[0].get_attribute("href")
+            if href:
                 return href if href.startswith("http") else f"{BASE_URL}{href}"
 
         return None
 
     async def _click_next_page(self, page: Any) -> bool:
-        """다음 페이지 버튼 탐색 및 클릭
-
-        여러 선택자 패턴으로 '다음' 버튼을 찾아 클릭.
+        """다음 페이지로 이동 (레거시 호환성 유지, 실제 구현은 fn_page 사용)
 
         Args:
             page: Playwright 페이지 객체
 
         Returns:
-            클릭 성공 여부
+            항상 False (fn_page 방식으로 대체됨)
         """
-        for selector in NEXT_PAGE_SELECTORS:
-            try:
-                next_btn = await page.query_selector(selector)
-                if not next_btn:
-                    continue
-
-                # 버튼이 비활성화되어 있는지 확인
-                is_disabled = await next_btn.get_attribute("disabled")
-                class_attr = await next_btn.get_attribute("class") or ""
-
-                if is_disabled or "disabled" in class_attr:
-                    return False
-
-                await next_btn.click()
-                return True
-            except Exception:
-                continue
-
         return False
 
     async def parse_listing(self, page: Any) -> list[PolicyListing]:
@@ -418,9 +400,10 @@ class KLIACrawler(BaseCrawler):
         return []
 
     async def download_pdf(self, listing: PolicyListing) -> bytes:
-        """약관 PDF 다운로드
+        """약관 PDF HTTP 직접 다운로드
 
-        Playwright를 통해 PDF를 바이너리로 다운로드.
+        /FileDown.do?fileNo=XXXX&seq=N URL에서 직접 다운로드.
+        Referer 헤더 필요.
 
         Args:
             listing: 다운로드할 상품 정보
@@ -428,54 +411,26 @@ class KLIACrawler(BaseCrawler):
         Returns:
             PDF 바이너리 데이터
         """
-        return await self._download_with_playwright(listing.pdf_url)
-
-    async def _download_with_playwright(self, url: str) -> bytes:
-        """Playwright로 PDF 다운로드
-
-        Args:
-            url: PDF URL
-
-        Returns:
-            PDF 바이너리
-        """
+        import httpx
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Referer": LISTING_URL,
+        }
         try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            logger.warning("playwright 미설치, 빈 bytes 반환")
-            return b""
-
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            try:
-                context = await browser.new_context()
-                page = await context.new_page()
-
-                # 응답 캡처를 위한 핸들러
-                response_data: list[bytes] = []
-
-                async def handle_response(response: Any) -> None:
-                    if url in response.url and response.status < 400:
-                        try:
-                            body = await response.body()
-                            response_data.append(body)
-                        except Exception:
-                            pass
-
-                page.on("response", handle_response)
-                await page.goto(url, wait_until="networkidle", timeout=30000)
-
-                # 응답 캡처 대기
-                if not response_data:
-                    await page.wait_for_timeout(2000)
-
-            finally:
-                await browser.close()
-
-        if response_data:
-            return response_data[0]
-
-        logger.warning("KLIA PDF 다운로드 데이터 없음: %s", url)
+            async with httpx.AsyncClient(headers=headers, timeout=60.0, follow_redirects=True) as client:
+                resp = await client.get(listing.pdf_url)
+                if resp.status_code < 400:
+                    data = resp.content
+                    if data[:4] == b"%PDF":
+                        return data
+                    logger.warning("KLIA PDF 응답이 PDF 형식이 아닙니다: %s", listing.pdf_url)
+                else:
+                    logger.warning("KLIA PDF 다운로드 실패 HTTP %d: %s", resp.status_code, listing.pdf_url)
+        except Exception as exc:
+            logger.error("KLIA PDF 다운로드 오류: %s - %s", listing.pdf_url, str(exc))
         return b""
 
     async def detect_changes(self, listings: list[PolicyListing]) -> DeltaResult:

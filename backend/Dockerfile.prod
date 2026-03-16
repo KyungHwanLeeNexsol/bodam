@@ -17,9 +17,23 @@ FROM python:3.13-slim AS runtime
 
 WORKDIR /app
 
-# 보안: curl 설치 (헬스체크용), 불필요한 캐시 제거
+# 시스템 패키지: curl(헬스체크) + Playwright Chromium 의존성
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # 보안: 비루트 사용자 생성
@@ -28,14 +42,22 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
 # builder 스테이지에서 의존성 복사
 COPY --from=builder /app/.venv /app/.venv
 
+# Playwright 브라우저 설치 (root로 실행, 캐시를 /app/.cache에 저장)
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN /app/.venv/bin/playwright install chromium
+
 # 애플리케이션 코드 복사
 COPY --chown=appuser:appuser . .
+
+# Playwright 캐시 소유권 변경
+RUN chown -R appuser:appuser /app/.cache || true
 
 # 비루트 사용자로 전환
 USER appuser
 
 # PATH에 가상환경 추가
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
 
 EXPOSE 8000
 

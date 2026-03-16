@@ -46,9 +46,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    # 소스코드 볼륨 마운트 없음 (프로덕션 - 코드가 이미지에 포함)
     restart: always
     env_file: .env.prod
+    volumes:
+      - crawl_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,7 +59,7 @@ services:
       resources:
         limits:
           cpus: "0.8"
-          memory: 400M
+          memory: 600M
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
       interval: 30s
@@ -203,3 +204,4 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  crawl_data:

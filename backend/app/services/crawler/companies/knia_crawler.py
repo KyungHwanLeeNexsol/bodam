@@ -24,13 +24,11 @@ CRAWLER_NAME = "knia"
 # 손해보험협회 기본 URL
 BASE_URL = "https://www.knia.or.kr"
 
-# 약관 목록 페이지 경로 후보 (사이트 구조 변경 대비 다중 경로)
-LISTING_PATHS = [
-    "/consumer/policy",
-    "/consumer/policy/list",
-    "/disclosure/policy",
-    "/public/policy",
-]
+# @MX:NOTE: [AUTO] KNIA 약관 크롤링 현황
+# kpub.knia.or.kr는 비교공시 사이트로 PDF 다운로드 미제공
+# www.knia.or.kr/file/download/XXX는 이미지 파일 (PDF 아님)
+# 현재 KNIA 약관 PDF 공개 경로 미확인 - 빈 목록 반환
+KNIA_PDF_NOT_AVAILABLE = True
 
 # 다음 페이지 버튼 선택자 후보
 NEXT_PAGE_SELECTORS = [
@@ -148,86 +146,29 @@ class KNIACrawler(BaseCrawler):
             )
 
     # @MX:ANCHOR: [AUTO] 전체 약관 목록 크롤링 핵심 메서드
-    # @MX:REASON: crawl()에서 직접 호출, Playwright 페이지네이션 처리 담당
+    # @MX:REASON: crawl()에서 직접 호출, KNIA PDF 미제공으로 빈 목록 반환
     async def _fetch_all_listings_playwright(self) -> list[PolicyListing]:
-        """Playwright로 전체 약관 목록 크롤링 (페이지네이션 포함)
+        """KNIA 약관 목록 크롤링
 
-        page.query_selector_all()을 사용한 강건한 엘리먼트 선택.
-        '다음' 버튼이 있는 한 계속 페이지 이동.
+        현재 KNIA(kpub.knia.or.kr)는 보험료 비교공시 사이트로,
+        약관 PDF 다운로드를 제공하지 않습니다.
+        www.knia.or.kr/file/download/ 는 이미지 파일만 제공.
+
+        향후 KNIA에서 약관 PDF 공시 경로 확인 시 구현 필요.
 
         Returns:
-            전체 페이지에서 수집한 PolicyListing 목록
+            빈 목록 (KNIA PDF 미제공)
         """
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            logger.warning("playwright 미설치, 빈 목록 반환")
+        if KNIA_PDF_NOT_AVAILABLE:
+            logger.warning(
+                "KNIA 약관 PDF 다운로드 경로 미확인. "
+                "kpub.knia.or.kr는 비교공시 전용 사이트입니다. "
+                "약관 PDF 크롤링을 건너뜁니다."
+            )
             return []
 
-        all_listings: list[PolicyListing] = []
-
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            try:
-                page = await browser.new_page()
-
-                # 접근 가능한 목록 페이지 URL 탐색
-                target_url = await self._find_listing_url(page)
-                if not target_url:
-                    logger.error("KNIA 목록 페이지를 찾을 수 없습니다")
-                    return all_listings
-
-                await page.goto(target_url, wait_until="networkidle", timeout=30000)
-
-                # 페이지네이션 루프 (최대 100페이지)
-                page_num = 1
-                max_pages = 100
-
-                while page_num <= max_pages:
-                    logger.info("KNIA 목록 페이지 %d 파싱 중...", page_num)
-
-                    # 현재 페이지의 목록 파싱
-                    page_listings = await self._parse_page_listings(page)
-                    all_listings.extend(page_listings)
-                    logger.info("KNIA 페이지 %d에서 %d개 항목 발견", page_num, len(page_listings))
-
-                    # 다음 페이지 버튼 탐색 및 클릭
-                    next_clicked = await self._click_next_page(page)
-                    if not next_clicked:
-                        logger.info("KNIA 마지막 페이지 도달 (총 %d페이지)", page_num)
-                        break
-
-                    # 페이지 로딩 대기
-                    await page.wait_for_load_state("networkidle", timeout=15000)
-                    page_num += 1
-
-            finally:
-                await browser.close()
-
-        logger.info("KNIA 전체 크롤링 완료: %d개 항목", len(all_listings))
-        return all_listings
-
-    async def _find_listing_url(self, page: Any) -> str | None:
-        """접근 가능한 KNIA 목록 페이지 URL 탐색
-
-        여러 경로를 시도하여 실제로 작동하는 URL을 반환.
-
-        Args:
-            page: Playwright 페이지 객체
-
-        Returns:
-            접근 가능한 URL 또는 None
-        """
-        for path in LISTING_PATHS:
-            url = f"{BASE_URL}{path}"
-            try:
-                response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                if response and response.status < 400:
-                    return url
-            except Exception as exc:
-                logger.debug("KNIA URL %s 접근 실패: %s", url, str(exc))
-
-        return None
+        # 향후 구현을 위한 플레이스홀더
+        return []
 
     async def _parse_page_listings(self, page: Any) -> list[PolicyListing]:
         """현재 페이지에서 약관 목록 파싱

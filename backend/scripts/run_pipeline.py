@@ -46,19 +46,19 @@ async def run_crawl(crawler_name: str) -> None:
     Args:
         crawler_name: 크롤러 이름 ('klia' 또는 'knia')
     """
+    import app.core.database as db_module
     from app.core.config import Settings
-    from app.core.database import init_database, session_factory
 
     settings = Settings()  # type: ignore[call-arg]
-    await init_database(settings)
+    await db_module.init_database(settings)
 
-    if session_factory is None:
+    if db_module.session_factory is None:
         logger.error("데이터베이스 초기화 실패")
         return
 
     logger.info("크롤러 시작: %s", crawler_name)
 
-    async with session_factory() as session:
+    async with db_module.session_factory() as session:
         # 스토리지 백엔드 초기화
         storage = _create_storage(settings)
 
@@ -98,29 +98,31 @@ async def run_embed_all() -> None:
     """임베딩이 없는 모든 정책 청크에 대해 임베딩 생성"""
     from sqlalchemy import select
 
+    import app.core.database as db_module
     from app.core.config import Settings
-    from app.core.database import init_database, session_factory
     from app.models.insurance import PolicyChunk
     from app.services.rag.embeddings import EmbeddingService
 
     settings = Settings()  # type: ignore[call-arg]
-    await init_database(settings)
+    await db_module.init_database(settings)
 
-    if session_factory is None:
+    if db_module.session_factory is None:
         logger.error("데이터베이스 초기화 실패")
         return
 
-    if not settings.openai_api_key:
-        logger.error("OPENAI_API_KEY가 설정되지 않았습니다")
+    import os
+    api_key = settings.gemini_api_key or os.environ.get("GOOGLE_API_KEY", "")
+    if not api_key:
+        logger.error("GEMINI_API_KEY 또는 GOOGLE_API_KEY가 설정되지 않았습니다")
         return
 
     embedding_service = EmbeddingService(
-        api_key=settings.openai_api_key,
+        api_key=api_key,
         model=settings.embedding_model,
         dimensions=settings.embedding_dimensions,
     )
 
-    async with session_factory() as session:
+    async with db_module.session_factory() as session:
         # 임베딩이 없는 청크 조회
         stmt = select(PolicyChunk).where(PolicyChunk.embedding.is_(None))
         result = await session.execute(stmt)
@@ -156,19 +158,19 @@ async def show_status() -> None:
     """데이터베이스 현황 조회 및 출력"""
     from sqlalchemy import func, select
 
+    import app.core.database as db_module
     from app.core.config import Settings
-    from app.core.database import init_database, session_factory
     from app.models.case_precedent import CasePrecedent
     from app.models.insurance import InsuranceCompany, Policy, PolicyChunk
 
     settings = Settings()  # type: ignore[call-arg]
-    await init_database(settings)
+    await db_module.init_database(settings)
 
-    if session_factory is None:
+    if db_module.session_factory is None:
         logger.error("데이터베이스 초기화 실패")
         return
 
-    async with session_factory() as session:
+    async with db_module.session_factory() as session:
         # 각 테이블 레코드 수 조회
         company_count_result = await session.execute(select(func.count()).select_from(InsuranceCompany))
         company_count = company_count_result.scalar() or 0
