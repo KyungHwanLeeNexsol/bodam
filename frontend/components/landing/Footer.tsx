@@ -24,6 +24,7 @@ export default function Footer() {
             width={273}
             height={108}
             className="h-8 w-auto"
+            style={{ width: 'auto', height: '2rem' }}
           />
           <p className="text-[13px] leading-relaxed text-[#888888]">
             보험 보상 안내 플랫폼<br />
