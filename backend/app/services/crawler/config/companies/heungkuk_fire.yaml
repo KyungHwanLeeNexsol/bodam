@@ -1,0 +1,18 @@
+# 셀렉터는 실제 사이트 검증 필요 - 보험사 사이트 구조 변경 시 업데이트
+company_name: 흥국화재
+company_code: heungkuk-fire
+category: NON_LIFE
+base_url: https://www.heungkukfire.co.kr
+listing_url: https://www.heungkukfire.co.kr/consumer/terms/termsList.do
+selectors:
+  listing_container: "table.tbl_list tbody tr, table.list_type tbody tr, table tbody tr"
+  product_name: "td:nth-child(2) a, td:nth-child(2)"
+  product_code: "td:nth-child(1)"
+  pdf_link: "a[href*='.pdf'], a[href*='download'], a[href*='FileDown']"
+  next_page: ".paging .next, a.btn_next, .pagination .next"
+  sale_status: "td.state, td:last-child"
+pagination:
+  type: numbered
+  max_pages: 50
+rate_limit_seconds: 3.0
+timeout_ms: 30000

@@ -1,6 +1,6 @@
-"""크롤러 Celery 태스크 모듈 (SPEC-CRAWLER-001)
+"""크롤러 Celery 태스크 모듈 (SPEC-CRAWLER-001, SPEC-CRAWLER-002)
 
-crawl_all: 등록된 모든 크롤러 순차 실행
+crawl_all: 등록된 모든 크롤러 순차 실행 (YAML 기반 자동 등록 포함)
 crawl_single: 특정 크롤러 단독 실행
 ingest_policy: CrawlResult PDF -> Policy 업데이트 파이프라인
 """
@@ -19,6 +19,7 @@ async def _run_crawler_async(crawler_name: str) -> dict:
     """단일 크롤러 비동기 실행 (내부 함수)
 
     DB 세션과 스토리지를 생성 후 크롤러를 실행.
+    레지스트리에 인스턴스와 클래스 모두 처리 가능.
 
     Args:
         crawler_name: 실행할 크롤러 이름
@@ -32,24 +33,36 @@ async def _run_crawler_async(crawler_name: str) -> dict:
     from app.services.crawler.storage import create_storage
 
     settings = get_settings()
-    crawler_class = crawler_registry.get(crawler_name)
-
-    if crawler_class is None:
-        raise ValueError(f"크롤러를 찾을 수 없음: {crawler_name!r}")
-
+    # scan_yaml_configs() 호출 후 인스턴스가 등록되므로 먼저 스토리지 생성
     storage = create_storage(
         backend_type=settings.crawler_storage_backend,
         base_dir=settings.crawler_base_dir,
     )
 
+    # YAML 기반 크롤러 자동 등록 (미등록 상태면 등록)
+    crawler_registry.scan_yaml_configs(storage)
+
+    crawler_or_class = crawler_registry.get(crawler_name)
+
+    if crawler_or_class is None:
+        raise ValueError(f"크롤러를 찾을 수 없음: {crawler_name!r}")
+
     async for session in get_db():
         try:
-            crawler = crawler_class(
-                db_session=session,
-                storage=storage,
-                rate_limit_seconds=settings.crawler_rate_limit_seconds,
-                max_retries=settings.crawler_max_retries,
-            )
+            # 인스턴스인지 클래스인지 판별
+            # crawl 메서드가 있으면 인스턴스, 없으면 클래스로 간주
+            if callable(crawler_or_class) and not hasattr(crawler_or_class, "crawl"):
+                # 클래스 - DB 세션과 스토리지로 인스턴스 생성
+                crawler = crawler_or_class(
+                    db_session=session,
+                    storage=storage,
+                    rate_limit_seconds=settings.crawler_rate_limit_seconds,
+                    max_retries=settings.crawler_max_retries,
+                )
+            else:
+                # 이미 인스턴스 (scan_yaml_configs로 등록된 경우)
+                crawler = crawler_or_class
+
             result = await crawler.crawl()
             return {
                 "crawler_name": crawler_name,
@@ -149,16 +162,33 @@ def _get_celery_app():
 class CrawlAllTask:
     """등록된 모든 크롤러를 순차 실행하는 Celery 태스크
 
+    YAML 기반 크롤러 자동 등록 후, 협회 크롤러(knia/klia) 우선 실행.
     각 크롤러에 대해 CrawlRun을 생성하고 결과를 저장.
     """
 
     def run(self) -> dict:
         """모든 크롤러 실행
 
+        실행 순서:
+        1. YAML 설정 기반 크롤러 자동 등록 (scan_yaml_configs)
+        2. 협회 크롤러(knia, klia) 우선 실행 - 중복 감지 기준 데이터 수집
+        3. 개별 보험사 크롤러 순차 실행
+
         Returns:
             전체 실행 결과 요약 딕셔너리
         """
+        from app.core.config import get_settings
         from app.services.crawler.registry import crawler_registry
+        from app.services.crawler.storage import create_storage
+
+        settings = get_settings()
+
+        # YAML 기반 크롤러 자동 등록
+        storage = create_storage(
+            backend_type=settings.crawler_storage_backend,
+            base_dir=settings.crawler_base_dir,
+        )
+        crawler_registry.scan_yaml_configs(storage)
 
         crawler_names = crawler_registry.list_crawlers()
         results = []
@@ -166,7 +196,12 @@ class CrawlAllTask:
         total_updated = 0
         total_failed = 0
 
-        for name in crawler_names:
+        # 협회 크롤러 우선 실행 (knia, klia)
+        association_names = ["knia", "klia"]
+        company_names = [n for n in crawler_names if n not in association_names]
+        ordered_names = [n for n in association_names if n in crawler_names] + company_names
+
+        for name in ordered_names:
             try:
                 result = _run_async(_run_crawler_async(name))
                 results.append(result)
@@ -179,7 +214,7 @@ class CrawlAllTask:
                 total_failed += 1
 
         return {
-            "crawlers_run": len(crawler_names),
+            "crawlers_run": len(ordered_names),
             "total_new": total_new,
             "total_updated": total_updated,
             "total_failed": total_failed,
