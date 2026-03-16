@@ -1,7 +1,7 @@
 ---
 id: SPEC-CRAWLER-002
 version: 1.0.0
-status: draft
+status: completed
 created: 2026-03-16
 updated: 2026-03-16
 author: zuge3
