@@ -14,7 +14,7 @@ const sizeMap = {
   lg: { mark: 44, icon: 24, radius: 12, text: 30, gap: 12 },
 }
 
-export default function Logo({ white = false, size = 'md' }: LogoProps): JSX.Element {
+export default function Logo({ white = false, size = 'md' }: LogoProps) {
   const s = sizeMap[size]
 
   return (

@@ -24,7 +24,7 @@ const legalLinks = [
   { label: '쿠키 정책', href: '#' },
 ]
 
-export default function Footer(): JSX.Element {
+export default function Footer() {
   return (
     <footer className="bg-[#1A1A1A] px-[120px] py-12">
       {/* 상단: 브랜드 + 3컬럼 링크 */}
