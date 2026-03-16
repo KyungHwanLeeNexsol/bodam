@@ -17,14 +17,13 @@ export default function Footer() {
       {/* 상단: 브랜드 좌측 + 링크 우측 */}
       <div className="mb-10 flex w-full items-center justify-between">
         {/* 브랜드 */}
-        <div className="flex w-[300px] flex-col gap-3">
+        <div className="flex w-[300px] flex-col items-start gap-3">
           <Image
             src="/logo.png"
             alt="보담 로고"
             width={273}
             height={108}
             className="h-8 w-auto"
-            style={{ width: 'auto', height: '2rem' }}
           />
           <p className="text-[13px] leading-relaxed text-[#888888]">
             보험 보상 안내 플랫폼<br />
