@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     description: '복잡한 보험 약관을 쉽게 이해하고 정확한 보상 청구를 받으세요.',
     locale: 'ko_KR',
     type: 'website',
-    images: ['/og-image.png'],
+    images: [{ url: '/opengraph-image', width: 1200, height: 630 }],
   },
 }
 
