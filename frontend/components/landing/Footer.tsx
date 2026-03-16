@@ -23,7 +23,7 @@ export default function Footer() {
             alt="보담 로고"
             width={273}
             height={108}
-            className="h-8 w-auto object-contain"
+            className="h-[30px] w-auto object-contain"
           />
           <p className="text-[13px] leading-relaxed text-[#888888]">
             보험 보상 안내 플랫폼<br />
