@@ -74,11 +74,11 @@ async def cleanup_expired_access_logs() -> int:
     cutoff = datetime.now(UTC) - timedelta(days=LOG_RETENTION_DAYS)
 
     async with get_db_session() as db:
-        # AccessLog 모델이 아직 없으므로 더미 쿼리로 구조 유지
-        # TODO: AccessLog 모델 구현 후 실제 삭제 쿼리로 교체
-        stmt = sa.text("SELECT 1")
-        await db.execute(stmt)
+        stmt = sa.text(
+            "DELETE FROM access_logs WHERE created_at < :cutoff"
+        ).bindparams(cutoff=cutoff)
+        result = await db.execute(stmt)
         await db.commit()
-        deleted_count = 0
+        deleted_count = result.rowcount
         logger.info("접근 로그 정리 완료: %d 건 삭제 (기준: %s 이전)", deleted_count, cutoff.date())
         return deleted_count

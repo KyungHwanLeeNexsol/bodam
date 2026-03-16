@@ -168,12 +168,32 @@ class S3Storage(StorageBackend):
             raise NotImplementedError("S3Storage는 boto3가 필요합니다") from err
 
     def exists(self, path: str) -> bool:
-        """S3 객체 존재 여부 확인 (스텁)
+        """S3 객체 존재 여부 확인
+
+        Args:
+            path: base_dir 기준 상대 경로
+
+        Returns:
+            S3 객체가 존재하면 True
 
         Raises:
-            NotImplementedError: 항상 발생
+            NotImplementedError: boto3 미설치 시
         """
-        raise NotImplementedError("S3Storage.exists()는 아직 구현되지 않았습니다")
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+
+            s3 = boto3.client("s3", **self.kwargs)
+            key = f"{self.base_dir}/{path}" if self.base_dir else path
+            try:
+                s3.head_object(Bucket=self.bucket, Key=key)
+                return True
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "404":
+                    return False
+                raise
+        except ImportError as err:
+            raise NotImplementedError("S3Storage는 boto3가 필요합니다") from err
 
     def get_path(self, company_code: str, product_code: str, version: str) -> str:
         """S3 키 생성
@@ -189,12 +209,24 @@ class S3Storage(StorageBackend):
         return f"{company_code}/{product_code}/{version}.pdf"
 
     def delete(self, path: str) -> None:
-        """S3 객체 삭제 (스텁)
+        """S3 객체 삭제
+
+        존재하지 않는 객체는 조용히 무시.
+
+        Args:
+            path: base_dir 기준 상대 경로
 
         Raises:
-            NotImplementedError: 항상 발생
+            NotImplementedError: boto3 미설치 시
         """
-        raise NotImplementedError("S3Storage.delete()는 아직 구현되지 않았습니다")
+        try:
+            import boto3
+
+            s3 = boto3.client("s3", **self.kwargs)
+            key = f"{self.base_dir}/{path}" if self.base_dir else path
+            s3.delete_object(Bucket=self.bucket, Key=key)
+        except ImportError as err:
+            raise NotImplementedError("S3Storage는 boto3가 필요합니다") from err
 
 
 def create_storage(backend_type: str, base_dir: str, **kwargs: object) -> StorageBackend:

@@ -6,8 +6,7 @@ Alembic autogenerate 및 앱 전반에서 편리하게 임포트 가능.
 
 from __future__ import annotations
 
-from app.models.agent_client import AgentClient, ConsentStatus
-from app.models.api_key import APIKey
+from app.models.access_log import AccessLog
 from app.models.base import Base, TimestampMixin
 from app.models.case_precedent import CasePrecedent
 from app.models.chat import ChatMessage, ChatSession, MessageRole
@@ -19,8 +18,6 @@ from app.models.insurance import (
     Policy,
     PolicyChunk,
 )
-from app.models.organization import Organization, OrgType, PlanType
-from app.models.organization_member import OrganizationMember, OrgMemberRole
 from app.models.pdf import (
     PdfAnalysisMessage,
     PdfAnalysisSession,
@@ -30,12 +27,12 @@ from app.models.pdf import (
     PdfUploadStatus,
 )
 from app.models.social_account import SocialAccount
-from app.models.usage_record import UsageRecord
 from app.models.user import ConsentRecord, User, UserRole
 
 __all__ = [
     "Base",
     "TimestampMixin",
+    "AccessLog",
     "InsuranceCategory",
     "InsuranceCompany",
     "Policy",
@@ -58,14 +55,5 @@ __all__ = [
     "UserRole",
     "ConsentRecord",
     "SocialAccount",
-    "Organization",
-    "OrgType",
-    "PlanType",
-    "OrganizationMember",
-    "OrgMemberRole",
-    "APIKey",
-    "AgentClient",
-    "ConsentStatus",
-    "UsageRecord",
     "CasePrecedent",
 ]
