@@ -9,8 +9,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 4G
+          cpus: "0.5"
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodam} -d ${POSTGRES_DB:-bodam}"]
       interval: 10s
@@ -30,8 +30,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 1G
+          cpus: "0.25"
+          memory: 128M
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -56,8 +56,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.0"
-          memory: 12G
+          cpus: "0.8"
+          memory: 400M
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
       interval: 30s

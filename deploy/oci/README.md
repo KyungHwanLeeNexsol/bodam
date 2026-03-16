@@ -1,246 +1,221 @@
 # 보담 OCI 배포 가이드
 
-Oracle Cloud Infrastructure (OCI) Always Free 티어를 이용한 보담 서비스 배포 가이드입니다.
+Oracle Cloud Free Tier VM.Standard.E2.1.Micro (1 OCPU, 1GB RAM) 기준 배포 가이드입니다.
 
-## 사양
-
-- **인스턴스**: VM.Standard.A1.Flex (ARM64 Ampere)
-- **CPU**: 4 OCPU (Always Free 최대)
-- **RAM**: 24GB (Always Free 최대)
-- **OS**: Ubuntu 22.04 aarch64
-- **스토리지**: 200GB 부트 볼륨 (Always Free)
+- **서버 IP**: `134.185.103.92`
+- **도메인**: `134.185.103.92.nip.io` (nip.io 무료 DNS)
+- **HTTPS**: `https://134.185.103.92.nip.io`
+- **OS**: Ubuntu 22.04
+- **배포 방식**: GitHub push → webhook → deploy.sh 자동 실행
 
 ---
 
-## 1단계: OCI 계정 및 VM 인스턴스 생성
+## 1단계: OCI Security List 포트 개방
 
-### 계정 생성
+OCI 콘솔에서 인바운드 규칙을 추가해야 합니다.
 
-1. [OCI 공식 사이트](https://www.oracle.com/cloud/free/) 접속
-2. "Start for Free" 클릭 후 계정 생성
-3. 신용카드 인증 필요 (Always Free 한도 내에서 과금 없음)
-4. 홈 리전 선택 (가장 가까운 리전 권장 - 한국: ap-seoul-1)
+1. OCI 콘솔 → Networking → Virtual Cloud Networks
+2. 인스턴스의 VCN 클릭
+3. Security Lists → Default Security List
+4. "Add Ingress Rules" 에서 다음 추가:
 
-### VM 인스턴스 생성
-
-1. OCI 콘솔 접속 후 "Compute > Instances > Create Instance" 클릭
-2. **이름**: bodam-server
-3. **이미지**: Canonical Ubuntu 22.04 선택
-4. **Shape**: VM.Standard.A1.Flex 선택
-   - OCPU: 4
-   - Memory: 24GB
-5. **SSH 키**: 기존 키 업로드 또는 새 키 생성 (반드시 보관)
-6. **부트 볼륨**: 200GB (Always Free 최대)
-7. "Create" 클릭 후 인스턴스 생성 대기 (약 2-3분)
-
----
-
-## 2단계: Security List 설정 (포트 개방)
-
-인스턴스의 네트워크 보안 그룹에서 포트를 열어야 합니다.
-
-1. OCI 콘솔에서 "Networking > Virtual Cloud Networks" 이동
-2. 생성된 VCN 클릭
-3. "Security Lists > Default Security List" 클릭
-4. "Add Ingress Rules" 클릭하여 다음 규칙 추가:
-
-| 소스 CIDR | 프로토콜 | 포트 | 설명 |
-|-----------|---------|------|------|
+| 소스 CIDR | 프로토콜 | 포트 범위 | 설명 |
+|-----------|---------|----------|------|
 | 0.0.0.0/0 | TCP | 22 | SSH |
 | 0.0.0.0/0 | TCP | 80 | HTTP |
 | 0.0.0.0/0 | TCP | 443 | HTTPS |
 
 ---
 
-## 3단계: SSH로 서버 접속
+## 2단계: SSH 접속
 
 ```bash
-# SSH 키 권한 설정 (처음 한 번만)
-chmod 600 ~/.ssh/your-oci-key.pem
-
-# 서버 접속
-ssh -i ~/.ssh/your-oci-key.pem ubuntu@YOUR_SERVER_IP
+ssh -i ~/.ssh/your-oci-key.pem ubuntu@134.185.103.92
 ```
-
-**서버 IP 확인**: OCI 콘솔 > Compute > Instances > 인스턴스 클릭 > "Public IP Address"
 
 ---
 
-## 4단계: setup.sh 실행
-
-서버에 접속한 후 초기 설정 스크립트를 실행합니다.
+## 3단계: 서버 초기 설정
 
 ```bash
-# 코드 먼저 클론 (setup.sh를 실행하기 위해)
+# 패키지 업데이트 + Docker + Nginx + Certbot + UFW 설치
 sudo apt-get update -y && sudo apt-get install -y git
-git clone https://github.com/YOUR_ORG/bodam /opt/bodam
-
-# 초기 설정 스크립트 실행
-sudo bash /opt/bodam/deploy/oci/setup.sh
+git clone https://github.com/YOUR_ORG/bodam /home/ubuntu/bodam
+sudo bash /home/ubuntu/bodam/deploy/oci/setup.sh
 ```
 
-스크립트가 설치하는 항목:
-- Docker Engine (ARM64 공식 패키지)
-- Docker Compose v2 플러그인
-- Nginx
-- Certbot (Let's Encrypt SSL 인증서)
-- UFW 방화벽 (22, 80, 443 포트 허용)
-
----
-
-## 5단계: 코드 클론 확인
-
+SSH 재접속 (docker 그룹 권한 적용):
 ```bash
-# setup.sh 실행 후 SSH 재접속 (docker 그룹 권한 적용)
 exit
-ssh -i ~/.ssh/your-oci-key.pem ubuntu@YOUR_SERVER_IP
-
-# /opt/bodam 디렉토리 확인
-ls /opt/bodam
+ssh -i ~/.ssh/your-oci-key.pem ubuntu@134.185.103.92
 ```
 
 ---
 
-## 6단계: .env.prod 파일 설정
+## 4단계: Swap 설정 (1GB RAM 보완 - 필수)
+
+1GB RAM만으로는 컨테이너 4개(postgres + redis + backend + nginx) 실행이 불가능합니다.
+2GB Swap을 추가합니다.
 
 ```bash
-# 백엔드 환경 변수 설정
-cd /opt/bodam
-cp backend/.env.prod.example backend/.env.prod
-nano backend/.env.prod
+sudo bash /home/ubuntu/bodam/deploy/oci/setup-swap.sh
 ```
 
-변경 필수 항목:
-- `POSTGRES_PASSWORD`: 강력한 비밀번호로 변경
-- `SECRET_KEY`: `openssl rand -hex 32` 명령으로 생성
-- `GEMINI_API_KEY`: Gemini API 키 입력
-- `ALLOWED_ORIGINS`: 실제 도메인 입력
-
+완료 후 메모리 확인:
 ```bash
-# 프론트엔드 환경 변수 설정
-cp frontend/.env.prod.example frontend/.env.prod
-nano frontend/.env.prod
-```
-
-변경 필수 항목:
-- `NEXT_PUBLIC_API_URL`: 실제 도메인 입력 (예: https://bodam.example.com)
-
----
-
-## 7단계: 도메인 없는 경우 nip.io 사용
-
-도메인 없이도 HTTPS를 사용할 수 있습니다. nip.io는 IP를 도메인으로 변환해줍니다.
-
-서버 IP가 `141.148.100.200`이라면:
-- 도메인: `141.148.100.200.nip.io`
-- HTTPS: `https://141.148.100.200.nip.io`
-
-nip.io 사용 시 환경 변수:
-```bash
-NEXT_PUBLIC_API_URL=https://141.148.100.200.nip.io
-ALLOWED_ORIGINS=https://141.148.100.200.nip.io
+free -h
+# Swap: 2.0G 가 표시되면 정상
 ```
 
 ---
 
-## 8단계: Nginx 설정 및 HTTPS 인증서 발급
+## 5단계: .env.prod 파일 작성
 
 ```bash
-# Nginx 설정 파일 복사
-sudo cp /opt/bodam/deploy/nginx/bodam.conf /etc/nginx/sites-available/bodam
-sudo ln -s /etc/nginx/sites-available/bodam /etc/nginx/sites-enabled/bodam
+cd /home/ubuntu/bodam
+cp .env.prod.example .env.prod
+nano .env.prod
+```
 
-# 기본 Nginx 설정 비활성화 (포트 충돌 방지)
-sudo rm -f /etc/nginx/sites-enabled/default
+필수 변경 항목:
 
-# server_name 수정 (실제 도메인 또는 nip.io 주소로)
-sudo nano /etc/nginx/sites-available/bodam
-# server_name _; 부분을 실제 도메인으로 변경
-# 예: server_name 141.148.100.200.nip.io;
+| 항목 | 생성 방법 |
+|------|-----------|
+| `POSTGRES_PASSWORD` | 강력한 비밀번호 직접 입력 |
+| `REDIS_PASSWORD` | 강력한 비밀번호 직접 입력 |
+| `DATABASE_URL` | POSTGRES_PASSWORD와 동일하게 수정 |
+| `REDIS_URL` | REDIS_PASSWORD와 동일하게 수정 |
+| `SECRET_KEY` | `openssl rand -hex 32` 실행 후 복붙 |
+| `OPENAI_API_KEY` | OpenAI API 키 |
+| `GOOGLE_API_KEY` | Google Gemini API 키 |
+| `MINIO_ENDPOINT` | Cloudflare R2 엔드포인트 |
+| `MINIO_ACCESS_KEY` | R2 Access Key |
+| `MINIO_SECRET_KEY` | R2 Secret Key |
+| `SOCIAL_TOKEN_ENCRYPTION_KEY` | `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 
-# Nginx 설정 검증 및 재시작
-sudo nginx -t
-sudo systemctl restart nginx
+`ALLOWED_ORIGINS`와 도메인 관련 항목은 이미 `134.185.103.92.nip.io`로 설정되어 있습니다.
 
-# Certbot으로 SSL 인증서 발급 (HTTP만 먼저 주석 처리된 상태로 실행)
-# 주의: SSL 설정 블록은 인증서 발급 전 주석 처리 필요
-sudo certbot --nginx -d your-domain.com
+---
 
-# 인증서 자동 갱신 크론잡 확인
-sudo systemctl status certbot.timer
+## 6단계: SSL 인증서 발급 (Let's Encrypt)
+
+Nginx 컨테이너 없이 먼저 certbot으로 인증서를 발급받아야 합니다.
+
+```bash
+# certbot 직접 실행 (standalone 모드 - 80포트 임시 점유)
+sudo certbot certonly --standalone \
+  -d 134.185.103.92.nip.io \
+  --non-interactive \
+  --agree-tos \
+  --email your@email.com
+```
+
+발급 확인:
+```bash
+sudo ls /etc/letsencrypt/live/134.185.103.92.nip.io/
+# fullchain.pem, privkey.pem 이 있으면 성공
 ```
 
 ---
 
-## 9단계: GitHub Actions Secrets 설정
+## 7단계: 첫 배포 실행
 
-GitHub 저장소 > Settings > Secrets and variables > Actions에서 다음 시크릿 추가:
-
-| Secret 이름 | 값 |
-|-------------|---|
-| OCI_SSH_HOST | OCI 서버 Public IP |
-| OCI_SSH_USER | ubuntu |
-| OCI_SSH_KEY | SSH 개인키 내용 (-----BEGIN OPENSSH PRIVATE KEY----- 포함) |
-
-SSH 개인키 내용 확인:
 ```bash
-cat ~/.ssh/your-oci-key.pem
+cd /home/ubuntu/bodam
+bash deploy/scripts/deploy.sh
+```
+
+컨테이너 상태 확인:
+```bash
+docker compose -f docker-compose.prod.yml ps
+```
+
+API 헬스체크:
+```bash
+curl https://134.185.103.92.nip.io/api/v1/health
 ```
 
 ---
 
-## 10단계: 첫 배포 실행
+## 8단계: GitHub Webhook 설정 (자동 배포)
 
-### 수동 배포 (처음 한 번)
+서버에서 webhook 데몬 설치:
 ```bash
-# 서버에서 직접 실행
-bash /opt/bodam/deploy/oci/deploy.sh
+# YOUR_SECRET은 임의의 강력한 문자열로 직접 지정
+sudo bash /home/ubuntu/bodam/deploy/oci/setup-webhook.sh YOUR_SECRET
 ```
 
-### GitHub Actions 자동 배포 확인
-main 브랜치에 push하면 자동으로 배포됩니다.
-GitHub 저장소 > Actions 탭에서 배포 진행 상황을 확인하세요.
+GitHub 레포에서 Webhook 등록:
+1. GitHub 레포 → Settings → Webhooks → Add webhook
+2. **Payload URL**: `https://134.185.103.92.nip.io/webhooks/deploy-bodam`
+3. **Content type**: `application/json`
+4. **Secret**: setup-webhook.sh에서 사용한 `YOUR_SECRET`
+5. **Events**: "Just the push event"
+6. Save
+
+이후 main 브랜치에 push하면 자동으로 서버에서 deploy.sh가 실행됩니다.
 
 ---
 
 ## 운영 명령어
 
 ```bash
-# 컨테이너 상태 확인
+# 컨테이너 상태
 docker compose -f docker-compose.prod.yml ps
 
-# 백엔드 로그 확인
+# 로그 확인
 docker compose -f docker-compose.prod.yml logs backend -f
-
-# 프론트엔드 로그 확인
-docker compose -f docker-compose.prod.yml logs frontend -f
-
-# 모니터링 스택 시작
-docker compose -f docker-compose.prod.yml --profile monitoring up -d
+docker compose -f docker-compose.prod.yml logs postgres -f
 
 # 수동 재배포
-bash /opt/bodam/deploy/oci/deploy.sh
+bash /home/ubuntu/bodam/deploy/scripts/deploy.sh
+
+# 롤백
+bash /home/ubuntu/bodam/deploy/scripts/rollback.sh
+
+# 메모리 상태 확인
+free -h
 ```
+
+---
+
+## 메모리 구성 (1GB RAM + 2GB Swap)
+
+| 서비스 | 메모리 제한 |
+|--------|------------|
+| postgres | 256MB |
+| redis | 128MB |
+| backend | 400MB |
+| nginx | 256MB |
+| **합계** | **~1040MB** |
+
+RAM 부족 시 Swap(디스크)으로 보완됩니다. Swap은 RAM보다 느리므로 트래픽이 많아지면 더 큰 인스턴스 전환을 권장합니다.
 
 ---
 
 ## 문제 해결
 
-### 컨테이너가 시작되지 않는 경우
+### OOM (메모리 부족) 발생 시
+```bash
+# 현재 메모리/스왑 사용량 확인
+free -h
+# Swap이 꽉 찼다면 컨테이너 재시작
+docker compose -f docker-compose.prod.yml restart
+```
+
+### SSL 인증서 만료 (90일마다 자동 갱신)
+```bash
+sudo certbot renew --dry-run  # 갱신 테스트
+sudo certbot renew            # 실제 갱신
+```
+
+### 컨테이너 시작 실패
 ```bash
 docker compose -f docker-compose.prod.yml logs --tail=50
 ```
 
-### 데이터베이스 연결 실패
+### Nginx 502
 ```bash
-# postgres 컨테이너 상태 확인
-docker compose -f docker-compose.prod.yml exec postgres pg_isready -U bodam
-```
-
-### Nginx 502 오류
-```bash
-# 백엔드/프론트엔드 컨테이너가 실행 중인지 확인
 docker compose -f docker-compose.prod.yml ps
 sudo nginx -t
-sudo systemctl status nginx
 ```

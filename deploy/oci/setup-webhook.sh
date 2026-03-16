@@ -66,7 +66,7 @@ sudo systemctl status bodam-webhook --no-pager
 echo ""
 echo "=== GitHub Webhook 설정 방법 ==="
 echo "GitHub 레포 → Settings → Webhooks → Add webhook"
-echo "  Payload URL: https://yourdomain.com/webhooks/deploy-bodam"
+echo "  Payload URL: https://134.185.103.92.nip.io/webhooks/deploy-bodam"
 echo "  Content type: application/json"
 echo "  Secret: $WEBHOOK_SECRET"
 echo "  Events: Just the push event"
