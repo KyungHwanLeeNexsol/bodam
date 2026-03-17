@@ -2,7 +2,7 @@
 id: SPEC-PERF-001
 type: progress
 version: 1.0.0
-status: in-progress
+status: completed
 created: 2026-03-14
 updated: 2026-03-14
 author: zuge3
