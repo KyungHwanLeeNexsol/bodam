@@ -18,6 +18,7 @@
 | 환경 | 참조 파일 | 예시 파일 |
 |------|---------|---------|
 | 로컬 개발 | `backend/.env` | `backend/.env.example` |
+| 스테이징 | `.env.staging` | `.env.staging.example` |
 | 프로덕션 (Fly.io) | Fly.io Secrets | `backend/.env.fly.example` |
 
 > **Frontend (Vercel)**: 환경변수는 Vercel 대시보드에서 관리합니다. `NEXT_PUBLIC_API_URL` 등 프론트엔드 변수는 별도 `.env` 파일로 관리되지 않습니다.
