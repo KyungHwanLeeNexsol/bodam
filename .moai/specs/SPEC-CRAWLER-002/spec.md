@@ -1,9 +1,9 @@
 ---
 id: SPEC-CRAWLER-002
-version: 1.0.0
+version: 1.1.0
 status: completed
 created: 2026-03-16
-updated: 2026-03-16
+updated: 2026-03-17
 author: zuge3
 priority: high
 issue_number: 0
@@ -19,6 +19,7 @@ blocks: [SPEC-EMBED-001]
 | 버전 | 날짜 | 작성자 | 변경 내용 |
 |------|------|--------|-----------|
 | 1.0.0 | 2026-03-16 | zuge3 | 초안 작성 |
+| 1.1.0 | 2026-03-17 | zuge3 | REQ-06(미탐색 14개 생보사 YAML 탐색), REQ-07(OCI DB 자동 저장) 추가 |
 
 ---
 
@@ -125,6 +126,9 @@ Bodam 플랫폼의 보험 약관 지식 베이스는 현재 협회 포털(KNIA, 
 - A6: URL 패턴이 확인되지 않은 보험사(9~22번)는 Phase 1에서 탐색 후 YAML 설정을 작성하거나, Generic Crawler로 대응한다.
 - A7: 기존 BaseCrawler 인터페이스를 확장하여 `sale_status` 필드 등 개별 보험사 크롤링에 필요한 추가 데이터를 수용한다.
 - A8: KLIA SPA 문제는 Playwright의 명시적 대기(waitForSelector) + 충분한 타임아웃(30초+)으로 해결 가능하다.
+- A9: OCI PostgreSQL(pgvector)은 SPEC-DATA-001에서 구축 완료되어 있으며, Policy 모델과 DocumentProcessor 파이프라인이 존재한다.
+- A10: Policy 모델에 `sale_status` 필드가 없으므로 Alembic 마이그레이션으로 추가한다.
+- A11: 14개 미탐색 생명보험사의 공시실 URL 탐색은 자동화하기 어려우므로, Playwright로 직접 탐색하여 YAML 설정 파일을 작성하고 구현 범위에 포함한다. 탐색 실패 시 스킵하고 별도 보고서를 생성한다.
 
 ---
 
@@ -182,6 +186,26 @@ Bodam 플랫폼의 보험 약관 지식 베이스는 현재 협회 포털(KNIA, 
 - REQ-05.3: **WHEN** YAML 설정 파일이 존재하지 않는 보험사에 대해 크롤링이 시도되면 **THEN** 해당 보험사를 스킵하고 경고 로그를 기록해야 한다.
 - REQ-05.4: 시스템은 YAML 설정의 유효성을 검증하기 위해 Pydantic 모델 기반 스키마 검증을 수행해야 한다.
 
+### REQ-06: 미탐색 생명보험사 YAML 설정 탐색 및 구축
+
+구현 단계에서 나머지 14개 생명보험사의 공시실 구조를 Playwright로 직접 탐색하여 YAML 설정 파일을 생성해야 한다.
+
+- REQ-06.1: 미탐색 14개 생보사(DB생명, KDB생명, DGB생명, 메트라이프, AIA생명, 처브라이프, 라이나생명, 하나생명, iM라이프, 교보라이프플래닛, 카카오페이생명, 오렌지라이프, 푸본현대생명, 한국생명보험)에 대해 공시실 URL을 탐색해야 한다.
+- REQ-06.2: 탐색 성공 시 `backend/app/services/crawler/config/companies/` 디렉터리에 YAML 설정 파일을 생성해야 한다.
+- REQ-06.3: **WHEN** 특정 보험사 공시실 접근 또는 파싱이 불가능할 때 **THEN** 해당 보험사를 스킵하고 `backend/app/services/crawler/config/unsupported_companies.md` 보고서에 이유와 함께 기록해야 한다.
+- REQ-06.4: 탐색 완료 후 최종 커버리지 요약(지원 보험사 N개 / 전체 N개)을 보고해야 한다.
+
+### REQ-07: 수집 완료 후 OCI PostgreSQL 자동 저장
+
+시스템은 **항상** 약관 PDF 수집 완료 후 OCI PostgreSQL에 자동으로 데이터를 저장해야 한다.
+
+- REQ-07.1: `Policy` 모델에 `sale_status` 컬럼을 추가하는 Alembic 마이그레이션을 생성해야 한다 (기본값 `UNKNOWN`, nullable).
+- REQ-07.2: 크롤러가 PDF를 성공적으로 다운로드한 후 `PolicyIngestor` 서비스가 `PolicyListing`을 `Policy` 레코드로 upsert해야 한다 (`product_code` + `company_code`를 복합 키로 중복 제거).
+- REQ-07.3: **WHEN** Policy upsert 완료 시 **THEN** 기존 DocumentProcessor 파이프라인을 Celery task로 비동기 트리거하여 PDF 텍스트 추출 → 청킹 → 임베딩까지 자동 진행해야 한다.
+- REQ-07.4: **WHEN** DB 저장 실패 시 **THEN** PDF 파일은 로컬/S3에 유지하고, `CrawlResult.status`를 `FAILED`로 업데이트하며, 재시도 큐에 추가해야 한다.
+- REQ-07.5: 시스템은 동일한 `content_hash`를 가진 PDF가 이미 DB에 존재하면 `CrawlResult.status`를 `SKIPPED`로 처리해야 한다 (delta crawling).
+- REQ-07.6: 크롤링 1회 실행 완료 시 `CrawlRun.status`를 `COMPLETED`로 업데이트하고, 전체 통계(신규/업데이트/스킵/실패 건수)를 `CrawlRun.stats` JSONB 필드에 저장해야 한다.
+
 ---
 
 ## 4. Specifications (세부 사양)
@@ -225,6 +249,11 @@ backend/app/services/crawler/
     klia_crawler.py            # 기존 크롤러 (SPA 수정 적용)
     knia_crawler.py            # 기존 크롤러 (변경 없음)
   config_loader.py             # YAML 설정 로더 + Pydantic 검증
+  policy_ingestor.py           # PolicyListing → Policy DB upsert + Celery 트리거
+  config/
+    unsupported_companies.md   # 탐색 불가 보험사 보고서 (REQ-06.3)
+backend/alembic/versions/
+  xxxx_add_sale_status_to_policy.py  # Policy.sale_status 마이그레이션 (REQ-07.1)
 ```
 
 ### 4.2 PolicyListing 확장
@@ -400,3 +429,5 @@ _미구현 상태 - `/moai:2-run SPEC-CRAWLER-002` 실행 시 구현 예정_
 | REQ-04 | `base.py` (PolicyListing 확장), `models/crawler.py` | `tests/unit/test_sale_status.py` |
 | REQ-05 | `config/companies/*.yaml`, `config_loader.py` | `tests/unit/test_config_loader.py` |
 | KLIA SPA 수정 | `companies/klia_crawler.py` | `tests/integration/test_klia_spa.py` |
+| REQ-06 | `config/companies/*.yaml` (14개사), `config/unsupported_companies.md` | `tests/unit/test_remaining_life_crawlers.py` |
+| REQ-07 | `policy_ingestor.py`, `alembic/versions/xxxx_add_sale_status.py` | `tests/unit/test_policy_ingestor.py`, `tests/integration/test_db_auto_save.py` |
