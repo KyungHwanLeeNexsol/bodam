@@ -1,0 +1,21 @@
+# AIA생명 약관 공시 크롤러 설정 (SPEC-CRAWLER-002 REQ-06)
+# AIA생명보험 - aia.co.kr
+# 글로벌 보험사로 React/Angular SPA 가능성 있음
+# 셀렉터는 실제 사이트 검증 필요
+company_name: AIA생명
+company_code: aia-life
+category: LIFE
+base_url: https://www.aia.co.kr
+listing_url: https://www.aia.co.kr/ko/help-support/resource-center/policy-terms.html
+selectors:
+  listing_container: "table tbody tr, .terms-item, .policy-item"
+  product_name: "td:nth-child(2) a, .title, .product-name"
+  product_code: "td:nth-child(1), .code"
+  pdf_link: "a[href*='.pdf'], a[href*='download'], a[download]"
+  next_page: ".paging .next, a.btn_next, [aria-label='다음']"
+  sale_status: "td:last-child, .status"
+pagination:
+  type: numbered
+  max_pages: 30
+rate_limit_seconds: 3.0
+timeout_ms: 30000

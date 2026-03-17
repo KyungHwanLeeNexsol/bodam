@@ -1,0 +1,20 @@
+# DB생명 약관 공시 크롤러 설정 (SPEC-CRAWLER-002 REQ-06)
+# DB생명보험(구 동부생명) - dblifeinsurance.com
+# 셀렉터는 실제 사이트 검증 필요
+company_name: DB생명
+company_code: db-life
+category: LIFE
+base_url: https://www.dblifeinsurance.com
+listing_url: https://www.dblifeinsurance.com/consumer/disclosure/policyTerms.do
+selectors:
+  listing_container: "table tbody tr"
+  product_name: "td:nth-child(2) a, td:nth-child(2)"
+  product_code: "td:nth-child(1)"
+  pdf_link: "a[href*='.pdf'], a[href*='download'], a[href*='FileDown']"
+  next_page: ".paging .next, a.btn_next"
+  sale_status: "td:last-child"
+pagination:
+  type: numbered
+  max_pages: 30
+rate_limit_seconds: 3.0
+timeout_ms: 30000

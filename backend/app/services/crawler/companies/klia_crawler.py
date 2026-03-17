@@ -199,6 +199,16 @@ class KLIACrawler(BaseCrawler):
                 page = await browser.new_page()
                 await page.goto(LISTING_URL, wait_until="networkidle", timeout=30000)
 
+                # SPA 동적 콘텐츠 로드 대기 - 테이블 또는 목록 컨테이너가 나타날 때까지 대기
+                # KLIA 사이트의 JavaScript 렌더링 완료 보장
+                for selector in ROW_SELECTORS:
+                    try:
+                        await page.wait_for_selector(selector, timeout=30000)
+                        logger.debug("KLIA 동적 콘텐츠 로드 완료 (selector=%s)", selector)
+                        break
+                    except Exception:  # noqa: BLE001
+                        continue
+
                 # 마지막 페이지 번호 파악
                 max_page = await self._get_max_page(page)
                 logger.info("KLIA 총 페이지 수: %d", max_page)

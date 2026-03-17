@@ -126,6 +126,14 @@ class Policy(Base, TimestampMixin):
         sa.Boolean, nullable=False, default=False, server_default=sa.text("false")
     )
 
+    # 판매 상태 (ON_SALE, DISCONTINUED, UNKNOWN) - SPEC-CRAWLER-002 REQ-07.1
+    sale_status: Mapped[str | None] = mapped_column(
+        sa.String(20),
+        nullable=True,
+        default="UNKNOWN",
+        server_default=sa.text("'UNKNOWN'"),
+    )
+
     # 원본 약관 전문 (OCR/PDF 추출 텍스트)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
