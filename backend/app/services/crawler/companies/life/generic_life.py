@@ -182,7 +182,7 @@ class GenericLifeCrawler(BaseCrawler):
         max_pages = self.config.pagination.max_pages
 
         try:
-            await page.goto(url, wait_until="networkidle", timeout=self.config.timeout_ms)
+            await page.goto(url, wait_until="domcontentloaded", timeout=self.config.timeout_ms)
 
             # SPA 로딩 대기 (설정된 경우)
             if self.config.wait_for_selector:

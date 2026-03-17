@@ -197,7 +197,7 @@ class KLIACrawler(BaseCrawler):
             browser = await p.chromium.launch(headless=True)
             try:
                 page = await browser.new_page()
-                await page.goto(LISTING_URL, wait_until="networkidle", timeout=30000)
+                await page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=60000)
 
                 # SPA 동적 콘텐츠 로드 대기 - 테이블 또는 목록 컨테이너가 나타날 때까지 대기
                 # KLIA 사이트의 JavaScript 렌더링 완료 보장
@@ -217,7 +217,7 @@ class KLIACrawler(BaseCrawler):
                     if page_num > 1:
                         try:
                             await page.evaluate(f"fn_page({page_num})")
-                            await page.wait_for_load_state("networkidle", timeout=15000)
+                            await page.wait_for_load_state("domcontentloaded", timeout=15000)
                         except Exception as exc:
                             logger.warning("KLIA 페이지 %d 이동 실패: %s", page_num, str(exc))
                             break
