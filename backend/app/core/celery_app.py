@@ -42,6 +42,12 @@ def create_celery_app() -> Celery:
         enable_utc=True,
         # 작업 결과 만료 시간 (24시간)
         result_expires=86400,
+        # 태스크 모듈 명시적 포함 (autodiscover_tasks는 기본적으로 tasks.py만 탐색)
+        include=[
+            "app.tasks.crawler_tasks",
+            "app.tasks.embedding_tasks",
+            "app.tasks.cleanup_tasks",
+        ],
     )
 
     # 작업 모듈 자동 탐색
