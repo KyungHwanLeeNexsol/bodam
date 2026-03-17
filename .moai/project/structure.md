@@ -306,22 +306,6 @@ bodam/
 │       ├── few_shot_examples.json # In-context learning examples
 │       └── classification_rules.json # Policy classification logic
 │
-├── infra/                       # Infrastructure as Code
-│   ├── docker/                  # Docker configurations
-│   │   ├── Dockerfile.frontend  # Next.js image
-│   │   ├── Dockerfile.backend   # FastAPI image
-│   │   └── Dockerfile.postgres  # PostgreSQL with custom init
-│   │
-│   ├── docker-compose.yml       # Local development stack
-│   │   # Services: frontend, backend, postgres, redis
-│   │   # Volumes: postgres data, redis cache
-│   │   # Networks: internal bridging
-│   │
-│   ├── kubernetes/              # Kubernetes manifests (future)
-│   │   └── README.md
-│   │
-│   └── nginx/                   # Nginx configuration (future)
-│       └── nginx.conf
 │
 ├── .moai/                       # MoAI project configuration
 │   ├── config/                  # Configuration files
@@ -371,15 +355,7 @@ bodam/
 │   └── index.md                 # Documentation index
 │
 ├── .gitignore                   # Git ignore rules
-├── .github/                     # GitHub configuration
-│   ├── workflows/               # CI/CD workflows
-│   │   ├── test.yml            # Test pipeline
-│   │   ├── build.yml           # Build pipeline
-│   │   └── deploy.yml          # Deployment pipeline
-│   │
-│   └── ISSUE_TEMPLATE/          # Issue templates
-│       ├── bug_report.md
-│       └── feature_request.md
+│
 │
 ├── docker-compose.yml           # Root docker-compose for full stack
 ├── package.json                 # Root monorepo script (optional)
