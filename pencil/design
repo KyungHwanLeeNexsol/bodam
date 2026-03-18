@@ -1350,179 +1350,80 @@
                 },
                 {
                   "type": "frame",
-                  "id": "p9m9Q",
-                  "name": "footerCols",
-                  "gap": 80,
+                  "id": "W1Zdk",
+                  "name": "footerLinks",
+                  "gap": 16,
+                  "alignItems": "center",
                   "children": [
                     {
-                      "type": "frame",
-                      "id": "M5Fzw",
-                      "name": "col1",
-                      "layout": "vertical",
-                      "gap": 16,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "D6SX9",
-                          "name": "col1Title",
-                          "fill": "#FFFFFF",
-                          "content": "서비스",
-                          "fontFamily": "JetBrains Mono",
-                          "fontSize": 11,
-                          "fontWeight": "600",
-                          "letterSpacing": 2
-                        },
-                        {
-                          "type": "text",
-                          "id": "zBsab",
-                          "name": "col1a",
-                          "fill": "#888888",
-                          "content": "보담 보상 안내",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "n3UaT",
-                          "name": "col1b",
-                          "fill": "#888888",
-                          "content": "약관 분석",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "zSJMh",
-                          "name": "col1c",
-                          "fill": "#888888",
-                          "content": "보험사 비교",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "tiFHY",
-                          "name": "col1d",
-                          "fill": "#888888",
-                          "content": "거절 분석",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        }
-                      ]
+                      "type": "text",
+                      "id": "2O71v",
+                      "name": "link1",
+                      "fill": "#888888",
+                      "content": "이용약관",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     },
                     {
-                      "type": "frame",
-                      "id": "Q0gKd",
-                      "name": "col2",
-                      "layout": "vertical",
-                      "gap": 16,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "QZk9M",
-                          "name": "col2Title",
-                          "fill": "#FFFFFF",
-                          "content": "회사",
-                          "fontFamily": "JetBrains Mono",
-                          "fontSize": 11,
-                          "fontWeight": "600",
-                          "letterSpacing": 2
-                        },
-                        {
-                          "type": "text",
-                          "id": "zRXyj",
-                          "name": "col2a",
-                          "fill": "#888888",
-                          "content": "회사 소개",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "B1e6y",
-                          "name": "col2b",
-                          "fill": "#888888",
-                          "content": "채용",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "08tJa",
-                          "name": "col2c",
-                          "fill": "#888888",
-                          "content": "블로그",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "glw4K",
-                          "name": "col2d",
-                          "fill": "#888888",
-                          "content": "문의하기",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        }
-                      ]
+                      "type": "text",
+                      "id": "YWKZK",
+                      "name": "sep1",
+                      "fill": "#555555",
+                      "content": "·",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     },
                     {
-                      "type": "frame",
-                      "id": "L8D0h",
-                      "name": "col3",
-                      "layout": "vertical",
-                      "gap": 16,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "oVJZE",
-                          "name": "col3Title",
-                          "fill": "#FFFFFF",
-                          "content": "법적고지",
-                          "fontFamily": "JetBrains Mono",
-                          "fontSize": 11,
-                          "fontWeight": "600",
-                          "letterSpacing": 2
-                        },
-                        {
-                          "type": "text",
-                          "id": "6pcKM",
-                          "name": "col3a",
-                          "fill": "#888888",
-                          "content": "이용약관",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "m9THW",
-                          "name": "col3b",
-                          "fill": "#888888",
-                          "content": "개인정보처리방침",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "bByDq",
-                          "name": "col3c",
-                          "fill": "#888888",
-                          "content": "쿠키 정책",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        }
-                      ]
+                      "type": "text",
+                      "id": "vOXG2",
+                      "name": "link2",
+                      "fill": "#888888",
+                      "content": "개인정보처리방침",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "5wKAx",
+                      "name": "sep2",
+                      "fill": "#555555",
+                      "content": "·",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "retSG",
+                      "name": "link3",
+                      "fill": "#888888",
+                      "content": "쿠키 정책",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "BCh2g",
+                      "name": "sep3",
+                      "fill": "#555555",
+                      "content": "·",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "OKP26",
+                      "name": "link4",
+                      "fill": "#888888",
+                      "content": "문의하기",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 }
@@ -3995,7 +3896,7 @@
           "width": 1200,
           "height": 630,
           "layout": "vertical",
-          "gap": 28,
+          "gap": 32,
           "padding": [
             0,
             100
@@ -4008,20 +3909,26 @@
               "type": "ref",
               "ref": "ZLSdm",
               "name": "logo",
-              "x": 535.5,
-              "y": 196.5,
+              "x": 516.5,
+              "y": 194.5,
+              "width": "fit_content",
+              "height": "fit_content",
               "descendants": {
                 "N2VMr": {
-                  "width": 52,
-                  "height": 52,
-                  "cornerRadius": 14
+                  "width": 68,
+                  "height": 68,
+                  "cornerRadius": 18
                 },
                 "BIgTI": {
-                  "width": 30,
-                  "height": 32
+                  "width": 40,
+                  "height": 42,
+                  "x": 14,
+                  "y": 13
                 },
                 "hJerW": {
-                  "fontSize": 36
+                  "fontSize": 48,
+                  "x": 78,
+                  "y": 0
                 }
               }
             },
@@ -4033,8 +3940,8 @@
               "content": "보험 보상, 보담이 안내해드릴게요",
               "textAlign": "center",
               "fontFamily": "Newsreader",
-              "fontSize": 40,
-              "fontWeight": "600"
+              "fontSize": 52,
+              "fontWeight": "700"
             },
             {
               "type": "text",
@@ -4044,19 +3951,8 @@
               "content": "AI 기반 보험 약관 분석으로 정확한 보상 안내를 받아보세요",
               "textAlign": "center",
               "fontFamily": "Inter",
-              "fontSize": 18,
+              "fontSize": 22,
               "fontWeight": "normal"
-            },
-            {
-              "type": "text",
-              "id": "JVl1T",
-              "name": "url",
-              "fill": "#2563EB",
-              "content": "bodam.chat",
-              "fontFamily": "Inter",
-              "fontSize": 14,
-              "fontWeight": "500",
-              "letterSpacing": 2
             }
           ]
         }
