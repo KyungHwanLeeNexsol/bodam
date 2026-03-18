@@ -124,8 +124,8 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                     fail_count += 1
                     continue
 
-                # 청크 분할
-                chunks = text_chunker.chunk_text(text)
+                # 청크 분할 (메타데이터 포함)
+                chunks = text_chunker.chunk_text_with_metadata(text)
                 if not chunks:
                     logger.warning("청크 없음: %s", pdf_path)
                     fail_count += 1
@@ -143,7 +143,7 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                         policy_id=policy.id,
                         chunk_index=j,
                         chunk_text=chunk["text"],
-                        token_count=chunk.get("token_count", len(chunk["text"].split())),
+                        token_count=chunk.get("token_count", 0),
                         embedding=vector,
                         metadata_={
                             "company_code": company.code,
@@ -160,8 +160,9 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                 success_count += 1
 
             except Exception as exc:
+                prod_code = policy.product_code if hasattr(policy, "_sa_instance_state") else "unknown"
                 await session.rollback()
-                logger.error("[%d/%d] 실패: %s - %s", i, len(policies_to_process), policy.product_code, exc)
+                logger.error("[%d/%d] 실패: %s - %s", i, len(policies_to_process), prod_code, exc)
                 fail_count += 1
 
     print(f"\n{'='*50}")
