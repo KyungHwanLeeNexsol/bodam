@@ -29,6 +29,7 @@ bodam/
 │   │   ├── (main)/              # Main application routes (protected)
 │   │   │   ├── chat/            # Chat interface (primary feature)
 │   │   │   ├── policies/        # Policy management and listing
+│   │   │   ├── pdf/             # PDF analysis interface (upload, analyze, sessions)
 │   │   │   ├── dashboard/       # User dashboard with analytics
 │   │   │   └── layout.tsx       # Main app layout
 │   │   │
@@ -71,6 +72,12 @@ bodam/
 │   │   │   ├── AccountMergeDialog.tsx # Account merge UI
 │   │   │   └── EmailInputDialog.tsx   # Email input for social login
 │   │   │
+│   │   ├── pdf/                 # PDF analysis components
+│   │   │   ├── PDFUploader.tsx   # Drag-and-drop PDF upload (REQ-PDF-401, 402, 405)
+│   │   │   ├── AnalysisResult.tsx # Structured analysis result display (담보, 보장, 면책)
+│   │   │   ├── PDFChat.tsx       # Q&A chat interface for PDF (REQ-PDF-404, 206)
+│   │   │   └── SessionList.tsx   # Analysis history and session management
+│   │   │
 │   │   └── layout/              # Layout components
 │   │       ├── Navbar.tsx       # Navigation bar
 │   │       ├── Sidebar.tsx      # Sidebar navigation
@@ -79,6 +86,7 @@ bodam/
 │   ├── lib/                     # Utility functions and helpers
 │   │   ├── api-client.ts        # Axios instance for API calls (with auth header injection)
 │   │   ├── auth.ts              # Auth utilities (getToken, setToken, removeToken)
+│   │   ├── pdf.ts               # PDF client utilities (uploadPdfApi, analyzePdfApi, queryPdfStreamApi, listSessionsApi, getSessionApi, deleteSessionApi)
 │   │   ├── validation.ts        # Form validation schemas (zod schemas for login/register)
 │   │   └── formatters.ts        # Data formatting utilities
 │   │
@@ -98,6 +106,17 @@ bodam/
 │   │   └── api.ts               # API response types
 │   │
 │   ├── middleware.ts            # Next.js middleware for protected routes
+│   │
+│   ├── __tests__/                # Frontend tests
+│   │   ├── lib/
+│   │   │   └── pdf-client.test.ts # PDF API client tests (uploadPdfApi, analyzePdfApi, queryPdfStreamApi, etc.)
+│   │   ├── components/
+│   │   │   └── pdf/
+│   │   │       ├── PDFUploader.test.tsx      # Drag-and-drop, file selection, progress (REQ-PDF-401, 402, 405)
+│   │   │       ├── AnalysisResult.test.tsx   # Coverage cards, accordion UI (REQ-PDF-403)
+│   │   │       ├── PDFChat.test.tsx          # Message sending, SSE streaming, errors (REQ-PDF-404, 206)
+│   │   │       └── SessionList.test.tsx      # Session list, deletion, status display
+│   │   └── pdf-page.test.tsx     # Integration tests for /pdf page
 │   │
 │   ├── styles/                  # Global styles
 │   │   ├── globals.css          # Global CSS
@@ -127,6 +146,7 @@ bodam/
 │   │   │   │   ├── users.py     # User profile endpoints
 │   │   │   │   ├── oauth.py     # OAuth2 endpoints (authorize, callback)
 │   │   │   │   ├── guidance.py  # Guidance endpoints (dispute detection, analysis)
+│   │   │   │   ├── pdf.py       # PDF analysis endpoints (upload, analyze, query, sessions)
 │   │   │   │   └── b2b/         # B2B platform endpoints
 │   │   │   │       ├── organizations.py  # Organization CRUD
 │   │   │   │       ├── api_keys.py       # API key management
@@ -157,6 +177,7 @@ bodam/
 │   │   │   ├── agent_client.py  # AgentClient model (CRM with Fernet encryption)
 │   │   │   ├── usage_record.py  # UsageRecord model (usage tracking, billing)
 │   │   │   ├── case_precedent.py # CasePrecedent model (Vector(1536) embeddings)
+│   │   │   ├── pdf.py           # PDF analysis models (PdfUpload, PdfAnalysisSession, PdfAnalysisMessage)
 │   │   │   └── __init__.py      # Model exports
 │   │   │
 │   │   ├── schemas/             # Pydantic request/response schemas
@@ -220,14 +241,21 @@ bodam/
 │   │   │   │   ├── usage_service.py        # Usage tracking and billing
 │   │   │   │   └── dashboard_service.py    # Dashboard analytics
 │   │   │   │
-│   │   │   └── guidance/        # Insurance dispute guidance service
-│   │   │       ├── guidance_service.py     # Main guidance orchestrator
-│   │   │       ├── dispute_detector.py     # Dispute case detection
-│   │   │       ├── precedent_service.py    # Case precedent search
-│   │   │       ├── probability_scorer.py   # Probability estimation
-│   │   │       ├── evidence_advisor.py     # Evidence strategy
-│   │   │       ├── escalation_advisor.py   # Escalation recommendations
-│   │   │       └── disclaimer.py           # Legal disclaimer
+│   │   │   ├── guidance/        # Insurance dispute guidance service
+│   │   │   │   ├── guidance_service.py     # Main guidance orchestrator
+│   │   │   │   ├── dispute_detector.py     # Dispute case detection
+│   │   │   │   ├── precedent_service.py    # Case precedent search
+│   │   │   │   ├── probability_scorer.py   # Probability estimation
+│   │   │   │   ├── evidence_advisor.py     # Evidence strategy
+│   │   │   │   ├── escalation_advisor.py   # Escalation recommendations
+│   │   │   │   └── disclaimer.py           # Legal disclaimer
+│   │   │   │
+│   │   │   └── pdf/             # On-demand PDF analysis service
+│   │   │       ├── __init__.py        # PDF service exports
+│   │   │       ├── storage.py         # PDF file storage (validation, quota, persistence)
+│   │   │       ├── analysis.py        # Gemini Files API analysis engine
+│   │   │       ├── session.py         # Analysis session management (CRUD, lifecycle)
+│   │   │       └── schemas.py         # Pydantic schemas (PdfUploadRequest, AnalysisResult)
 │   │   │
 │   │   ├── tasks/               # Background task processing (Celery)
 │   │   │   ├── __init__.py      # Task module exports
@@ -251,7 +279,13 @@ bodam/
 │   │   ├── unit/                # Unit tests
 │   │   │   ├── test_auth.py
 │   │   │   ├── test_policies.py
-│   │   │   └── test_llm_router.py
+│   │   │   ├── test_llm_router.py
+│   │   │   ├── test_pdf_models.py          # PDF data models validation (12 tests)
+│   │   │   ├── test_pdf_schemas.py         # PDF Pydantic schemas (13 tests)
+│   │   │   ├── test_pdf_storage_service.py # PDF storage validation and quota (24 tests)
+│   │   │   ├── test_pdf_session_service.py # PDF session lifecycle (19 tests)
+│   │   │   ├── test_pdf_analysis_service.py # Gemini API integration (19 tests)
+│   │   │   └── test_pdf_api.py             # PDF API endpoints (10 tests)
 │   │   │
 │   │   ├── integration/         # Integration tests
 │   │   │   ├── test_chat_endpoint.py

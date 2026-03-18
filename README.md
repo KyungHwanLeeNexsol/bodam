@@ -2,6 +2,14 @@
 
 보담 프로젝트 - AI 기반 노인 돌봄 서비스
 
+## 주요 기능
+
+### 보험 약관 분석
+- 📊 **온디맨드 PDF 분석**: Gemini 2.0 Flash로 사용자 업로드 약관 실시간 분석
+- 💬 **Q&A 채팅**: 업로드된 약관에 대한 자연어 질문 지원
+- 📋 **보장 분석**: 담보 항목, 보상 조건, 면책 사항, 보상 한도 자동 추출
+- 🔄 **세션 관리**: 분석 이력 조회 및 세션 수 제한
+
 ## 아키텍처
 
 | 구성요소 | 플랫폼 | 설명 |
@@ -10,6 +18,7 @@
 | Backend | Fly.io | FastAPI, 자동 배포 |
 | Database | Neon PostgreSQL (pgvector) | 서버리스 PostgreSQL |
 | Cache | Upstash Redis | 인증 세션, Rate Limiting |
+| AI/LLM | Google Gemini | Gemini 2.0 Flash API (1M context window) |
 
 ## 환경변수 설정
 

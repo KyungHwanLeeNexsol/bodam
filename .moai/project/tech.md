@@ -85,6 +85,7 @@ Auth.js provides enterprise-grade authentication without forcing a monolithic au
 | **langchain-core** | 0.3.x | Lightweight LLM framework (used instead of full langchain) |
 | **langchain-openai** | 1.1.x | OpenAI LLM integration |
 | **langchain-google-genai** | 1.0.x | Google Gemini LLM integration |
+| **google-generativeai** | >=0.8.0 | Gemini Files API for on-demand PDF analysis |
 | **Celery** | 5.x | Async background task processing |
 | **structlog** | 24.x | Structured logging for LLM metrics and analytics |
 | **tenacity** | 9.x | Retry library for exponential backoff on API failures |
@@ -142,6 +143,16 @@ Insurance companies publish policy documents, disclosure statements, and terms o
 - **Headless browser automation** for extracting structured data from unstructured HTML
 
 This is critical for building the ground truth dataset of insurance policies to feed into the RAG pipeline.
+
+**Why google-generativeai?**
+
+The Gemini 2.0 Flash API with 1M token context window enables real-time analysis of user-uploaded insurance policies without requiring database entry. The google-generativeai library provides direct Files API support for:
+- **Direct PDF upload and analysis**: Send policy PDFs directly to Gemini without conversion
+- **Rapid processing**: 1M context window accommodates 200-page policies in a single request
+- **Cost efficiency**: ~$0.02 per policy analysis at Gemini 2.0 Flash pricing ($0.10/MTok)
+- **Flexible coverage**: Support for non-indexed policies, regional variants, custom policies
+
+This enables SPEC-PDF-001 on-demand analysis feature without modifying the core RAG database.
 
 ---
 
