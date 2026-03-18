@@ -1,7 +1,7 @@
 ---
 id: SPEC-PDF-001
 document: progress
-version: 1.0.0
+version: 1.1.0
 status: completed
 created: 2026-03-17
 updated: 2026-03-18
@@ -11,14 +11,14 @@ tags: [pdf-analysis, gemini, on-demand]
 
 # SPEC-PDF-001: 진행 현황
 
-## 전체 진행률: 85%
+## 전체 진행률: 100%
 
 | 마일스톤 | 상태 | 진행률 |
 |----------|------|--------|
 | M1: PDF 업로드 API (백엔드) | 완료 | 100% |
 | M2: Gemini 2.0 Flash 분석 통합 | 완료 | 100% |
 | M3: 캐싱 & 히스토리 | 완료 | 100% |
-| M4: 프론트엔드 PDF 업로드 UI | 미착수 | 0% |
+| M4: 프론트엔드 PDF 업로드 UI | 완료 | 100% |
 | M5: 세션 관리 | 완료 | 100% |
 
 ## TDD 구현 완료 (2026-03-18)
@@ -59,15 +59,27 @@ TOTAL                            308     36    88%
 - **Ruff 린트**: 0 오류
 - **구현 방식**: TDD (RED-GREEN-REFACTOR)
 
-### 미완성 항목
+## M4 프론트엔드 TDD 완료 (2026-03-18)
 
-- **M4 프론트엔드**: Next.js PDF 업로드 UI, Q&A 채팅 인터페이스
-  - drag & drop 업로드 컴포넌트
-  - 분석 결과 카드 UI
-  - Q&A 채팅 인터페이스
-  - 모바일 반응형 레이아웃
+### RED-GREEN-REFACTOR 사이클 완료 (브라운필드 TDD)
 
-- **Alembic 마이그레이션**: pdf_uploads, pdf_analysis_sessions, pdf_analysis_messages 테이블 생성 마이그레이션 파일 필요
+| 파일 | 테스트 수 | 커버 영역 |
+|------|-----------|-----------|
+| `frontend/__tests__/lib/pdf-client.test.ts` | - | PDF API 클라이언트 (uploadPdfApi, analyzePdfApi, queryPdfStreamApi, listSessionsApi, getSessionApi, deleteSessionApi) |
+| `frontend/__tests__/components/pdf/PDFUploader.test.tsx` | - | 드래그앤드롭, 파일선택, 진행률, 50MB 검증 (REQ-PDF-401, 402, 405) |
+| `frontend/__tests__/components/pdf/AnalysisResult.test.tsx` | - | 담보목록, 보상조건, 면책사항 아코디언 카드 (REQ-PDF-403) |
+| `frontend/__tests__/components/pdf/PDFChat.test.tsx` | - | 질문 전송, SSE 스트리밍, 에러 처리 (REQ-PDF-404) |
+| `frontend/__tests__/components/pdf/SessionList.test.tsx` | - | 세션 목록, 삭제, 상태 표시 |
+| `frontend/__tests__/pdf-page.test.tsx` | - | 메인 페이지 상태 머신 통합 |
+
+#### 총합: 109개 테스트 (100% 통과)
+
+### 완료된 항목
+- drag & drop 업로드 컴포넌트 ✅
+- 분석 결과 카드 UI ✅
+- Q&A 채팅 인터페이스 ✅
+- 모바일 반응형 레이아웃 ✅
+- Alembic 마이그레이션 (`f6g7h8i9j0k1_add_pdf_analysis_tables.py`) ✅
 
 ### 구현된 파일 목록
 
