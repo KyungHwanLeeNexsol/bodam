@@ -51,13 +51,21 @@ END;
 $$ LANGUAGE plpgsql
 """)
 
-    # 트리거 등록 (INSERT 및 UPDATE 시 실행)
+    # 트리거 등록 (INSERT 및 UPDATE 시 실행) - 이미 존재하면 건너뜀
     op.execute("""
-CREATE TRIGGER trg_policy_chunks_search_vector_update
-BEFORE INSERT OR UPDATE OF chunk_text
-ON policy_chunks
-FOR EACH ROW
-EXECUTE FUNCTION fn_policy_chunks_search_vector_update()
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_policy_chunks_search_vector_update'
+          AND tgrelid = 'policy_chunks'::regclass
+    ) THEN
+        CREATE TRIGGER trg_policy_chunks_search_vector_update
+        BEFORE INSERT OR UPDATE OF chunk_text
+        ON policy_chunks
+        FOR EACH ROW
+        EXECUTE FUNCTION fn_policy_chunks_search_vector_update();
+    END IF;
+END $$
 """)
 
 
