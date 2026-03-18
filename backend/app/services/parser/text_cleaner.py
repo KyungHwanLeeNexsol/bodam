@@ -50,6 +50,9 @@ class TextCleaner:
         Returns:
             정제된 텍스트
         """
+        # NULL 바이트 제거 (PDF에서 간헐적으로 포함됨, PostgreSQL UTF-8 호환)
+        text = text.replace("\x00", "")
+
         # 페이지 번호 패턴 제거 (순서 중요: 구체적인 패턴부터)
         text = self._PAGE_NUM_DASH.sub("", text)
         text = self._PAGE_NUM_KOREAN.sub("", text)

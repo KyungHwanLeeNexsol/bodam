@@ -170,7 +170,7 @@ class EmbeddingService:
             batch_indices = valid_indices[start:end]
 
             try:
-                # 지수 백오프 재시도 로직
+                # 지수 백오프 재시도 로직 (rate limit 대응 포함)
                 embeddings = await self._call_with_retry(batch_texts)
 
                 # 결과를 원래 인덱스에 배치
@@ -246,14 +246,21 @@ class EmbeddingService:
             except google_exceptions.GoogleAPIError as e:
                 last_error = e
                 if attempt < MAX_RETRIES - 1:
-                    # 지수 백오프: 1초, 2초, 4초...
-                    wait_time = BASE_RETRY_DELAY * (2**attempt)
+                    # 429 Rate Limit: API가 알려주는 retry_delay 존중 (최소 35초)
+                    error_str = str(e)
+                    if "429" in error_str or "quota" in error_str.lower():
+                        import re as _re
+                        retry_match = _re.search(r"retry in (\d+(?:\.\d+)?)", error_str, _re.IGNORECASE)
+                        wait_time = float(retry_match.group(1)) + 5.0 if retry_match else 35.0
+                    else:
+                        # 일반 오류: 지수 백오프 (1초, 2초, 4초)
+                        wait_time = BASE_RETRY_DELAY * (2**attempt)
                     logger.warning(
-                        "Google Gemini API 오류 발생, %d초 후 재시도 (%d/%d): %s",
+                        "Google Gemini API 오류 발생, %.0f초 후 재시도 (%d/%d): %s",
                         wait_time,
                         attempt + 1,
                         MAX_RETRIES,
-                        str(e),
+                        str(e)[:200],
                     )
                     await asyncio.sleep(wait_time)
 

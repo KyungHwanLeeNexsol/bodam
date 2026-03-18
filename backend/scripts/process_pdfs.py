@@ -54,17 +54,31 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
         return
 
     import os
-    api_key = getattr(settings, "gemini_api_key", None) or os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
+    # API 키 로테이션: 여러 키를 쉼표로 구분하여 GEMINI_API_KEYS에 설정 가능
+    api_keys_str = os.environ.get("GEMINI_API_KEYS", "")
+    api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()] if api_keys_str else []
+    # 단일 키 폴백
+    if not api_keys:
+        single_key = getattr(settings, "gemini_api_key", None) or os.environ.get("GEMINI_API_KEY", "")
+        if single_key:
+            api_keys = [single_key]
+    if not api_keys:
         logger.error("GEMINI_API_KEY가 설정되지 않았습니다")
         return
 
-    embedding_service = EmbeddingService(
-        api_key=api_key,
-        model=getattr(settings, "embedding_model", "models/text-embedding-004"),
-        dimensions=getattr(settings, "embedding_dimensions", 768),
-    )
+    logger.info("API 키 %d개 로테이션 모드", len(api_keys))
+    current_key_idx = 0
+    model_name = getattr(settings, "embedding_model", "models/text-embedding-004")
+    dims = getattr(settings, "embedding_dimensions", 768)
+
+    def create_embedding_service(key_idx: int) -> EmbeddingService:
+        return EmbeddingService(api_key=api_keys[key_idx], model=model_name, dimensions=dims)
+
+    embedding_service = create_embedding_service(current_key_idx)
+    from app.services.parser.text_cleaner import TextCleaner
+
     pdf_parser = PDFParser()
+    text_cleaner = TextCleaner()
     text_chunker = TextChunker(
         chunk_size=getattr(settings, "chunk_size_tokens", 500),
         chunk_overlap=getattr(settings, "chunk_overlap_tokens", 100),
@@ -124,8 +138,10 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
             try:
                 logger.info("[%d/%d] 처리 중: %s / %s", i, len(raw_policies), pol["company_code"], pol["product_code"])
 
-                # PDF 파싱
+                # PDF 파싱 + 텍스트 정제 (NULL 바이트 제거 포함)
                 text = pdf_parser.extract_text(str(pdf_path))
+                if text:
+                    text = text_cleaner.clean(text)
                 if not text or not text.strip():
                     logger.warning("텍스트 추출 실패 또는 빈 내용: %s", pdf_path)
                     fail_count += 1
@@ -166,9 +182,48 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                 logger.info("  → %d청크 생성 + 임베딩 완료", chunk_count)
                 success_count += 1
 
+                # Rate limit 대응: 임베딩 성공 후 짧은 대기 (분당 100건 제한)
+                await asyncio.sleep(1.0)
+
             except Exception as exc:
                 await session.rollback()
-                logger.error("[%d/%d] 실패: %s - %s", i, len(raw_policies), pol["product_code"], exc)
+                error_str = str(exc)
+                # 429 Rate Limit → 다른 API 키로 전환 후 재시도
+                if "429" in error_str and len(api_keys) > 1:
+                    current_key_idx = (current_key_idx + 1) % len(api_keys)
+                    logger.warning("Rate limit 도달, API 키 %d로 전환", current_key_idx + 1)
+                    embedding_service = create_embedding_service(current_key_idx)
+                    # 전환 후 즉시 재시도
+                    try:
+                        await asyncio.sleep(2.0)
+                        vectors = await embedding_service.embed_batch(texts)
+                        chunk_count = 0
+                        for j, (chunk, vector) in enumerate(zip(chunks, vectors)):
+                            policy_chunk = PolicyChunk(
+                                id=uuid.uuid4(),
+                                policy_id=pol["id"],
+                                chunk_index=j,
+                                chunk_text=chunk["text"],
+                                embedding=vector,
+                                metadata_={
+                                    "company_code": pol["company_code"],
+                                    "product_code": pol["product_code"],
+                                    "chunk_index": j,
+                                    "total_chunks": len(chunks),
+                                    "token_count": chunk.get("token_count", 0),
+                                },
+                            )
+                            session.add(policy_chunk)
+                            chunk_count += 1
+                        await session.commit()
+                        logger.info("  → 키 전환 후 %d청크 생성 + 임베딩 완료", chunk_count)
+                        success_count += 1
+                        await asyncio.sleep(1.0)
+                        continue
+                    except Exception as retry_exc:
+                        await session.rollback()
+                        logger.error("[%d/%d] 키 전환 후에도 실패: %s - %s", i, len(raw_policies), pol["product_code"], retry_exc)
+                logger.error("[%d/%d] 실패: %s - %s", i, len(raw_policies), pol["product_code"], error_str[:200])
                 fail_count += 1
 
     print(f"\n{'='*50}")
