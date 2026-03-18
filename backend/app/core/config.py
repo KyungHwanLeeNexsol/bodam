@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     # 테스트 환경에서는 빈 문자열로 설정 가능
     openai_api_key: str = ""
 
-    # 임베딩 모델명 (Gemini text-embedding-004: 768차원)
-    embedding_model: str = "models/text-embedding-004"
+    # 임베딩 모델명 (Gemini text-embedding-004: 768차원, EmbeddingService가 models/ 접두사 추가)
+    embedding_model: str = "text-embedding-004"
 
     # 임베딩 벡터 차원 수 (pgvector Vector 타입과 일치해야 함)
     embedding_dimensions: int = 768
