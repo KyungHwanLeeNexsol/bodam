@@ -228,8 +228,8 @@ class EmbeddingService:
                         content=texts[0],
                         task_type="RETRIEVAL_DOCUMENT",
                     )
-                    # 단일 텍스트 응답 구조: {"embedding": {"values": [...]}}
-                    embedding_values = response["embedding"]["values"]
+                    # gemini-embedding-001 응답 구조: {"embedding": [float, ...]}
+                    embedding_values = response["embedding"]
                     return [embedding_values]
                 else:
                     response = await asyncio.to_thread(
@@ -238,8 +238,8 @@ class EmbeddingService:
                         content=texts,
                         task_type="RETRIEVAL_DOCUMENT",
                     )
-                    # 배치 응답 구조: {"embedding": [{"values": [...]}, ...]}
-                    return [item["values"] for item in response["embedding"]]
+                    # 배치 응답 구조: {"embedding": [[float, ...], [float, ...], ...]}
+                    return response["embedding"]
 
             except google_exceptions.GoogleAPIError as e:
                 last_error = e
