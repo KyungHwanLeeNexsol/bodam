@@ -1,9 +1,9 @@
 ---
 id: SPEC-CRAWLER-002
-version: 1.1.0
-status: planned
+version: 1.2.0
+status: superseded-partial
 created: 2026-03-16
-updated: 2026-03-17
+updated: 2026-03-18
 author: zuge3
 priority: high
 issue_number: 0
@@ -20,6 +20,7 @@ blocks: [SPEC-EMBED-001]
 |------|------|--------|-----------|
 | 1.0.0 | 2026-03-16 | zuge3 | 초안 작성 |
 | 1.1.0 | 2026-03-17 | zuge3 | REQ-06(미탐색 14개 생보사 YAML 탐색), REQ-07(OCI DB 자동 저장) 추가 |
+| 1.2.0 | 2026-03-18 | zuge3 | 전략 변경: 생명보험사 개별 크롤러를 pub.insure.or.kr 기반 SPEC-CRAWLER-003으로 대체. 손해보험사 개별 크롤러 유효성 재검토 필요 |
 
 ---
 
@@ -431,3 +432,19 @@ _미구현 상태 - `/moai:2-run SPEC-CRAWLER-002` 실행 시 구현 예정_
 | KLIA SPA 수정 | `companies/klia_crawler.py` | `tests/integration/test_klia_spa.py` |
 | REQ-06 | `config/companies/*.yaml` (14개사), `config/unsupported_companies.md` | `tests/unit/test_remaining_life_crawlers.py` |
 | REQ-07 | `policy_ingestor.py`, `alembic/versions/xxxx_add_sale_status.py` | `tests/unit/test_policy_ingestor.py`, `tests/integration/test_db_auto_save.py` |
+
+---
+
+## 전략 변경 사항 (Strategy Change)
+
+### 생명보험사 크롤러 대체
+
+pub.insure.or.kr (생명보험협회 공시실) Playwright 테스트 결과 (2026-03-18):
+- SSR 방식으로 SPA 없음, 봇 차단 없음
+- 22개 생명보험사 전체 데이터 제공
+- FileDown.do 엔드포인트로 직접 PDF 다운로드 가능
+
+이에 따라 본 SPEC의 생명보험사 개별 YAML 크롤러(18개)는 SPEC-CRAWLER-003으로 대체됨.
+손해보험사 YAML 크롤러(12개)는 kpub.knia.or.kr KNIA 크롤러로 대부분 커버되므로 P4 우선순위 작업으로 분류.
+
+참고: SPEC-CRAWLER-003 (pub.insure.or.kr 생명보험 크롤러)

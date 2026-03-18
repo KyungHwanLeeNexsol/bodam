@@ -41,3 +41,11 @@ tags: [crawler, insurance, individual-company, playwright]
 - 2026-03-17: SPEC 문서 작성 (v1.1.0)
 - 2026-03-17: 구현 완료 확인 - 기존 코드에 모든 요구사항 이미 구현됨
 - 2026-03-17: 레거시 테스트 3건 수정 (Playwright 전환 반영)
+
+## 후속 발견 사항 (2026-03-18)
+
+실제 수집 실행 시 발견된 문제:
+- 생명보험사 YAML URL 대부분 404 또는 SPA 오류 (P0 버그 수정 커밋 cbb49d5 참조)
+- KLIA 크롤러 3개 PDF만 수집 (SPA 구조 문제)
+
+**전략 변경**: SPEC-CRAWLER-003 (pub.insure.or.kr)으로 생명보험 데이터 수집 전략 변경
