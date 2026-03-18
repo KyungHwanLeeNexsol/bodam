@@ -278,10 +278,24 @@ class GenericNonLifeCrawler(BaseCrawler):
                 logger.info("%s 마지막 페이지 (%d페이지)", self.config.company_code, page_num)
                 break
 
+            # Issue 3 수정: networkidle 실패 후 listing_container 선택자로 폴백 대기
+            # SPA(React/Vue) 페이지는 networkidle 이후에도 렌더링이 완료되지 않을 수 있음
             try:
                 await page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
-                logger.debug("%s 페이지 로드 대기 타임아웃 (계속)", self.config.company_code)
+                logger.debug("%s networkidle 타임아웃, listing_container 선택자로 폴백 대기", self.config.company_code)
+                listing_sel = self.config.selectors.listing_container.split(",")[0].strip()
+                try:
+                    await page.wait_for_selector(listing_sel, timeout=30000)
+                except Exception as exc:
+                    logger.warning(
+                        "%s listing_container 대기 실패 (URL: %s, 선택자: '%s'): %s",
+                        self.config.company_code,
+                        page.url,
+                        listing_sel,
+                        str(exc),
+                    )
+                    return all_listings
 
         return all_listings
 
@@ -304,16 +318,37 @@ class GenericNonLifeCrawler(BaseCrawler):
         """
         listings: list[PolicyListing] = []
 
-        try:
-            rows = await page.query_selector_all(self.config.selectors.listing_container)
-        except Exception as exc:
+        # Issue 1 수정: listing_container도 복합 선택자일 수 있으므로 순차 시도
+        container_selector = self.config.selectors.listing_container
+        sub_selectors = [s.strip() for s in container_selector.split(",")]
+        rows: list[Any] = []
+        last_exc: Exception | None = None
+        for sel in sub_selectors:
+            try:
+                found = await page.query_selector_all(sel)
+                if found:
+                    rows = found
+                    break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "%s 목록 선택자 실패 ('%s'): %s",
+                    self.config.company_code,
+                    sel,
+                    str(exc),
+                )
+
+        # Issue 2 수정: 0개 발견 시 WARNING 로그로 실패를 명시
+        if not rows:
             logger.warning(
-                "%s 목록 선택자 실패 ('%s'): %s",
+                "%s 목록 항목 0개 발견 (선택자: '%s')%s",
                 self.config.company_code,
-                self.config.selectors.listing_container,
-                str(exc),
+                container_selector,
+                f" - 마지막 오류: {last_exc}" if last_exc else "",
             )
             return listings
+
+        logger.debug("%s 목록 항목 %d개 발견", self.config.company_code, len(rows))
 
         for row in rows:
             try:
@@ -381,6 +416,7 @@ class GenericNonLifeCrawler(BaseCrawler):
         """엘리먼트에서 PDF URL 추출
 
         href, onclick 속성에서 PDF 링크를 탐색.
+        콤마로 구분된 복합 선택자는 각각 순차적으로 시도.
 
         Args:
             element: Playwright 엘리먼트
@@ -390,8 +426,24 @@ class GenericNonLifeCrawler(BaseCrawler):
         """
         pdf_selector = self.config.selectors.pdf_link
 
-        # 설정된 선택자로 링크 탐색
-        links = await element.query_selector_all(pdf_selector)
+        # Issue 1 수정: Playwright는 콤마 구분 복합 선택자 미지원
+        # 선택자를 콤마로 분리해 각각 순차 시도
+        sub_selectors = [s.strip() for s in pdf_selector.split(",")]
+        links: list[Any] = []
+        for sel in sub_selectors:
+            try:
+                found = await element.query_selector_all(sel)
+                if found:
+                    links = found
+                    break
+            except Exception as exc:
+                logger.warning(
+                    "%s PDF 선택자 실패 ('%s'): %s",
+                    self.config.company_code,
+                    sel,
+                    str(exc),
+                )
+
         for link in links:
             href = await link.get_attribute("href")
             if href and href not in ("#", "javascript:void(0)"):

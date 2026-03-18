@@ -12,9 +12,6 @@ Create Date: 2026-03-18 00:00:00.000000
 
 from __future__ import annotations
 
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -25,7 +22,7 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    """파이프라인 실행 테이블 및 enum 타입 생성"""
+    """파이프라인 실행 테이블 및 enum 타입 생성 (순수 SQL)"""
 
     # pipelinestatus enum 생성
     op.execute("""DO $$ BEGIN
@@ -39,60 +36,32 @@ END $$""")
 EXCEPTION WHEN duplicate_object THEN null;
 END $$""")
 
-    # pipeline_runs 테이블 생성
-    op.create_table(
-        "pipeline_runs",
-        sa.Column(
-            "id",
-            UUID(as_uuid=True),
-            primary_key=True,
-            server_default=sa.text("gen_random_uuid()"),
-        ),
-        sa.Column(
-            "status",
-            sa.Enum("PENDING", "RUNNING", "COMPLETED", "FAILED", "PARTIAL", name="pipelinestatus", create_type=False),
-            nullable=False,
-            server_default="PENDING",
-        ),
-        sa.Column(
-            "trigger_type",
-            sa.Enum("SCHEDULED", "MANUAL", name="pipelinetriggertype", create_type=False),
-            nullable=False,
-        ),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("stats", JSONB, nullable=True),
-        sa.Column("error_details", JSONB, nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-    )
+    # pipeline_runs 테이블 생성 (순수 SQL - asyncpg enum 충돌 방지)
+    op.execute("""
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    status pipelinestatus NOT NULL DEFAULT 'PENDING',
+    trigger_type pipelinetriggertype NOT NULL,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    stats JSONB,
+    error_details JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+""")
 
     # 인덱스 생성
-    op.create_index("ix_pipeline_runs_status", "pipeline_runs", ["status"])
-    op.create_index("ix_pipeline_runs_trigger_type", "pipeline_runs", ["trigger_type"])
-    op.create_index("ix_pipeline_runs_created_at", "pipeline_runs", ["created_at"])
+    op.execute("CREATE INDEX IF NOT EXISTS ix_pipeline_runs_status ON pipeline_runs (status)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_pipeline_runs_trigger_type ON pipeline_runs (trigger_type)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_pipeline_runs_created_at ON pipeline_runs (created_at)")
 
 
 def downgrade() -> None:
     """파이프라인 실행 테이블 및 enum 타입 제거"""
-    # 인덱스 제거
-    op.drop_index("ix_pipeline_runs_created_at", table_name="pipeline_runs")
-    op.drop_index("ix_pipeline_runs_trigger_type", table_name="pipeline_runs")
-    op.drop_index("ix_pipeline_runs_status", table_name="pipeline_runs")
-
-    # 테이블 제거
-    op.drop_table("pipeline_runs")
-
-    # enum 타입 제거
-    sa.Enum(name="pipelinetriggertype").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="pipelinestatus").drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP INDEX IF EXISTS ix_pipeline_runs_created_at")
+    op.execute("DROP INDEX IF EXISTS ix_pipeline_runs_trigger_type")
+    op.execute("DROP INDEX IF EXISTS ix_pipeline_runs_status")
+    op.execute("DROP TABLE IF EXISTS pipeline_runs")
+    op.execute("DROP TYPE IF EXISTS pipelinetriggertype")
+    op.execute("DROP TYPE IF EXISTS pipelinestatus")
