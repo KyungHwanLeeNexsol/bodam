@@ -1,6 +1,6 @@
 # Fly.io configuration for Bodam Backend
 app = 'bodam'
-primary_region = 'nrt'  # Tokyo - closest to Korean users
+primary_region = 'sin'  # Singapore - same region as Neon DB (ap-southeast-1)
 
 [build]
   dockerfile = 'backend/Dockerfile'
