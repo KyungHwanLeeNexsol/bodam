@@ -24,11 +24,11 @@ class Settings(BaseSettings):
     # 테스트 환경에서는 빈 문자열로 설정 가능
     openai_api_key: str = ""
 
-    # 임베딩 모델명 (text-embedding-3-small: 1536차원, 비용 효율적)
-    embedding_model: str = "text-embedding-3-small"
+    # 임베딩 모델명 (Gemini text-embedding-004: 768차원)
+    embedding_model: str = "models/text-embedding-004"
 
     # 임베딩 벡터 차원 수 (pgvector Vector 타입과 일치해야 함)
-    embedding_dimensions: int = 1536
+    embedding_dimensions: int = 768
 
     # RAG 청크 분할 설정
     # 청크 최대 토큰 수 (tiktoken 기준)

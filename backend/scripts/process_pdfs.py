@@ -88,34 +88,41 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
         chunk_result = await session.execute(chunk_stmt)
         processed_ids = {row[0] for row in chunk_result}
 
-        policies_to_process = [
-            (policy, company) for policy, company in rows
+        # SQLAlchemy 객체를 plain dict로 변환 (rollback 후 expired 방지)
+        raw_policies = [
+            {
+                "id": policy.id,
+                "product_code": policy.product_code,
+                "pdf_path": (policy.metadata_ or {}).get("pdf_path"),
+                "company_code": company.code,
+            }
+            for policy, company in rows
             if policy.id not in processed_ids
         ]
 
         if limit:
-            policies_to_process = policies_to_process[:limit]
+            raw_policies = raw_policies[:limit]
 
-        logger.info("처리할 Policy 수: %d개 (전체 %d개 중)", len(policies_to_process), len(rows))
+        logger.info("처리할 Policy 수: %d개 (전체 %d개 중)", len(raw_policies), len(rows))
 
         success_count = 0
         fail_count = 0
 
-        for i, (policy, company) in enumerate(policies_to_process, 1):
-            pdf_path_rel = (policy.metadata_ or {}).get("pdf_path")
+        for i, pol in enumerate(raw_policies, 1):
+            pdf_path_rel = pol["pdf_path"]
             if not pdf_path_rel:
-                logger.warning("[%d/%d] PDF 경로 없음: %s", i, len(policies_to_process), policy.product_code)
+                logger.warning("[%d/%d] PDF 경로 없음: %s", i, len(raw_policies), pol["product_code"])
                 fail_count += 1
                 continue
 
             pdf_path = project_root / pdf_path_rel
             if not pdf_path.exists():
-                logger.warning("[%d/%d] PDF 없음: %s", i, len(policies_to_process), pdf_path)
+                logger.warning("[%d/%d] PDF 없음: %s", i, len(raw_policies), pdf_path)
                 fail_count += 1
                 continue
 
             try:
-                logger.info("[%d/%d] 처리 중: %s / %s", i, len(policies_to_process), company.code, policy.product_code)
+                logger.info("[%d/%d] 처리 중: %s / %s", i, len(raw_policies), pol["company_code"], pol["product_code"])
 
                 # PDF 파싱
                 text = pdf_parser.extract_text(str(pdf_path))
@@ -140,14 +147,14 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                 for j, (chunk, vector) in enumerate(zip(chunks, vectors)):
                     policy_chunk = PolicyChunk(
                         id=uuid.uuid4(),
-                        policy_id=policy.id,
+                        policy_id=pol["id"],
                         chunk_index=j,
                         chunk_text=chunk["text"],
                         token_count=chunk.get("token_count", 0),
                         embedding=vector,
                         metadata_={
-                            "company_code": company.code,
-                            "product_code": policy.product_code,
+                            "company_code": pol["company_code"],
+                            "product_code": pol["product_code"],
                             "chunk_index": j,
                             "total_chunks": len(chunks),
                         },
@@ -160,9 +167,8 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                 success_count += 1
 
             except Exception as exc:
-                prod_code = policy.product_code if hasattr(policy, "_sa_instance_state") else "unknown"
                 await session.rollback()
-                logger.error("[%d/%d] 실패: %s - %s", i, len(policies_to_process), prod_code, exc)
+                logger.error("[%d/%d] 실패: %s - %s", i, len(raw_policies), pol["product_code"], exc)
                 fail_count += 1
 
     print(f"\n{'='*50}")
