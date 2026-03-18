@@ -315,7 +315,7 @@ Real-time analysis of user-uploaded policy PDFs using Gemini 2.0 Flash with 1M c
 - International policies or policies in transition
 - Rapid policy analysis without manual database entry
 
-**Status**: Implemented in SPEC-PDF-001 (2026-03-15) - Gemini 2.0 Flash Files API integration, 7 API endpoints, drag-and-drop frontend UI
+**Status**: Implemented in SPEC-PDF-001 (2026-03-17) - Gemini 2.0 Flash Files API integration, 7 API endpoints, drag-and-drop frontend UI, 97 backend tests (88% coverage), 109 frontend tests (100% pass)
 
 ### 13. User Authentication & Account Management
 
@@ -514,11 +514,22 @@ B2B 파트너용 API 기반 플랫폼으로 조직 관리, RBAC, API 키 인증,
 
 ### Phase 2 Feature Implementation Complete
 
-**신규 기능 구현 (2026-03-15)**:
+**신규 기능 구현 (2026-03-15 완료)**:
 - ✅ SPEC-OAUTH-001: Social Login (Kakao, Naver, Google)
 - ✅ SPEC-B2B-001: B2B Platform (조직 관리, RBAC, API 키, 사용량 추적)
 - ✅ SPEC-GUIDANCE-001: Insurance Dispute Guidance (6-step orchestrator, 판례 검색)
 - ✅ SPEC-GUIDANCE-002: Guidance-Chat Hybrid (실시간 채팅 중 가이던스)
+
+### Phase 2 Additional Work (2026-03-16~17)
+
+**최신 구현 완료 (2026-03-17)**:
+- ✅ SPEC-PDF-001: 프론트엔드 TDD 테스트 완성 (109개 테스트, 100% 통과)
+  - PDFUploader 컴포넌트: 드래그 앤 드롭, 파일 선택 UI 완전 테스트
+  - AnalysisResult 컴포넌트: 담보/보장/면책 정보 표시 테스트
+  - PDFChat 컴포넌트: 메시지 전송, SSE 스트리밍, 에러 처리 테스트
+  - SessionList 컴포넌트: 세션 목록, 삭제, 상태 표시 테스트
+- ✅ SPEC-CRAWLER-003: pub.insure.or.kr 생명보험 상품요약서 크롤러 구현 완료
+- ✅ SPEC-PIPELINE-001: E2E 파이프라인 자동화 전체 구현 완료
 
 ### 배포 준비 상태
 

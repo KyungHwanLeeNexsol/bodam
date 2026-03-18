@@ -24,16 +24,17 @@ Bodam is an AI-powered insurance claims analysis platform designed to process po
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **Next.js** | 16.1.x | React meta-framework with App Router, SSR, API routes |
-| **React** | 19.2.x | UI component library |
+| **Next.js** | 16.1.6 | React meta-framework with App Router, SSR, API routes |
+| **React** | 19.2.3 | UI component library |
 | **TypeScript** | 5.x | Type-safe JavaScript |
-| **Tailwind CSS** | 4.2.x | Utility-first CSS framework for rapid styling |
-| **shadcn/ui** | CLI v4 (2026.03) | Pre-built component library on Radix UI primitives |
-| **Vercel AI SDK** | 6.x (`ai` package) | LLM streaming chat UI with `useChat` hook |
-| **Auth.js (NextAuth)** | v5 | OAuth, credentials, and session management |
-| **react-hook-form** | >=7.0.0 | Performant, flexible form state management |
-| **zod** | >=3.0.0 | TypeScript-first schema validation |
-| **@hookform/resolvers** | >=3.0.0 | Zod integration for react-hook-form |
+| **Tailwind CSS** | 4 | Utility-first CSS framework for rapid styling |
+| **shadcn** | 4.0.6 | CLI tool for copying UI components |
+| **class-variance-authority** | 0.7.1 | Component styling utilities |
+| **react-hook-form** | 7.71.2 | Performant, flexible form state management |
+| **zod** | 4.3.6 | TypeScript-first schema validation |
+| **@hookform/resolvers** | 5.2.2 | Zod integration for react-hook-form |
+| **lucide-react** | 0.577.0 | Icon library |
+| **clsx** / **tailwind-merge** | 2.1.1 / 3.5.0 | Utility functions for className management |
 
 ### Frontend Design Rationale
 
@@ -75,24 +76,31 @@ Auth.js provides enterprise-grade authentication without forcing a monolithic au
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **Python** | 3.13.x | Primary backend language with mature AI/ML ecosystem |
-| **FastAPI** | 0.135.x | Async web framework with auto-generated OpenAPI documentation |
-| **Pydantic** | 2.12.x | Type-safe data validation and serialization |
+| **Python** | 3.13+ | Primary backend language with mature AI/ML ecosystem |
+| **FastAPI** | >=0.135.0,<0.136.0 | Async web framework with auto-generated OpenAPI documentation |
+| **Pydantic** | >=2.12.0,<2.13.0 | Type-safe data validation and serialization |
+| **pydantic-settings** | >=2.7.0 | Environment variable management |
 | **bcrypt** | >=4.0.0 | Password hashing (used directly instead of passlib for Python 3.13 compatibility) |
 | **python-jose[cryptography]** | >=3.3.0 | JWT token generation and verification |
-| **cryptography (Fernet)** | >=42.0.0 | Symmetric encryption for PII in B2B agent client management |
-| **LangChain** | 1.2.x | RAG pipeline orchestration and prompt management |
-| **langchain-core** | 0.3.x | Lightweight LLM framework (used instead of full langchain) |
-| **langchain-openai** | 1.1.x | OpenAI LLM integration |
-| **langchain-google-genai** | 1.0.x | Google Gemini LLM integration |
+| **cryptography** | >=43.0.0 | Symmetric encryption for PII in B2B agent client management |
+| **langchain-core** | >=0.3.0,<0.4.0 | Lightweight LLM framework core |
+| **langchain-openai** | >=0.3.0,<0.4.0 | OpenAI LLM integration |
+| **langchain-google-genai** | >=2.0.0,<3.0.0 | Google Gemini LLM integration |
 | **google-generativeai** | >=0.8.0 | Gemini Files API for on-demand PDF analysis |
-| **Celery** | 5.x | Async background task processing |
-| **structlog** | 24.x | Structured logging for LLM metrics and analytics |
-| **tenacity** | 9.x | Retry library for exponential backoff on API failures |
-| **SQLAlchemy** | 2.x | ORM for database operations and relationships |
-| **Alembic** | 1.x | Database migration management |
-| **Playwright** | latest | Web scraping for insurance disclosure pages |
-| **pydantic[email]** | 2.12.x | Email validation support (EmailStr type) |
+| **Celery** | >=5.4.0 | Async background task processing |
+| **structlog** | >=24.0.0 | Structured logging for LLM metrics and analytics |
+| **tenacity** | >=9.0.0 | Retry library for exponential backoff on API failures |
+| **SQLAlchemy** | >=2.0.0 | ORM for database operations and relationships |
+| **asyncpg** | >=0.30.0 | PostgreSQL async driver |
+| **Alembic** | >=1.14.0 | Database migration management |
+| **Playwright** | >=1.49.0 | Web scraping for insurance disclosure pages |
+| **pydantic[email]** | >=2.12.0,<2.13.0 | Email validation support (EmailStr type) |
+| **OpenAI** | >=1.60.0 | OpenAI API client |
+| **tiktoken** | >=0.8.0 | Token counting for OpenAI models |
+| **pdfplumber** | >=0.11.0 | PDF parsing and text extraction |
+| **pgvector** | >=0.3.6 | Vector database extension |
+| **Redis** | >=5.2.0 | Redis client for caching and message broker |
+| **prometheus-client** | >=0.21.0 | Prometheus metrics collection |
 
 ### Backend Design Rationale
 
@@ -407,6 +415,7 @@ If Gemini becomes cost-prohibitive:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2026-03-18 | Updated with verified version numbers from pyproject.toml and package.json (March 2026) |
 | 1.0.0 | 2026-03-13 | Initial technology stack documentation with verified version numbers (March 2026) |
 
 ---
@@ -434,5 +443,5 @@ If Gemini becomes cost-prohibitive:
 ---
 
 **Document Maintainer**: Bodam Engineering Team
-**Last Review**: 2026-03-13
-**Next Review**: 2026-06-13 (quarterly technology assessment)
+**Last Review**: 2026-03-18
+**Next Review**: 2026-06-18 (quarterly technology assessment)

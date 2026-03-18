@@ -212,10 +212,27 @@ bodam/
 │   │   │   │   ├── base.py          # BaseCrawler abstract class with retry/rate-limit
 │   │   │   │   ├── registry.py      # CrawlerRegistry for dynamic registration
 │   │   │   │   ├── storage.py       # FileStorage abstraction (Local + S3 stub)
-│   │   │   │   └── companies/       # Insurance association crawlers
+│   │   │   │   ├── config/          # Crawler configuration
+│   │   │   │   │   └── companies/   # Company-specific configurations
+│   │   │   │   └── companies/       # Insurance association and company-specific crawlers
 │   │   │   │       ├── __init__.py
-│   │   │   │       ├── klia_crawler.py    # Life Insurance Association (생명보험협회)
-│   │   │   │       └── knia_crawler.py    # Non-Life Insurance Association (손해보험협회)
+│   │   │   │       ├── klia_crawler.py           # Life Insurance Association (생명보험협회)
+│   │   │   │       ├── knia_crawler.py           # Non-Life Insurance Association (손해보험협회)
+│   │   │   │       ├── pubinsure_life_crawler.py # pub.insure.or.kr life insurance crawler (SPEC-CRAWLER-003)
+│   │   │   │       ├── life/                    # Life insurance company crawlers
+│   │   │   │       │   ├── samsung_life.py      # Samsung Life
+│   │   │   │       │   ├── kyobo_life.py        # Kyobo Life
+│   │   │   │       │   ├── shinhan_life.py      # Shinhan Life
+│   │   │   │       │   ├── mirae_life.py        # Mirae Asset Life
+│   │   │   │       │   ├── heungkuk_life.py     # Heungkuk Life
+│   │   │   │       │   ├── dongyang_life.py     # Dongyang Life
+│   │   │   │       │   ├── nh_life.py           # NH Life
+│   │   │   │       │   ├── hanwha_life.py       # Hanwha Life
+│   │   │   │       │   ├── generic_life.py      # Generic life insurance crawler template
+│   │   │   │       │   └── __init__.py
+│   │   │   │       └── nonlife/                 # Non-life insurance company crawlers
+│   │   │   │           ├── generic_nonlife.py   # Generic non-life insurance crawler template
+│   │   │   │           └── __init__.py
 │   │   │   │
 │   │   │   ├── parser/          # PDF and document parsing
 │   │   │   │   ├── pdf_parser.py    # PDF extraction and parsing
@@ -791,4 +808,25 @@ Models are configured in the LLM service with pricing tiers, latency specificati
 
 ---
 
+## Recent Updates (2026-03-17)
+
+### Backend Enhancements
+- **Crawler System Expansion**: Added company-specific crawlers for major Korean life insurance companies (Samsung, Kyobo, Shinhan, Mirae, Heungkuk, Dongyang, NH, Hanwha)
+- **pub.insure.or.kr Integration**: Implemented SPEC-CRAWLER-003 crawler for life insurance product summary documents
+- **Pipeline Automation**: Completed SPEC-PIPELINE-001 E2E pipeline with comprehensive automated crawling
+
+### Frontend Enhancements
+- **PDF Components**: Full TDD test coverage with 109 tests (100% pass rate)
+- **Component Coverage**:
+  - PDFUploader: Drag-and-drop file selection with progress tracking
+  - AnalysisResult: Structured display of coverage, benefits, and exclusions
+  - PDFChat: Real-time Q&A interface with SSE streaming
+  - SessionList: Session management and deletion
+
+---
+
 This document represents the planned architecture for Bodam Insurance AI Platform. As the project evolves, this structure should be updated to reflect any changes or optimizations discovered during development. Refer to individual README.md files in each major directory for detailed technical information specific to that component.
+
+**Document Version**: 1.2
+**Last Updated**: 2026-03-18
+**Status**: Phase 2 Implementation + Additional Work Complete
