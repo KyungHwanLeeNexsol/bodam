@@ -1,6 +1,6 @@
 """임베딩 서비스 모듈 (TAG-009)
 
-OpenAI API를 사용하여 텍스트 임베딩 벡터를 생성.
+Google Generative AI API를 사용하여 텍스트 임베딩 벡터를 생성.
 배치 처리, 재시도 로직, 입력 유효성 검사 포함.
 """
 
@@ -11,7 +11,8 @@ import logging
 import math
 from typing import TYPE_CHECKING
 
-import openai
+import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 
 if TYPE_CHECKING:
     pass
@@ -21,8 +22,8 @@ logger = logging.getLogger(__name__)
 # 최소 텍스트 길이 (50자 미만 텍스트는 임베딩 건너뜀)
 MIN_TEXT_CHARS = 50
 
-# OpenAI API 배치 크기 제한 (최대 2048개)
-MAX_BATCH_SIZE = 2048
+# Google Gemini API 배치 크기 제한 (최대 100개)
+MAX_BATCH_SIZE = 100
 
 # 최대 재시도 횟수
 MAX_RETRIES = 3
@@ -35,55 +36,58 @@ DEFAULT_MAX_CONSECUTIVE_FAILURES = 5
 
 
 class APIUnavailableError(Exception):
-    """OpenAI API 연속 실패로 서비스 불가 상태임을 나타내는 예외
+    """Google Gemini API 연속 실패로 서비스 불가 상태임을 나타내는 예외
 
     N회 연속으로 전체 배치 실패가 발생하면 이 예외가 발생.
     """
 
 
 class EmbeddingService:
-    """OpenAI 텍스트 임베딩 생성 서비스
+    """Google Gemini 텍스트 임베딩 생성 서비스
 
     텍스트를 벡터 임베딩으로 변환하는 서비스.
-    배치 처리 최적화 및 RateLimitError 재시도 로직 포함.
+    배치 처리 최적화 및 GoogleAPIError 재시도 로직 포함.
     """
 
     def __init__(
         self,
         api_key: str,
-        model: str = "text-embedding-3-small",
-        dimensions: int = 1536,
-        _client=None,
+        model: str = "text-embedding-004",
+        dimensions: int = 768,
+        _embed_fn=None,
     ) -> None:
         """임베딩 서비스 초기화
 
         Args:
-            api_key: OpenAI API 키 (필수, 빈 문자열 불가)
+            api_key: Google API 키 (필수, 빈 문자열 불가)
             model: 사용할 임베딩 모델명
             dimensions: 출력 벡터 차원 수
-            _client: 테스트용 클라이언트 주입 (None이면 실제 OpenAI 클라이언트 생성)
+            _embed_fn: 테스트용 embed_content 함수 주입 (None이면 genai.embed_content 사용)
 
         Raises:
             ValueError: API 키가 없거나 빈 문자열인 경우
         """
         # API 키 유효성 검사
         if not api_key:
-            raise ValueError("OpenAI API 키가 설정되지 않았습니다. OPENAI_API_KEY 환경변수를 설정하세요.")
+            raise ValueError("Google API 키가 설정되지 않았습니다. GOOGLE_API_KEY 환경변수를 설정하세요.")
 
-        self._model = model
+        self._model = f"models/{model}"
         self._dimensions = dimensions
 
         # 연속 전체 실패 카운터 및 임계값
         self._consecutive_failures = 0
         self._max_consecutive_failures = DEFAULT_MAX_CONSECUTIVE_FAILURES
 
-        # 테스트에서 mock 클라이언트를 주입할 수 있도록 허용
+        # Google Generative AI 클라이언트 설정
         # # @MX:ANCHOR: [AUTO] EmbeddingService 핵심 클라이언트 초기화 지점
         # # @MX:REASON: RAG 파이프라인의 모든 임베딩 요청이 이 클라이언트를 사용함
-        if _client is not None:
-            self._client = _client
+        genai.configure(api_key=api_key)
+
+        # 테스트에서 mock 함수를 주입할 수 있도록 허용
+        if _embed_fn is not None:
+            self._embed_fn = _embed_fn
         else:
-            self._client = openai.AsyncOpenAI(api_key=api_key)
+            self._embed_fn = genai.embed_content
 
     async def embed_text(self, text: str) -> list[float]:
         """단일 텍스트의 임베딩 벡터 생성
@@ -95,7 +99,7 @@ class EmbeddingService:
             임베딩 벡터 (float 리스트, 길이 = dimensions)
 
         Raises:
-            openai.RateLimitError: 최대 재시도 후에도 속도 제한 초과 시
+            google.api_core.exceptions.GoogleAPIError: 최대 재시도 후에도 API 오류 시
         """
         results = await self.embed_batch([text])
         # 짧은 텍스트인 경우 빈 리스트 반환됨
@@ -111,7 +115,7 @@ class EmbeddingService:
         """여러 텍스트를 배치로 임베딩 벡터 생성
 
         50자 미만 텍스트는 필터링하고 빈 리스트로 대체.
-        2048개 초과 시 여러 API 호출로 분할.
+        100개 초과 시 여러 API 호출로 분할.
 
         Args:
             texts: 임베딩할 텍스트 목록
@@ -125,7 +129,7 @@ class EmbeddingService:
 
         Raises:
             APIUnavailableError: 연속 실패 횟수가 임계값 이상인 경우
-            openai.APIError: skip_on_failure=False이고 API 오류 발생 시
+            google.api_core.exceptions.GoogleAPIError: skip_on_failure=False이고 API 오류 발생 시
         """
         if not texts:
             if skip_on_failure:
@@ -152,7 +156,7 @@ class EmbeddingService:
         # API 불가 상태 확인
         if self._consecutive_failures >= self._max_consecutive_failures:
             raise APIUnavailableError(
-                f"OpenAI API 연속 실패 {self._consecutive_failures}회로 서비스 불가 상태입니다."
+                f"Google Gemini API 연속 실패 {self._consecutive_failures}회로 서비스 불가 상태입니다."
             )
 
         # 배치 크기로 분할하여 API 호출
@@ -198,9 +202,10 @@ class EmbeddingService:
         return results
 
     async def _call_with_retry(self, texts: list[str]) -> list[list[float]]:
-        """재시도 로직이 포함된 OpenAI 임베딩 API 호출
+        """재시도 로직이 포함된 Google Gemini 임베딩 API 호출
 
-        RateLimitError 및 APIError 발생 시 지수 백오프로 최대 3회 재시도.
+        GoogleAPIError 발생 시 지수 백오프로 최대 3회 재시도.
+        Google embed_content는 동기 함수이므로 asyncio.to_thread로 래핑.
 
         Args:
             texts: 임베딩할 텍스트 목록
@@ -209,26 +214,40 @@ class EmbeddingService:
             임베딩 벡터 목록
 
         Raises:
-            openai.RateLimitError: 최대 재시도 후에도 속도 제한 초과 시
+            google.api_core.exceptions.GoogleAPIError: 최대 재시도 후에도 API 오류 시
         """
         last_error: Exception | None = None
 
         for attempt in range(MAX_RETRIES):
             try:
-                response = await self._client.embeddings.create(
-                    model=self._model,
-                    input=texts,
-                    dimensions=self._dimensions,
-                )
-                return [item.embedding for item in response.data]
+                # 단일 텍스트는 스칼라로, 복수 텍스트는 리스트로 전달
+                if len(texts) == 1:
+                    response = await asyncio.to_thread(
+                        self._embed_fn,
+                        model=self._model,
+                        content=texts[0],
+                        task_type="RETRIEVAL_DOCUMENT",
+                    )
+                    # 단일 텍스트 응답 구조: {"embedding": {"values": [...]}}
+                    embedding_values = response["embedding"]["values"]
+                    return [embedding_values]
+                else:
+                    response = await asyncio.to_thread(
+                        self._embed_fn,
+                        model=self._model,
+                        content=texts,
+                        task_type="RETRIEVAL_DOCUMENT",
+                    )
+                    # 배치 응답 구조: {"embedding": [{"values": [...]}, ...]}
+                    return [item["values"] for item in response["embedding"]]
 
-            except (openai.RateLimitError, openai.APIError) as e:
+            except google_exceptions.GoogleAPIError as e:
                 last_error = e
                 if attempt < MAX_RETRIES - 1:
                     # 지수 백오프: 1초, 2초, 4초...
                     wait_time = BASE_RETRY_DELAY * (2**attempt)
                     logger.warning(
-                        "OpenAI API 오류 발생, %d초 후 재시도 (%d/%d): %s",
+                        "Google Gemini API 오류 발생, %d초 후 재시도 (%d/%d): %s",
                         wait_time,
                         attempt + 1,
                         MAX_RETRIES,
