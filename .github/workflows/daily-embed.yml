@@ -1,0 +1,55 @@
+name: Daily Embedding Batch
+
+on:
+  schedule:
+    # UTC 17:00 = KST 02:00 (매일 새벽 2시)
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      max_chunks:
+        description: 'Maximum chunks to process'
+        required: false
+        default: '2500'
+
+jobs:
+  embed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt 2>/dev/null || pip install sqlalchemy[asyncio] asyncpg pgvector pydantic-settings python-dotenv google-generativeai tiktoken pdfplumber httpx
+
+      - name: Run daily embedding batch
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          EMBEDDING_MODEL: gemini-embedding-001
+          EMBEDDING_DIMENSIONS: '768'
+        run: |
+          python scripts/daily_embed.py --max-chunks ${{ github.event.inputs.max_chunks || '2500' }}
+
+      - name: Check DB status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/run_pipeline.py status
