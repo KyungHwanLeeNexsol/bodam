@@ -259,8 +259,8 @@ class PolicyChunk(Base):
     # 청크 순서 인덱스 (0부터 시작)
     chunk_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
 
-    # text-embedding-3-small 기준 1536차원 임베딩 벡터
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # gemini-embedding-001 기준 768차원 임베딩 벡터
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
 
     # tsvector 전문 검색 벡터 (chunk_text 기반 자동 생성, REQ-10)
     # PostgreSQL tsvector 타입이지만 SQLAlchemy 호환성을 위해 Text 사용

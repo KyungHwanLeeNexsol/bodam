@@ -150,13 +150,13 @@ async def process_all(limit: int | None = None, company_filter: str | None = Non
                         policy_id=pol["id"],
                         chunk_index=j,
                         chunk_text=chunk["text"],
-                        token_count=chunk.get("token_count", 0),
                         embedding=vector,
                         metadata_={
                             "company_code": pol["company_code"],
                             "product_code": pol["product_code"],
                             "chunk_index": j,
                             "total_chunks": len(chunks),
+                            "token_count": chunk.get("token_count", 0),
                         },
                     )
                     session.add(policy_chunk)
