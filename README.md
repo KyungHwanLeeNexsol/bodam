@@ -7,10 +7,9 @@
 | 구성요소 | 플랫폼 | 설명 |
 |--------|--------|------|
 | Frontend | Vercel | Next.js, GitHub push 시 자동 배포 |
-| Backend | OCI ARM64 VM | FastAPI, Docker Compose |
-| Database | PostgreSQL 18 (pgvector) | 내부 네트워크만 노출 |
-| Cache | Redis 7 | 인증 세션, Rate Limiting |
-| Proxy | Nginx | SSL 종료, /api/* 프록시 |
+| Backend | Fly.io | FastAPI, 자동 배포 |
+| Database | Neon PostgreSQL (pgvector) | 서버리스 PostgreSQL |
+| Cache | Upstash Redis | 인증 세션, Rate Limiting |
 
 ## 환경변수 설정
 
@@ -20,7 +19,7 @@
 |------|---------|---------|
 | 로컬 개발 | `backend/.env` | `backend/.env.example` |
 | 스테이징 | `.env.staging` | `.env.staging.example` |
-| 프로덕션 | `.env.prod` | `.env.prod.example` |
+| 프로덕션 (Fly.io) | Fly.io Secrets | `backend/.env.fly.example` |
 
 > **Frontend (Vercel)**: 환경변수는 Vercel 대시보드에서 관리합니다. `NEXT_PUBLIC_API_URL` 등 프론트엔드 변수는 별도 `.env` 파일로 관리되지 않습니다.
 
@@ -34,20 +33,13 @@ cp backend/.env.example backend/.env
 docker compose up -d
 ```
 
-**프로덕션 환경 (OCI VM):**
+**프로덕션 환경 (Fly.io):**
 
 ```bash
-cp .env.prod.example .env.prod
-# .env.prod 파일을 열어 모든 CHANGE_ME 값 교체
-docker compose -f docker-compose.prod.yml up -d
-```
-
-**스테이징 환경:**
-
-```bash
-cp .env.staging.example .env.staging
-# .env.staging 파일을 열어 스테이징용 값 입력
-docker compose -f docker-compose.staging.yml up -d
+# backend/.env.fly.example 참고하여 Fly.io secrets 설정
+fly secrets set KEY=VALUE --app bodam
+# 또는 일괄 설정
+fly secrets import < backend/.env.fly --app bodam
 ```
 
 ### 주의사항
@@ -68,6 +60,7 @@ docker compose exec backend uv run alembic upgrade head
 
 ## 배포
 
-프로덕션 배포는 `.github/workflows/deploy.yml` GitHub Actions 워크플로우를 통해 자동화됩니다.
-
-자세한 내용은 `deploy/` 디렉토리의 스크립트 및 `deploy/oci/README.md`를 참고하세요.
+- **Frontend**: Vercel에서 GitHub push 시 자동 배포
+- **Backend**: Fly.io에서 `fly deploy` 또는 GitHub 연동 자동 배포
+- **Database**: Neon 서버리스 PostgreSQL (관리형)
+- **Cache**: Upstash Redis (관리형)

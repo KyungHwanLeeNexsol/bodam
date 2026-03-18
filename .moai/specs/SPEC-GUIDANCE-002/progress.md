@@ -1,8 +1,22 @@
-## SPEC-GUIDANCE-002 Progress
+---
+id: SPEC-GUIDANCE-002
+document: progress
+version: 1.0.0
+status: completed
+created: 2026-03-15
+updated: 2026-03-17
+author: zuge3
+tags: [guidance, chat-integration, hybrid]
+---
 
-- Started: 2026-03-15
-- Phase 1 (Backend TDD): Complete
-- Phase 2 (Frontend TDD): Complete
+# SPEC-GUIDANCE-002: 진행 현황
+
+## 전체 진행률: 100%
+
+| 마일스톤 | 상태 | 진행률 |
+|----------|------|--------|
+| Phase 1: Backend TDD | 완료 | 100% |
+| Phase 2: Frontend TDD | 완료 | 100% |
 
 ### Phase 1: Backend Integration (REQ-GC-001~004)
 
