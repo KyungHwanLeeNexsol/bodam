@@ -30,6 +30,16 @@ class SaleStatus(StrEnum):
     UNKNOWN = "UNKNOWN"           # 미확인
 
 
+# @MX:ANCHOR: [AUTO] StructureChangedError - CSS 선택자가 예상 요소를 찾지 못할 때 발생
+# @MX:REASON: BaseCrawler 구현체들이 페이지 구조 변경 감지 시 이 예외를 발생시킴
+class StructureChangedError(Exception):
+    """페이지 구조 변경 감지 예외 (SPEC-PIPELINE-001 REQ-02)
+
+    CSS 선택자가 예상 DOM 요소를 찾지 못할 때 발생.
+    이 예외 발생 시 해당 회사의 health_status가 DEGRADED로 업데이트됨.
+    """
+
+
 @dataclasses.dataclass
 class PolicyListing:
     """크롤링으로 발견된 보험 상품 정보

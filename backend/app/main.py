@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.admin import admin_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.chat import router as chat_router
+from app.api.v1.crawler import router as crawler_router
 from app.api.v1.guidance import router as guidance_router
 from app.api.v1.health import router as health_router
 from app.api.v1.oauth import router as oauth_router
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(chat_router, prefix="/api/v1")
     app.include_router(pdf_router, prefix="/api/v1")
     app.include_router(guidance_router, prefix="/api/v1")
+    app.include_router(crawler_router, prefix="/api/v1")
 
     return app
 

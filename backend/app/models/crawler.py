@@ -38,12 +38,14 @@ class CrawlResultStatus(StrEnum):
     UPDATED: 기존 상품 변경 감지
     SKIPPED: 변경 없어 건너뜀
     FAILED: 개별 항목 처리 실패
+    STRUCTURE_CHANGED: CSS 선택자가 예상 요소를 찾지 못함 (페이지 구조 변경)
     """
 
     NEW = "NEW"
     UPDATED = "UPDATED"
     SKIPPED = "SKIPPED"
     FAILED = "FAILED"
+    STRUCTURE_CHANGED = "STRUCTURE_CHANGED"
 
 
 class CrawlRun(Base, TimestampMixin):
