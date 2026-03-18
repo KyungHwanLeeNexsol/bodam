@@ -13,6 +13,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Text, UniqueConstraint, func
+from sqlalchemy.schema import FetchedValue
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -262,12 +263,12 @@ class PolicyChunk(Base):
     # gemini-embedding-001 기준 768차원 임베딩 벡터
     embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
 
-    # tsvector 전문 검색 벡터 (chunk_text 기반 자동 생성, REQ-10)
-    # PostgreSQL tsvector 타입이지만 SQLAlchemy 호환성을 위해 Text 사용
-    # 실제 DB에서는 Alembic 마이그레이션으로 tsvector 타입으로 변경
+    # tsvector 전문 검색 벡터 (chunk_text 기반 트리거로 자동 생성, REQ-10)
+    # server_default=FetchedValue()로 INSERT 시 제외 → 트리거가 자동 설정
     search_vector: Mapped[str | None] = mapped_column(
         sa.Text,
         nullable=True,
+        server_default=FetchedValue(),
     )
 
     # 추가 메타데이터 (JSONB: 토큰 수, 페이지 번호 등)
