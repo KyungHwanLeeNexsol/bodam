@@ -227,6 +227,7 @@ class EmbeddingService:
                         model=self._model,
                         content=texts[0],
                         task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=self._dimensions,
                     )
                     # gemini-embedding-001 응답 구조: {"embedding": [float, ...]}
                     embedding_values = response["embedding"]
@@ -237,6 +238,7 @@ class EmbeddingService:
                         model=self._model,
                         content=texts,
                         task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=self._dimensions,
                     )
                     # 배치 응답 구조: {"embedding": [[float, ...], [float, ...], ...]}
                     return response["embedding"]
