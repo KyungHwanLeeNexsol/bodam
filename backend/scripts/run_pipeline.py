@@ -281,6 +281,14 @@ def _create_crawler(
             rate_limit_seconds=rate_limit,
             max_retries=max_retries,
         )
+    elif crawler_name == "pubinsure":
+        from app.services.crawler.companies.pubinsure_life_crawler import PubInsureLifeCrawler
+        return PubInsureLifeCrawler(
+            db_session=db_session,
+            storage=storage,
+            rate_limit_seconds=rate_limit,
+            max_retries=max_retries,
+        )
 
     return None
 
@@ -307,8 +315,8 @@ def main() -> None:
     crawl_group = crawl_parser.add_mutually_exclusive_group(required=True)
     crawl_group.add_argument(
         "--crawler",
-        choices=["klia", "knia"],
-        help="실행할 크롤러 선택 (klia: 생명보험협회, knia: 손해보험협회)",
+        choices=["klia", "knia", "pubinsure"],
+        help="실행할 크롤러 선택 (klia: 생명보험협회, knia: 손해보험협회, pubinsure: 공시실)",
     )
     crawl_group.add_argument(
         "--all",

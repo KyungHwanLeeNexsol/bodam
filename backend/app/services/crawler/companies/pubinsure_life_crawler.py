@@ -13,6 +13,9 @@ from typing import Any
 
 import httpx
 
+from sqlalchemy import select
+
+from app.models.insurance import InsuranceCategory, InsuranceCompany, Policy
 from app.services.crawler.base import BaseCrawler, CrawlRunResult, DeltaResult, PolicyListing
 
 logger = logging.getLogger(__name__)
@@ -189,6 +192,9 @@ class PubInsureLifeCrawler(BaseCrawler):
                 else:
                     updated_count += 1
 
+                # DB에 InsuranceCompany + Policy upsert
+                await self._upsert_policy(listing, path, content_hash)
+
                 results.append({
                     "product_code": listing.product_code,
                     "company_code": listing.company_code,
@@ -231,6 +237,41 @@ class PubInsureLifeCrawler(BaseCrawler):
             failed_count=failed_count,
             results=results,
         )
+
+    async def _upsert_policy(self, listing: PolicyListing, pdf_path: str, content_hash: str) -> None:
+        """InsuranceCompany + Policy를 DB에 upsert"""
+        import uuid as uuid_mod
+
+        stmt = select(InsuranceCompany).where(InsuranceCompany.code == listing.company_code)
+        result = await self.db_session.execute(stmt)
+        company = result.scalar_one_or_none()
+        if company is None:
+            company = InsuranceCompany(
+                id=uuid_mod.uuid4(),
+                code=listing.company_code,
+                name=listing.company_name,
+            )
+            self.db_session.add(company)
+            await self.db_session.flush()
+
+        stmt2 = select(Policy).where(
+            Policy.company_id == company.id,
+            Policy.product_code == listing.product_code,
+        )
+        result2 = await self.db_session.execute(stmt2)
+        policy = result2.scalar_one_or_none()
+        if policy is None:
+            policy = Policy(
+                id=uuid_mod.uuid4(),
+                company_id=company.id,
+                name=listing.product_name,
+                product_code=listing.product_code,
+                category=listing.category if isinstance(listing.category, InsuranceCategory) else InsuranceCategory.LIFE,
+                metadata_={"pdf_path": pdf_path, "content_hash": content_hash, "source": "pubinsure"},
+            )
+            self.db_session.add(policy)
+        else:
+            policy.metadata_ = {"pdf_path": pdf_path, "content_hash": content_hash, "source": "pubinsure"}
 
     async def parse_listing(self, page: Any) -> list[PolicyListing]:
         """HTML 문자열에서 fn_fileDown 패턴을 파싱하여 PolicyListing 목록 반환
