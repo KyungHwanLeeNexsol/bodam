@@ -1,0 +1,63 @@
+# ============================================
+# .claudeignore 템플릿
+# 프로젝트 루트에 .claudeignore 파일로 저장하세요
+# Claude CLI가 불필요한 파일을 스캔하지 않아 메모리 절약됩니다
+# ============================================
+
+# 의존성
+node_modules/
+vendor/
+.pnp/
+.pnp.js
+
+# 빌드 결과물
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+
+# 캐시
+.cache/
+.parcel-cache/
+.turbo/
+__pycache__/
+*.pyc
+
+# 테스트 결과
+coverage/
+.nyc_output/
+
+# IDE 설정
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 로그
+logs/
+*.log
+npm-debug.log*
+
+# 환경 파일
+.env
+.env.*
+
+# 대용량 파일
+*.zip
+*.tar.gz
+*.rar
+*.mp4
+*.mov
+*.avi
+*.psd
+*.ai
+
+# 잠금 파일
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Git
+.git/
