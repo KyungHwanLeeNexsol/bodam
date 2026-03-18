@@ -2,11 +2,12 @@
 # SQLAlchemy 비동기 엔진을 사용하는 Alembic 환경
 import asyncio
 import os
+import ssl
 from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
 
@@ -24,8 +25,19 @@ if config.config_file_name is not None:
 target_metadata = None
 
 # 환경변수에서 데이터베이스 URL 가져오기 (alembic.ini 값을 오버라이드)
-database_url = os.environ.get("DATABASE_URL")
+# asyncpg는 sslmode 파라미터를 지원하지 않으므로 제거 후 connect_args로 처리
+database_url = os.environ.get("DATABASE_URL", "")
+_use_ssl = False
 if database_url:
+    if "sslmode=require" in database_url or "ssl=require" in database_url:
+        _use_ssl = True
+        database_url = (
+            database_url
+            .replace("&sslmode=require", "")
+            .replace("?sslmode=require", "")
+            .replace("&ssl=require", "")
+            .replace("?ssl=require", "")
+        )
     config.set_main_option("sqlalchemy.url", database_url)
 
 
@@ -56,10 +68,16 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """비동기 엔진을 사용하여 온라인 모드에서 마이그레이션 실행"""
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    url = config.get_main_option("sqlalchemy.url")
+    connect_args: dict = {}
+    if _use_ssl:
+        ssl_ctx = ssl.create_default_context()
+        connect_args["ssl"] = ssl_ctx
+
+    connectable = create_async_engine(
+        url,
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
