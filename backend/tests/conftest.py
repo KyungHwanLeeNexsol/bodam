@@ -7,8 +7,51 @@
 from __future__ import annotations
 
 import os
+import sys
+from unittest.mock import MagicMock
 
 import pytest
+
+# openai가 설치되지 않은 환경(로컬 테스트)에서 모킹
+if "openai" not in sys.modules:
+    openai_mock = MagicMock()
+    openai_mock.AsyncOpenAI = MagicMock
+    openai_mock.BadRequestError = Exception
+    sys.modules["openai"] = openai_mock
+
+# jose가 설치되지 않은 환경(로컬 테스트)에서 모킹
+if "jose" not in sys.modules:
+    jose_mock = MagicMock()
+    jose_mock.JWTError = Exception
+    jose_mock.jwt = MagicMock()
+    sys.modules["jose"] = jose_mock
+
+# pgvector가 설치되지 않은 환경(로컬 테스트)에서 모킹
+# 프로덕션 환경에는 pgvector가 설치되어 있으므로 영향 없음
+if "pgvector" not in sys.modules:
+    import sqlalchemy as _sa
+
+    # SQLAlchemy TypeDecorator를 상속하는 Vector 목 클래스 생성
+    class _VectorType(_sa.types.TypeDecorator):
+        """pgvector Vector 타입 대체 mock (테스트용)"""
+        impl = _sa.Text
+        cache_ok = True
+
+        def __init__(self, dim: int = 1536) -> None:
+            super().__init__()
+            self.dim = dim
+
+        def process_bind_param(self, value, dialect):
+            return str(value) if value is not None else None
+
+        def process_result_value(self, value, dialect):
+            return value
+
+    pgvector_mock = MagicMock()
+    pgvector_mock.sqlalchemy = MagicMock()
+    pgvector_mock.sqlalchemy.Vector = _VectorType
+    sys.modules["pgvector"] = pgvector_mock
+    sys.modules["pgvector.sqlalchemy"] = pgvector_mock.sqlalchemy
 from httpx import ASGITransport, AsyncClient
 
 # ─────────────────────────────────────────────

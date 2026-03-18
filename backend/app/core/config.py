@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     # @MX:REASON: PIPA(개인정보보호법) - 고객 PII 암호화 키 관리 의무
     b2b_encryption_key: str = ""
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 @lru_cache

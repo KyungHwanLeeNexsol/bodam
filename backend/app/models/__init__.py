@@ -26,6 +26,7 @@ from app.models.pdf import (
     PdfUpload,
     PdfUploadStatus,
 )
+from app.models.pipeline import PipelineRun, PipelineStatus, PipelineTriggerType
 from app.models.social_account import SocialAccount
 from app.models.user import ConsentRecord, User, UserRole
 
@@ -56,4 +57,7 @@ __all__ = [
     "ConsentRecord",
     "SocialAccount",
     "CasePrecedent",
+    "PipelineRun",
+    "PipelineStatus",
+    "PipelineTriggerType",
 ]

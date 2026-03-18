@@ -47,6 +47,7 @@ def create_celery_app() -> Celery:
             "app.tasks.crawler_tasks",
             "app.tasks.embedding_tasks",
             "app.tasks.cleanup_tasks",
+            "app.tasks.pipeline_tasks",
         ],
     )
 
@@ -61,6 +62,12 @@ def create_celery_app() -> Celery:
         "crawl-all-weekly": {
             "task": "app.tasks.crawler_tasks.crawl_all",
             "schedule": crontab(day_of_week=0, hour=2, minute=0),
+        },
+        # 매주 일요일 새벽 2시에 전체 파이프라인 실행 (REQ-07)
+        "pipeline-run-weekly": {
+            "task": "app.tasks.pipeline_tasks.trigger_pipeline",
+            "schedule": crontab(day_of_week=0, hour=2, minute=0),
+            "kwargs": {"trigger_type": "SCHEDULED"},
         },
     }
 

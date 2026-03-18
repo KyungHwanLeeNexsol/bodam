@@ -262,6 +262,14 @@ class PolicyChunk(Base):
     # text-embedding-3-small 기준 1536차원 임베딩 벡터
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
+    # tsvector 전문 검색 벡터 (chunk_text 기반 자동 생성, REQ-10)
+    # PostgreSQL tsvector 타입이지만 SQLAlchemy 호환성을 위해 Text 사용
+    # 실제 DB에서는 Alembic 마이그레이션으로 tsvector 타입으로 변경
+    search_vector: Mapped[str | None] = mapped_column(
+        sa.Text,
+        nullable=True,
+    )
+
     # 추가 메타데이터 (JSONB: 토큰 수, 페이지 번호 등)
     metadata_: Mapped[dict | None] = mapped_column("metadata_", JSONB, nullable=True)
 
