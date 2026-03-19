@@ -103,17 +103,21 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
     stats = {"products": 0, "downloaded": 0, "skipped": 0, "failed": 0}
     label = cat["label"]
 
-    # Step 2: 상품 목록 조회
-    try:
-        resp2 = await client.post(STEP2_URL, json={
-            "arc_knd_lgcg_nm": cat["ln"], "sl_chn_nm": cat["sn"],
-            "arc_knd_mdcg_nm": cat["mn"], "arc_pdc_sl_yn": "1",
-        }, headers={"Content-Type": "application/json"}, timeout=60.0)
-        data2 = resp2.json()
-        products = data2.get("result", [])
-    except Exception as e:
-        logger.error("  [%s] Step2 실패: %s", label, e)
-        return stats
+    # Step 2: 상품 목록 조회 (판매중 + 판매중지 모두)
+    products = []
+    for sl_yn in ["1", "0"]:  # 1=판매중, 0=판매중지
+        try:
+            resp2 = await client.post(STEP2_URL, json={
+                "arc_knd_lgcg_nm": cat["ln"], "sl_chn_nm": cat["sn"],
+                "arc_knd_mdcg_nm": cat["mn"], "arc_pdc_sl_yn": sl_yn,
+            }, headers={"Content-Type": "application/json"}, timeout=60.0)
+            data2 = resp2.json()
+            items = data2.get("result", [])
+            for item in items:
+                item["_sl_yn"] = sl_yn
+            products.extend(items)
+        except Exception as e:
+            logger.error("  [%s] Step2 실패 (sl_yn=%s): %s", label, sl_yn, e)
 
     stats["products"] = len(products)
     if not products:
@@ -126,9 +130,10 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
 
         # Step 3: 판매기간 조회
         try:
+            sl_yn = prod.get("_sl_yn", "1")
             resp3 = await client.post(
                 STEP3_URL,
-                json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": "1"},
+                json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": sl_yn},
                 headers={"Content-Type": "application/json"},
                 timeout=60.0,
             )
@@ -152,7 +157,7 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
         try:
             resp4 = await client.post(
                 STEP4_URL,
-                json={"sqno": str(sqno), "arc_pdc_sl_yn": "1"},
+                json={"sqno": str(sqno), "arc_pdc_sl_yn": sl_yn},
                 headers={"Content-Type": "application/json"},
                 timeout=60.0,
             )
