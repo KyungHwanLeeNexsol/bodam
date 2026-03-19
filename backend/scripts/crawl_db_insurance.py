@@ -105,7 +105,10 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
 
     # Step 2: 상품 목록 조회
     try:
-        resp2 = await client.post(STEP2_URL, json={"ln": cat["ln"], "sn": cat["sn"], "mn": cat["mn"]}, timeout=30.0)
+        resp2 = await client.post(STEP2_URL, json={
+            "arc_knd_lgcg_nm": cat["ln"], "sl_chn_nm": cat["sn"],
+            "arc_knd_mdcg_nm": cat["mn"], "arc_pdc_sl_yn": "1",
+        }, headers={"Content-Type": "application/json"}, timeout=60.0)
         data2 = resp2.json()
         products = data2.get("result", [])
     except Exception as e:
@@ -125,8 +128,9 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
         try:
             resp3 = await client.post(
                 STEP3_URL,
-                json={"ln": cat["ln"], "sn": cat["sn"], "mn": cat["mn"], "pn": pdc_nm},
-                timeout=30.0,
+                json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": "1"},
+                headers={"Content-Type": "application/json"},
+                timeout=60.0,
             )
             data3 = resp3.json()
             periods = data3.get("result", [])
@@ -148,11 +152,9 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
         try:
             resp4 = await client.post(
                 STEP4_URL,
-                json={
-                    "ln": cat["ln"], "sn": cat["sn"], "mn": cat["mn"],
-                    "pn": pdc_nm, "sl": sl_str_dt, "sq": str(sqno),
-                },
-                timeout=30.0,
+                json={"sqno": str(sqno), "arc_pdc_sl_yn": "1"},
+                headers={"Content-Type": "application/json"},
+                timeout=60.0,
             )
             data4 = resp4.json()
             files = data4.get("result", [])
@@ -207,7 +209,7 @@ async def main(dry_run: bool = False) -> None:
 
     async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
         # 세션 초기화: 메인 페이지 접속
-        await client.get(f"{BASE_URL}/FWMAIV1534.do", timeout=30.0)
+        await client.get(f"{BASE_URL}/FWMAIV1534.do", timeout=120.0)
 
         for cat in TARGET_CATEGORIES:
             label = cat["label"]
