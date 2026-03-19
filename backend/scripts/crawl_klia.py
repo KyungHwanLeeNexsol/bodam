@@ -6,6 +6,10 @@
   - https://pub.insure.or.kr (생명보험 공시실 - 금감원)
 
 KNIA 크롤러(crawl_real.py)와 동일한 방식으로 DB 없이 로컬 저장.
+
+# @MX:NOTE: SPEC-CRAWL-001 - 18개 생명보험사 대상 크롤러
+#           crawl_constants.py의 COMPANY_NAME_MAP, save_pdf_with_metadata 사용
+# @MX:SPEC: SPEC-CRAWL-001
 """
 
 from __future__ import annotations
@@ -19,9 +23,24 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-BASE_DIR = Path(__file__).parent.parent / "data" / "crawled_pdfs_life"
+# crawl_constants에서 공통 상수 및 유틸리티 import
+from scripts.crawl_constants import (
+    COMPANY_NAME_MAP,
+    DISEASE_INJURY_EXCLUDE,
+    DISEASE_INJURY_INCLUDE,
+    LIFE_COMPANY_IDS,
+    is_disease_injury_product,
+    normalize_company_name,
+    save_pdf_with_metadata,
+)
+
+# 저장 디렉토리: company_id별 구조로 저장
+BASE_DIR = Path(__file__).parent.parent / "data"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
-METADATA_FILE = BASE_DIR / "metadata.json"
+# 레거시 호환: 기존 크롤링 결과를 위한 메타데이터 파일
+LEGACY_DIR = Path(__file__).parent.parent / "data" / "crawled_pdfs_life"
+LEGACY_DIR.mkdir(parents=True, exist_ok=True)
+METADATA_FILE = LEGACY_DIR / "metadata.json"
 INSPECT_DIR = Path(__file__).parent.parent / "data" / "klia_inspection"
 INSPECT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -65,8 +84,13 @@ def download_file(url: str) -> bytes | None:
 
 
 def save_file(data: bytes, company: str, filename: str, ext: str = "pdf") -> str:
-    """파일 저장 (중복 방지 포함)"""
-    company_dir = BASE_DIR / slugify(company)
+    """파일 저장 (중복 방지 포함) - 레거시 호환용
+
+    신규 코드는 save_pdf_with_metadata()를 사용할 것.
+    """
+    # company_id로 정규화 시도
+    company_id = normalize_company_name(company) or slugify(company)
+    company_dir = BASE_DIR / company_id
     company_dir.mkdir(parents=True, exist_ok=True)
     safe_name = slugify(filename)
     out_path = company_dir / f"{safe_name}.{ext}"
@@ -316,31 +340,12 @@ def _extract_klia_downloads(
 
 
 def _extract_life_company(text: str) -> str:
-    """상품명에서 생명보험사명 추출"""
-    patterns = [
-        (r'삼성생명', '삼성생명'),
-        (r'한화생명', '한화생명'),
-        (r'교보생명', '교보생명'),
-        (r'신한라이프|신한생명', '신한라이프'),
-        (r'흥국생명', '흥국생명'),
-        (r'동양생명', '동양생명'),
-        (r'ABL생명|ABL', 'ABL생명'),
-        (r'KDB생명|KDB', 'KDB생명'),
-        (r'푸본현대|푸본', '푸본현대생명'),
-        (r'처브라이프|처브', '처브라이프'),
-        (r'AIA생명|AIA', 'AIA생명'),
-        (r'메트라이프', '메트라이프생명'),
-        (r'미래에셋생명|미래에셋', '미래에셋생명'),
-        (r'NH농협생명|농협생명', 'NH농협생명'),
-        (r'DGB생명|DGB', 'DGB생명'),
-        (r'하나생명', '하나생명'),
-        (r'IBK연금보험|IBK', 'IBK연금보험'),
-    ]
-
-    for pattern, name in patterns:
-        if re.search(pattern, text):
+    """상품명에서 생명보험사명 추출 (COMPANY_NAME_MAP 사용)"""
+    # COMPANY_NAME_MAP의 긴 이름부터 매칭 시도
+    sorted_names = sorted(COMPANY_NAME_MAP.keys(), key=len, reverse=True)
+    for name in sorted_names:
+        if name in text:
             return name
-
     return "생명보험사"
 
 
@@ -526,7 +531,23 @@ def download_all(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         filename = f"{product[:25]}_{url_part}"
 
         try:
-            file_path = save_file(data, company, filename, ext)
+            # PDF인 경우 save_pdf_with_metadata 사용 (메타데이터 JSON 포함)
+            if ext == "pdf" and is_disease_injury_product(product):
+                company_id = normalize_company_name(company) or slugify(company)
+                result_meta = save_pdf_with_metadata(
+                    data=data,
+                    company_id=company_id,
+                    company_name=company,
+                    product_name=product,
+                    product_type="미분류",
+                    source_url=url,
+                    base_dir=BASE_DIR,
+                )
+                file_path = result_meta["file_path"]
+            else:
+                # 비PDF 또는 비질병/상해 상품은 레거시 방식으로 저장
+                file_path = save_file(data, company, filename, ext)
+
             item["status"] = "SUCCESS"
             item["file_path"] = file_path
             item["file_size"] = len(data)
