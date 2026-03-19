@@ -9,9 +9,11 @@
 | 메리츠화재 | ✅ 완료 | 542개 | 공시실 SPA, Playwright 다운로드 |
 | 현대해상 | ✅ 완료 | 526개 | ajax.xhi API + openPdf popup |
 | KB손해보험 | ✅ 완료 | 481개 | 페이지네이션 + POST form |
-| 나머지 손해보험 6개사 | ❌ 미완료 | 0개 | 한화, 흥국, DB, AXA, MG, NH, 롯데 |
+| 흥국화재 | ✅ 완료 | 9개 | fn_filedownX → /common/download.do |
+| DB손해보험 | ✅ 완료 | 127개 | AJAX Step2-3-4 API 직접 호출 |
+| 나머지 손해보험 5개사 | ❌ 미완료 | 0개 | 한화, AXA, MG, NH, 롯데 |
 
-**총 수집: ~4,419개 PDF**
+**총 수집: ~4,555개 PDF**
 
 ---
 
