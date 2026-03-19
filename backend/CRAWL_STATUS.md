@@ -6,9 +6,12 @@
 |------|------|--------|------|
 | 생명보험 (pub.insure.or.kr) | ✅ 완료 | 1,115개 | 21개 회사 |
 | 삼성화재 | ✅ 완료 | 1,755개 | API 직접 호출 |
-| 나머지 손해보험 11개사 | ❌ 미완료 | 0개 | Playwright 크롤러 작성 완료, 테스트 필요 |
+| 메리츠화재 | ✅ 완료 | 542개 | 공시실 SPA, Playwright 다운로드 |
+| 현대해상 | ✅ 완료 | 526개 | ajax.xhi API + openPdf popup |
+| KB손해보험 | ✅ 완료 | 481개 | 페이지네이션 + POST form |
+| 나머지 손해보험 6개사 | ❌ 미완료 | 0개 | 한화, 흥국, DB, AXA, MG, NH, 롯데 |
 
-**총 수집: ~2,870개 PDF**
+**총 수집: ~4,419개 PDF**
 
 ---
 
@@ -58,68 +61,74 @@
 
 ---
 
-## 미완료 손해보험 (11개사)
+## 완료된 손해보험 크롤러 (3개사 신규)
 
-### 크롤러 파일
-- **`backend/scripts/crawl_nonlife_playwright.py`** - 11개사 통합 Playwright 크롤러 (작성 완료)
-- **`backend/scripts/explore_nonlife_apis.py`** - API 탐색 스크립트
+### 메리츠화재 (542개 PDF)
+- **스크립트**: `backend/scripts/crawl_meritz_fire.py`
+- **데이터 경로**: `backend/data/meritz_fire/`
+- **접근 방식**: 공시실 SPA (`/disclosure/product-announcement/product-list.do`)
+  - AngularJS SPA, 카테고리 클릭 시 `json.smart` API 호출
+  - PDF 다운로드: `pdfDown()` → `POST /hp/fileDownload.do` (암호화된 경로)
+  - Playwright 다운로드 이벤트 필수 (직접 HTTP GET 불가)
+- **카테고리**: 질병보험(15), 상해보험(511), 암보험(9), 어린이보험(2), 통합보험(5)
+- **실행**:
+  ```bash
+  cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_meritz_fire
+  cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_meritz_fire --category 질병보험
+  ```
 
-### 실행 방법
-```bash
-# 단일 회사 테스트
-cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_nonlife_playwright --company db_insurance
+### 현대해상 (526개 PDF)
+- **스크립트**: `backend/scripts/crawl_hyundai_marine.py`
+- **데이터 경로**: `backend/data/hyundai_marine/`
+- **접근 방식**: SPA (`/serviceAction.do`) → `fn_goMenu('100932')` 공시실
+  - `POST ajax.xhi` (tranId: `HHCA0310M38S`) → 전체 상품 목록 (2,289개 JSON)
+  - `openPdf(clauApnflId)` → 새 탭에서 PDF 열림
+  - 다운로드 URL: `/FileActionServlet/preview/0/data/...pdf`
+- **필터**: prodCatCd 0302(건강), 0303(어린이), 0304(실손), 0305(암) + 일반보험 키워드
+- **실행**:
+  ```bash
+  cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_hyundai_marine
+  ```
 
-# 특정 회사 목록 실행
-cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_nonlife_playwright --companies hyundai_marine,kb_insurance
-
-# 전체 실행
-cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_nonlife_playwright
-```
-
-### 회사별 API 패턴 (탐색 완료)
-
-| 회사 ID | 회사명 | API 패턴 | 상태 |
-|---------|--------|---------|------|
-| `hyundai_marine` | 현대해상 | SPA: `POST /serviceAction.do`, `ajax.xhi` 엔드포인트, `fn_goMenu()` 네비게이션 | 패턴 발견, 크롤러 작성 완료 |
-| `db_insurance` | DB손해보험 | AJAX Steps: `/insuPcPbanFindProductStep2_AX.do` ~ Step5, PDF: `/cYakgwanDown.do?FilePath=InsProduct/` | 패턴 발견, 크롤러 작성 완료, 0 PDF 수집 (버그 있음) |
-| `kb_insurance` | KB손해보험 | SPA: `https://www.kbinsure.co.kr`, 약관 페이지 탐색 필요 | 크롤러 작성 완료 |
-| `meritz_fire` | 메리츠화재 | `https://www.meritzfire.com/customer/publicTerms/list.do` | 크롤러 작성 완료 |
-| `hanwha_general` | 한화손해보험 | `https://www.hwgeneralins.com` (200 OK 확인) | 크롤러 작성 완료 |
-| `heungkuk_fire` | 흥국화재 | `https://www.heungkukfire.co.kr` | 크롤러 작성 완료 |
-| `axa_general` | AXA손해보험 | `https://www.axa.co.kr/cui/` | 크롤러 작성 완료 |
-| `mg_insurance` | MG손해보험(예별) | `https://www.yebyeol.co.kr/PB031210DM.scp` | 크롤러 작성 완료 |
-| `nh_fire` | NH농협손해보험 | `https://www.nhfire.co.kr` | 크롤러 작성 완료 |
-| `lotte_insurance` | 롯데손해보험 | `https://www.lotteins.co.kr` | 크롤러 작성 완료 |
-| `hana_insurance` | 하나손해보험 | `https://www.hanaworldwide.com` (사이트 다운) | 제외됨 |
+### KB손해보험 (481개 PDF)
+- **스크립트**: `backend/scripts/crawl_kb_insurance.py`
+- **데이터 경로**: `backend/data/kb_insurance/`
+- **접근 방식**: 서버렌더링 HTML (euc-kr 인코딩)
+  - 상품목록: `CG802030001.ec` (페이지네이션: `goPage(startRow)`, 10개/페이지)
+  - 상세: `CG802030002.ec` (POST form submit)
+  - PDF 다운로드: `CG802030003.ec?fileNm=상품코드_회차_1.pdf` (직접 GET)
+- **카테고리**: 상해보험(c), 질병보험(d), 통합보험(a), 운전자보험(b)
+- **실행**:
+  ```bash
+  cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_kb_insurance
+  ```
 
 ---
 
-## 다음 PC에서 이어서 할 작업
+## 미완료 손해보험 (7개사)
 
-### 1. DB손보 크롤러 버그 수정 (우선순위 높음)
-DB손보 크롤러가 0 PDF를 수집. 문제: DOM 클릭 타이밍 이슈.
-해결 방안: AJAX 엔드포인트 직접 호출 방식으로 변경
-```
-POST https://www.idbins.com/insuPcPbanFindProductStep2_AX.do
-POST https://www.idbins.com/insuPcPbanFindProductStep3_AX.do
-POST https://www.idbins.com/insuPcPbanFindProductStep4_AX.do
-POST https://www.idbins.com/insuPcPbanFindProductStep5_AX.do
-```
-최종 PDF URL 패턴: `/cYakgwanDown.do?FilePath=InsProduct/{filename}`
+모든 사이트가 커스텀 SPA/UI를 사용하여 개별 탐색 필요.
 
-### 2. 각 회사별 크롤러 실행 및 테스트
-```bash
-# 한 회사씩 테스트하면서 확인
-cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_nonlife_playwright --company hyundai_marine
-```
+| 회사 ID | 회사명 | 약관 페이지 URL | 탐색 결과 |
+|---------|--------|---------------|----------|
+| `hanwha_general` | 한화손해보험 | `/notice/ir/product-main.do` | 상품공시실 발견, 커스텀 UI 탐색 필요 |
+| `heungkuk_fire` | 흥국화재 | SPA (javascript:void(0)) | "보험상품공시" 메뉴 발견, SPA 네비게이션 필요 |
+| `db_insurance` | DB손해보험 | `/FWMAIV1534.do` | AJAX Step2~5 API 발견, 사이트 로딩 느림 |
+| `axa_general` | AXA손해보험 | SPA `/cui/` | "보험상품공시실" 메뉴 발견, SPA 탐색 필요 |
+| `mg_insurance` | MG손해보험(예별) | `/PB031210DM.scp` | 3단계 선택 UI (장기→상해→상품), 커스텀 드롭다운 |
+| `nh_fire` | NH농협손해보험 | `/announce/.../retrieveInsuranceProductsAnnounce.nhfire` | 공시정보 페이지 발견, 커스텀 탭/선택 UI |
+| `lotte_insurance` | 롯데손해보험 | 확인 불가 | 메인 페이지에서 약관 링크 미발견, 추가 탐색 필요 |
+| `hana_insurance` | 하나손해보험 | 사이트 다운 | 제외 |
 
-### 3. 현대해상 추가 탐색 필요
-- `fn_goMenu('보험약관')` 메뉴 ID 확인 필요
-- 올바른 tranId 파악 필요
+### 남은 작업 우선순위
 
-### 4. 데이터 임베딩 파이프라인 연결
-- 수집된 PDF를 RAG 파이프라인에 투입
-- `backend/scripts/` 내 임베딩 배치 스크립트 활용
+1. **한화손해보험**: `/notice/ir/product-main.do` 상품공시실 탐색 → 상품 목록 API 발견 → 크롤러 작성
+2. **NH농협손해보험**: 공시정보 페이지 커스텀 UI 분석 → 상품 선택 자동화
+3. **MG손해보험(예별)**: 3단계 커스텀 드롭다운 JS 분석 → 상품별 약관 PDF 추출
+4. **흥국화재**: SPA 네비게이션 분석 → 보험상품공시 페이지 접근
+5. **AXA손해보험**: SPA 약관 페이지 탐색
+6. **DB손해보험**: AJAX Step API 직접 호출 방식 구현
+7. **롯데손해보험**: 사이트 구조 탐색부터 시작
 
 ---
 
@@ -132,24 +141,28 @@ pip install playwright httpx
 playwright install chromium
 ```
 
+### Python 경로 (Windows)
+```bash
+/c/Users/zuge3/AppData/Local/Programs/Python/Python311/python.exe
+```
+
 ### 프로젝트 구조
 ```
 backend/
 ├── data/
 │   ├── samsung_fire/     # 삼성화재 PDFs (1,755개)
-│   ├── {company_id}/     # 생명보험 PDFs (21개 회사)
+│   ├── meritz_fire/      # 메리츠화재 PDFs (542개)
+│   ├── hyundai_marine/   # 현대해상 PDFs (526개)
+│   ├── kb_insurance/     # KB손해보험 PDFs (481개)
+│   ├── {company_id}/     # 생명보험 PDFs (21개 회사, 1,115개)
 │   └── api_discovery/    # API 탐색 결과
 ├── scripts/
-│   ├── crawl_samsung_fire.py     # 삼성화재 (완료)
-│   ├── crawl_pub_insure.py       # 생명보험 pub.insure (완료)
-│   ├── crawl_nonlife_playwright.py  # 나머지 손해보험 11개사 (진행중)
-│   └── explore_nonlife_apis.py   # API 탐색 도구
+│   ├── crawl_samsung_fire.py        # 삼성화재 (완료)
+│   ├── crawl_pub_insure.py          # 생명보험 pub.insure (완료)
+│   ├── crawl_meritz_fire.py         # 메리츠화재 (완료, 신규)
+│   ├── crawl_hyundai_marine.py      # 현대해상 (완료, 신규)
+│   ├── crawl_kb_insurance.py        # KB손해보험 (완료, 신규)
+│   ├── crawl_nonlife_playwright.py  # 통합 크롤러 (구버전, 참고용)
+│   └── explore_nonlife_apis.py      # API 탐색 도구
 └── CRAWL_STATUS.md  # 이 파일
 ```
-
----
-
-## Git 상태
-- **현재 브랜치**: main
-- **원격보다 6커밋 앞서있음** (push 필요)
-- 마지막 커밋: `ec9098c ci: GitHub Actions 매일 임베딩 배치 워크플로우 추가`
