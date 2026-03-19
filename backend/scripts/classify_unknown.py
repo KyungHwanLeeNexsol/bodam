@@ -199,7 +199,7 @@ def main() -> None:
         logger.error("klia-unknown 디렉토리 없음: %s", UNKNOWN_DIR)
         return
 
-    pdf_files = list(UNKNOWN_DIR.glob("*.pdf"))
+    pdf_files = list(UNKNOWN_DIR.rglob("*.pdf"))
     logger.info("분류 대상 PDF: %d개", len(pdf_files))
 
     classified: list[dict[str, Any]] = []
