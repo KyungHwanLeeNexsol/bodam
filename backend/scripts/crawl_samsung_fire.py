@@ -54,8 +54,8 @@ TARGET_GUN_GB: dict[str, set[str]] = {
     "일반보험": {"상해", "종합"},
 }
 
-# 2023년 이후 판매 종료 포함 (= 현행 약관 + 최근 3년)
-MIN_SALE_END_DT = "20230101"
+# 전체 과거 약관 포함 (판매중지 상품 모두 수집)
+MIN_SALE_END_DT = "19000101"
 
 RATE_LIMIT = 0.5  # 초
 

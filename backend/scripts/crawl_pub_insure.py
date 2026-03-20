@@ -30,6 +30,7 @@ BASE_DIR = Path(__file__).parent.parent / "data"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 LISTING_URL = "https://pub.insure.or.kr/compareDis/prodCompare/assurance/listNew.do"
+SAVING_URL = "https://pub.insure.or.kr/compareDis/prodCompare/saving/list.do"
 FILE_DOWN_URL = "https://pub.insure.or.kr/FileDown.do"
 
 # fn_fileDown('fileNo', 'seq') 패턴
@@ -96,7 +97,7 @@ DISEASE_INJURY_CATEGORIES: dict[str, str] = {
     "024400010005": "CI보험",
 }
 
-# 전체 카테고리 (모두 수집)
+# 전체 카테고리 (모두 수집) - assurance/listNew.do 엔드포인트 사용
 ALL_CATEGORIES: dict[str, str] = {
     "024400010001": "종신보험",
     "024400010002": "정기보험",
@@ -105,9 +106,17 @@ ALL_CATEGORIES: dict[str, str] = {
     "024400010005": "CI보험",
     "024400010006": "저축보험",
     "024400010007": "유니버셜보험",
+    "024400010008": "실손의료비보장보험",
     "024400010009": "치아보험",
     "024400010010": "실손/치아보험",
     "024400010011": "기타",
+}
+
+# 저축성 카테고리 (saving/list.do 엔드포인트 사용)
+SAVING_CATEGORIES: dict[str, str] = {
+    "024400020001": "연금저축보험",
+    "024400020002": "연금보험(저축성)",
+    "024400020003": "저축보험(저축성)",
 }
 
 HEADERS = {
@@ -123,8 +132,9 @@ HEADERS = {
 RATE_LIMIT = 1.0  # 초
 
 
-def fetch_category_page(category_code: str, page_index: int = 1) -> str:
+def fetch_category_page(category_code: str, page_index: int = 1, use_saving_url: bool = False) -> str:
     """특정 카테고리의 페이지 HTML을 POST로 가져온다."""
+    url = SAVING_URL if use_saving_url else LISTING_URL
     params = {
         "pageIndex": str(page_index),
         "pageUnit": "100",
@@ -133,7 +143,7 @@ def fetch_category_page(category_code: str, page_index: int = 1) -> str:
         "search_prodGroup": category_code,
     }
     try:
-        resp = httpx.post(LISTING_URL, data=params, headers=HEADERS, timeout=30, follow_redirects=True)
+        resp = httpx.post(url, data=params, headers=HEADERS, timeout=30, follow_redirects=True)
         if resp.status_code >= 400:
             logger.warning("목록 조회 HTTP %d: cat=%s page=%d", resp.status_code, category_code, page_index)
             return ""
@@ -217,8 +227,19 @@ def get_company_id(company_name: str) -> str:
 
 
 def crawl_all_categories(target_categories: dict[str, str] | None = None) -> dict:
-    """전체 카테고리를 순회하며 PDF를 수집한다."""
-    categories = target_categories or ALL_CATEGORIES
+    """전체 카테고리를 순회하며 PDF를 수집한다. (보장성 + 저축성 포함)"""
+    # ALL_CATEGORIES (보장성) + SAVING_CATEGORIES (저축성) 합산
+    if target_categories is not None:
+        categories_assurance = {k: v for k, v in target_categories.items() if k.startswith("02440001")}
+        categories_saving = {k: v for k, v in target_categories.items() if k.startswith("02440002")}
+    else:
+        categories_assurance = ALL_CATEGORIES
+        categories_saving = SAVING_CATEGORIES
+
+    # (카테고리코드, 카테고리명, 저축성여부) 튜플 목록
+    all_cats = [(k, v, False) for k, v in categories_assurance.items()] + \
+               [(k, v, True) for k, v in categories_saving.items()]
+
     results: list[dict] = []
     failed: list[dict] = []
     seen_files: set[str] = set()  # 중복 방지
@@ -227,17 +248,17 @@ def crawl_all_categories(target_categories: dict[str, str] | None = None) -> dic
 
     print(f"\n{'='*60}")
     print("pub.insure.or.kr 생명보험 약관 PDF 크롤링")
-    print(f"대상 카테고리: {len(categories)}개")
+    print(f"대상 카테고리: {len(all_cats)}개 (보장성 {len(categories_assurance)}개 + 저축성 {len(categories_saving)}개)")
     print(f"저장 경로: {BASE_DIR}")
     print("="*60)
 
-    for cat_code, cat_name in categories.items():
+    for cat_code, cat_name, use_saving in all_cats:
         print(f"\n[카테고리] {cat_name} ({cat_code})")
         page_index = 1
         cat_count = 0
 
         while True:
-            html = fetch_category_page(cat_code, page_index)
+            html = fetch_category_page(cat_code, page_index, use_saving_url=use_saving)
             if not html:
                 break
 

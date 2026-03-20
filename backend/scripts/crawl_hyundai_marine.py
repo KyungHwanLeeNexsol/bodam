@@ -112,8 +112,12 @@ async def get_product_list(page: Any) -> list[dict[str, Any]]:
                 body = await resp.body()
                 if len(body) > 100000:
                     data = json.loads(body)
-                    if "data" in data and "slYProdList" in data.get("data", {}):
-                        product_data.extend(data["data"]["slYProdList"])
+                    if "data" in data:
+                        inner = data["data"]
+                        # slYProdList: 판매중, slNProdList: 판매중지
+                        for key in ("slYProdList", "slNProdList"):
+                            if key in inner and isinstance(inner[key], list):
+                                product_data.extend(inner[key])
             except Exception:
                 pass
 
