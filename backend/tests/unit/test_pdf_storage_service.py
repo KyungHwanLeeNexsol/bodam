@@ -240,9 +240,17 @@ class TestSaveFile:
         pdf_content = b"%PDF-1.4 valid content"
         mock_file.read = AsyncMock(return_value=pdf_content)
 
+        mock_aio_file = AsyncMock()
+        mock_aio_file.__aenter__ = AsyncMock(return_value=mock_aio_file)
+        mock_aio_file.__aexit__ = AsyncMock(return_value=False)
+        mock_aio_file.write = AsyncMock()
+
+        mock_aiofiles = MagicMock()
+        mock_aiofiles.open = MagicMock(return_value=mock_aio_file)
+
         with patch.object(service, "check_user_quota", AsyncMock()), \
              patch("pathlib.Path.mkdir"), \
-             patch("builtins.open", mock_open()):
+             patch.dict("sys.modules", {"aiofiles": mock_aiofiles}):
             file_path, file_hash, file_size = await service.save_file(
                 user_id=str(uuid.uuid4()),
                 upload_id=str(uuid.uuid4()),

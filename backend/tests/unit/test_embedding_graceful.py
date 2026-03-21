@@ -8,15 +8,25 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import openai
 import pytest
+from google.api_core import exceptions as google_exceptions
 
 
-def _make_service(mock_client):
-    """mock 클라이언트를 주입한 EmbeddingService 생성 헬퍼"""
+def _make_service(mock_embed_fn):
+    """mock embed_fn을 주입한 EmbeddingService 생성 헬퍼"""
     from app.services.rag.embeddings import EmbeddingService
 
-    return EmbeddingService(api_key="test-key", _client=mock_client)
+    return EmbeddingService(api_key="test-google-key", _embed_fn=mock_embed_fn)
+
+
+def _make_single_response(vector: list[float]) -> dict:
+    """단일 텍스트 응답 mock 딕셔너리"""
+    return {"embedding": vector}
+
+
+def _make_batch_response(vectors: list[list[float]]) -> dict:
+    """배치 텍스트 응답 mock 딕셔너리"""
+    return {"embedding": [v for v in vectors]}
 
 
 class TestSkipOnFailure:
@@ -29,27 +39,22 @@ class TestSkipOnFailure:
 
         call_count = 0
 
-        async def mock_create(*args, **kwargs):
+        def mock_embed_fn(**kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                # 첫 번째 배치만 실패
-                raise openai.APIError("API 오류", request=MagicMock(), body=None)
-            r = MagicMock()
-            r.data = [MagicMock(embedding=[0.1] * 1536) for _ in range(len(kwargs.get("input", [])))]
-            return r
+                raise google_exceptions.GoogleAPIError("API 오류")
+            content = kwargs.get("content", [])
+            if isinstance(content, list):
+                return _make_batch_response([[0.1] * 768 for _ in content])
+            return _make_single_response([0.1] * 768)
 
-        mock_client = AsyncMock()
-        mock_client.embeddings.create = mock_create
-
-        service = _make_service(mock_client)
+        service = _make_service(mock_embed_fn)
 
         with patch("app.services.rag.embeddings.asyncio.sleep", new_callable=AsyncMock):
             results, failed_indices = await service.embed_batch(texts, skip_on_failure=True)
 
-        # 실패한 인덱스가 추적되어야 함
         assert isinstance(failed_indices, list)
-        # 결과 리스트의 길이는 입력과 동일해야 함
         assert len(results) == len(texts)
 
     async def test_failed_indices_are_tracked(self):
@@ -57,20 +62,15 @@ class TestSkipOnFailure:
         base = "보험 약관 제1조 목적 이 약관은 피보험자의 상해 및 질병을 보장합니다."
         texts = [f"{base} 인덱스: {i:04d}" for i in range(3)]
 
-        async def mock_create_always_fail(*args, **kwargs):
-            raise openai.APIError("API 오류", request=MagicMock(), body=None)
+        def mock_embed_fn_fail(**kwargs):
+            raise google_exceptions.GoogleAPIError("API 오류")
 
-        mock_client = AsyncMock()
-        mock_client.embeddings.create = mock_create_always_fail
-
-        service = _make_service(mock_client)
+        service = _make_service(mock_embed_fn_fail)
 
         with patch("app.services.rag.embeddings.asyncio.sleep", new_callable=AsyncMock):
             results, failed_indices = await service.embed_batch(texts, skip_on_failure=True)
 
-        # 모두 실패하면 failed_indices에 유효한 인덱스들이 포함되어야 함
         assert len(failed_indices) > 0
-        # failed_indices의 값들은 유효한 인덱스 범위 내에 있어야 함
         for idx in failed_indices:
             assert 0 <= idx < len(texts)
 
@@ -79,13 +79,10 @@ class TestSkipOnFailure:
         base = "보험 약관 제1조 목적 이 약관은 피보험자의 상해 및 질병을 보장합니다."
         texts = [f"{base} 인덱스: {i:04d}" for i in range(3)]
 
-        async def mock_create_fail(*args, **kwargs):
-            raise openai.APIError("API 오류", request=MagicMock(), body=None)
+        def mock_embed_fn_fail(**kwargs):
+            raise google_exceptions.GoogleAPIError("API 오류")
 
-        mock_client = AsyncMock()
-        mock_client.embeddings.create = mock_create_fail
-
-        service = _make_service(mock_client)
+        service = _make_service(mock_embed_fn_fail)
 
         with patch("app.services.rag.embeddings.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(Exception):
@@ -96,21 +93,19 @@ class TestSkipOnFailure:
         base = "보험 약관 제1조 목적 이 약관은 피보험자의 상해 및 질병을 보장합니다."
         texts = [f"{base} 인덱스: {i:04d}" for i in range(1)]
 
-        async def mock_create_success(*args, **kwargs):
-            r = MagicMock()
-            r.data = [MagicMock(embedding=[0.5] * 1536)]
-            return r
+        def mock_embed_fn_success(**kwargs):
+            content = kwargs.get("content", [])
+            if isinstance(content, list):
+                return _make_batch_response([[0.5] * 768 for _ in content])
+            return _make_single_response([0.5] * 768)
 
-        mock_client = AsyncMock()
-        mock_client.embeddings.create = mock_create_success
-
-        service = _make_service(mock_client)
+        service = _make_service(mock_embed_fn_success)
 
         results, failed_indices = await service.embed_batch(texts, skip_on_failure=True)
 
         assert len(results) == 1
         assert failed_indices == []
-        assert len(results[0]) == 1536
+        assert len(results[0]) == 768
 
 
 class TestAPIUnavailableError:
@@ -123,14 +118,10 @@ class TestAPIUnavailableError:
         base = "보험 약관 제1조 목적 이 약관은 피보험자의 상해 및 질병을 보장합니다."
         texts = [f"{base} 인덱스: {i:04d}" for i in range(1)]
 
-        async def mock_create_fail(*args, **kwargs):
-            raise openai.APIError("서비스 불가", request=MagicMock(), body=None)
+        def mock_embed_fn_fail(**kwargs):
+            raise google_exceptions.GoogleAPIError("서비스 불가")
 
-        mock_client = AsyncMock()
-        mock_client.embeddings.create = mock_create_fail
-
-        service = _make_service(mock_client)
-        # 연속 실패 횟수를 임계값 이상으로 설정
+        service = _make_service(mock_embed_fn_fail)
         service._consecutive_failures = service._max_consecutive_failures
 
         with patch("app.services.rag.embeddings.asyncio.sleep", new_callable=AsyncMock):
@@ -142,19 +133,15 @@ class TestAPIUnavailableError:
         base = "보험 약관 제1조 목적 이 약관은 피보험자의 상해 및 질병을 보장합니다."
         texts = [f"{base} 인덱스: {i:04d}" for i in range(1)]
 
-        async def mock_create_success(*args, **kwargs):
-            r = MagicMock()
-            r.data = [MagicMock(embedding=[0.1] * 1536)]
-            return r
+        def mock_embed_fn_success(**kwargs):
+            content = kwargs.get("content", [])
+            if isinstance(content, list):
+                return _make_batch_response([[0.1] * 768 for _ in content])
+            return _make_single_response([0.1] * 768)
 
-        mock_client = AsyncMock()
-        mock_client.embeddings.create = mock_create_success
-
-        service = _make_service(mock_client)
-        # 연속 실패 횟수를 임계값 근처로 설정
+        service = _make_service(mock_embed_fn_success)
         service._consecutive_failures = 2
 
         await service.embed_batch(texts, skip_on_failure=False)
 
-        # 성공 후 카운터가 0으로 초기화되어야 함
         assert service._consecutive_failures == 0

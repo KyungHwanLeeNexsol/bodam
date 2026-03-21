@@ -39,20 +39,20 @@ class TestSettingsEmbeddingFields:
         assert settings.openai_api_key == ""
 
     def test_embedding_model_default(self) -> None:
-        """embedding_model 기본값이 text-embedding-3-small이어야 함"""
+        """embedding_model 기본값이 gemini-embedding-001이어야 함"""
         from app.core.config import get_settings
 
         get_settings.cache_clear()
         settings = get_settings()
-        assert settings.embedding_model == "text-embedding-3-small"
+        assert settings.embedding_model == "gemini-embedding-001"
 
     def test_embedding_dimensions_default(self) -> None:
-        """embedding_dimensions 기본값이 1536이어야 함"""
+        """embedding_dimensions 기본값이 768이어야 함"""
         from app.core.config import get_settings
 
         get_settings.cache_clear()
         settings = get_settings()
-        assert settings.embedding_dimensions == 1536
+        assert settings.embedding_dimensions == 768
 
     def test_chunk_size_tokens_default(self) -> None:
         """chunk_size_tokens 기본값이 500이어야 함"""

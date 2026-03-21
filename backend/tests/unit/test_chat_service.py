@@ -45,16 +45,16 @@ def chat_service(mock_db, mock_settings):
     from app.services.chat_service import ChatService
 
     with (
-        patch("app.services.chat_service.AsyncOpenAI") as mock_openai_cls,
+        patch("app.services.chat_service.FallbackChain") as mock_chain_cls,
         patch("app.services.chat_service.EmbeddingService") as mock_embedding_cls,
         patch("app.services.chat_service.VectorSearchService") as mock_vector_cls,
     ):
-        mock_openai_cls.return_value = AsyncMock()
+        mock_chain_cls.return_value = AsyncMock()
         mock_embedding_cls.return_value = AsyncMock()
         mock_vector_cls.return_value = AsyncMock()
 
         service = ChatService(db=mock_db, settings=mock_settings)
-        service._openai_client = AsyncMock()
+        service._llm_chain = AsyncMock()
         service._vector_search = AsyncMock()
 
         yield service
@@ -184,13 +184,10 @@ class TestChatServiceDeleteSession:
 class TestChatServiceSendMessage:
     """ChatService.send_message 테스트"""
 
-    def _make_openai_response(self, content: str) -> MagicMock:
-        """OpenAI ChatCompletion 응답 목 생성"""
-        mock_choice = MagicMock()
-        mock_choice.message.content = content
-
+    def _make_llm_response(self, content: str) -> MagicMock:
+        """LLMResponse 목 생성"""
         mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
+        mock_response.content = content
         return mock_response
 
     def _make_search_result(self) -> dict:
@@ -221,8 +218,8 @@ class TestChatServiceSendMessage:
 
         chat_service._vector_search.search = AsyncMock(return_value=[self._make_search_result()])
 
-        chat_service._openai_client.chat.completions.create = AsyncMock(
-            return_value=self._make_openai_response("암 보험에 대해 답변드립니다.")
+        chat_service._llm_chain.generate = AsyncMock(
+            return_value=self._make_llm_response("암 보험에 대해 답변드립니다.")
         )
 
         user_msg, assistant_msg = await chat_service.send_message(
@@ -251,8 +248,8 @@ class TestChatServiceSendMessage:
 
         chat_service._vector_search.search = AsyncMock(return_value=[])
 
-        chat_service._openai_client.chat.completions.create = AsyncMock(
-            return_value=self._make_openai_response("관련 약관 정보를 찾지 못했습니다.")
+        chat_service._llm_chain.generate = AsyncMock(
+            return_value=self._make_llm_response("관련 약관 정보를 찾지 못했습니다.")
         )
 
         user_msg, assistant_msg = await chat_service.send_message(session_id=session_id, content="이상한 질문")
@@ -283,15 +280,15 @@ class TestChatServiceSendMessage:
         mock_db.flush = AsyncMock()
 
         chat_service._vector_search.search = AsyncMock(return_value=[])
-        chat_service._openai_client.chat.completions.create = AsyncMock(
-            return_value=self._make_openai_response("답변입니다")
+        chat_service._llm_chain.generate = AsyncMock(
+            return_value=self._make_llm_response("답변입니다")
         )
 
         await chat_service.send_message(session_id=session_id, content="새 질문")
 
-        call_kwargs = chat_service._openai_client.chat.completions.create.call_args
+        call_kwargs = chat_service._llm_chain.generate.call_args
         messages_arg = (
-            call_kwargs.kwargs.get("messages") or call_kwargs.args[0]
+            call_kwargs.args[0]
             if call_kwargs.args
             else call_kwargs.kwargs.get("messages")
         )
@@ -302,9 +299,7 @@ class TestChatServiceSendMessage:
 
     @pytest.mark.asyncio
     async def test_openai_timeout_error_handling(self, chat_service, mock_db) -> None:
-        """OpenAI 타임아웃 시 에러 메시지 응답"""
-        import openai
-
+        """LLM 타임아웃 시 에러 메시지 응답"""
         session_id = uuid.uuid4()
 
         mock_session = MagicMock(spec=ChatSession)
@@ -318,19 +313,17 @@ class TestChatServiceSendMessage:
         mock_db.flush = AsyncMock()
 
         chat_service._vector_search.search = AsyncMock(return_value=[])
-        chat_service._openai_client.chat.completions.create = AsyncMock(
-            side_effect=openai.APITimeoutError(request=MagicMock())
+        chat_service._llm_chain.generate = AsyncMock(
+            side_effect=TimeoutError("request timed out")
         )
 
         user_msg, assistant_msg = await chat_service.send_message(session_id=session_id, content="질문")
 
-        assert "시간이 초과" in assistant_msg.content or "다시 시도" in assistant_msg.content
+        assert "문제가 발생했습니다" in assistant_msg.content or "다시 시도" in assistant_msg.content
 
     @pytest.mark.asyncio
     async def test_openai_auth_error_handling(self, chat_service, mock_db) -> None:
-        """OpenAI 인증 실패 시 에러 메시지 응답"""
-        import openai
-
+        """LLM 인증 실패 시 에러 메시지 응답"""
         session_id = uuid.uuid4()
 
         mock_session = MagicMock(spec=ChatSession)
@@ -344,17 +337,13 @@ class TestChatServiceSendMessage:
         mock_db.flush = AsyncMock()
 
         chat_service._vector_search.search = AsyncMock(return_value=[])
-        chat_service._openai_client.chat.completions.create = AsyncMock(
-            side_effect=openai.AuthenticationError(
-                message="invalid api key",
-                response=MagicMock(),
-                body=None,
-            )
+        chat_service._llm_chain.generate = AsyncMock(
+            side_effect=PermissionError("invalid api key")
         )
 
         user_msg, assistant_msg = await chat_service.send_message(session_id=session_id, content="질문")
 
-        assert "연결에 실패" in assistant_msg.content
+        assert "문제가 발생했습니다" in assistant_msg.content or "다시 시도" in assistant_msg.content
 
 
 class TestChatServiceSendMessageStream:
@@ -377,17 +366,9 @@ class TestChatServiceSendMessageStream:
 
         chat_service._vector_search.search = AsyncMock(return_value=[])
 
-        async def mock_stream():
-            for token in ["안녕", "하세요", "!"]:
-                chunk = MagicMock()
-                chunk.choices = [MagicMock()]
-                chunk.choices[0].delta.content = token
-                yield chunk
-
-        mock_stream_cm = MagicMock()
-        mock_stream_cm.__aenter__ = AsyncMock(return_value=mock_stream())
-        mock_stream_cm.__aexit__ = AsyncMock(return_value=False)
-        chat_service._openai_client.chat.completions.stream = MagicMock(return_value=mock_stream_cm)
+        mock_llm_resp = MagicMock()
+        mock_llm_resp.content = "안녕하세요!"
+        chat_service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp)
 
         events = []
         async for event in chat_service.send_message_stream(session_id=session_id, content="안녕하세요"):
@@ -424,16 +405,9 @@ class TestChatServiceSendMessageStream:
             ]
         )
 
-        async def mock_stream():
-            chunk = MagicMock()
-            chunk.choices = [MagicMock()]
-            chunk.choices[0].delta.content = "답변"
-            yield chunk
-
-        mock_stream_cm = MagicMock()
-        mock_stream_cm.__aenter__ = AsyncMock(return_value=mock_stream())
-        mock_stream_cm.__aexit__ = AsyncMock(return_value=False)
-        chat_service._openai_client.chat.completions.stream = MagicMock(return_value=mock_stream_cm)
+        mock_llm_resp = MagicMock()
+        mock_llm_resp.content = "답변"
+        chat_service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp)
 
         events = []
         async for event in chat_service.send_message_stream(session_id=session_id, content="질문"):
@@ -459,16 +433,9 @@ class TestChatServiceSendMessageStream:
 
         chat_service._vector_search.search = AsyncMock(return_value=[])
 
-        async def mock_stream():
-            chunk = MagicMock()
-            chunk.choices = [MagicMock()]
-            chunk.choices[0].delta.content = "완료"
-            yield chunk
-
-        mock_stream_cm = MagicMock()
-        mock_stream_cm.__aenter__ = AsyncMock(return_value=mock_stream())
-        mock_stream_cm.__aexit__ = AsyncMock(return_value=False)
-        chat_service._openai_client.chat.completions.stream = MagicMock(return_value=mock_stream_cm)
+        mock_llm_resp = MagicMock()
+        mock_llm_resp.content = "완료"
+        chat_service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp)
 
         events = []
         async for event in chat_service.send_message_stream(session_id=session_id, content="질문"):

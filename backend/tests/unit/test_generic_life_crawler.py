@@ -155,22 +155,8 @@ class TestCrawlMethod:
 
     @pytest.mark.asyncio
     async def test_crawl_returns_crawl_run_result(self, crawler):
-        """crawl()은 CrawlRunResult를 반환"""
-        mock_pw_instance = self._make_mock_playwright()
-
-        with patch("playwright.async_api.async_playwright", return_value=mock_pw_instance):
-            # import 자체를 성공시키되 playwright를 mock으로
-            import sys
-            # playwright가 설치된 경우 ImportError를 강제해서 빈 결과 반환 경로 테스트
-            with patch.object(
-                __import__("app.services.crawler.companies.life.generic_life",
-                           fromlist=["GenericLifeCrawler"]),
-                "__name__",
-                "app.services.crawler.companies.life.generic_life",
-            ):
-                pass
-
-        # playwright ImportError를 테스트하여 빈 결과 반환 확인
+        """crawl()은 CrawlRunResult를 반환 (playwright 미설치 시 빈 결과)"""
+        # playwright ImportError를 강제하여 빈 결과 반환 경로 테스트
         with patch("builtins.__import__", side_effect=self._import_side_effect):
             result = await crawler.crawl()
         assert isinstance(result, CrawlRunResult)

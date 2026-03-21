@@ -152,23 +152,23 @@ def _make_chat_service(mock_db, mock_settings, intent_classifier=None, guidance_
     from app.services.chat_service import ChatService
 
     with (
-        patch("app.services.chat_service.AsyncOpenAI") as mock_openai_cls,
+        patch("app.services.chat_service.FallbackChain") as mock_chain_cls,
         patch("app.services.chat_service.EmbeddingService"),
         patch("app.services.chat_service.VectorSearchService"),
     ):
-        mock_openai_cls.return_value = AsyncMock()
+        mock_chain_cls.return_value = AsyncMock()
         service = ChatService(
             db=mock_db,
             settings=mock_settings,
             intent_classifier=intent_classifier,
             guidance_service=guidance_service,
         )
-        service._openai_client = AsyncMock()
+        mock_llm_resp = MagicMock()
+        mock_llm_resp.content = "테스트 응답입니다."
+        service._llm_chain = AsyncMock()
+        service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp)
         service._vector_search = AsyncMock()
         service._vector_search.search = AsyncMock(return_value=[])
-        service._openai_client.chat.completions.create = AsyncMock(
-            return_value=_make_openai_response("테스트 응답입니다.")
-        )
     return service
 
 
@@ -466,9 +466,9 @@ class TestStreamingGuidanceEvent:
             intent_classifier=dispute_classifier,
             guidance_service=mock_guidance_service,
         )
-        service._openai_client.chat.completions.stream = MagicMock(
-            return_value=_make_stream_cm(["답변", " 내용"])
-        )
+        mock_llm_resp = MagicMock()
+        mock_llm_resp.content = "답변 내용"
+        service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp)
 
         events = []
         async for event in service.send_message_stream(session_id=session_id, content="보험금 분쟁"):
@@ -500,9 +500,9 @@ class TestStreamingGuidanceEvent:
             intent_classifier=dispute_classifier,
             guidance_service=mock_guidance_service,
         )
-        service._openai_client.chat.completions.stream = MagicMock(
-            return_value=_make_stream_cm(["토큰"])
-        )
+        mock_llm_resp2 = MagicMock()
+        mock_llm_resp2.content = "토큰"
+        service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp2)
 
         events = []
         async for event in service.send_message_stream(session_id=session_id, content="분쟁"):
@@ -538,9 +538,9 @@ class TestStreamingGuidanceEvent:
             intent_classifier=general_classifier,
             guidance_service=mock_guidance_service,
         )
-        service._openai_client.chat.completions.stream = MagicMock(
-            return_value=_make_stream_cm(["답변"])
-        )
+        mock_llm_resp3 = MagicMock()
+        mock_llm_resp3.content = "답변"
+        service._llm_chain.generate = AsyncMock(return_value=mock_llm_resp3)
 
         events = []
         async for event in service.send_message_stream(session_id=session_id, content="일반 질문"):

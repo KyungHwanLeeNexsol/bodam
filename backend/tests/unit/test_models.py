@@ -281,7 +281,7 @@ class TestPolicyChunkModel:
 
         col = PolicyChunk.__table__.columns["embedding"]
         assert isinstance(col.type, Vector)
-        assert col.type.dim == 1536
+        assert col.type.dim == 768
 
     def test_no_updated_at_column(self) -> None:
         """PolicyChunk에는 updated_at이 없어야 함 (생성 전용)"""

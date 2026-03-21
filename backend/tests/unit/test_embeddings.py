@@ -19,12 +19,12 @@ from google.api_core import exceptions as google_exceptions
 
 def _make_single_response(vector: list[float]) -> dict:
     """단일 텍스트 응답 mock 딕셔너리 생성 헬퍼"""
-    return {"embedding": {"values": vector}}
+    return {"embedding": vector}
 
 
 def _make_batch_response(vectors: list[list[float]]) -> dict:
     """배치 텍스트 응답 mock 딕셔너리 생성 헬퍼"""
-    return {"embedding": [{"values": v} for v in vectors]}
+    return {"embedding": vectors}
 
 
 def _make_service(mock_embed_fn):
@@ -101,7 +101,7 @@ class TestEmbedBatch:
 
         call_counts = []
 
-        def mock_embed_fn(model, content, task_type):
+        def mock_embed_fn(model, content, task_type, **kwargs):
             if isinstance(content, list):
                 call_counts.append(len(content))
                 return _make_batch_response([[0.1] * 768 for _ in content])
@@ -157,7 +157,7 @@ class TestRetryLogic:
         # 처음 2번은 GoogleAPIError, 3번째는 성공
         call_count = 0
 
-        def mock_embed_fn(model, content, task_type):
+        def mock_embed_fn(model, content, task_type, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count < 3:
@@ -177,7 +177,7 @@ class TestRetryLogic:
 
     async def test_retry_raises_after_max_retries(self):
         """최대 재시도 횟수(3회) 초과 시 예외를 발생시켜야 한다"""
-        def mock_embed_fn(model, content, task_type):
+        def mock_embed_fn(model, content, task_type, **kwargs):
             raise google_exceptions.GoogleAPIError("Persistent API error")
 
         service = _make_service(mock_embed_fn)

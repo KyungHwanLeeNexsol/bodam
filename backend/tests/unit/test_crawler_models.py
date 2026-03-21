@@ -48,8 +48,8 @@ class TestCrawlResultStatus:
         assert issubclass(CrawlResultStatus, StrEnum)
 
     def test_crawl_result_status_count(self):
-        """CrawlResultStatus 값은 정확히 4개여야 함"""
-        assert len(CrawlResultStatus) == 4
+        """CrawlResultStatus 값은 정확히 5개여야 함"""
+        assert len(CrawlResultStatus) == 5
 
 
 class TestCrawlRunModel:

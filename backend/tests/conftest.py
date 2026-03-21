@@ -13,22 +13,28 @@ from unittest.mock import MagicMock
 import pytest
 
 # openai가 설치되지 않은 환경(로컬 테스트)에서 모킹
-if "openai" not in sys.modules:
+try:
+    import openai  # noqa: F401 - sys.modules에 등록하여 mock 건너뜀
+except ImportError:
     openai_mock = MagicMock()
     openai_mock.AsyncOpenAI = MagicMock
     openai_mock.BadRequestError = Exception
     sys.modules["openai"] = openai_mock
 
 # jose가 설치되지 않은 환경(로컬 테스트)에서 모킹
-if "jose" not in sys.modules:
+try:
+    import jose  # noqa: F401 - sys.modules에 등록하여 mock 건너뜀
+except ImportError:
     jose_mock = MagicMock()
     jose_mock.JWTError = Exception
     jose_mock.jwt = MagicMock()
     sys.modules["jose"] = jose_mock
 
 # pgvector가 설치되지 않은 환경(로컬 테스트)에서 모킹
-# 프로덕션 환경에는 pgvector가 설치되어 있으므로 영향 없음
-if "pgvector" not in sys.modules:
+# 설치된 경우에는 실제 pgvector를 사용하여 cosine_distance 등이 정상 동작
+try:
+    import pgvector  # noqa: F401 - sys.modules에 등록하여 mock 건너뜀
+except ImportError:
     import sqlalchemy as _sa
 
     # SQLAlchemy TypeDecorator를 상속하는 Vector 목 클래스 생성
