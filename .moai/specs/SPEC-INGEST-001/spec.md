@@ -2,7 +2,7 @@
 id: SPEC-INGEST-001
 title: "Multi-PC Local PDF Ingestion to Neon DB"
 version: 1.0.0
-status: draft
+status: completed
 created: 2026-03-21
 updated: 2026-03-21
 author: zuge3
