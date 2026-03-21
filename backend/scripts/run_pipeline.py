@@ -289,6 +289,20 @@ def _create_crawler(
             rate_limit_seconds=rate_limit,
             max_retries=max_retries,
         )
+    elif crawler_name == "kb-nonlife":
+        from app.services.crawler.companies.nonlife.kb_nonlife_crawler import KBNonLifeCrawler
+        return KBNonLifeCrawler(
+            storage=storage,
+            rate_limit_seconds=rate_limit,
+            max_retries=max_retries,
+        )
+    elif crawler_name == "db-nonlife":
+        from app.services.crawler.companies.nonlife.db_nonlife_crawler import DBNonLifeCrawler
+        return DBNonLifeCrawler(
+            storage=storage,
+            rate_limit_seconds=rate_limit,
+            max_retries=max_retries,
+        )
 
     return None
 
@@ -315,8 +329,8 @@ def main() -> None:
     crawl_group = crawl_parser.add_mutually_exclusive_group(required=True)
     crawl_group.add_argument(
         "--crawler",
-        choices=["klia", "knia", "pubinsure"],
-        help="실행할 크롤러 선택 (klia: 생명보험협회, knia: 손해보험협회, pubinsure: 공시실)",
+        choices=["klia", "knia", "pubinsure", "kb-nonlife", "db-nonlife"],
+        help="실행할 크롤러 선택 (klia: 생명보험협회, knia: 손해보험협회, pubinsure: 공시실, kb-nonlife: KB손보, db-nonlife: DB손보)",
     )
     crawl_group.add_argument(
         "--all",
@@ -343,7 +357,7 @@ def main() -> None:
             if args.all:
                 # 모든 크롤러 순차 실행
                 async def run_all() -> None:
-                    for name in ["klia", "knia"]:
+                    for name in ["klia", "knia", "pubinsure", "kb-nonlife", "db-nonlife"]:
                         await run_crawl(name)
                 asyncio.run(run_all())
             else:
