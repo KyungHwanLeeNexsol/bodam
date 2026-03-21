@@ -25,6 +25,12 @@ from app.core.metrics import PrometheusMiddleware, metrics_endpoint
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.request_id_middleware import RequestIdMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.usage_tracking import UsageTrackingMiddleware
+from app.api.v1.b2b.organizations import router as b2b_org_router
+from app.api.v1.b2b.api_keys import router as b2b_api_keys_router
+from app.api.v1.b2b.clients import router as b2b_clients_router
+from app.api.v1.b2b.usage import router as b2b_usage_router
+from app.api.v1.b2b.dashboard import router as b2b_dashboard_router
 
 
 @asynccontextmanager
@@ -89,6 +95,9 @@ def create_app() -> FastAPI:
     # 올바른 요청 흐름: CORS → Prometheus → RequestId → SecurityHeaders → RateLimit → App
 
     # 내부 미들웨어 (app에 가까운 순서)
+    # B2B 사용량 추적 미들웨어 (SPEC-B2B-001 Phase 4)
+    app.add_middleware(UsageTrackingMiddleware)
+
     # Rate Limit 미들웨어 (SPEC-SEC-001 M1: IP 기반 속도 제한)
     app.add_middleware(RateLimitMiddleware)
 
@@ -145,6 +154,13 @@ def create_app() -> FastAPI:
     app.include_router(guidance_router, prefix="/api/v1")
     app.include_router(crawler_router, prefix="/api/v1")
     app.include_router(pipeline_router, prefix="/api/v1")
+
+    # B2B API 라우터 등록 (SPEC-B2B-001)
+    app.include_router(b2b_org_router, prefix="/api/v1/b2b")
+    app.include_router(b2b_api_keys_router, prefix="/api/v1/b2b")
+    app.include_router(b2b_clients_router, prefix="/api/v1/b2b")
+    app.include_router(b2b_usage_router, prefix="/api/v1/b2b")
+    app.include_router(b2b_dashboard_router, prefix="/api/v1/b2b")
 
     return app
 

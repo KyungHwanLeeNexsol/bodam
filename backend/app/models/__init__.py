@@ -29,6 +29,11 @@ from app.models.pdf import (
 from app.models.pipeline import PipelineRun, PipelineStatus, PipelineTriggerType
 from app.models.social_account import SocialAccount
 from app.models.user import ConsentRecord, User, UserRole
+from app.models.organization import Organization, OrgType, PlanType
+from app.models.organization_member import OrganizationMember, OrgMemberRole
+from app.models.api_key import APIKey
+from app.models.agent_client import AgentClient, ConsentStatus
+from app.models.usage_record import UsageRecord
 
 __all__ = [
     "Base",
@@ -60,4 +65,13 @@ __all__ = [
     "PipelineRun",
     "PipelineStatus",
     "PipelineTriggerType",
+    "Organization",
+    "OrgType",
+    "PlanType",
+    "OrganizationMember",
+    "OrgMemberRole",
+    "APIKey",
+    "AgentClient",
+    "ConsentStatus",
+    "UsageRecord",
 ]

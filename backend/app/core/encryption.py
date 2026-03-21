@@ -83,3 +83,20 @@ class FieldEncryptor:
             return decrypted_bytes.decode("utf-8")
         except (InvalidToken, Exception) as e:
             raise DecryptionError(f"복호화 실패: {e}") from e
+
+
+def get_field_encryptor() -> "FieldEncryptor":
+    """FieldEncryptor FastAPI 의존성.
+
+    환경변수 FIELD_ENCRYPTION_KEY에서 키를 읽어 FieldEncryptor를 반환한다.
+
+    Returns:
+        FieldEncryptor 인스턴스
+    """
+    import os
+    key = os.environ.get("FIELD_ENCRYPTION_KEY", "")
+    if not key:
+        # 개발/테스트 환경용 임시 키 (프로덕션에서는 환경변수 필수)
+        from cryptography.fernet import Fernet
+        key = Fernet.generate_key().decode()
+    return FieldEncryptor(key=key)

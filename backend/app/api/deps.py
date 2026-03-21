@@ -92,6 +92,85 @@ async def get_current_user(
     return await _get_user_from_token(credentials=credentials, db=db, settings=settings)
 
 
+def require_scope(scope: str) -> Callable:
+    """스코프 기반 접근 제어 의존성 (AC-008)
+
+    API 키의 허용 스코프를 검사하는 의존성을 반환한다.
+    JWT 인증(api_key=None)이면 스코프 검사를 건너뛴다.
+
+    Args:
+        scope: 필요한 스코프 이름
+
+    Returns:
+        스코프 검사 의존성 함수
+    """
+    from app.models.api_key import APIKey
+
+    async def _check_scope(api_key: APIKey | None = None) -> APIKey | None:
+        """API 키 스코프를 검사한다.
+
+        Args:
+            api_key: 현재 인증된 API 키 (JWT 인증 시 None)
+
+        Returns:
+            스코프 검증을 통과한 APIKey 또는 None
+
+        Raises:
+            HTTPException 403: 스코프 없음
+        """
+        if api_key is None:
+            # JWT 인증된 사용자는 스코프 검사 없이 통과
+            return None
+        if scope not in (api_key.scopes or []):
+            raise HTTPException(
+                status_code=403,
+                detail=f"'{scope}' 스코프 권한이 없습니다.",
+            )
+        return api_key
+
+    return _check_scope
+
+
+async def get_current_user_or_api_key(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    x_api_key: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> tuple:
+    """JWT 또는 X-API-Key 헤더로 인증하는 의존성 (AC-007).
+
+    Args:
+        credentials: HTTP Bearer 자격증명
+        x_api_key: X-API-Key 헤더 값
+        db: 비동기 DB 세션
+        settings: 애플리케이션 설정
+
+    Returns:
+        (User | None, APIKey | None, Organization | None) 튜플
+
+    Raises:
+        HTTPException 401: 인증 수단 없음 또는 유효하지 않음
+    """
+    from app.services.b2b.api_key_service import APIKeyService
+
+    if x_api_key is not None:
+        # X-API-Key 헤더로 인증
+        service = APIKeyService(db=db)
+        api_key, org = await service.validate_api_key(raw_key=x_api_key)
+        return None, api_key, org
+
+    if credentials is not None:
+        # Bearer JWT 토큰으로 인증
+        user = await _get_user_from_token(
+            credentials=credentials,
+            db=db,
+            settings=settings,
+        )
+        return user, None, None
+
+    raise HTTPException(status_code=401, detail="인증이 필요합니다.")
+
+
 def require_role(*roles: UserRole) -> Callable:
     """역할 기반 접근 제어 의존성
 
