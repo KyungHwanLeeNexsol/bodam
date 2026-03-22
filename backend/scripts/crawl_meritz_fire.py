@@ -104,8 +104,12 @@ async def crawl_category(
     page: Any,
     category: str,
     dry_run: bool = False,
+    sale_status: str = "판매",
 ) -> list[dict[str, Any]]:
-    """특정 카테고리의 약관 PDF를 Playwright 다운로드로 수집한다."""
+    """특정 카테고리의 약관 PDF를 Playwright 다운로드로 수집한다.
+
+    # @MX:NOTE: sale_status="판매중지"로 호출하면 판매중지 탭 클릭 후 수집
+    """
     results: list[dict[str, Any]] = []
 
     # 카테고리 클릭
@@ -127,6 +131,25 @@ async def crawl_category(
         return results
 
     await asyncio.sleep(4)
+
+    # 판매중지 탭 클릭 (sale_status가 "판매중지"인 경우)
+    if sale_status == "판매중지":
+        tab_clicked = await page.evaluate("""() => {
+            const elements = document.querySelectorAll('a, li, button, span');
+            for (const el of elements) {
+                if (el.textContent.trim() === '판매중지') {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if tab_clicked:
+            logger.info("[%s] 판매중지 탭 클릭 성공 (%s)", COMPANY_NAME, category)
+            await asyncio.sleep(3)
+        else:
+            logger.warning("[%s] 판매중지 탭을 찾지 못함 (%s)", COMPANY_NAME, category)
+            return results
 
     # 테이블 행 수와 상품명 가져오기
     row_info = await page.evaluate("""() => {
@@ -240,20 +263,28 @@ async def main(dry_run: bool = False, categories: list[str] | None = None) -> No
         await asyncio.sleep(4)
 
         for category in target_cats:
-            logger.info("[%s] 카테고리: %s", COMPANY_NAME, category)
-            cat_results = await crawl_category(page, category, dry_run)
-            all_results[category] = cat_results
-            downloaded = sum(1 for r in cat_results if r["status"] == "downloaded")
-            total_downloaded += downloaded
-            logger.info(
-                "[%s] %s 완료: %d개 다운로드, %d개 스킵, %d개 타임아웃/실패",
-                COMPANY_NAME,
-                category,
-                downloaded,
-                sum(1 for r in cat_results if r["status"] == "skipped"),
-                sum(1 for r in cat_results if r["status"] in ("failed", "error", "timeout", "invalid")),
-            )
-            await asyncio.sleep(2)
+            all_results[category] = []
+            for sale_status in ["판매", "판매중지"]:
+                logger.info("[%s] 카테고리: %s (%s)", COMPANY_NAME, category, sale_status)
+
+                # 탭/카테고리 전환 전 페이지 재로딩으로 SPA 상태 초기화
+                await page.goto(DISCLOSURE_URL, timeout=30000, wait_until="networkidle")
+                await asyncio.sleep(4)
+
+                cat_results = await crawl_category(page, category, dry_run, sale_status)
+                all_results[category].extend(cat_results)
+                downloaded = sum(1 for r in cat_results if r["status"] == "downloaded")
+                total_downloaded += downloaded
+                logger.info(
+                    "[%s] %s (%s) 완료: %d개 다운로드, %d개 스킵, %d개 타임아웃/실패",
+                    COMPANY_NAME,
+                    category,
+                    sale_status,
+                    downloaded,
+                    sum(1 for r in cat_results if r["status"] == "skipped"),
+                    sum(1 for r in cat_results if r["status"] in ("failed", "error", "timeout", "invalid")),
+                )
+                await asyncio.sleep(2)
 
         await browser.close()
 

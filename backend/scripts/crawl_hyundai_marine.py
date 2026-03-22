@@ -104,20 +104,25 @@ def save_pdf(
 async def get_product_list(page: Any) -> list[dict[str, Any]]:
     """ajax.xhi API에서 전체 상품 목록을 가져온다."""
     product_data: list[dict] = []
+    # slYProdList/slNProdList 포함 응답 도착 시 set
+    data_received = asyncio.Event()
 
     async def on_response(resp: Any) -> None:
         ct = resp.headers.get("content-type", "")
         if resp.status == 200 and "json" in ct and "ajax.xhi" in resp.url:
             try:
                 body = await resp.body()
-                if len(body) > 100000:
-                    data = json.loads(body)
-                    if "data" in data:
-                        inner = data["data"]
-                        # slYProdList: 판매중, slNProdList: 판매중지
-                        for key in ("slYProdList", "slNProdList"):
-                            if key in inner and isinstance(inner[key], list):
-                                product_data.extend(inner[key])
+                data = json.loads(body)
+                if "data" in data:
+                    inner = data["data"]
+                    # slYProdList: 판매중, slNProdList: 판매중지
+                    found = False
+                    for key in ("slYProdList", "slNProdList"):
+                        if key in inner and isinstance(inner[key], list):
+                            product_data.extend(inner[key])
+                            found = True
+                    if found:
+                        data_received.set()
             except Exception:
                 pass
 
@@ -127,7 +132,12 @@ async def get_product_list(page: Any) -> list[dict[str, Any]]:
     await page.goto(f"{BASE_URL}/serviceAction.do", timeout=30000, wait_until="networkidle")
     await asyncio.sleep(3)
     await page.evaluate("fn_goMenu('100932')")
-    await asyncio.sleep(8)
+
+    # 상품 데이터 응답을 받을 때까지 최대 60초 대기
+    try:
+        await asyncio.wait_for(data_received.wait(), timeout=60)
+    except asyncio.TimeoutError:
+        logger.warning("[%s] 상품 목록 응답 타임아웃 (60초)", COMPANY_NAME)
 
     page.remove_listener("response", on_response)
     logger.info("[%s] 전체 %d개 상품 로드 완료", COMPANY_NAME, len(product_data))

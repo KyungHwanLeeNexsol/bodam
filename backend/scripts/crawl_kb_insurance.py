@@ -154,6 +154,56 @@ async def main(dry_run: bool = False) -> None:
 
         logger.info("[%s] 전체 %d개 상품 수집 완료 (%d 페이지)", COMPANY_NAME, len(all_products), page_num)
 
+        # 판매중지 탭 클릭 시도 - 추가 상품 수집
+        disc_clicked = await page.evaluate("""() => {
+            const elements = document.querySelectorAll('a, li, button, span, div');
+            for (const el of elements) {
+                const text = el.textContent.trim();
+                if (text === '판매중지' || text === '판매 중지') {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if disc_clicked:
+            logger.info("[%s] 판매중지 탭 클릭 - 추가 상품 수집 중...", COMPANY_NAME)
+            await asyncio.sleep(3)
+            existing_keys = {(p["code"], p["seq"]) for p in all_products}
+            disc_page_num = 1
+            while True:
+                disc_products = await get_products_from_page(page)
+                if not disc_products:
+                    break
+                for p in disc_products:
+                    key = (p["code"], p["seq"])
+                    if key not in existing_keys:
+                        all_products.append(p)
+                        existing_keys.add(key)
+                disc_page_num += 1
+                start_row = (disc_page_num - 1) * 10 + 1
+                has_next = await page.evaluate(f"""() => {{
+                    const links = document.querySelectorAll('.paging a, [class*=pag] a');
+                    for (const a of links) {{
+                        const onclick = a.getAttribute('onclick') || '';
+                        if (onclick.includes("goPage('{start_row}')")) return true;
+                    }}
+                    return false;
+                }}""")
+                if not has_next:
+                    break
+                try:
+                    async with page.expect_navigation(wait_until="networkidle", timeout=15000):
+                        await page.evaluate(f"goPage('{start_row}')")
+                except Exception:
+                    await asyncio.sleep(3)
+                await asyncio.sleep(1)
+                if disc_page_num > 100:
+                    break
+            logger.info("[%s] 판매중지 포함 총 %d개 상품", COMPANY_NAME, len(all_products))
+        else:
+            logger.info("[%s] 판매중지 탭 없음 또는 이미 전체 포함", COMPANY_NAME)
+
         # 2. 대상 카테고리 필터링
         targets = [p for p in all_products if p.get("category") in TARGET_CATEGORIES]
         logger.info("[%s] 대상 카테고리 %d개 상품", COMPANY_NAME, len(targets))

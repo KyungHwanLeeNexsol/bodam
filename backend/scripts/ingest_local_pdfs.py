@@ -66,12 +66,36 @@ logger = logging.getLogger("ingest_local_pdfs")
 # # @MX:REASON: 3개 이상의 함수(detect_format, extract_metadata, scan_data_directory)가 참조
 # # @MX:SPEC: SPEC-INGEST-001 REQ-09
 COMPANY_MAP: dict[str, tuple[str, str, str]] = {
+    # 손보사
     "meritz_fire": ("meritz-fire", "메리츠화재", "NON_LIFE"),
     "hyundai_marine": ("hyundai-marine", "현대해상", "NON_LIFE"),
     "kb_insurance": ("kb-insurance", "KB손해보험", "NON_LIFE"),
     "samsung_fire": ("samsung-fire", "삼성화재", "NON_LIFE"),
     "db_insurance": ("db-insurance", "DB손해보험", "NON_LIFE"),
     "heungkuk_fire": ("heungkuk-fire", "흥국화재", "NON_LIFE"),
+    # 생보사
+    "abl": ("abl", "ABL생명", "LIFE"),
+    "aia": ("aia", "AIA생명", "LIFE"),
+    "bnp_life": ("bnp-life", "BNP파리바카디프생명", "LIFE"),
+    "chubb_life": ("chubb-life", "처브라이프생명", "LIFE"),
+    "db": ("db-life", "DB생명", "LIFE"),
+    "dongyang_life": ("dongyang-life", "동양생명", "LIFE"),
+    "fubon_hyundai_life": ("fubon-hyundai-life", "푸본현대생명", "LIFE"),
+    "hana_life": ("hana-life", "하나생명", "LIFE"),
+    "hanwha_life": ("hanwha-life", "한화생명", "LIFE"),
+    "heungkuk_life": ("heungkuk-life", "흥국생명", "LIFE"),
+    "im_life": ("im-life", "iM라이프", "LIFE"),
+    "kb_life": ("kb-life", "KB라이프생명", "LIFE"),
+    "kdb": ("kdb-life", "KDB생명", "LIFE"),
+    "kyobo_life": ("kyobo-life", "교보생명", "LIFE"),
+    "kyobo_lifeplanet": ("kyobo-lifeplanet", "교보라이프플래닛생명", "LIFE"),
+    "lina_life": ("lina-life", "라이나생명", "LIFE"),
+    "metlife": ("metlife", "메트라이프생명", "LIFE"),
+    "mirae_life": ("mirae-life", "미래에셋생명", "LIFE"),
+    "nh": ("nh-life", "NH농협생명", "LIFE"),
+    "samsung_life": ("samsung-life", "삼성생명", "LIFE"),
+    "shinhan_life": ("shinhan-life", "신한라이프생명", "LIFE"),
+    "unknown_life": ("unknown-life", "기타생명", "LIFE"),
 }
 
 # 숫자형 디렉터리 패턴 (Format A): 예) 10000-0001, 12345_6789
@@ -735,18 +759,31 @@ async def main(argv: list[str] | None = None) -> None:
     }
     failures: list[dict[str, Any]] = []
 
-    # 파일별 처리
-    for pdf_path, _fmt in pdf_list:
-        metadata = extract_metadata(pdf_path, data_dir)
+    # 파일별 병렬 처리 (Semaphore로 동시 실행 수 제한)
+    sem = asyncio.Semaphore(10)
 
-        result = await process_single_file(
-            _db.session_factory,
-            pdf_path,
-            metadata,
-            dry_run=args.dry_run,
-            embedding_service=embedding_service,
-        )
+    async def _process(pdf_path: Path, _fmt: str) -> dict[str, Any]:
+        async with sem:
+            metadata = extract_metadata(pdf_path, data_dir)
+            return await process_single_file(
+                _db.session_factory,
+                pdf_path,
+                metadata,
+                dry_run=args.dry_run,
+                embedding_service=embedding_service,
+            )
 
+    tasks = [_process(pdf_path, _fmt) for pdf_path, _fmt in pdf_list]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for (pdf_path, _fmt), result in zip(pdf_list, results):
+        if isinstance(result, BaseException):
+            stats["failed"] += 1
+            failures.append({
+                "file": str(pdf_path),
+                "error": str(result),
+            })
+            continue
         status = result["status"]
         if status == "success":
             stats["success"] += 1

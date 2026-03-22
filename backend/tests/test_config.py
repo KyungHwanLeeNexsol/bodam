@@ -28,14 +28,10 @@ def test_settings_has_defaults(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/testdb")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key")
 
-    import importlib
-
     import app.core.config as config_module
 
-    importlib.reload(config_module)
-    from app.core.config import get_settings
-
-    settings = get_settings()
+    # .env 파일 영향을 배제하고 환경변수만으로 Settings 인스턴스 생성
+    settings = config_module.Settings(_env_file=None)
     assert settings.app_name == "Bodam API"
     assert settings.app_version == "0.1.0"
     assert settings.debug is False
@@ -47,13 +43,8 @@ def test_settings_missing_required_raises(monkeypatch):
     for key in ["DATABASE_URL", "SECRET_KEY"]:
         monkeypatch.delenv(key, raising=False)
 
-    # .env 파일이 없는 환경에서 테스트
-    import importlib
-
     import app.core.config as config_module
 
-    importlib.reload(config_module)
-    from app.core.config import get_settings
-
+    # .env 파일 영향을 배제하고 환경변수만으로 검증
     with pytest.raises(Exception):
-        get_settings()
+        config_module.Settings(_env_file=None)

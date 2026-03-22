@@ -407,6 +407,29 @@ async def collect_pdf_links_from_dom(
     return pdf_links
 
 
+async def try_click_discontinued_tab(page: Page, company_id: str) -> bool:
+    """판매중지 탭을 찾아 클릭한다. 탭이 없으면 False 반환한다."""
+    try:
+        result = await page.evaluate("""() => {
+            const candidates = document.querySelectorAll('a, li, button, span, div');
+            for (const el of candidates) {
+                const text = el.textContent.trim();
+                if (text === '판매중지' || text === '판매 중지') {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if result:
+            await asyncio.sleep(3)
+            logger.info("  [%s] 판매중지 탭 클릭 성공", company_id)
+        return bool(result)
+    except Exception as exc:
+        logger.debug("  [%s] 판매중지 탭 탐색 오류: %s", company_id, exc)
+        return False
+
+
 async def try_click_search_button(page: Page, selectors: list[str]) -> bool:
     """검색/조회 버튼을 찾아서 클릭한다.
 
@@ -526,6 +549,21 @@ async def crawl_company(
                         for link in dom_links:
                             if link not in all_pdf_urls:
                                 all_pdf_urls.append(link)
+
+                        # 판매중지 탭 클릭 후 추가 PDF 링크 수집
+                        discontinued = await try_click_discontinued_tab(page, company_id)
+                        if discontinued:
+                            disc_links = await collect_pdf_links_from_dom(
+                                page, base_url, pdf_patterns
+                            )
+                            for link in disc_links:
+                                if link not in all_pdf_urls:
+                                    all_pdf_urls.append(link)
+                            logger.info(
+                                "  [%s] 판매중지 탭에서 PDF %d개 추가",
+                                company_id,
+                                len(disc_links),
+                            )
 
                         # HTML 저장 (디버깅용)
                         await save_html_for_inspection(page, company_id)

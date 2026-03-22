@@ -209,6 +209,30 @@ async def download_pdf_bytes(url: str, context: Any) -> bytes | None:
         return None
 
 
+async def try_click_discontinued_tab_pl(page: Any, company_name: str) -> None:
+    """판매중지 탭을 찾아 클릭한다. 응답 인터셉트 활성 상태에서 호출해야 효과 있음.
+
+    # @MX:NOTE: 클릭 성공 시 3초 대기하여 새로운 API 응답 캡처 시간 확보
+    """
+    try:
+        result = await page.evaluate("""() => {
+            const candidates = document.querySelectorAll('a, li, button, span, div');
+            for (const el of candidates) {
+                const text = el.textContent.trim();
+                if (text === '판매중지' || text === '판매 중지') {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if result:
+            await asyncio.sleep(3)
+            logger.info("[%s] 판매중지 탭 클릭 성공", company_name)
+    except Exception as exc:
+        logger.debug("[%s] 판매중지 탭 탐색 오류: %s", company_name, exc)
+
+
 # =============================================================================
 # 현대해상 크롤러
 # =============================================================================
@@ -381,6 +405,9 @@ async def crawl_hyundai_marine(context: Any) -> int:
             if href and (href.lower().endswith(".pdf") or "/PM/" in href):
                 pdf_url = urljoin("https://www.hi.co.kr", href)
                 found_pdfs.append({"type": "pdf_link", "url": pdf_url, "text": link.get("text", "")})
+
+        # 판매중지 탭 클릭 시도 (응답 인터셉트가 활성화된 상태)
+        await try_click_discontinued_tab_pl(page, company_name)
 
         # 발견된 PDF 처리
         seen_urls: set[str] = set()
@@ -618,6 +645,9 @@ async def crawl_db_insurance(context: Any) -> int:
         """)
         await asyncio.sleep(3)
 
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
+
         # 발견된 JSON에서 약관 파일 정보 추출
         seen_files: set[str] = set()
         for item in found_items:
@@ -801,6 +831,9 @@ async def crawl_kb_insurance(context: Any) -> int:
                     """)
                     await asyncio.sleep(3)
 
+                    # 판매중지 탭 클릭 시도
+                    await try_click_discontinued_tab_pl(page, company_name)
+
                     # PDF 링크 수집
                     links = await page.evaluate("""
                         () => {
@@ -921,6 +954,9 @@ async def crawl_meritz_fire(context: Any) -> int:
         # 모든 항목 로드를 위해 스크롤
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         await asyncio.sleep(2)
+
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
 
         # 페이지에서 직접 PDF 링크 탐색
         links = await page.evaluate("""
@@ -1090,6 +1126,9 @@ async def crawl_hanwha_general(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
+
         seen: set[str] = set()
         for item in found_items:
             if item["type"] == "pdf":
@@ -1207,6 +1246,9 @@ async def crawl_heungkuk_fire(context: Any) -> int:
                             await asyncio.sleep(2)
                         except Exception:
                             pass
+
+                    # 판매중지 탭 클릭 시도
+                    await try_click_discontinued_tab_pl(page, company_name)
 
                     # PDF 링크 수집
                     links = await page.evaluate("""
@@ -1342,6 +1384,9 @@ async def crawl_axa_general(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
+
         seen: set[str] = set()
         for item in found_items:
             if item["type"] == "pdf":
@@ -1453,6 +1498,9 @@ async def crawl_mg_insurance(context: Any) -> int:
                 await asyncio.sleep(2)
             except Exception:
                 pass
+
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
 
         # PDF 링크 수집
         links = await page.evaluate("""
@@ -1621,6 +1669,9 @@ async def crawl_nh_fire(context: Any) -> int:
                     break
             except Exception:
                 pass
+
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
 
         seen: set[str] = set()
         for item in found_items:
@@ -1792,6 +1843,9 @@ async def crawl_lotte_insurance(context: Any) -> int:
                     break
             except Exception:
                 pass
+
+        # 판매중지 탭 클릭 시도
+        await try_click_discontinued_tab_pl(page, company_name)
 
         seen: set[str] = set()
         for item in found_items:
