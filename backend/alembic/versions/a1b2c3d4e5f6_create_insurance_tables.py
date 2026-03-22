@@ -32,12 +32,7 @@ def upgrade() -> None:
     # ─────────────────────────────────────────────
     # InsuranceCategory enum 타입 생성
     # ─────────────────────────────────────────────
-    op.execute(
-        """DO $$ BEGIN
-            CREATE TYPE insurance_category_enum AS ENUM ('LIFE', 'NON_LIFE', 'THIRD_SECTOR');
-        EXCEPTION WHEN duplicate_object THEN null;
-        END $$"""
-    )
+    op.execute("CREATE TYPE IF NOT EXISTS insurance_category_enum AS ENUM ('LIFE', 'NON_LIFE', 'THIRD_SECTOR')")
 
     # ─────────────────────────────────────────────
     # insurance_companies 테이블 생성
@@ -218,12 +213,23 @@ def upgrade() -> None:
         USING embedding::vector(1536)
     """)
 
-    op.execute("""
-        CREATE INDEX idx_policy_chunks_embedding
-        ON policy_chunks
-        USING hnsw (embedding vector_cosine_ops)
-        WITH (m = 16, ef_construction = 64)
-    """)
+    try:
+        op.execute("""
+            CREATE INDEX idx_policy_chunks_embedding
+            ON policy_chunks
+            USING hnsw (embedding vector_cosine_ops)
+            WITH (m = 16, ef_construction = 64)
+        """)
+    except Exception:
+        # CockroachDB: HNSW WITH 파라미터 미지원 → 기본 HNSW 인덱스 생성
+        try:
+            op.execute("""
+                CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding
+                ON policy_chunks
+                USING hnsw (embedding vector_cosine_ops)
+            """)
+        except Exception:
+            pass
 
 
 def downgrade() -> None:

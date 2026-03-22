@@ -18,8 +18,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """pgvector 확장 활성화 - 벡터 유사도 검색에 필요"""
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    """pgvector 확장 활성화 - 벡터 유사도 검색에 필요
+
+    CockroachDB: vector 타입이 내장됨 → CREATE EXTENSION 불필요, 예외 무시
+    """
+    try:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    except Exception:
+        pass  # CockroachDB는 vector 내장 타입, extension 불필요
 
 
 def downgrade() -> None:

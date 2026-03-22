@@ -30,36 +30,16 @@ def upgrade() -> None:
     """B2B RBAC 테이블 생성 및 users 테이블 role 컬럼 추가"""
 
     # 1. userrole enum 타입 생성 (IF NOT EXISTS로 중복 방지)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE userrole AS ENUM ('B2C_USER', 'AGENT', 'AGENT_ADMIN', 'ORG_OWNER', 'SYSTEM_ADMIN');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
+    op.execute("CREATE TYPE IF NOT EXISTS userrole AS ENUM ('B2C_USER', 'AGENT', 'AGENT_ADMIN', 'ORG_OWNER', 'SYSTEM_ADMIN')")
 
     # 2. orgtype enum 타입 생성
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE orgtype AS ENUM ('GA', 'INDEPENDENT', 'CORPORATE');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
+    op.execute("CREATE TYPE IF NOT EXISTS orgtype AS ENUM ('GA', 'INDEPENDENT', 'CORPORATE')")
 
     # 3. plantype enum 타입 생성
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE plantype AS ENUM ('FREE_TRIAL', 'BASIC', 'PROFESSIONAL', 'ENTERPRISE');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
+    op.execute("CREATE TYPE IF NOT EXISTS plantype AS ENUM ('FREE_TRIAL', 'BASIC', 'PROFESSIONAL', 'ENTERPRISE')")
 
     # 4. orgmemberrole enum 타입 생성
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE orgmemberrole AS ENUM ('ORG_OWNER', 'AGENT_ADMIN', 'AGENT');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
+    op.execute("CREATE TYPE IF NOT EXISTS orgmemberrole AS ENUM ('ORG_OWNER', 'AGENT_ADMIN', 'AGENT')")
 
     # 5. users 테이블에 role 컬럼 추가 (기본값: B2C_USER)
     op.add_column(

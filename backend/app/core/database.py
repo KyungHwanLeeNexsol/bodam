@@ -7,6 +7,7 @@ FastAPI 의존성 주입용 get_db() 제너레이터 포함.
 
 from __future__ import annotations
 
+import ssl
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,16 @@ from app.core.config import Settings
 
 if TYPE_CHECKING:
     pass
+
+
+def _build_connect_args(database_url: str) -> dict:
+    """CockroachDB 연결 시 SSL 컨텍스트를 asyncpg connect_args로 반환."""
+    if "cockroachlabs.cloud" in database_url or ":26257" in database_url:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return {"ssl": ctx}
+    return {}
 
 # ─────────────────────────────────────────────
 # 모듈 레벨 싱글턴 (앱 시작 시 init_database()로 초기화)
@@ -40,8 +51,9 @@ async def init_database(settings: Settings) -> None:
         settings.database_url,
         echo=settings.debug,
         pool_pre_ping=True,  # 유효하지 않은 연결 자동 재연결
-        pool_size=10,  # 기본 연결 풀 크기
-        max_overflow=20,  # 최대 초과 연결 수
+        pool_size=5,  # CockroachDB Basic 연결 제한 고려
+        max_overflow=10,
+        connect_args=_build_connect_args(settings.database_url),
     )
 
     session_factory = async_sessionmaker(

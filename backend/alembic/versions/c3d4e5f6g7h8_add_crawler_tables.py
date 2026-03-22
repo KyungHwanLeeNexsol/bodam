@@ -30,16 +30,10 @@ def upgrade() -> None:
     """크롤러 테이블 및 enum 타입 생성"""
 
     # crawl_status_enum 생성
-    op.execute("""DO $$ BEGIN
-    CREATE TYPE crawl_status_enum AS ENUM ('RUNNING', 'COMPLETED', 'FAILED');
-EXCEPTION WHEN duplicate_object THEN null;
-END $$""")
+    op.execute("CREATE TYPE IF NOT EXISTS crawl_status_enum AS ENUM ('RUNNING', 'COMPLETED', 'FAILED')")
 
     # crawl_result_status_enum 생성
-    op.execute("""DO $$ BEGIN
-    CREATE TYPE crawl_result_status_enum AS ENUM ('NEW', 'UPDATED', 'SKIPPED', 'FAILED');
-EXCEPTION WHEN duplicate_object THEN null;
-END $$""")
+    op.execute("CREATE TYPE IF NOT EXISTS crawl_result_status_enum AS ENUM ('NEW', 'UPDATED', 'SKIPPED', 'FAILED')")
 
     # crawl_runs 테이블 생성
     op.create_table(

@@ -22,26 +22,30 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    """search_vector 컬럼, GIN 인덱스, 자동 갱신 트리거 추가"""
+    """search_vector 컬럼, GIN 인덱스, 자동 갱신 트리거 추가
 
-    # search_vector tsvector 컬럼 추가
-    op.execute(
-        "ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS search_vector tsvector"
-    )
+    CockroachDB: tsvector/GIN/트리거 미지원 → 스킵 (search_vector 컬럼은 TEXT로 유지)
+    PostgreSQL: 전체 마이그레이션 실행
+    """
+    bind = op.get_bind()
+    # CockroachDB는 tsvector, GIN 인덱스, plpgsql 트리거 미지원 → 스킵
+    if "cockroach" in str(getattr(bind, "engine", bind)).lower() or \
+       "cockroach" in str(getattr(bind.dialect, "name", "")).lower() or \
+       "26257" in str(getattr(getattr(bind, "engine", None), "url", "") or ""):
+        return
 
-    # 기존 데이터 일괄 갱신 (한국어 simple 설정 사용)
-    op.execute(
-        "UPDATE policy_chunks SET search_vector = to_tsvector('simple', coalesce(chunk_text, ''))"
-    )
-
-    # GIN 인덱스 생성 (전문 검색 고속화)
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_policy_chunks_search_vector "
-        "ON policy_chunks USING GIN (search_vector)"
-    )
-
-    # chunk_text 변경 시 search_vector 자동 갱신 트리거 함수 생성
-    op.execute("""
+    try:
+        op.execute(
+            "ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS search_vector tsvector"
+        )
+        op.execute(
+            "UPDATE policy_chunks SET search_vector = to_tsvector('simple', coalesce(chunk_text, ''))"
+        )
+        op.execute(
+            "CREATE INDEX IF NOT EXISTS idx_policy_chunks_search_vector "
+            "ON policy_chunks USING GIN (search_vector)"
+        )
+        op.execute("""
 CREATE OR REPLACE FUNCTION fn_policy_chunks_search_vector_update()
 RETURNS trigger AS $$
 BEGIN
@@ -50,9 +54,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql
 """)
-
-    # 트리거 등록 (INSERT 및 UPDATE 시 실행) - 이미 존재하면 건너뜀
-    op.execute("""
+        op.execute("""
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_trigger
@@ -67,6 +69,8 @@ DO $$ BEGIN
     END IF;
 END $$
 """)
+    except Exception:
+        pass  # tsvector 미지원 환경에서 무시
 
 
 def downgrade() -> None:
