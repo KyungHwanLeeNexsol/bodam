@@ -80,7 +80,7 @@ COMPANY_CONFIG: dict[str, dict[str, Any]] = {
     },
     "mirae_life": {
         "name": "미래에셋생명",
-        "url": "https://www.miraeassetlife.co.kr",
+        "url": "https://life.miraeasset.com",
         "folder": "mirae_life",
     },
     "nh_life": {
@@ -90,7 +90,7 @@ COMPANY_CONFIG: dict[str, dict[str, Any]] = {
     },
     "db_life": {
         "name": "DB생명",
-        "url": "https://www.db-lifeinsurance.com",
+        "url": "https://www.idblife.com",
         "folder": "db",
     },
     "kdb_life": {
@@ -135,12 +135,12 @@ COMPANY_CONFIG: dict[str, dict[str, Any]] = {
     },
     "im_life": {
         "name": "iM라이프",
-        "url": "https://www.imlife.co.kr",
+        "url": "https://www.imlifeins.co.kr",  # 실제 운영 도메인 (imlife.co.kr은 SSL 만료)
         "folder": "im_life",
     },
     "ibk_life": {
         "name": "IBK연금보험",
-        "url": "https://www.ibkannuity.co.kr",
+        "url": "https://www.ibki.co.kr",
         "folder": "ibk",
     },
     "chubb_life": {
@@ -1191,68 +1191,142 @@ async def crawl_dongyang_life(context: Any, dry_run: bool = False) -> int:
 # =============================================================================
 
 async def crawl_mirae_life(context: Any, dry_run: bool = False) -> int:
-    """미래에셋생명 약관 PDF를 수집한다."""
+    """미래에셋생명 약관 PDF를 수집한다.
+
+    # @MX:NOTE: 상품목록 API: POST /home/prod/getProdList.do → {prodInfo: [...]}
+    # @MX:NOTE: PDF 파일: /uploadwas/life/{fpath} (data-fpath DOM 속성)
+    # @MX:NOTE: radio1=1 판매중, radio1=2 판매중지 (COMEXCEL JS 라이브러리 사용)
+    # @MX:WARN: on_response 리스너는 URL에 "terms" 필터 없이 모든 JSON 캡처 필요
+    # @MX:REASON: /home/prod/getProdList.do에 "terms" 키워드가 없으므로 필터 제거
+    """
     company_id = "mirae_life"
     company_name = "미래에셋생명"
     downloaded = 0
-    api_calls: list[dict] = []
+    base_url = "https://life.miraeasset.com"
+
+    # getProdList.do 응답 캡처 버퍼 (모든 JSON 응답 수집)
+    prod_list_buffer: list[list[dict]] = []
 
     async def on_response(response: Any) -> None:
-        url = response.url
-        if any(kw in url for kw in ["terms", "약관", "clause", "공시", "disclosure"]):
-            ct = response.headers.get("content-type", "")
-            if "json" in ct or "javascript" in ct:
-                try:
-                    body = await response.body()
-                    text = body.decode("utf-8", errors="ignore")
-                    if len(text) > 200:
-                        try:
-                            data = json.loads(text)
-                            api_calls.append({"url": url, "data": data})
-                            logger.info("[미래에셋생명] API 탐지: %s", url)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+        """모든 JSON 응답을 캡처하여 getProdList.do 응답 탐지."""
+        if response.status != 200:
+            return
+        ct = response.headers.get("content-type", "")
+        if "json" not in ct and "javascript" not in ct:
+            return
+        try:
+            body = await response.body()
+            text = body.decode("utf-8", errors="ignore")
+            if len(text) < 50:
+                return
+            data = json.loads(text)
+            # getProdList.do 응답 구조: {"prodInfo": [...]}
+            if isinstance(data, dict) and "prodInfo" in data:
+                prod_info = data["prodInfo"]
+                if isinstance(prod_info, list) and prod_info:
+                    prod_list_buffer.append(prod_info)
+                    logger.info("[미래에셋생명] 상품목록 API 캡처 (%d개)", len(prod_info))
+        except Exception:
+            pass
 
     page = await context.new_page()
     page.on("response", on_response)
 
     try:
+        # @MX:NOTE: 미래에셋생명 약관공시 페이지
+        target_url = f"{base_url}/micro/disclosure/product/PC-HO-080301-000000.do"
         logger.info("[미래에셋생명] 약관공시 페이지 로딩...")
-        await page.goto(
-            "https://www.miraeassetlife.co.kr/app/cstm/terms/selectTermsList.do",
-            timeout=PAGE_TIMEOUT, wait_until="domcontentloaded"
-        )
-        await asyncio.sleep(5)
 
-        for call in api_calls:
+        try:
+            await page.goto(target_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(5)
+        except Exception as exc:
+            logger.warning("[미래에셋생명] 페이지 로드 실패: %s", exc)
+
+        # 판매중인 상품 (radio1=1) 데이터 로드 - 이미 초기 로드 시 발생했을 수 있음
+        # 판매중지 상품 (radio1=2) 데이터 추가 로드
+        for radio_val, status_label in [("1", "판매중"), ("2", "판매중지")]:
+            prod_list_buffer.clear()
             try:
-                data = call.get("data", {})
-                items = _extract_list(data)
-                for item in items:
-                    product_name = _get_product_name(item)
-                    pdf_url = _get_pdf_url(item, "https://www.miraeassetlife.co.kr")
-                    if not pdf_url or not product_name:
-                        continue
-                    if file_already_exists(company_id, product_name):
-                        continue
-                    pdf_data = await download_pdf_bytes(pdf_url, context)
-                    if pdf_data:
-                        result = save_pdf(
-                            pdf_data, company_id, company_name,
-                            product_name, "생명보험", pdf_url, _detect_sale_status(item), dry_run
-                        )
-                        if not result.get("skipped") and not result.get("dry_run"):
-                            downloaded += 1
-                        await asyncio.sleep(1.0)
+                # COMEXCEL JS 라디오버튼 클릭으로 데이터 로드 트리거
+                await page.evaluate(f"""
+                    () => {{
+                        const radios = document.querySelectorAll('input[type="radio"][name="radio1"]');
+                        for (const r of radios) {{
+                            if (r.value === '{radio_val}') {{
+                                r.click();
+                                return true;
+                            }}
+                        }}
+                        return false;
+                    }}
+                """)
+                await asyncio.sleep(4)
             except Exception as exc:
-                logger.warning("[미래에셋생명] 처리 오류: %s", exc)
+                logger.warning("[미래에셋생명] 라디오버튼 클릭 실패 (radio1=%s): %s", radio_val, exc)
 
-        if downloaded == 0 and not api_calls:
+            # 버퍼에 수집된 상품 처리
+            all_items: list[dict] = []
+            for prod_info in prod_list_buffer:
+                all_items.extend(prod_info)
+
+            if not all_items:
+                logger.info("[미래에셋생명] %s - API 미탐지, DOM에서 data-fpath 추출 시도", status_label)
+                # DOM에서 data-fpath 속성으로 PDF 경로 직접 추출 (폴백)
+                try:
+                    fpath_list: list[str] = await page.evaluate("""
+                        () => {
+                            const els = document.querySelectorAll('[data-fpath]');
+                            return Array.from(els).map(el => el.getAttribute('data-fpath')).filter(Boolean);
+                        }
+                    """)
+                    for fpath in fpath_list:
+                        pdf_url = f"{base_url}/uploadwas/life/{fpath}"
+                        prod_name = fpath.split("/")[-1].replace(".pdf", "") if "/" in fpath else fpath
+                        if file_already_exists(company_id, prod_name):
+                            continue
+                        pdf_data = await download_pdf_bytes(pdf_url, context)
+                        if pdf_data:
+                            result = save_pdf(
+                                pdf_data, company_id, company_name,
+                                prod_name, "생명보험", pdf_url, status_label, dry_run,
+                            )
+                            if not result.get("skipped") and not result.get("dry_run"):
+                                downloaded += 1
+                            await asyncio.sleep(0.5)
+                except Exception as exc:
+                    logger.warning("[미래에셋생명] DOM 추출 실패: %s", exc)
+                continue
+
+            logger.info("[미래에셋생명] %s 상품 %d개 처리...", status_label, len(all_items))
+            for item in all_items:
+                fpath: str = item.get("fpath") or ""
+                prod_name: str = (
+                    item.get("prodNm") or item.get("prdNm") or
+                    item.get("prodName") or fpath.split("/")[-1].replace(".pdf", "") or ""
+                )
+                if not fpath or not prod_name:
+                    continue
+
+                unique_name = f"{prod_name}_{status_label}"
+                if file_already_exists(company_id, unique_name):
+                    continue
+
+                pdf_url = f"{base_url}/uploadwas/life/{fpath}"
+                pdf_data = await download_pdf_bytes(pdf_url, context)
+                if pdf_data:
+                    result = save_pdf(
+                        pdf_data, company_id, company_name,
+                        unique_name, "생명보험", pdf_url, status_label, dry_run,
+                    )
+                    if not result.get("skipped") and not result.get("dry_run"):
+                        downloaded += 1
+                    await asyncio.sleep(0.5)
+
+        if downloaded == 0:
+            logger.info("[미래에셋생명] 전용 파싱 실패, DOM 링크 크롤링 시도...")
             downloaded = await _crawl_by_dom_links(
-                page, context, company_id, company_name,
-                "https://www.miraeassetlife.co.kr", dry_run
+                page, context, company_id, company_name, base_url, dry_run
             )
 
     finally:
@@ -1356,68 +1430,197 @@ async def crawl_nh_life(context: Any, dry_run: bool = False) -> int:
 # =============================================================================
 
 async def crawl_db_life(context: Any, dry_run: bool = False) -> int:
-    """DB생명 약관 PDF를 수집한다."""
+    """DB생명 약관 PDF를 수집한다.
+
+    # @MX:NOTE: 판매중 상품: GET /notice/product/sale - 서버 렌더링 HTML 테이블
+    # @MX:NOTE: 판매중지 상품: GET /notice/product/sold_out - 서버 렌더링 HTML 테이블
+    # @MX:NOTE: 상세/다운로드 뷰어: /notice/product/prov/soldOut/{PUBLISH_NO}
+    # @MX:NOTE: 데이터 필드: PRODUCT_NAME, PUBLISH_NO, FILE1_NAME, FILE3_NAME
+    """
     company_id = "db_life"
     company_name = "DB생명"
     downloaded = 0
-    api_calls: list[dict] = []
-
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(kw in url for kw in ["terms", "약관", "clause", "공시"]):
-            ct = response.headers.get("content-type", "")
-            if "json" in ct or "javascript" in ct:
-                try:
-                    body = await response.body()
-                    text = body.decode("utf-8", errors="ignore")
-                    if len(text) > 200:
-                        try:
-                            data = json.loads(text)
-                            api_calls.append({"url": url, "data": data})
-                            logger.info("[DB생명] API 탐지: %s", url)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+    base_url = "https://www.idblife.com"
 
     page = await context.new_page()
-    page.on("response", on_response)
+
+    async def _process_product_page(page_url: str, sale_status: str) -> int:
+        """판매중/판매중지 상품 목록 페이지에서 PDF 링크를 추출하여 다운로드한다."""
+        count = 0
+        try:
+            await page.goto(page_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(3)
+        except Exception as exc:
+            logger.warning("[DB생명] 페이지 로드 실패 (%s): %s", page_url, exc)
+            return count
+
+        # DOM에서 PDF 직접 링크 추출 (a[href$=".pdf"] 또는 PDF 다운로드 링크)
+        try:
+            pdf_links: list[dict] = await page.evaluate("""
+                () => {
+                    const results = [];
+                    // PDF href 직접 링크
+                    const anchors = document.querySelectorAll('a[href]');
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        const text = (a.textContent || '').trim();
+                        if (href.toLowerCase().endsWith('.pdf') || href.includes('/Download/')) {
+                            results.push({ url: href, name: text });
+                        }
+                    }
+                    // 테이블 행에서 상품명과 링크 추출
+                    const rows = document.querySelectorAll('table tbody tr');
+                    for (const row of rows) {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length === 0) continue;
+                        const rowLinks = row.querySelectorAll('a[href]');
+                        const prodName = cells[0] ? cells[0].textContent.trim() : '';
+                        for (const link of rowLinks) {
+                            const href = link.getAttribute('href') || '';
+                            if (href.toLowerCase().endsWith('.pdf') || href.includes('download') || href.includes('file')) {
+                                results.push({ url: href, name: prodName || link.textContent.trim() });
+                            }
+                        }
+                    }
+                    return results;
+                }
+            """)
+
+            for link_info in pdf_links:
+                raw_url: str = link_info.get("url", "")
+                prod_name: str = link_info.get("name", "")
+                if not raw_url:
+                    continue
+                pdf_url = urljoin(base_url, raw_url) if not raw_url.startswith("http") else raw_url
+                if not prod_name:
+                    prod_name = pdf_url.split("/")[-1].replace(".pdf", "")
+
+                unique_name = f"{prod_name}_{sale_status}"
+                if file_already_exists(company_id, unique_name):
+                    continue
+
+                pdf_data = await download_pdf_bytes(pdf_url, context)
+                if pdf_data:
+                    result = save_pdf(
+                        pdf_data, company_id, company_name,
+                        unique_name, "생명보험", pdf_url, sale_status, dry_run,
+                    )
+                    if not result.get("skipped") and not result.get("dry_run"):
+                        count += 1
+                    await asyncio.sleep(0.5)
+
+        except Exception as exc:
+            logger.warning("[DB생명] DOM 파싱 오류 (%s): %s", page_url, exc)
+
+        return count
+
+    async def _process_sold_out_detail(publish_no: str, prod_name: str) -> int:
+        """판매중지 상품 상세 페이지에서 PDF를 다운로드한다."""
+        count = 0
+        detail_url = f"{base_url}/notice/product/prov/soldOut/{publish_no}"
+        try:
+            await page.goto(detail_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
+            pdf_hrefs: list[str] = await page.evaluate("""
+                () => Array.from(document.querySelectorAll('a[href]'))
+                    .map(a => a.getAttribute('href'))
+                    .filter(h => h && (h.toLowerCase().endsWith('.pdf') || h.includes('download')))
+            """)
+            for href in pdf_hrefs:
+                pdf_url = urljoin(base_url, href) if not href.startswith("http") else href
+                unique_name = f"{prod_name}_{publish_no}"
+                if file_already_exists(company_id, unique_name):
+                    continue
+                pdf_data = await download_pdf_bytes(pdf_url, context)
+                if pdf_data:
+                    result = save_pdf(
+                        pdf_data, company_id, company_name,
+                        unique_name, "생명보험", pdf_url, "판매중지", dry_run,
+                    )
+                    if not result.get("skipped") and not result.get("dry_run"):
+                        count += 1
+                    await asyncio.sleep(0.5)
+        except Exception as exc:
+            logger.warning("[DB생명] 상세 페이지 오류 (%s): %s", detail_url, exc)
+        return count
 
     try:
-        logger.info("[DB생명] 약관공시 페이지 로딩...")
-        await page.goto(
-            "https://www.db-lifeinsurance.com/consumer/publicInfo/terms/list",
-            timeout=PAGE_TIMEOUT, wait_until="domcontentloaded"
-        )
-        await asyncio.sleep(5)
+        # @MX:NOTE: DB생명 도메인: idblife.com (db-lifeinsurance.com에서 변경)
+        logger.info("[DB생명] 약관공시 페이지 크롤링...")
 
-        for call in api_calls:
-            try:
-                data = call.get("data", {})
-                items = _extract_list(data)
+        # 1단계: 판매중 상품 목록
+        sale_url = f"{base_url}/notice/product/sale"
+        logger.info("[DB생명] 판매중 상품 페이지 처리...")
+        cnt = await _process_product_page(sale_url, "판매중")
+        downloaded += cnt
+        logger.info("[DB생명] 판매중 상품 %d개 수집", cnt)
+
+        # 2단계: 판매중지 상품 목록 - AJAX 엔드포인트로 데이터 요청
+        sold_out_url = f"{base_url}/notice/product/sold_out"
+        logger.info("[DB생명] 판매중지 상품 페이지 처리...")
+
+        try:
+            await page.goto(sold_out_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(3)
+
+            # AJAX 요청으로 판매중지 상품 목록 가져오기
+            ajax_resp = await page.request.post(
+                f"{base_url}/notice/product/sold_out/ajaxRequest",
+                data=json.dumps({"pageIndex": 1, "pageSize": 100}),
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Referer": sold_out_url,
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                timeout=30_000,
+            )
+            if ajax_resp.ok:
+                ajax_body = await ajax_resp.body()
+                ajax_data = json.loads(ajax_body.decode("utf-8", errors="ignore"))
+                items = _extract_list(ajax_data)
+                logger.info("[DB생명] 판매중지 AJAX 데이터 %d개", len(items))
+
                 for item in items:
-                    product_name = _get_product_name(item)
-                    pdf_url = _get_pdf_url(item, "https://www.db-lifeinsurance.com")
-                    if not pdf_url or not product_name:
-                        continue
-                    if file_already_exists(company_id, product_name):
-                        continue
-                    pdf_data = await download_pdf_bytes(pdf_url, context)
-                    if pdf_data:
-                        result = save_pdf(
-                            pdf_data, company_id, company_name,
-                            product_name, "생명보험", pdf_url, _detect_sale_status(item), dry_run
-                        )
-                        if not result.get("skipped") and not result.get("dry_run"):
-                            downloaded += 1
-                        await asyncio.sleep(1.0)
-            except Exception as exc:
-                logger.warning("[DB생명] 처리 오류: %s", exc)
+                    prod_name = (
+                        item.get("PRODUCT_NAME") or item.get("productName") or
+                        _get_product_name(item) or ""
+                    )
+                    publish_no = str(item.get("PUBLISH_NO") or item.get("publishNo") or "")
+                    if prod_name and publish_no:
+                        cnt = await _process_sold_out_detail(publish_no, prod_name)
+                        downloaded += cnt
+                    else:
+                        # 직접 파일 URL 시도
+                        for file_key in ["FILE1_NAME", "FILE3_NAME", "file1Name", "file3Name"]:
+                            fname = item.get(file_key)
+                            if fname:
+                                pdf_url = urljoin(base_url, fname) if not fname.startswith("http") else fname
+                                unique_name = f"{prod_name or fname}_{file_key}"
+                                if not file_already_exists(company_id, unique_name):
+                                    pdf_data = await download_pdf_bytes(pdf_url, context)
+                                    if pdf_data:
+                                        result = save_pdf(
+                                            pdf_data, company_id, company_name,
+                                            unique_name, "생명보험", pdf_url, "판매중지", dry_run,
+                                        )
+                                        if not result.get("skipped") and not result.get("dry_run"):
+                                            downloaded += 1
+                                        await asyncio.sleep(0.5)
+            else:
+                # AJAX 실패 시 DOM 파싱으로 폴백
+                cnt = await _process_product_page(sold_out_url, "판매중지")
+                downloaded += cnt
 
-        if downloaded == 0 and not api_calls:
+        except Exception as exc:
+            logger.warning("[DB생명] 판매중지 처리 오류: %s", exc)
+            cnt = await _process_product_page(sold_out_url, "판매중지")
+            downloaded += cnt
+
+        if downloaded == 0:
+            logger.info("[DB생명] 전용 파싱 실패, DOM 링크 크롤링 시도...")
             downloaded = await _crawl_by_dom_links(
-                page, context, company_id, company_name,
-                "https://www.db-lifeinsurance.com", dry_run
+                page, context, company_id, company_name, base_url, dry_run
             )
 
     finally:
@@ -2103,68 +2306,165 @@ async def crawl_kb_life(context: Any, dry_run: bool = False) -> int:
 # =============================================================================
 
 async def crawl_im_life(context: Any, dry_run: bool = False) -> int:
-    """iM라이프 약관 PDF를 수집한다."""
+    """iM라이프 약관 PDF를 수집한다.
+
+    # @MX:NOTE: 실제 도메인: www.imlifeins.co.kr (imlife.co.kr은 SSL 만료)
+    # @MX:NOTE: 약관 페이지: /BA/BA_A020.do - 서버 렌더링 HTML (가장 단순한 구조)
+    # @MX:NOTE: sellType 파라미터: 1=판매중, 0=판매종료
+    # @MX:NOTE: 파일 경로: /Download/{yyyymmdd}_{ProductName}.pdf
+    """
     company_id = "im_life"
     company_name = "iM라이프"
     downloaded = 0
-    api_calls: list[dict] = []
-
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(kw in url for kw in ["terms", "약관", "clause", "공시"]):
-            ct = response.headers.get("content-type", "")
-            if "json" in ct or "javascript" in ct:
-                try:
-                    body = await response.body()
-                    text = body.decode("utf-8", errors="ignore")
-                    if len(text) > 200:
-                        try:
-                            data = json.loads(text)
-                            api_calls.append({"url": url, "data": data})
-                            logger.info("[iM라이프] API 탐지: %s", url)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+    base_url = "https://www.imlifeins.co.kr"
 
     page = await context.new_page()
-    page.on("response", on_response)
+
+    async def _fetch_terms_page(sell_type: str, sale_status: str) -> int:
+        """sellType 파라미터로 약관 목록 페이지를 가져와 PDF 링크를 추출한다."""
+        count = 0
+        terms_url = f"{base_url}/BA/BA_A020.do?sellType={sell_type}"
+        try:
+            await page.goto(terms_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(3)
+        except Exception as exc:
+            logger.warning("[iM라이프] 페이지 로드 실패 (sellType=%s): %s", sell_type, exc)
+            return count
+
+        # 서버 렌더링 HTML에서 /Download/ 경로 링크 추출
+        try:
+            links: list[dict] = await page.evaluate("""
+                () => {
+                    const results = [];
+                    const anchors = document.querySelectorAll('a[href]');
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        if (href.includes('/Download/') || href.toLowerCase().endsWith('.pdf')) {
+                            const text = (a.textContent || '').trim();
+                            results.push({ url: href, name: text });
+                        }
+                    }
+                    return results;
+                }
+            """)
+
+            if not links:
+                # /Download/ 링크가 없으면 모든 PDF 링크 탐색
+                links = await page.evaluate("""
+                    () => {
+                        const results = [];
+                        const anchors = document.querySelectorAll('a[href]');
+                        for (const a of anchors) {
+                            const href = a.getAttribute('href') || '';
+                            if (href.toLowerCase().endsWith('.pdf')) {
+                                const text = (a.textContent || '').trim();
+                                const row = a.closest('tr');
+                                const rowText = row ? row.textContent.trim() : text;
+                                results.push({ url: href, name: text || rowText.split('\\n')[0].trim() });
+                            }
+                        }
+                        return results;
+                    }
+                """)
+
+            logger.info("[iM라이프] %s 링크 %d개 발견", sale_status, len(links))
+
+            for link_info in links:
+                raw_url: str = link_info.get("url", "")
+                prod_name: str = link_info.get("name", "")
+                if not raw_url:
+                    continue
+
+                # 절대 URL 변환
+                if raw_url.startswith("/"):
+                    pdf_url = f"{base_url}{raw_url}"
+                elif raw_url.startswith("http"):
+                    pdf_url = raw_url
+                else:
+                    pdf_url = f"{base_url}/{raw_url}"
+
+                # 상품명 정리
+                if not prod_name or len(prod_name) < 2:
+                    # URL에서 파일명 추출
+                    fname = raw_url.split("/")[-1]
+                    # 날짜 prefix 제거 (예: 20260101_상품명.pdf)
+                    if "_" in fname:
+                        parts = fname.split("_", 1)
+                        prod_name = parts[1].replace(".pdf", "") if len(parts) > 1 else fname.replace(".pdf", "")
+                    else:
+                        prod_name = fname.replace(".pdf", "")
+
+                unique_name = f"{prod_name}_{sale_status}"
+                if file_already_exists(company_id, unique_name):
+                    continue
+
+                pdf_data = await download_pdf_bytes(pdf_url, context)
+                if pdf_data:
+                    result = save_pdf(
+                        pdf_data, company_id, company_name,
+                        unique_name, "생명보험", pdf_url, sale_status, dry_run,
+                    )
+                    if not result.get("skipped") and not result.get("dry_run"):
+                        count += 1
+                    await asyncio.sleep(0.5)
+
+        except Exception as exc:
+            logger.warning("[iM라이프] DOM 파싱 오류 (sellType=%s): %s", sell_type, exc)
+
+        return count
 
     try:
-        logger.info("[iM라이프] 약관공시 페이지 로딩...")
-        await page.goto(
-            "https://www.imlife.co.kr/consumer/publicnotice/terms",
-            timeout=PAGE_TIMEOUT, wait_until="domcontentloaded"
-        )
-        await asyncio.sleep(5)
+        logger.info("[iM라이프] 약관공시 크롤링 시작 (imlifeins.co.kr)...")
 
-        for call in api_calls:
-            try:
-                data = call.get("data", {})
-                items = _extract_list(data)
-                for item in items:
-                    product_name = _get_product_name(item)
-                    pdf_url = _get_pdf_url(item, "https://www.imlife.co.kr")
-                    if not pdf_url or not product_name:
-                        continue
-                    if file_already_exists(company_id, product_name):
-                        continue
-                    pdf_data = await download_pdf_bytes(pdf_url, context)
-                    if pdf_data:
-                        result = save_pdf(
-                            pdf_data, company_id, company_name,
-                            product_name, "생명보험", pdf_url, _detect_sale_status(item), dry_run
-                        )
-                        if not result.get("skipped") and not result.get("dry_run"):
-                            downloaded += 1
-                        await asyncio.sleep(1.0)
-            except Exception as exc:
-                logger.warning("[iM라이프] 처리 오류: %s", exc)
+        # 판매중 상품 (sellType=1)
+        cnt = await _fetch_terms_page("1", "판매중")
+        downloaded += cnt
+        logger.info("[iM라이프] 판매중 %d개 수집", cnt)
 
-        if downloaded == 0 and not api_calls:
+        # 판매종료 상품 (sellType=0)
+        cnt = await _fetch_terms_page("0", "판매중지")
+        downloaded += cnt
+        logger.info("[iM라이프] 판매중지 %d개 수집", cnt)
+
+        # 변액보험 운용설명서 추가 수집 시도
+        try:
+            await page.goto(f"{base_url}/BA/BA_C010.do", timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
+            var_links: list[dict] = await page.evaluate("""
+                () => {
+                    return Array.from(document.querySelectorAll('a[href]'))
+                        .filter(a => {
+                            const href = a.getAttribute('href') || '';
+                            return href.includes('/Download/') || href.toLowerCase().endsWith('.pdf');
+                        })
+                        .map(a => ({ url: a.getAttribute('href'), name: (a.textContent || '').trim() }));
+                }
+            """)
+            for link_info in var_links:
+                raw_url = link_info.get("url", "")
+                prod_name = link_info.get("name", "") or raw_url.split("/")[-1].replace(".pdf", "")
+                if not raw_url:
+                    continue
+                pdf_url = f"{base_url}{raw_url}" if raw_url.startswith("/") else raw_url
+                unique_name = f"변액_{prod_name}"
+                if file_already_exists(company_id, unique_name):
+                    continue
+                pdf_data = await download_pdf_bytes(pdf_url, context)
+                if pdf_data:
+                    result = save_pdf(
+                        pdf_data, company_id, company_name,
+                        unique_name, "생명보험", pdf_url, "판매중", dry_run,
+                    )
+                    if not result.get("skipped") and not result.get("dry_run"):
+                        downloaded += 1
+                    await asyncio.sleep(0.5)
+        except Exception as exc:
+            logger.debug("[iM라이프] 변액보험 수집 실패 (무시): %s", exc)
+
+        if downloaded == 0:
+            logger.info("[iM라이프] 전용 파싱 실패, DOM 링크 크롤링 시도...")
             downloaded = await _crawl_by_dom_links(
-                page, context, company_id, company_name,
-                "https://www.imlife.co.kr", dry_run
+                page, context, company_id, company_name, base_url, dry_run
             )
 
     finally:
@@ -2179,68 +2479,232 @@ async def crawl_im_life(context: Any, dry_run: bool = False) -> int:
 # =============================================================================
 
 async def crawl_ibk_life(context: Any, dry_run: bool = False) -> int:
-    """IBK연금보험 약관 PDF를 수집한다."""
+    """IBK연금보험 약관 PDF를 수집한다.
+
+    # @MX:NOTE: 약관목록 API: GET /paging/HP_UNFI_BLTB_TYP1_LIST?bltb_cod=SC000014&sctn=in&pageIndex=N
+    # @MX:NOTE: 파일 다운로드: POST /process/mFileDownload (pFidwSeq, pFilePath, pGrpKey)
+    # @MX:NOTE: HTML의 onDownload(FileCors, FileSeq, GrpKey) 클릭 핸들러에서 파라미터 추출
+    # @MX:NOTE: bltb_cod=SC000014: 보험약관 (개인/단체)
+    # @MX:NOTE: bltb_cod=SC000017: 상품공시사항 (70+ items)
+    """
     company_id = "ibk_life"
     company_name = "IBK연금보험"
     downloaded = 0
-    api_calls: list[dict] = []
-
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(kw in url for kw in ["terms", "약관", "clause", "공시"]):
-            ct = response.headers.get("content-type", "")
-            if "json" in ct or "javascript" in ct:
-                try:
-                    body = await response.body()
-                    text = body.decode("utf-8", errors="ignore")
-                    if len(text) > 200:
-                        try:
-                            data = json.loads(text)
-                            api_calls.append({"url": url, "data": data})
-                            logger.info("[IBK연금보험] API 탐지: %s", url)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+    base_url = "https://www.ibki.co.kr"
 
     page = await context.new_page()
-    page.on("response", on_response)
+
+    async def _download_ibk_file(file_cors: str, file_seq: str, grp_key: str, prod_name: str) -> int:
+        """IBK 파일 다운로드 API를 호출하여 PDF를 저장한다."""
+        if not file_seq or not grp_key:
+            return 0
+
+        download_url = f"{base_url}/process/mFileDownload"
+        try:
+            resp = await page.request.post(
+                download_url,
+                form={
+                    "pFidwSeq": file_seq,
+                    "pFilePath": file_cors,
+                    "pGrpKey": grp_key,
+                },
+                headers={
+                    "Referer": base_url,
+                    "Origin": base_url,
+                    "Accept": "application/octet-stream, */*",
+                },
+                timeout=30_000,
+            )
+            if not resp.ok:
+                logger.debug("[IBK연금보험] 다운로드 실패 (status=%d): seq=%s", resp.status, file_seq)
+                return 0
+
+            ct = resp.headers.get("content-type", "")
+            if "pdf" in ct or "octet" in ct or resp.status == 200:
+                pdf_data = await resp.body()
+                if len(pdf_data) < 100:
+                    return 0
+                unique_name = f"{prod_name}_{file_seq}"
+                if file_already_exists(company_id, unique_name):
+                    return 0
+                result = save_pdf(
+                    pdf_data, company_id, company_name,
+                    unique_name, "생명보험", download_url, "판매중", dry_run,
+                )
+                if not result.get("skipped") and not result.get("dry_run"):
+                    return 1
+        except Exception as exc:
+            logger.debug("[IBK연금보험] 다운로드 오류 (seq=%s): %s", file_seq, exc)
+        return 0
+
+    async def _fetch_bulletin_page(bltb_cod: str, page_index: int) -> tuple[list[dict], int]:
+        """게시판 목록 페이지를 가져온다. (항목 목록, 전체 페이지 수) 반환."""
+        list_url = (
+            f"{base_url}/paging/HP_UNFI_BLTB_TYP1_LIST"
+            f"?bltb_cod={bltb_cod}&sctn=in&pageIndex={page_index}"
+        )
+        try:
+            await page.goto(list_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
+        except Exception as exc:
+            logger.warning("[IBK연금보험] 목록 페이지 로드 실패 (page=%d): %s", page_index, exc)
+            return [], 0
+
+        # onDownload(FileCors, FileSeq, GrpKey) 파라미터 추출
+        try:
+            items: list[dict] = await page.evaluate("""
+                () => {
+                    const results = [];
+                    // onDownload 클릭 핸들러에서 파라미터 추출
+                    const links = document.querySelectorAll('a[onclick], button[onclick]');
+                    for (const el of links) {
+                        const onclick = el.getAttribute('onclick') || '';
+                        const match = onclick.match(/onDownload\\s*\\(\\s*['"]?([^'",$)]+)['"]?\\s*,\\s*['"]?([^'",$)]+)['"]?\\s*,\\s*['"]?([^'",$)]+)['"]?\\s*\\)/);
+                        if (match) {
+                            const row = el.closest('tr');
+                            const name = row ? (row.querySelector('td:nth-child(2), td:first-child') || row).textContent.trim() : (el.textContent || '').trim();
+                            results.push({
+                                fileCors: match[1].trim(),
+                                fileSeq: match[2].trim(),
+                                grpKey: match[3].trim(),
+                                name: name.split('\\n')[0].trim()
+                            });
+                        }
+                    }
+                    // data 속성 기반 추출도 시도
+                    const dataEls = document.querySelectorAll('[data-file-seq], [data-seq]');
+                    for (const el of dataEls) {
+                        const fileSeq = el.getAttribute('data-file-seq') || el.getAttribute('data-seq') || '';
+                        const grpKey = el.getAttribute('data-grp-key') || el.getAttribute('data-grpkey') || '';
+                        const fileCors = el.getAttribute('data-file-cors') || el.getAttribute('data-cors') || '';
+                        if (fileSeq) {
+                            const row = el.closest('tr');
+                            const name = row ? row.querySelector('td')?.textContent?.trim() : (el.textContent || '').trim();
+                            results.push({ fileCors, fileSeq, grpKey, name: (name || '').split('\\n')[0].trim() });
+                        }
+                    }
+                    return results;
+                }
+            """)
+
+            # 페이지네이션 정보 추출
+            total_pages: int = await page.evaluate("""
+                () => {
+                    // 페이지네이션 링크에서 최대 페이지 번호 추출
+                    const pageLinks = document.querySelectorAll('.pagination a, .paging a, a[href*="pageIndex"]');
+                    let maxPage = 1;
+                    for (const a of pageLinks) {
+                        const href = a.getAttribute('href') || '';
+                        const match = href.match(/pageIndex=([0-9]+)/);
+                        if (match) {
+                            maxPage = Math.max(maxPage, parseInt(match[1]));
+                        }
+                        // onclick 기반 페이지네이션
+                        const onclick = a.getAttribute('onclick') || '';
+                        const mMatch = onclick.match(/[Pp]age\\s*\\(?\\s*([0-9]+)/);
+                        if (mMatch) {
+                            maxPage = Math.max(maxPage, parseInt(mMatch[1]));
+                        }
+                    }
+                    return maxPage;
+                }
+            """)
+            return items, total_pages
+
+        except Exception as exc:
+            logger.warning("[IBK연금보험] DOM 파싱 오류 (page=%d): %s", page_index, exc)
+            return [], 0
 
     try:
-        logger.info("[IBK연금보험] 약관공시 페이지 로딩...")
-        await page.goto(
-            "https://www.ibkannuity.co.kr/consumer/publicnotice/terms",
-            timeout=PAGE_TIMEOUT, wait_until="domcontentloaded"
-        )
-        await asyncio.sleep(5)
+        # @MX:NOTE: IBK연금보험 도메인: ibki.co.kr (ibkannuity.co.kr에서 변경)
+        logger.info("[IBK연금보험] 약관공시 크롤링 시작...")
 
-        for call in api_calls:
-            try:
-                data = call.get("data", {})
-                items = _extract_list(data)
+        # 세션 초기화를 위해 메인 페이지 먼저 방문
+        try:
+            await page.goto(base_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
+        except Exception:
+            pass
+
+        # bltb_cod=SC000014: 보험약관 (개인/단체) 수집
+        for bltb_cod, category_name in [("SC000014", "보험약관"), ("SC000017", "상품공시사항")]:
+            logger.info("[IBK연금보험] %s (%s) 수집 시작...", category_name, bltb_cod)
+            page_idx = 1
+            max_pages = 1
+
+            while page_idx <= max_pages:
+                items, total_pages = await _fetch_bulletin_page(bltb_cod, page_idx)
+
+                if page_idx == 1:
+                    max_pages = max(total_pages, 1)
+                    logger.info("[IBK연금보험] %s 총 %d 페이지", category_name, max_pages)
+
+                logger.info(
+                    "[IBK연금보험] %s 페이지 %d/%d - %d개 항목",
+                    category_name, page_idx, max_pages, len(items)
+                )
+
                 for item in items:
-                    product_name = _get_product_name(item)
-                    pdf_url = _get_pdf_url(item, "https://www.ibkannuity.co.kr")
-                    if not pdf_url or not product_name:
-                        continue
-                    if file_already_exists(company_id, product_name):
-                        continue
-                    pdf_data = await download_pdf_bytes(pdf_url, context)
-                    if pdf_data:
-                        result = save_pdf(
-                            pdf_data, company_id, company_name,
-                            product_name, "생명보험", pdf_url, _detect_sale_status(item), dry_run
-                        )
-                        if not result.get("skipped") and not result.get("dry_run"):
-                            downloaded += 1
-                        await asyncio.sleep(1.0)
-            except Exception as exc:
-                logger.warning("[IBK연금보험] 처리 오류: %s", exc)
+                    file_cors: str = item.get("fileCors", "")
+                    file_seq: str = item.get("fileSeq", "")
+                    grp_key: str = item.get("grpKey", "")
+                    prod_name: str = item.get("name", "") or f"IBK_{bltb_cod}_{file_seq}"
 
-        if downloaded == 0 and not api_calls:
+                    if not file_seq:
+                        continue
+
+                    cnt = await _download_ibk_file(file_cors, file_seq, grp_key, prod_name)
+                    downloaded += cnt
+                    if cnt > 0:
+                        await asyncio.sleep(0.5)
+
+                if not items or page_idx >= max_pages:
+                    break
+                page_idx += 1
+
+        # 영업보험약관 추가 수집 (분기별 공시)
+        try:
+            quarterly_url = f"{base_url}/process/HP_CVAP_NCSE_PBANO_LIST?PAGE_TAB=02"
+            await page.goto(quarterly_url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
+            q_items: list[dict] = await page.evaluate("""
+                () => {
+                    const results = [];
+                    const links = document.querySelectorAll('a[onclick], button[onclick]');
+                    for (const el of links) {
+                        const onclick = el.getAttribute('onclick') || '';
+                        const match = onclick.match(/onDownload\\s*\\(\\s*['"]?([^'",$)]+)['"]?\\s*,\\s*['"]?([^'",$)]+)['"]?\\s*,\\s*['"]?([^'",$)]+)['"]?\\s*\\)/);
+                        if (match) {
+                            const row = el.closest('tr');
+                            const name = row ? row.querySelector('td')?.textContent?.trim() : (el.textContent || '').trim();
+                            results.push({
+                                fileCors: match[1].trim(),
+                                fileSeq: match[2].trim(),
+                                grpKey: match[3].trim(),
+                                name: (name || '').split('\\n')[0].trim()
+                            });
+                        }
+                    }
+                    return results;
+                }
+            """)
+            for q_item in q_items:
+                cnt = await _download_ibk_file(
+                    q_item.get("fileCors", ""),
+                    q_item.get("fileSeq", ""),
+                    q_item.get("grpKey", ""),
+                    f"영업약관_{q_item.get('name', '')}",
+                )
+                downloaded += cnt
+                if cnt > 0:
+                    await asyncio.sleep(0.5)
+        except Exception as exc:
+            logger.debug("[IBK연금보험] 영업보험약관 수집 실패 (무시): %s", exc)
+
+        if downloaded == 0:
+            logger.info("[IBK연금보험] 전용 파싱 실패, DOM 링크 크롤링 시도...")
             downloaded = await _crawl_by_dom_links(
-                page, context, company_id, company_name,
-                "https://www.ibkannuity.co.kr", dry_run
+                page, context, company_id, company_name, base_url, dry_run
             )
 
     finally:
@@ -2716,6 +3180,8 @@ async def run_company(company_id: str, dry_run: bool = False) -> dict[str, Any]:
                     extra_http_headers={
                         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
                     },
+                    # @MX:NOTE: SSL 인증서 만료 보험사(iM라이프 등) 크롤링을 위해 HTTPS 에러 무시
+                    ignore_https_errors=True,
                 )
                 try:
                     downloaded = await crawler_fn(browser_context, dry_run)

@@ -19,6 +19,19 @@ if TYPE_CHECKING:
     pass
 
 
+def _strip_sslmode(database_url: str) -> str:
+    """asyncpg가 지원하지 않는 sslmode 파라미터를 URL에서 제거."""
+    return (
+        database_url
+        .replace("&sslmode=require", "")
+        .replace("?sslmode=require", "")
+        .replace("&sslmode=verify-full", "")
+        .replace("?sslmode=verify-full", "")
+        .replace("&ssl=require", "")
+        .replace("?ssl=require", "")
+    )
+
+
 def _build_connect_args(database_url: str) -> dict:
     """CockroachDB 연결 시 SSL 컨텍스트를 asyncpg connect_args로 반환."""
     if "cockroachlabs.cloud" in database_url or ":26257" in database_url:
@@ -47,13 +60,14 @@ async def init_database(settings: Settings) -> None:
     """
     global engine, session_factory
 
+    clean_url = _strip_sslmode(settings.database_url)
     engine = create_async_engine(
-        settings.database_url,
+        clean_url,
         echo=settings.debug,
         pool_pre_ping=True,  # 유효하지 않은 연결 자동 재연결
         pool_size=5,  # CockroachDB Basic 연결 제한 고려
         max_overflow=10,
-        connect_args=_build_connect_args(settings.database_url),
+        connect_args=_build_connect_args(clean_url),
     )
 
     session_factory = async_sessionmaker(

@@ -26,6 +26,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+# 프로젝트 루트를 Python 경로에 추가 (parser 임포트 전에 먼저 수행)
+_project_root = Path(__file__).parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
 # 파서 클래스 임포트 (process_single_file에서 모킹 가능하도록 모듈 레벨 임포트)
 # 실제 임포트는 런타임에 시도하고 실패 시 None으로 처리
 try:
@@ -36,11 +41,6 @@ except ImportError:
     PDFParser = None  # type: ignore[assignment,misc]
     TextCleaner = None  # type: ignore[assignment,misc]
     TextChunker = None  # type: ignore[assignment,misc]
-
-# 프로젝트 루트를 Python 경로에 추가
-_project_root = Path(__file__).parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
 
 # 환경변수 로딩 (.env 파일 지원)
 try:
