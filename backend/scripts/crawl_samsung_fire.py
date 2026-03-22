@@ -153,6 +153,9 @@ def crawl() -> dict:
 
             dest.write_bytes(pdf_bytes)
 
+            today_str = datetime.now(tz=timezone.utc).strftime("%Y%m%d")
+            sale_status = "ON_SALE" if (not sale_end or sale_end >= today_str) else "DISCONTINUED"
+
             meta = {
                 "company_id": "samsung_fire",
                 "company_name": "삼성화재",
@@ -161,6 +164,7 @@ def crawl() -> dict:
                 "product_type": prd_gun,
                 "product_category": prd_gb,
                 "sale_end_dt": sale_end,
+                "sale_status": sale_status,
                 "source_url": f"{PDF_BASE}{fpath}",
                 "file_path": str(dest.relative_to(BASE_DIR.parent)),
                 "file_hash": f"sha256:{hashlib.sha256(pdf_bytes).hexdigest()}",

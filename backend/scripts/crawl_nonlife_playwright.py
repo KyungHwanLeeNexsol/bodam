@@ -135,6 +135,7 @@ def save_pdf(
     product_name: str,
     product_category: str,
     source_url: str,
+    sale_status: str = "ON_SALE",
 ) -> dict[str, Any]:
     """PDF 파일을 저장하고 메타데이터를 기록한다.
 
@@ -174,6 +175,7 @@ def save_pdf(
         "source_url": source_url,
         "file_path": f"{company_id}/{file_name}",
         "file_hash": f"sha256:{file_hash}",
+        "sale_status": sale_status,
         "crawled_at": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+09:00"),
         "file_size_bytes": len(data),
     }
@@ -209,10 +211,13 @@ async def download_pdf_bytes(url: str, context: Any) -> bytes | None:
         return None
 
 
-async def try_click_discontinued_tab_pl(page: Any, company_name: str) -> None:
+async def try_click_discontinued_tab_pl(page: Any, company_name: str) -> bool:
     """판매중지 탭을 찾아 클릭한다. 응답 인터셉트 활성 상태에서 호출해야 효과 있음.
 
     # @MX:NOTE: 클릭 성공 시 3초 대기하여 새로운 API 응답 캡처 시간 확보
+
+    Returns:
+        True: 판매중지 탭 클릭 성공, False: 탭 미발견 또는 클릭 실패
     """
     try:
         result = await page.evaluate("""() => {
@@ -229,8 +234,11 @@ async def try_click_discontinued_tab_pl(page: Any, company_name: str) -> None:
         if result:
             await asyncio.sleep(3)
             logger.info("[%s] 판매중지 탭 클릭 성공", company_name)
+            return True
+        return False
     except Exception as exc:
         logger.debug("[%s] 판매중지 탭 탐색 오류: %s", company_name, exc)
+        return False
 
 
 # =============================================================================
@@ -406,12 +414,15 @@ async def crawl_hyundai_marine(context: Any) -> int:
                 pdf_url = urljoin("https://www.hi.co.kr", href)
                 found_pdfs.append({"type": "pdf_link", "url": pdf_url, "text": link.get("text", "")})
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_pdfs)
         # 판매중지 탭 클릭 시도 (응답 인터셉트가 활성화된 상태)
         await try_click_discontinued_tab_pl(page, company_name)
 
         # 발견된 PDF 처리
         seen_urls: set[str] = set()
-        for item in found_pdfs:
+        for idx, item in enumerate(found_pdfs):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] in ("pdf", "pdf_link"):
                 pdf_url = item["url"]
                 if pdf_url in seen_urls:
@@ -432,6 +443,7 @@ async def crawl_hyundai_marine(context: Any) -> int:
                         product_name=product_name,
                         product_category="약관",
                         source_url=pdf_url,
+                        sale_status=status,
                     )
                     if not result.get("skipped"):
                         downloaded += 1
@@ -645,12 +657,15 @@ async def crawl_db_insurance(context: Any) -> int:
         """)
         await asyncio.sleep(3)
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
         # 발견된 JSON에서 약관 파일 정보 추출
         seen_files: set[str] = set()
-        for item in found_items:
+        for idx_item, item in enumerate(found_items):
+            item_status = "ON_SALE" if idx_item < on_sale_boundary else "DISCONTINUED"
             if item.get("type") == "pdf":
                 url = item["url"]
                 if url not in seen_files:
@@ -665,6 +680,7 @@ async def crawl_db_insurance(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=item_status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -728,6 +744,7 @@ async def crawl_db_insurance(context: Any) -> int:
                         product_name=str(prod_name),
                         product_category="질병/상해",
                         source_url=pdf_url,
+                        sale_status=item_status,
                     )
                     if not result.get("skipped"):
                         downloaded += 1
@@ -831,11 +848,27 @@ async def crawl_kb_insurance(context: Any) -> int:
                     """)
                     await asyncio.sleep(3)
 
+                    # 판매중지 탭 클릭 전 경계 기록 (response interception 없으므로 링크 기준)
+                    # PDF 링크 수집 (판매중)
+                    on_sale_links = await page.evaluate("""
+                        () => {
+                            const results = [];
+                            document.querySelectorAll('a').forEach(a => {
+                                const href = a.href || '';
+                                const text = a.textContent.trim();
+                                if (href.endsWith('.pdf') || href.includes('pdf') || href.includes('download')) {
+                                    results.push({href, text});
+                                }
+                            });
+                            return results;
+                        }
+                    """)
+
                     # 판매중지 탭 클릭 시도
                     await try_click_discontinued_tab_pl(page, company_name)
 
-                    # PDF 링크 수집
-                    links = await page.evaluate("""
+                    # PDF 링크 수집 (판매중지)
+                    disc_links = await page.evaluate("""
                         () => {
                             const results = [];
                             document.querySelectorAll('a').forEach(a => {
@@ -850,26 +883,28 @@ async def crawl_kb_insurance(context: Any) -> int:
                     """)
 
                     seen: set[str] = set()
-                    for link in links[:50]:
-                        href = link.get("href", "")
-                        text = link.get("text", "")
-                        if not href or href in seen:
-                            continue
-                        seen.add(href)
-                        if is_disease_injury(text) or not text:
-                            data_bytes = await download_pdf_bytes(href, context)
-                            if data_bytes and len(data_bytes) > 1000:
-                                result = save_pdf(
-                                    data=data_bytes,
-                                    company_id=company_id,
-                                    company_name=company_name,
-                                    product_name=text or Path(urlparse(href).path).stem,
-                                    product_category="약관",
-                                    source_url=href,
-                                )
-                                if not result.get("skipped"):
-                                    downloaded += 1
-                            await asyncio.sleep(1)
+                    for link_status, link_list in [("ON_SALE", on_sale_links), ("DISCONTINUED", disc_links)]:
+                        for link in link_list[:50]:
+                            href = link.get("href", "")
+                            text = link.get("text", "")
+                            if not href or href in seen:
+                                continue
+                            seen.add(href)
+                            if is_disease_injury(text) or not text:
+                                data_bytes = await download_pdf_bytes(href, context)
+                                if data_bytes and len(data_bytes) > 1000:
+                                    result = save_pdf(
+                                        data=data_bytes,
+                                        company_id=company_id,
+                                        company_name=company_name,
+                                        product_name=text or Path(urlparse(href).path).stem,
+                                        product_category="약관",
+                                        source_url=href,
+                                        sale_status=link_status,
+                                    )
+                                    if not result.get("skipped"):
+                                        downloaded += 1
+                                await asyncio.sleep(1)
                     break
             except Exception as exc:
                 logger.warning("[KB손해보험] 접속 실패 (%s): %s", try_url, exc)
@@ -955,6 +990,8 @@ async def crawl_meritz_fire(context: Any) -> int:
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         await asyncio.sleep(2)
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
@@ -972,7 +1009,8 @@ async def crawl_meritz_fire(context: Any) -> int:
         """)
 
         seen: set[str] = set()
-        for item in found_items:
+        for idx, item in enumerate(found_items):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] == "pdf":
                 url = item["url"]
                 if url not in seen:
@@ -987,6 +1025,7 @@ async def crawl_meritz_fire(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1009,6 +1048,7 @@ async def crawl_meritz_fire(context: Any) -> int:
                             product_name=pdf_info["name"],
                             product_category=pdf_info.get("category", "약관"),
                             source_url=pdf_info["url"],
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1126,11 +1166,14 @@ async def crawl_hanwha_general(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
         seen: set[str] = set()
-        for item in found_items:
+        for idx, item in enumerate(found_items):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] == "pdf":
                 url = item["url"]
                 if url not in seen:
@@ -1145,6 +1188,7 @@ async def crawl_hanwha_general(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1167,6 +1211,7 @@ async def crawl_hanwha_general(context: Any) -> int:
                             product_name=pdf_info["name"],
                             product_category=pdf_info.get("category", "약관"),
                             source_url=pdf_info["url"],
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1247,35 +1292,44 @@ async def crawl_heungkuk_fire(context: Any) -> int:
                         except Exception:
                             pass
 
+                    # 판매중 링크 수집 후 경계 기록
+                    on_sale_links = await page.evaluate("""
+                        () => Array.from(document.querySelectorAll('a[href*=".pdf"], a[href*="download"], a[href*="Down"]'))
+                            .map(a => ({href: a.href, text: a.textContent.trim()}))
+                    """)
+                    on_sale_boundary_json = len([f for f in found_pdfs if not isinstance(f, dict) or f.get("type") != "json"])
+
                     # 판매중지 탭 클릭 시도
                     await try_click_discontinued_tab_pl(page, company_name)
 
-                    # PDF 링크 수집
-                    links = await page.evaluate("""
+                    # 판매중지 링크 수집
+                    disc_links = await page.evaluate("""
                         () => Array.from(document.querySelectorAll('a[href*=".pdf"], a[href*="download"], a[href*="Down"]'))
                             .map(a => ({href: a.href, text: a.textContent.trim()}))
                     """)
 
                     seen: set[str] = set()
-                    for link in links[:50]:
-                        href = link.get("href", "")
-                        text = link.get("text", "")
-                        if not href or href in seen:
-                            continue
-                        seen.add(href)
-                        data_bytes = await download_pdf_bytes(href, context)
-                        if data_bytes and len(data_bytes) > 1000:
-                            result = save_pdf(
-                                data=data_bytes,
-                                company_id=company_id,
-                                company_name=company_name,
-                                product_name=text or Path(urlparse(href).path).stem,
-                                product_category="약관",
-                                source_url=href,
-                            )
-                            if not result.get("skipped"):
-                                downloaded += 1
-                        await asyncio.sleep(1)
+                    for link_status, link_list in [("ON_SALE", on_sale_links), ("DISCONTINUED", disc_links)]:
+                        for link in link_list[:50]:
+                            href = link.get("href", "")
+                            text = link.get("text", "")
+                            if not href or href in seen:
+                                continue
+                            seen.add(href)
+                            data_bytes = await download_pdf_bytes(href, context)
+                            if data_bytes and len(data_bytes) > 1000:
+                                result = save_pdf(
+                                    data=data_bytes,
+                                    company_id=company_id,
+                                    company_name=company_name,
+                                    product_name=text or Path(urlparse(href).path).stem,
+                                    product_category="약관",
+                                    source_url=href,
+                                    sale_status=link_status,
+                                )
+                                if not result.get("skipped"):
+                                    downloaded += 1
+                            await asyncio.sleep(1)
 
                     # JSON 응답에서 PDF 추출
                     for item in found_pdfs:
@@ -1384,11 +1438,14 @@ async def crawl_axa_general(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
         seen: set[str] = set()
-        for item in found_items:
+        for idx, item in enumerate(found_items):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] == "pdf":
                 url = item["url"]
                 if url not in seen:
@@ -1403,6 +1460,7 @@ async def crawl_axa_general(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1425,6 +1483,7 @@ async def crawl_axa_general(context: Any) -> int:
                             product_name=pdf_info["name"],
                             product_category=pdf_info.get("category", "약관"),
                             source_url=pdf_info["url"],
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1499,6 +1558,8 @@ async def crawl_mg_insurance(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
@@ -1520,7 +1581,8 @@ async def crawl_mg_insurance(context: Any) -> int:
         """)
 
         seen: set[str] = set()
-        for item in found_items:
+        for idx, item in enumerate(found_items):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] == "pdf":
                 url = item["url"]
                 if url not in seen:
@@ -1535,6 +1597,7 @@ async def crawl_mg_insurance(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1557,6 +1620,7 @@ async def crawl_mg_insurance(context: Any) -> int:
                             product_name=pdf_info["name"],
                             product_category=pdf_info.get("category", "약관"),
                             source_url=pdf_info["url"],
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1670,11 +1734,14 @@ async def crawl_nh_fire(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
         seen: set[str] = set()
-        for item in found_items:
+        for idx, item in enumerate(found_items):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] == "pdf":
                 url = item["url"]
                 if url not in seen:
@@ -1689,6 +1756,7 @@ async def crawl_nh_fire(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1711,6 +1779,7 @@ async def crawl_nh_fire(context: Any) -> int:
                             product_name=pdf_info["name"],
                             product_category=pdf_info.get("category", "약관"),
                             source_url=pdf_info["url"],
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1844,11 +1913,14 @@ async def crawl_lotte_insurance(context: Any) -> int:
             except Exception:
                 pass
 
+        # 판매중지 탭 클릭 전 경계 기록
+        on_sale_boundary = len(found_items)
         # 판매중지 탭 클릭 시도
         await try_click_discontinued_tab_pl(page, company_name)
 
         seen: set[str] = set()
-        for item in found_items:
+        for idx, item in enumerate(found_items):
+            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
             if item["type"] == "pdf":
                 url = item["url"]
                 if url not in seen:
@@ -1863,6 +1935,7 @@ async def crawl_lotte_insurance(context: Any) -> int:
                             product_name=name,
                             product_category="약관",
                             source_url=url,
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1
@@ -1885,6 +1958,7 @@ async def crawl_lotte_insurance(context: Any) -> int:
                             product_name=pdf_info["name"],
                             product_category=pdf_info.get("category", "약관"),
                             source_url=pdf_info["url"],
+                            sale_status=status,
                         )
                         if not result.get("skipped"):
                             downloaded += 1

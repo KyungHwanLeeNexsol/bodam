@@ -72,7 +72,7 @@ TARGET_CATEGORIES = [
 ]
 
 
-def save_pdf(data: bytes, product_name: str, category: str, source_url: str) -> dict[str, Any]:
+def save_pdf(data: bytes, product_name: str, category: str, source_url: str, sale_status: str = "ON_SALE") -> dict[str, Any]:
     out_dir = BASE_DATA_DIR / COMPANY_ID
     out_dir.mkdir(parents=True, exist_ok=True)
     content_hash = hashlib.sha256(data).hexdigest()[:16]
@@ -93,7 +93,7 @@ def save_pdf(data: bytes, product_name: str, category: str, source_url: str) -> 
     pdf_path.write_bytes(data)
     meta = {"company_id": COMPANY_ID, "company_name": COMPANY_NAME, "product_name": product_name.strip(),
             "category": category, "source_url": source_url, "content_hash": content_hash,
-            "file_size": len(data), "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            "file_size": len(data), "sale_status": sale_status, "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"skipped": False}
 
@@ -188,7 +188,8 @@ async def crawl_category(client: httpx.AsyncClient, cat: dict[str, str], dry_run
         try:
             resp_pdf = await client.get(pdf_url, timeout=30.0)
             if resp_pdf.status_code == 200 and resp_pdf.content[:4] == b"%PDF" and len(resp_pdf.content) > 1000:
-                result = save_pdf(resp_pdf.content, pdc_nm, label, pdf_url)
+                prod_status = "DISCONTINUED" if sl_yn == "0" else "ON_SALE"
+                result = save_pdf(resp_pdf.content, pdc_nm, label, pdf_url, sale_status=prod_status)
                 if result.get("skipped"):
                     stats["skipped"] += 1
                 else:

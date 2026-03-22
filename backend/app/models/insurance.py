@@ -263,12 +263,13 @@ class PolicyChunk(Base):
     # gemini-embedding-001 기준 768차원 임베딩 벡터
     embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
 
-    # tsvector 전문 검색 벡터 (chunk_text 기반 트리거로 자동 생성, REQ-10)
-    # server_default=FetchedValue()로 INSERT 시 제외 → 트리거가 자동 설정
+    # tsvector 전문 검색 벡터 (PostgreSQL 전용, CockroachDB에서는 컬럼 미생성)
+    # deferred=True: 명시적 접근 시에만 로딩 → CockroachDB에서 SELECT 에러 방지
     search_vector: Mapped[str | None] = mapped_column(
         sa.Text,
         nullable=True,
         server_default=FetchedValue(),
+        deferred=True,
     )
 
     # 추가 메타데이터 (JSONB: 토큰 수, 페이지 번호 등)

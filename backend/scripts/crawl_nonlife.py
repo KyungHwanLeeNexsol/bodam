@@ -244,6 +244,7 @@ async def download_pdf(
     product_name: str,
     company_name: str,
     http_client: httpx.AsyncClient,
+    sale_status: str = "ON_SALE",
 ) -> dict[str, Any] | None:
     """PDF URL에서 파일을 다운로드하고 저장한다.
 
@@ -281,6 +282,7 @@ async def download_pdf(
             product_type="약관",
             source_url=url,
             base_dir=BASE_DIR,
+            sale_status=sale_status,
         )
         logger.info(
             "[%s] PDF 저장 완료: %s (%d bytes)",
@@ -513,6 +515,7 @@ async def crawl_company(
         page.set_default_timeout(PAGE_TIMEOUT_MS)
 
         all_pdf_urls: list[str] = []
+        on_sale_boundary: int = -1  # -1: 판매중지 탭 미클릭 (전체 ON_SALE)
         found_page = False
 
         for base_url in base_urls:
@@ -551,8 +554,10 @@ async def crawl_company(
                                 all_pdf_urls.append(link)
 
                         # 판매중지 탭 클릭 후 추가 PDF 링크 수집
+                        pre_disc_count = len(all_pdf_urls)
                         discontinued = await try_click_discontinued_tab(page, company_id)
                         if discontinued:
+                            on_sale_boundary = pre_disc_count
                             disc_links = await collect_pdf_links_from_dom(
                                 page, base_url, pdf_patterns
                             )
@@ -601,12 +606,14 @@ async def crawl_company(
         logger.info("[%s] PDF 다운로드 시작 (%d개)", company_id, len(all_pdf_urls))
         for idx, pdf_url in enumerate(all_pdf_urls):
             product_name = extract_product_name_from_url(pdf_url, idx)
+            pdf_status = "ON_SALE" if on_sale_boundary < 0 or idx < on_sale_boundary else "DISCONTINUED"
             save_result = await download_pdf(
                 url=pdf_url,
                 company_id=company_id,
                 product_name=product_name,
                 company_name=company_name,
                 http_client=http_client,
+                sale_status=pdf_status,
             )
             if save_result:
                 result["saved_files"].append(save_result)

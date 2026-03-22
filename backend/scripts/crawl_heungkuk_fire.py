@@ -46,7 +46,7 @@ DOWNLOAD_URL = f"{BASE_URL}/common/download.do"
 TARGET_CATEGORIES = {"의료/건강", "운전자/상해", "자녀/실버"}
 
 
-def save_pdf(data: bytes, product_name: str, category: str, source_url: str) -> dict[str, Any]:
+def save_pdf(data: bytes, product_name: str, category: str, source_url: str, sale_status: str = "ON_SALE") -> dict[str, Any]:
     out_dir = BASE_DATA_DIR / COMPANY_ID
     out_dir.mkdir(parents=True, exist_ok=True)
     content_hash = hashlib.sha256(data).hexdigest()[:16]
@@ -67,7 +67,7 @@ def save_pdf(data: bytes, product_name: str, category: str, source_url: str) -> 
     pdf_path.write_bytes(data)
     meta = {"company_id": COMPANY_ID, "company_name": COMPANY_NAME, "product_name": product_name.strip(),
             "category": category, "source_url": source_url, "content_hash": content_hash,
-            "file_size": len(data), "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            "file_size": len(data), "sale_status": sale_status, "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"skipped": False}
 
@@ -152,7 +152,8 @@ async def main() -> None:
                             timeout=60.0,
                         )
                         if resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000:
-                            result = save_pdf(resp.content, name, cat, f"{DOWNLOAD_URL}?FILE_NAME={file_path}")
+                            tab_status = "DISCONTINUED" if tab_label == "판매중지" else "ON_SALE"
+                            result = save_pdf(resp.content, name, cat, f"{DOWNLOAD_URL}?FILE_NAME={file_path}", sale_status=tab_status)
                             if result.get("skipped"):
                                 skipped += 1
                             else:

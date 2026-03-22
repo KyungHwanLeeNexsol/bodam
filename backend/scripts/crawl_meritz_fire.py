@@ -59,6 +59,7 @@ def save_pdf(
     product_name: str,
     category: str,
     source_url: str,
+    sale_status: str = "ON_SALE",
 ) -> dict[str, Any]:
     """PDF를 저장하고 메타데이터를 기록한다."""
     out_dir = BASE_DATA_DIR / COMPANY_ID
@@ -94,6 +95,7 @@ def save_pdf(
         "source_url": source_url,
         "content_hash": content_hash,
         "file_size": len(data),
+        "sale_status": sale_status,
         "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -205,11 +207,13 @@ async def crawl_category(
                 data = Path(tmp_path).read_bytes()
                 # PDF 유효성 확인
                 if data[:4] == b"%PDF" and len(data) > 1000:
+                    status = "DISCONTINUED" if sale_status == "판매중지" else "ON_SALE"
                     save_result = save_pdf(
                         data=data,
                         product_name=name,
                         category=category,
                         source_url=download.url,
+                        sale_status=status,
                     )
                     if save_result.get("skipped"):
                         results.append({"name": name, "status": "skipped"})

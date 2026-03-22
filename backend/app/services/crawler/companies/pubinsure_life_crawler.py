@@ -16,7 +16,7 @@ import httpx
 from sqlalchemy import select
 
 from app.models.insurance import InsuranceCategory, InsuranceCompany, Policy
-from app.services.crawler.base import BaseCrawler, CrawlRunResult, DeltaResult, PolicyListing
+from app.services.crawler.base import BaseCrawler, CrawlRunResult, DeltaResult, PolicyListing, SaleStatus
 
 logger = logging.getLogger(__name__)
 
@@ -267,10 +267,12 @@ class PubInsureLifeCrawler(BaseCrawler):
                 name=listing.product_name,
                 product_code=listing.product_code,
                 category=listing.category if isinstance(listing.category, InsuranceCategory) else InsuranceCategory.LIFE,
+                sale_status=listing.sale_status.value,
                 metadata_={"pdf_path": pdf_path, "content_hash": content_hash, "source": "pubinsure"},
             )
             self.db_session.add(policy)
         else:
+            policy.sale_status = listing.sale_status.value
             policy.metadata_ = {"pdf_path": pdf_path, "content_hash": content_hash, "source": "pubinsure"}
 
     async def parse_listing(self, page: Any) -> list[PolicyListing]:
@@ -302,6 +304,8 @@ class PubInsureLifeCrawler(BaseCrawler):
                 category="LIFE",
                 pdf_url=pdf_url,
                 company_code="",       # 상세 파싱 시 추출
+                # pub.insure.or.kr은 판매중 상품만 공시하므로 ON_SALE 명시
+                sale_status=SaleStatus.ON_SALE,
             )
             listings.append(listing)
 

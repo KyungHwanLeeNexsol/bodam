@@ -307,6 +307,8 @@ def crawl_all_categories(target_categories: dict[str, str] | None = None) -> dic
                     "source_url": f"{FILE_DOWN_URL}?fileNo={file_no}&seq={seq}",
                     "file_path": str(dest_path.relative_to(BASE_DIR)),
                     "file_hash": f"sha256:{hashlib.sha256(pdf_bytes).hexdigest()}",
+                    # pub.insure.or.kr은 판매중 상품만 공시
+                    "sale_status": "ON_SALE",
                     "crawled_at": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+09:00"),
                     "file_size_bytes": len(pdf_bytes),
                     "category_code": cat_code,

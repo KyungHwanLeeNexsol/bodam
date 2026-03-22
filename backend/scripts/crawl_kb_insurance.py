@@ -44,7 +44,7 @@ BASE_URL = "https://www.kbinsure.co.kr"
 TARGET_CATEGORIES = {"상해보험", "질병보험", "통합보험", "운전자보험"}
 
 
-def save_pdf(data: bytes, product_name: str, product_code: str, category: str, source_url: str) -> dict[str, Any]:
+def save_pdf(data: bytes, product_name: str, product_code: str, category: str, source_url: str, sale_status: str = "ON_SALE") -> dict[str, Any]:
     out_dir = BASE_DATA_DIR / COMPANY_ID
     out_dir.mkdir(parents=True, exist_ok=True)
     content_hash = hashlib.sha256(data).hexdigest()[:16]
@@ -65,7 +65,7 @@ def save_pdf(data: bytes, product_name: str, product_code: str, category: str, s
     pdf_path.write_bytes(data)
     meta = {"company_id": COMPANY_ID, "company_name": COMPANY_NAME, "product_name": product_name.strip(),
             "product_code": product_code, "category": category, "source_url": source_url,
-            "content_hash": content_hash, "file_size": len(data), "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            "content_hash": content_hash, "file_size": len(data), "sale_status": sale_status, "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"skipped": False}
 
@@ -125,6 +125,8 @@ async def main(dry_run: bool = False) -> None:
             products = await get_products_from_page(page)
             if not products:
                 break
+            for p in products:
+                p["_sale_status"] = "ON_SALE"
             all_products.extend(products)
 
             # 다음 페이지 확인
@@ -178,6 +180,7 @@ async def main(dry_run: bool = False) -> None:
                 for p in disc_products:
                     key = (p["code"], p["seq"])
                     if key not in existing_keys:
+                        p["_sale_status"] = "DISCONTINUED"
                         all_products.append(p)
                         existing_keys.add(key)
                 disc_page_num += 1
@@ -264,7 +267,8 @@ async def main(dry_run: bool = False) -> None:
                     resp = await client.get(pdf_url, timeout=30.0)
 
                     if resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000:
-                        result = save_pdf(resp.content, name, code, cat, pdf_url)
+                        prod_status = prod.get("_sale_status", "ON_SALE")
+                        result = save_pdf(resp.content, name, code, cat, pdf_url, sale_status=prod_status)
                         if result.get("skipped"):
                             skipped += 1
                         else:

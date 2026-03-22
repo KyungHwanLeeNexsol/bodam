@@ -20,7 +20,7 @@ from app.services.crawler.companies.pubinsure_life_crawler import (
     PRODUCT_CATEGORIES,
     PubInsureLifeCrawler,
 )
-from app.services.crawler.base import CrawlRunResult, DeltaResult, PolicyListing
+from app.services.crawler.base import CrawlRunResult, DeltaResult, PolicyListing, SaleStatus
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,16 @@ class TestParseListingExtractsFileDownPatterns:
 
         for listing in listings:
             assert listing.category == "LIFE"
+
+    @pytest.mark.asyncio
+    async def test_parse_listing_sets_sale_status_on_sale(
+        self, crawler: PubInsureLifeCrawler
+    ) -> None:
+        """pub.insure.or.kr은 판매중 상품만 공시하므로 sale_status는 ON_SALE"""
+        listings = await crawler.parse_listing(SAMPLE_HTML_WITH_FILE_DOWN)
+
+        for listing in listings:
+            assert listing.sale_status == SaleStatus.ON_SALE
 
     @pytest.mark.asyncio
     async def test_parse_listing_empty_html(

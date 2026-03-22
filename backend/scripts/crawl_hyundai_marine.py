@@ -62,6 +62,7 @@ def save_pdf(
     product_name: str,
     category: str,
     source_url: str,
+    sale_status: str = "ON_SALE",
 ) -> dict[str, Any]:
     """PDF를 저장하고 메타데이터를 기록한다."""
     out_dir = BASE_DATA_DIR / COMPANY_ID
@@ -95,6 +96,7 @@ def save_pdf(
         "source_url": source_url,
         "content_hash": content_hash,
         "file_size": len(data),
+        "sale_status": sale_status,
         "crawled_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -117,9 +119,12 @@ async def get_product_list(page: Any) -> list[dict[str, Any]]:
                     inner = data["data"]
                     # slYProdList: 판매중, slNProdList: 판매중지
                     found = False
+                    key_status = {"slYProdList": "ON_SALE", "slNProdList": "DISCONTINUED"}
                     for key in ("slYProdList", "slNProdList"):
                         if key in inner and isinstance(inner[key], list):
-                            product_data.extend(inner[key])
+                            status = key_status[key]
+                            for item in inner[key]:
+                                product_data.append({**item, "_sale_status": status})
                             found = True
                     if found:
                         data_received.set()
@@ -309,7 +314,8 @@ async def main(dry_run: bool = False) -> None:
             data, url = await download_pdf_direct(page, context, clause_id)
 
             if data:
-                result = save_pdf(data=data, product_name=name, category=cat_cd, source_url=url)
+                prod_status = prod.get("_sale_status", "ON_SALE")
+                result = save_pdf(data=data, product_name=name, category=cat_cd, source_url=url, sale_status=prod_status)
                 if result.get("skipped"):
                     skipped += 1
                 else:

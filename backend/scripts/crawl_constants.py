@@ -149,6 +149,7 @@ def save_pdf_with_metadata(
     product_type: str,
     source_url: str,
     base_dir: Path,
+    sale_status: str = "ON_SALE",
 ) -> dict[str, Any]:
     """PDF 파일을 저장하고 메타데이터 JSON 파일을 생성한다.
 
@@ -163,6 +164,7 @@ def save_pdf_with_metadata(
         product_type: 상품 유형 (예: "질병보험", "상해보험")
         source_url: PDF 출처 URL
         base_dir: 기본 저장 디렉토리
+        sale_status: 판매 상태 ("ON_SALE" 또는 "DISCONTINUED")
 
     Returns:
         저장 결과 dict (file_path, file_hash, file_size_bytes 등 포함)
@@ -200,6 +202,7 @@ def save_pdf_with_metadata(
         "source_url": source_url,
         "file_path": str(file_path.relative_to(base_dir)) if base_dir in file_path.parents else str(file_path),
         "file_hash": f"sha256:{file_hash}",
+        "sale_status": sale_status,
         "crawled_at": crawled_at,
         "file_size_bytes": len(data),
     }
