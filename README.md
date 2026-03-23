@@ -16,7 +16,7 @@
 |--------|--------|------|
 | Frontend | Vercel | Next.js, GitHub push 시 자동 배포 |
 | Backend | Fly.io | FastAPI, 자동 배포 |
-| Database | Neon PostgreSQL (pgvector) | 서버리스 PostgreSQL |
+| Database | CockroachDB (pgvector) | 서버리스 PostgreSQL |
 | Cache | Upstash Redis | 인증 세션, Rate Limiting |
 | AI/LLM | Google Gemini | Gemini 2.0 Flash API (1M context window) |
 
@@ -71,5 +71,5 @@ docker compose exec backend uv run alembic upgrade head
 
 - **Frontend**: Vercel에서 GitHub push 시 자동 배포
 - **Backend**: Fly.io에서 `fly deploy` 또는 GitHub 연동 자동 배포
-- **Database**: Neon 서버리스 PostgreSQL (관리형)
+- **Database**: CockroachDB Basic (관리형)
 - **Cache**: Upstash Redis (관리형)

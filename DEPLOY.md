@@ -4,16 +4,13 @@
 
 Before deploying, you need the following services and tools set up.
 
-### 1. Neon PostgreSQL (with pgvector)
+### 1. CockroachDB
 
-1. Sign up at https://neon.tech
-2. Create a new project (select region: `ap-northeast-1` for Tokyo proximity)
-3. Enable the `pgvector` extension:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
+1. Sign up at https://cockroachlabs.com
+2. Create a new cluster (select region: `ap-northeast-1` for Tokyo proximity)
+3. CockroachDB has pgvector built-in (no extension needed)
 4. Copy the connection string from: Dashboard > Connection Details
-   - Use the **asyncpg** format: `postgresql+asyncpg://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/bodam?sslmode=require`
+   - Use the **asyncpg** format: `postgresql+asyncpg://user:password@cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full`
 
 ### 2. Upstash Redis
 
@@ -59,8 +56,8 @@ Run the following commands, replacing each `CHANGE_ME` with your actual values.
 **Required secrets:**
 
 ```bash
-# Database (Neon asyncpg connection string)
-fly secrets set DATABASE_URL="postgresql+asyncpg://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/bodam?sslmode=require" --app bodam
+# Database (CockroachDB asyncpg connection string)
+fly secrets set DATABASE_URL="postgresql+asyncpg://user:password@cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full" --app bodam
 
 # Redis (Upstash TLS URL)
 fly secrets set REDIS_URL="rediss://default:password@apn1-xxx.upstash.io:6379" --app bodam
@@ -119,7 +116,7 @@ fly secrets import < backend/.env.fly --app bodam
 
 ### Step 4: Run database migrations
 
-Run Alembic migrations against the Neon database before first deploy:
+Run Alembic migrations against the CockroachDB database before first deploy:
 
 ```bash
 # From the backend directory
@@ -178,7 +175,7 @@ The following secrets must be set. See `backend/.env.fly.example` for format det
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `DATABASE_URL` | Yes | Neon PostgreSQL asyncpg connection string |
+| `DATABASE_URL` | Yes | CockroachDB asyncpg connection string |
 | `REDIS_URL` | Yes | Upstash Redis TLS URL (`rediss://`) |
 | `SECRET_KEY` | Yes | JWT signing key (32-byte hex) |
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
@@ -203,7 +200,7 @@ The following secrets must be set. See `backend/.env.fly.example` for format det
 | Resource | Plan | Estimated Cost |
 |----------|------|----------------|
 | Fly.io VM (`shared-cpu-1x`, 512MB) | Auto-stop enabled | ~$0-5/month |
-| Neon PostgreSQL | Free tier (3GB, 100 compute hours) | $0/month |
+| CockroachDB | Basic (10GiB free) | $0/month |
 | Upstash Redis | Free tier (10K commands/day) | $0/month |
 
 With `auto_stop_machines = 'stop'` and `min_machines_running = 0`, the VM stops when idle and only incurs cost when actively serving requests.
@@ -219,7 +216,7 @@ With `auto_stop_machines = 'stop'` and `min_machines_running = 0`, the VM stops 
 **App starts but health check fails**
 - Verify `DATABASE_URL` is set correctly with `fly secrets list --app bodam`
 - Check logs: `fly logs --app bodam`
-- Ensure Neon DB has `pgvector` extension enabled
+- CockroachDB has pgvector built-in (no extension needed)
 
 **Cold start delays**
 - Expected with `auto_stop_machines = 'stop'` — first request after idle wakes the VM
