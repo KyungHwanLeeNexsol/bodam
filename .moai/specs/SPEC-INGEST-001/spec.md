@@ -1,6 +1,6 @@
 ---
 id: SPEC-INGEST-001
-title: "Multi-PC Local PDF Ingestion to Neon DB"
+title: "Multi-PC Local PDF Ingestion to CockroachDB"
 version: 1.0.0
 status: completed
 created: 2026-03-21
@@ -8,7 +8,7 @@ updated: 2026-03-21
 author: zuge3
 priority: high
 issue_number: 0
-tags: [ingestion, pdf, embedding, neon, multi-pc, pipeline]
+tags: [ingestion, pdf, embedding, cockroachdb, multi-pc, pipeline]
 dependencies: [SPEC-CRAWLER-001, SPEC-CRAWLER-002, SPEC-CRAWLER-003, SPEC-EMBED-001]
 blocks: [SPEC-PIPELINE-001]
 ---
@@ -47,7 +47,7 @@ Bodam 플랫폼의 약관 PDF 수집은 3대 PC에서 분산 실행되고 있다
 
 ### 1.2 문제점
 
-1. **파이프라인 단절**: 각 PC에서 PDF를 로컬에 저장만 하고, Neon DB에 Policy/PolicyChunk 레코드가 생성되지 않음
+1. **파이프라인 단절**: 각 PC에서 PDF를 로컬에 저장만 하고, CockroachDB에 Policy/PolicyChunk 레코드가 생성되지 않음
 2. **임베딩 불가**: DB에 청크가 없으므로 `daily_embed.py`가 처리할 대상이 없음
 3. **검색 불가**: RAG 검색에 필요한 벡터 임베딩이 없어 약관 Q&A 기능이 수집된 약관을 활용하지 못함
 4. **수동 통합 부재**: 3PC에서 수집한 PDF를 통합하는 자동화된 방법이 없음
@@ -66,7 +66,7 @@ Bodam 플랫폼의 약관 PDF 수집은 3대 PC에서 분산 실행되고 있다
 
 ## 2. Assumptions (가정)
 
-- A1: 각 PC는 Neon PostgreSQL에 직접 연결 가능하다 (공용 인터넷 접근)
+- A1: 각 PC는 CockroachDB에 직접 연결 가능하다 (공용 인터넷 접근)
 - A2: 각 PC에 Python 3.13+, uv/pip, pdfplumber 등 필요 패키지가 설치되어 있다
 - A3: `backend/data/` 디렉토리의 PDF 파일은 유효한 PDF 형식이다 (크롤러가 검증)
 - A4: content_hash(SHA-256)로 동일 PDF의 중복 인제스트를 방지할 수 있다
@@ -242,7 +242,7 @@ python scripts/ingest_local_pdfs.py --data-dir /path/to/data
 ```bash
 # 1. .env 파일 생성 (backend/ 디렉토리)
 cat > backend/.env << 'EOF'
-DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<neon-host>/bodam
+DATABASE_URL=postgresql+asyncpg://<user>:<pass>@<cockroachdb-host>/bodam
 GEMINI_API_KEY=AIza...  # --embed 사용 시에만 필요
 EOF
 
@@ -257,7 +257,7 @@ cd backend && PYTHONPATH=. python scripts/ingest_local_pdfs.py
 
 ```
 1. 각 PC에서 크롤링 완료 확인
-2. 각 PC에 .env 설정 (Neon DB URL)
+2. 각 PC에 .env 설정 (CockroachDB URL)
 3. 각 PC에서 ingest_local_pdfs.py 실행 (동시 실행 가능)
 4. 아무 PC에서 daily_embed.py 실행 (임베딩 배치)
 5. run_pipeline.py status로 현황 확인

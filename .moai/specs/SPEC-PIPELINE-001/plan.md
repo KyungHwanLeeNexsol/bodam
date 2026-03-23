@@ -156,7 +156,7 @@ PostgreSQL의 기본 한국어 파서 한계를 고려하여:
 | 보험사 웹사이트 구조 변경으로 크롤러 대량 실패 | High | ConfigValidator 정기 실행, 자동 비활성화, 알림 체계 |
 | Fly.io 1GB RAM에서 Playwright + Celery 메모리 초과 | High | 동시 실행 제한, headless 모드 최적화, 단계별 메모리 해제 |
 | tsvector 한국어 토큰화 품질 한계 | Medium | simple 파서 + 불용어 사전으로 시작, 향후 커스텀 파서 검토 |
-| Neon PostgreSQL cold start로 파이프라인 지연 | Medium | connection pooling, 파이프라인 시작 전 warm-up 쿼리 |
+| CockroachDB cold start로 파이프라인 지연 | Medium | connection pooling, 파이프라인 시작 전 warm-up 쿼리 |
 | OpenAI Embedding API rate limit 도달 | Medium | 배치 크기 조절, exponential backoff, 일일 한도 모니터링 |
 | 기존 검색 로직과 하이브리드 검색 통합 시 회귀 | Medium | 기존 VectorSearchService 인터페이스 유지, feature flag로 하이브리드 전환 |
 
@@ -172,7 +172,7 @@ PostgreSQL의 기본 한국어 파서 한계를 고려하여:
 
 ### 외부 의존성
 - OpenAI API: text-embedding-3-small (임베딩 생성)
-- Neon PostgreSQL: pgvector 0.8.2, tsvector
+- CockroachDB: pgvector 0.8.2, tsvector
 - Upstash Redis: Celery broker, Celery Beat
 - 보험사 웹사이트: 크롤링 대상 (30개 사이트)
 

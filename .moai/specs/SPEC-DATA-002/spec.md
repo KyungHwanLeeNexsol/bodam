@@ -87,7 +87,7 @@ Collect ALL disease(질병) and injury(상해) insurance policy documents from K
 ### Phase 1
 - [ ] AC-P1-01: PubInsure crawler runs and discovers 100+ products
 - [ ] AC-P1-02: PDFs downloaded and stored in `data/crawled_pdfs/`
-- [ ] AC-P1-03: PolicyChunk records created with embeddings in Neon DB
+- [ ] AC-P1-03: PolicyChunk records created with embeddings in CockroachDB
 - [ ] AC-P1-04: No rate limit failures (API key rotation working)
 
 ### Phase 2
@@ -149,4 +149,4 @@ Collect ALL disease(질병) and injury(상해) insurance policy documents from K
 | Rate limiting by insurance sites | Crawling blocked | rate_limit_seconds config + exponential backoff |
 | Gemini API daily quota | Embedding fails | API key rotation (GEMINI_API_KEYS) |
 | PDF not valid | Processing fails | Magic bytes validation + graceful skip |
-| Large data volume | Storage/DB costs | Incremental processing, Neon free tier limits |
+| Large data volume | Storage/DB costs | Incremental processing, CockroachDB Basic tier limits |

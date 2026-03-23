@@ -9,7 +9,7 @@ created: 2026-03-21
 
 ## Approach
 
-단일 Python 스크립트(`backend/scripts/ingest_local_pdfs.py`)를 작성하여 3대 PC에서 로컬에 수집된 PDF 파일을 Neon PostgreSQL에 직접 인제스트한다.
+단일 Python 스크립트(`backend/scripts/ingest_local_pdfs.py`)를 작성하여 3대 PC에서 로컬에 수집된 PDF 파일을 CockroachDB에 직접 인제스트한다.
 
 ## Key Decisions
 
@@ -40,7 +40,7 @@ created: 2026-03-21
 
 | Risk | Probability | Impact | Mitigation |
 |------|------------|--------|------------|
-| Neon DB 동시 쓰기 충돌 | Low | Low | Unique constraint + rollback per file |
+| CockroachDB 동시 쓰기 충돌 | Low | Low | Unique constraint + rollback per file |
 | 대량 PDF 처리 시 메모리 | Medium | Medium | 파일 단위 순차 처리, 메모리 해제 |
 | 손상된 PDF 파일 | Low | Low | try/except로 개별 파일 실패 처리 |
 | Gemini API 쿼터 소진 | Medium | Low | --embed 옵션 분리, daily_embed.py 사용 |
