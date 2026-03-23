@@ -1,0 +1,348 @@
+[
+  {
+    "company_id": "kyobo_life",
+    "company_name": "교보생명",
+    "base_url": "https://www.kyobo.com",
+    "nav_links": [
+      {
+        "text": "공시실",
+        "href": "https://www.kyobo.com/#",
+        "onclick": "headerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "공시실",
+        "href": "",
+        "onclick": "",
+        "tag": "BUTTON"
+      },
+      {
+        "text": "고객서비스",
+        "href": "https://www.kyobo.com/dgt/web/customer/service/lifeTime-service",
+        "onclick": "",
+        "tag": "A"
+      },
+      {
+        "text": "고객서비스활용 TIP",
+        "href": "https://www.kyobo.com/dgt/web/customer/finance-information/service-tip",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "민원공시",
+        "href": "https://www.kyobo.com/dgt/web/customer/customer-proposal/cval-prcn",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "약관/정책안내",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/individual-information-process-policy/finance",
+        "onclick": "",
+        "tag": "A"
+      },
+      {
+        "text": "홈페이지ㆍ모바일앱 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/homepage-utilization-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "전자금융거래 기본약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/electron-finance-dealing-basis-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "전자금융서비스 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/electron-finance-service-utilization-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "위치기반서비스 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/location-information-service-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "여신거래기본약관",
+        "href": "https://www.kyobo.com/dgt/web/loan/product/guidiance/creditTransaction-terms",
+        "onclick": "return Menu.lnbDpt04MenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "고객서비스활용 TIP",
+        "href": "https://www.kyobo.com/dgt/web/customer/finance-information/service-tip",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "민원공시",
+        "href": "https://www.kyobo.com/dgt/web/customer/customer-proposal/cval-prcn",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "홈페이지ㆍ모바일앱 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/homepage-utilization-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "전자금융거래 기본약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/electron-finance-dealing-basis-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "전자금융서비스 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/electron-finance-service-utilization-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "위치기반서비스 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/location-information-service-clouse",
+        "onclick": "Menu.top3rdMenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "#약관",
+        "href": "https://www.kyobo.com/#",
+        "onclick": "",
+        "tag": "A"
+      },
+      {
+        "text": "약관/정책안내",
+        "href": "javascript:void(0);",
+        "onclick": "",
+        "tag": "A"
+      },
+      {
+        "text": "이용약관",
+        "href": "javascript:void(0);",
+        "onclick": "footerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "전자금융거래 기본약관",
+        "href": "javascript:void(0);",
+        "onclick": "footerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "전자금융서비스 이용약관",
+        "href": "javascript:void(0);",
+        "onclick": "footerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "위치기반서비스 이용약관",
+        "href": "javascript:void(0);",
+        "onclick": "footerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "IT계약관리시스템",
+        "href": "https://itps.kyobo.co.kr/",
+        "onclick": "",
+        "tag": "A"
+      },
+      {
+        "text": "이용약관",
+        "href": "javascript:void(0);",
+        "onclick": "footerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "공시실",
+        "href": "https://www.kyobo.com/#",
+        "onclick": "headerPageMove(this);",
+        "tag": "A"
+      },
+      {
+        "text": "여신거래기본약관",
+        "href": "https://www.kyobo.com/dgt/web/loan/product/guidiance/creditTransaction-terms",
+        "onclick": "return Menu.lnbDpt04MenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "고객서비스활용 TIP",
+        "href": "https://www.kyobo.com/dgt/web/customer/finance-information/service-tip",
+        "onclick": "return Menu.lnbDpt04MenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "민원공시",
+        "href": "https://www.kyobo.com/dgt/web/customer/customer-proposal/cval-prcn",
+        "onclick": "return Menu.lnbDpt04MenuMove(this,event);",
+        "tag": "A"
+      },
+      {
+        "text": "홈페이지ㆍ모바일앱 이용약관",
+        "href": "https://www.kyobo.com/dgt/web/customer/clouse-policy-guidance/homepage-utilization-clouse",
+        "onclick": "return Menu.lnbDpt04MenuMove(this,event);",
+        "tag": "A"
+      }
+    ],
+    "terms_api_calls": [],
+    "all_api_calls": [
+      {
+        "url": "https://www.kyobo.com/dtm/menu/item-list?reqDevice=PC&menuType=ind",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "header",
+          "header.code",
+          "header.message",
+          "body",
+          "body.topLevelItemCount",
+          "body.loginRoleId",
+          "body.menuType",
+          "body.millisAfter",
+          "body.menuItems"
+        ],
+        "data_preview": "{'header': {'code': 'SUCCESS', 'message': '정상처리되었습니다.'}, 'body': {'topLevelItemCount': 6, 'loginRoleId': 'DGT_MMR_0001', 'menuType': 'ind', 'millisAfter': 1774071944615, 'menuItems': [{'menuId': 'DGT001000000000000', 'menuName': 'MY교보', 'menuUrlAdr': '/dgt/web/mc/sm/nl/PMCSMNL1000', 'subMenuItemCount': 8, 'subItems': [{'dgtMnuLveNo': 3, 'subMenuItemCount': 5, 'dgtUpMnuId': 'DGT001000000000000', 'dgtMnuId': 'DGT001002000000000', 'dgtMnuNm': '나의 보험', 'dgtMnuSeq': 2, 'dgtScrnDvCd': None, 'scrnUrlAd",
+        "is_terms_related": false
+      },
+      {
+        "url": "https://www.kyobo.com/dtm/co/popup-person",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "header",
+          "header.code",
+          "header.message",
+          "body",
+          "body.dgt_stfu_txt",
+          "body.dgt_mbl_exsr_dv_cd",
+          "body.dgt_mbl_web_exsr_dv_cd",
+          "body.dgt_hp_exsr_dv_cd",
+          "body.dgt_stfu_tp_cd"
+        ],
+        "data_preview": "{'header': {'code': 'SUCCESS', 'message': '정상처리되었습니다.'}, 'body': {'dgt_stfu_txt': '<h3 style=\"font-size: 20rem; color:#333; font-weight:600; margin:16rem 0 20rem;\">고객님께 드리는 사과의 말씀</h3>\\r\\n저희 교보생명은 고객님의 소중한 정보를 기반으로 고객님의 미래의 역경을 극복하도록 도와드리는 보험회사로 개인정보보호에 최우선으로 노력해 왔으나, 언론보도 내용과 같이 1만여 건의 당사 고객정보(고객명, 증권번호, 계좌번호, 전화번호)가 유출된 데 대해 머리 숙여 깊이 사과 드립니다.\\r\\n<br><br>\\r\\n경찰 조사에 따르면, 당사 직원 B씨는 악성코드에 감염되어 외부망 PC에 보관중인 당사 고객정보 1만여 건이 유출된 것으로 확인되었으며,\\r\\n경찰이 수사를 통하여 회수 중이며 추가 유출 및 고객피해는 없도록 조치 중에 있습니다. \\r\\n이번 사건",
+        "is_terms_related": false
+      },
+      {
+        "url": "https://www.kyobo.com/dtm/co/webCardList",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "header",
+          "header.code",
+          "header.message",
+          "body",
+          "body.promotions",
+          "body.keywords",
+          "body.tags"
+        ],
+        "data_preview": "{'header': {'code': 'SUCCESS', 'message': '정상처리되었습니다.'}, 'body': {'promotions': {'01': [{'dgtCarSeqtId': 89, 'dgtCarKdDvCd': '02', 'dgtCarTpDvCd': '21', 'dgtSvcChnCd': '01', 'promCarExsrOdr': None, 'oppbYn': 'Y', 'afftNm': '', 'dgtMmrIntrDvCd1': '', 'dgtMmrIntrDvCd2': '', 'dgtMmrIntrDvCd3': '', 'dgtCarTitlNm1': '보험계약대출 간편조회<br />한도·금리 알아보기', 'dgtCarSubTitlNm1': '휴대폰 본인확인 후 가능금액과 금리를 알아보세요!', 'dgtCarAddTxt': '<p><br /></p>', 'dgtBanAddTxt': '<p><br /></p>', 'dgtConnUrlAdr1': '/dgt/web/loan/direct",
+        "is_terms_related": false
+      },
+      {
+        "url": "https://www.kyobo.com/dtm/co/popup-event",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "header",
+          "header.code",
+          "header.message",
+          "body",
+          "body.[list len=1]",
+          "body.dgt_img_src",
+          "body.dgt_img_alt",
+          "body.dgt_url_adr",
+          "body.dgt_pp_txt"
+        ],
+        "data_preview": "{'header': {'code': 'SUCCESS', 'message': '정상처리되었습니다.'}, 'body': [{'dgt_img_src': '/share/dta/2026/03/12/Nzk0MWRiODAt_문화예술이벤트_27탄_pc팝업배너.png', 'dgt_img_alt': '뮤지컬 빌리엘리어트', 'dgt_url_adr': '/dgt/web/event/event-detail/430?gubn=ing', 'dgt_pp_txt': '', 'dgt_pp_seq': 145, 'dgt_pp_odr': 99999, 'targets': ['mb01', 'mb02', 'pc01', 'pc02'], 'dgt_pp_titl_nm': '뮤지컬 빌리엘리어트'}]}",
+        "is_terms_related": false
+      },
+      {
+        "url": "https://www.kyobo.com/dtc/customer/ntc/list",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "header",
+          "header.code",
+          "header.message",
+          "body",
+          "body.pageSize",
+          "body.totalElements",
+          "body.totalPages",
+          "body.rowPerPage",
+          "body.currPageIdx"
+        ],
+        "data_preview": "{'header': {'code': 'SUCCESS', 'message': '정상처리되었습니다.'}, 'body': {'pageSize': 10, 'totalElements': 635, 'totalPages': 212, 'rowPerPage': 3, 'currPageIdx': 0, 'first': True, 'last': False, 'contents': [{'totalCount': 0, 'dgtCsBubdSeqtId': 19198, 'csBubdTitlNm': '간편송금서비스 종료 안내', 'dgtButxTxt': '<p style=\"margin: 0px 0px 10px; text-align: justify; font-size: 10pt; font-family: \\'맑은 고딕\\'; line-height: normal;\"><span style=\"font-family: Pretendard;\">항상 교보생명을 이용해 주시는 고객님께 진심으로 감사드립니다.</span></p>\\r\\n<p ",
+        "is_terms_related": false
+      },
+      {
+        "url": "https://static.adbrix.io/web-sdk/apps/5452dd4f61187ef70ca1786c4fffe82d1e8a6cb94723d2cc9352534a80dc509f.json",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "region",
+          "appkey",
+          "web_secretkey_sha256",
+          "measurement",
+          "app_name",
+          "aos_market_url",
+          "ios_market_url",
+          "app_icon",
+          "web_url",
+          "og_tag",
+          "og_tag.title",
+          "og_tag.description",
+          "og_tag.image_url",
+          "last_updated_datetime",
+          "_key"
+        ],
+        "data_preview": "{'region': 'ap1', 'appkey': 'dGui2ZBF4EGzbugK49rCVA', 'web_secretkey_sha256': '93cac882691934da6a7b740b72cc7ba8e92402bfb2ef8dec2bad7a51ede510c9', 'measurement': True, 'app_name': '교보생명 - 생활에 감이 필요할 때 교보로감', 'aos_market_url': 'https://play.google.com/store/apps/details?id=com.kyobo.app', 'ios_market_url': 'https://apps.apple.com/us/app/%EA%B5%90%EB%B3%B4%EC%83%9D%EB%AA%85/id1642268866', 'app_icon': 'https://play-lh.googleusercontent.com/op1y5psKY8RTwW5p39EutZ_B_hP-Y-E9JnGeASwLfEtaUARVnIiPL8BpDKND",
+        "is_terms_related": false
+      }
+    ],
+    "direct_api_results": [],
+    "error": null
+  },
+  {
+    "company_id": "hanwha_life",
+    "company_name": "한화생명",
+    "base_url": "https://www.hanwhalife.com",
+    "nav_links": [],
+    "terms_api_calls": [],
+    "all_api_calls": [
+      {
+        "url": "https://www.hanwhalife.com/company/main/intro/getList.do",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "totalCount",
+          "pageCount",
+          "status",
+          "status.msg",
+          "status.code",
+          "status.type",
+          "list",
+          "list.[list len=4]",
+          "list.seq",
+          "list.subject",
+          "list.readCount",
+          "list.adminName"
+        ],
+        "data_preview": "{'totalCount': 156, 'pageCount': 39.0, 'status': {'msg': 'DBMS processing succeeded!', 'code': '0000', 'type': 'dbms'}, 'list': [{'seq': 3504, 'subject': '한화생명 홈페이지 전산시스템 및 인프라 개선 작업 안내', 'readCount': 113, 'adminName': '최기석', 'attachFile': '', 'regDate': '2026-03-05'}, {'seq': 3481, 'subject': '취약계층 대상 보험계약대출 우대금리 적용 시행 안내', 'readCount': 227, 'adminName': '전종명', 'attachFile': '', 'regDate': '2025-12-24'}, {'seq': 3449, 'subject': '보험계약대출 우대금리 적용 시행', 'readCount': 384, 'adminName': '이지형', 'attach",
+        "is_terms_related": false
+      },
+      {
+        "url": "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GenerateIT",
+        "status": 200,
+        "method": "GET",
+        "data_keys": [
+          "[list len=3]"
+        ],
+        "data_preview": "['j5v0XD/0x+38eGLDbjIvweD+1kI2RsRfskjHHhwkpoYMVkl2SpOY9ENYKd4MKyvZcS/fz8nGpWq5gtWBftNOz6Swxg==', 43200, 100]",
+        "is_terms_related": false
+      }
+    ],
+    "direct_api_results": [],
+    "error": null
+  }
+]
