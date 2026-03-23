@@ -93,6 +93,27 @@ DISEASE_INJURY_EXCLUDE: list[str] = [
 # 유틸리티 함수
 # =============================================================================
 
+def normalize_sale_status(raw: str | None) -> str:
+    """판매 상태 문자열을 ON_SALE / DISCONTINUED / UNKNOWN 중 하나로 정규화한다.
+
+    Args:
+        raw: 크롤러에서 수집한 원본 판매 상태 문자열
+
+    Returns:
+        "ON_SALE", "DISCONTINUED", "UNKNOWN" 중 하나
+    """
+    if raw is None:
+        return "UNKNOWN"
+    v = str(raw).strip().upper()
+    _on_sale = {"Y", "01", "ON_SALE", "판매중", "현재판매", "SALE", "ACTIVE", "TRUE", "1"}
+    _discontinued = {"N", "02", "DISCONTINUED", "판매중지", "판매종료", "STOP", "ENDED", "FALSE", "0"}
+    if v in _on_sale:
+        return "ON_SALE"
+    if v in _discontinued:
+        return "DISCONTINUED"
+    return "UNKNOWN"
+
+
 def normalize_company_name(name: str) -> str | None:
     """회사명을 정규화된 company_id로 변환한다.
 
@@ -164,11 +185,14 @@ def save_pdf_with_metadata(
         product_type: 상품 유형 (예: "질병보험", "상해보험")
         source_url: PDF 출처 URL
         base_dir: 기본 저장 디렉토리
-        sale_status: 판매 상태 ("ON_SALE" 또는 "DISCONTINUED")
+        sale_status: 판매 상태 (정규화 전 원본값도 허용 - 내부에서 normalize_sale_status 적용)
 
     Returns:
         저장 결과 dict (file_path, file_hash, file_size_bytes 등 포함)
     """
+    # 판매 상태 정규화
+    sale_status = normalize_sale_status(sale_status)
+
     # 회사 디렉토리 생성
     company_dir = base_dir / company_id
     company_dir.mkdir(parents=True, exist_ok=True)

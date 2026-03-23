@@ -246,7 +246,7 @@ def generate_report(stats: dict[str, int]) -> str:
     """처리 통계를 포맷된 문자열 리포트로 반환한다.
 
     Args:
-        stats: {"total", "success", "skipped", "failed"} 통계 딕셔너리
+        stats: {"total", "success", "skipped", "failed", "on_sale", "discontinued", "unknown"} 통계 딕셔너리
 
     Returns:
         포맷된 요약 리포트 문자열
@@ -262,6 +262,11 @@ def generate_report(stats: dict[str, int]) -> str:
         f"스킵(중복):  {stats.get('skipped', 0):>8,}개",
         f"실패:        {stats.get('failed', 0):>8,}개",
         f"dry-run:     {stats.get('dry_run', 0):>8,}개",
+        separator,
+        "판매 상태 분포 (성공 처리 기준)",
+        f"  ON_SALE:      {stats.get('on_sale', 0):>6,}개",
+        f"  DISCONTINUED: {stats.get('discontinued', 0):>6,}개",
+        f"  UNKNOWN:      {stats.get('unknown', 0):>6,}개",
         separator,
         "",
     ]
@@ -348,6 +353,23 @@ def scan_data_directory(
 # ─────────────────────────────────────────────────────────────
 
 
+def _normalize_sale_status(raw: str | None) -> str:
+    """판매 상태 문자열을 정규화한다.
+
+    ON_SALE(판매중) / DISCONTINUED(판매중지) / UNKNOWN(미확인) 중 하나를 반환.
+    """
+    if raw is None:
+        return "UNKNOWN"
+    v = str(raw).strip().upper()
+    on_sale = {"Y", "01", "ON_SALE", "판매중", "현재판매", "SALE", "ACTIVE", "TRUE"}
+    discontinued = {"N", "02", "DISCONTINUED", "판매중지", "판매종료", "STOP", "ENDED", "FALSE"}
+    if v in on_sale:
+        return "ON_SALE"
+    if v in discontinued:
+        return "DISCONTINUED"
+    return "UNKNOWN"
+
+
 def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
     """PDF 경로로부터 메타데이터를 추출한다.
 
@@ -360,7 +382,7 @@ def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
         data_dir: 루트 data 디렉터리 (format 감지용)
 
     Returns:
-        메타데이터 딕셔너리 (company_code, company_name, product_code, ...)
+        메타데이터 딕셔너리 (company_code, company_name, product_code, sale_status, ...)
     """
     parent_dir = pdf_path.parent
     fmt = detect_format(parent_dir)
@@ -376,6 +398,7 @@ def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
             "product_name": product_code,
             "category": "LIFE",
             "source_url": None,
+            "sale_status": "UNKNOWN",
         }
 
     if fmt == "B":
@@ -399,6 +422,7 @@ def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
                     "category": json_data.get("category", category),
                     "source_url": json_data.get("source_url"),
                     "json_content_hash": json_data.get("content_hash"),
+                    "sale_status": _normalize_sale_status(json_data.get("sale_status")),
                 }
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("JSON 파일 파싱 실패: %s (%s)", json_file, e)
@@ -412,6 +436,7 @@ def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
             "product_name": pdf_path.stem,
             "category": category,
             "source_url": None,
+            "sale_status": "UNKNOWN",
         }
 
     # Format C: 폴백
@@ -423,6 +448,7 @@ def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
         "product_name": pdf_path.stem,
         "category": "LIFE",
         "source_url": None,
+        "sale_status": "UNKNOWN",
     }
 
 
@@ -522,6 +548,8 @@ async def upsert_policy(
     if metadata.get("source_url"):
         policy_metadata["source_url"] = metadata["source_url"]
 
+    sale_status = metadata.get("sale_status", "UNKNOWN")
+
     if policy is None:
         policy = Policy(
             id=uuid.uuid4(),
@@ -531,15 +559,17 @@ async def upsert_policy(
             category=category,
             raw_text=raw_text,
             metadata_=policy_metadata,
+            sale_status=sale_status,
         )
         session.add(policy)
         await session.flush()
-        logger.debug("Policy 생성: %s / %s", company.code, product_code)
+        logger.debug("Policy 생성: %s / %s (sale_status=%s)", company.code, product_code, sale_status)
     else:
         # 기존 레코드 업데이트
         policy.raw_text = raw_text
         policy.metadata_ = policy_metadata
-        logger.debug("Policy 업데이트: %s / %s", company.code, product_code)
+        policy.sale_status = sale_status
+        logger.debug("Policy 업데이트: %s / %s (sale_status=%s)", company.code, product_code, sale_status)
 
     return policy
 
@@ -675,11 +705,16 @@ async def process_single_file(
                 len(chunks),
                 content_hash[:8],
             )
-            return {"status": "success", "chunk_count": len(chunks), "error": None}
+            return {
+                "status": "success",
+                "chunk_count": len(chunks),
+                "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                "error": None,
+            }
 
     except Exception as e:
         logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
-        return {"status": "failed", "chunk_count": 0, "error": str(e)}
+        return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -761,6 +796,9 @@ async def main(argv: list[str] | None = None) -> None:
         "skipped": 0,
         "failed": 0,
         "dry_run": 0,
+        "on_sale": 0,
+        "discontinued": 0,
+        "unknown": 0,
     }
     failures: list[dict[str, Any]] = []
 
@@ -792,6 +830,13 @@ async def main(argv: list[str] | None = None) -> None:
         status = result["status"]
         if status == "success":
             stats["success"] += 1
+            ss = result.get("sale_status", "UNKNOWN")
+            if ss == "ON_SALE":
+                stats["on_sale"] += 1
+            elif ss == "DISCONTINUED":
+                stats["discontinued"] += 1
+            else:
+                stats["unknown"] += 1
         elif status == "skipped":
             stats["skipped"] += 1
         elif status == "dry_run":

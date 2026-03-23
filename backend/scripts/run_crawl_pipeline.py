@@ -110,6 +110,7 @@ def run_company_pipeline(
     company_id: str,
     skip_crawl: bool = False,
     skip_embed: bool = False,
+    skip_status_update: bool = False,
 ) -> dict:
     """단일 보험사 파이프라인 실행. 결과 dict 반환."""
     result = {
@@ -117,6 +118,7 @@ def run_company_pipeline(
         "started_at": datetime.now(timezone.utc).isoformat(),
         "crawl": {"status": "skipped", "count": 0, "output_tail": ""},
         "ingest": {"status": "skipped", "count": 0, "output_tail": ""},
+        "status_update": {"status": "skipped"},
         "finished_at": None,
         "status": "pending",
     }
@@ -124,7 +126,7 @@ def run_company_pipeline(
     # ── Step 1: 크롤링 ─────────────────────────────────────────
     if not skip_crawl:
         logger.info("=" * 60)
-        logger.info("[%s] Step 1/2: 크롤링 시작", company_id)
+        logger.info("[%s] Step 1/3: 크롤링 시작", company_id)
         ok, out = run_step(
             [PYTHON, "scripts/crawl_nonlife_playwright.py", "--company", company_id],
             f"{company_id}/crawl",
@@ -141,7 +143,7 @@ def run_company_pipeline(
             return result
 
     # ── Step 2: 인제스트 + 임베딩 ──────────────────────────────
-    logger.info("[%s] Step 2/2: 인제스트 + 임베딩 시작", company_id)
+    logger.info("[%s] Step 2/3: 인제스트 + 임베딩 시작", company_id)
     ingest_cmd = [PYTHON, "scripts/ingest_local_pdfs.py", "--company", company_id]
     if not skip_embed:
         ingest_cmd.append("--embed")
@@ -152,6 +154,20 @@ def run_company_pipeline(
         "count": extract_ingest_count(out),
         "output_tail": out[-1000:],
     }
+
+    # ── Step 3: 현황 문서 업데이트 ─────────────────────────────
+    if not skip_status_update:
+        logger.info("[%s] Step 3/3: 현황 문서 업데이트", company_id)
+        ok_status, out_status = run_step(
+            [PYTHON, "scripts/update_pipeline_status.py", "--company", company_id],
+            f"{company_id}/status_update",
+        )
+        result["status_update"] = {
+            "status": "success" if ok_status else "failed",
+            "output_tail": out_status[-500:],
+        }
+        if not ok_status:
+            logger.warning("[%s] 현황 문서 업데이트 실패 (파이프라인은 계속)", company_id)
 
     result["finished_at"] = datetime.now(timezone.utc).isoformat()
     result["status"] = "completed" if ok else "ingest_failed"
@@ -164,6 +180,7 @@ def main() -> None:
     parser.add_argument("--skip-crawl", action="store_true", help="크롤링 건너뜀 (인제스트+임베딩만)")
     parser.add_argument("--skip-embed", action="store_true", help="임베딩 건너뜀 (크롤링+인제스트만)")
     parser.add_argument("--resume", action="store_true", help="이미 completed 상태인 회사 건너뜀")
+    parser.add_argument("--skip-status-update", action="store_true", help="현황 문서 업데이트 건너뜀")
     args = parser.parse_args()
 
     companies = args.companies or NONLIFE_COMPANIES
@@ -187,6 +204,7 @@ def main() -> None:
             company_id,
             skip_crawl=args.skip_crawl,
             skip_embed=args.skip_embed,
+            skip_status_update=args.skip_status_update,
         )
 
         # 진행 상황 저장
@@ -197,6 +215,7 @@ def main() -> None:
         logger.info("◀ [%s] 파이프라인 완료: %s", company_id, result["status"])
         logger.info("   크롤링: %s (%d개)", result["crawl"]["status"], result["crawl"]["count"])
         logger.info("   인제스트: %s (%d개)", result["ingest"]["status"], result["ingest"]["count"])
+        logger.info("   현황문서: %s", result["status_update"]["status"])
 
     # 최종 요약
     logger.info("")
