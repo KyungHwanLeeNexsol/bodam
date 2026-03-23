@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Neon DB에 인제스트된 PDF 파일을 로컬에서 삭제하여 디스크 공간 확보."""
+"""CockroachDB에 인제스트된 PDF 파일을 로컬에서 삭제하여 디스크 공간 확보."""
 from __future__ import annotations
 
 import asyncio

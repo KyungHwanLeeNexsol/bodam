@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""크롤러 완료 대기 후 Neon 인제스트 자동 실행.
+"""크롤러 완료 대기 후 인제스트 자동 실행.
 
 크롤러(crawl_*) 프로세스가 모두 종료되면 ingest_local_pdfs 를 실행한다.
 """
@@ -59,7 +59,7 @@ def main() -> None:
         time.sleep(30)
 
     # ingest_local_pdfs 실행
-    log("Neon 인제스트 시작...")
+    log("인제스트 시작...")
     backend_dir = Path(__file__).parent.parent
     env_vars = {"PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(backend_dir)}
 

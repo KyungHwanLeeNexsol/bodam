@@ -1229,135 +1229,199 @@ async def crawl_hanwha_general(context: Any) -> int:
 # =============================================================================
 
 async def crawl_heungkuk_fire(context: Any) -> int:
-    """흥국화재 약관 PDF를 수집한다.
+    """흥국화재 보험상품공시 페이지에서 약관 PDF를 수집한다.
 
-    # @MX:NOTE: 흥국화재 메인은 타임아웃 발생 가능, 약관 전용 URL 직접 접근
-    # @MX:NOTE: /consumer/terms/list.do 경로 확인됨
+    # @MX:NOTE: 실제 약관 페이지 URL: /FRW/announce/insGoodsGongsiSale.do
+    # @MX:NOTE: 다운로드 방식: fn_filedownX → downForm.submit() → Playwright expect_download
+    # @MX:NOTE: fn_filedownX 파라미터: (path, displayName, saveName) saveName이 실제 파일 ID
+    # @MX:NOTE: 페이지네이션: goPage(n) 함수 호출, 판매중 ~6페이지 / 판매중지 ~215페이지 이상
+    # @MX:NOTE: 상품약관 파일만 수집 (사업방법서, 상품요약서 제외)
+    # @MX:ANCHOR: 다운로드 방식 변경 금지 - form submit 방식만 정상 동작함
+    # @MX:REASON: /common/download.do?temp=타임스탬프 패턴, FILE_NAME 직접 접근 불가
     """
+    import re as _re
+    import tempfile
+
     company_id = "heungkuk_fire"
     company_name = "흥국화재"
+    base_url = "https://www.heungkukfire.co.kr"
+    terms_url = f"{base_url}/FRW/announce/insGoodsGongsiSale.do"
     downloaded = 0
-    found_pdfs: list[dict] = []
+    seen: set[str] = set()  # save_name 기준 중복 방지
 
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if url.lower().endswith(".pdf"):
-            found_pdfs.append({"url": url, "name": Path(urlparse(url).path).stem})
-        ct = response.headers.get("content-type", "")
-        if "json" in ct:
-            try:
-                body = await response.body()
-                if len(body) > 300:
-                    try:
-                        data = json.loads(body)
-                        data_str = json.dumps(data, ensure_ascii=False)
-                        if any(kw in data_str for kw in ["약관", "fileNm", "pdfUrl", "filePath"]):
-                            found_pdfs.append({"type": "json", "url": url, "data": data})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+    async def extract_yakgwan_links(pg: Any) -> list[dict]:
+        """현재 페이지에서 상품약관 fn_filedownX 링크를 파싱한다."""
+        items = await pg.evaluate("""
+        () => {
+            return Array.from(document.querySelectorAll('a[onclick*="fn_filedownX"]'))
+                .filter(a => a.textContent.trim() === '상품약관')
+                .map(a => ({
+                    text: a.textContent.trim(),
+                    onclick: a.getAttribute('onclick')
+                }));
+        }
+        """)
+        result = []
+        for item in items:
+            onclick = item.get("onclick", "")
+            # fn_filedownX(path, displayName, saveName) - 3개 파라미터 파싱
+            m = _re.search(r"fn_filedownX\('([^']+)',\s*'([^']*)',\s*'([^']+)'", onclick)
+            if m:
+                path, display_name, save_name = m.groups()
+                source_url = f"{base_url}/common/download.do?FILE_NAME={path}{save_name}"
+                # display_name에서 상품명 추출 (한글 파일명)
+                product_name = display_name.replace(".pdf", "").replace("_약관", "").strip()
+                result.append({
+                    "path": path,
+                    "display_name": display_name,
+                    "save_name": save_name,
+                    "product_name": product_name,
+                    "source_url": source_url,
+                })
+        return result
+
+    async def get_last_page(pg: Any) -> int:
+        """페이지네이션에서 마지막 페이지 번호를 반환한다."""
+        try:
+            last = await pg.evaluate("""
+            () => {
+                const links = Array.from(document.querySelectorAll('.paginate a, .paging a'));
+                const nums = links
+                    .map(a => {
+                        const h = a.href || '';
+                        const m = h.match(/goPage\\((\\d+)\\)/);
+                        return m ? parseInt(m[1]) : 0;
+                    })
+                    .filter(n => n > 0);
+                return nums.length > 0 ? Math.max(...nums) : 1;
+            }
+            """)
+            return last
+        except Exception:
+            return 1
+
+    async def download_via_form(pg: Any, path: str, display_name: str, save_name: str) -> bytes | None:
+        """downForm을 직접 submit하여 PDF를 다운로드한다."""
+        try:
+            # Playwright download 이벤트로 form submit 결과 캡처
+            async with pg.expect_download(timeout=30_000) as dl_info:
+                await pg.evaluate(f"""
+                () => {{
+                    const frm = document.getElementById('downForm');
+                    if (!frm) return;
+                    frm.filePath.value = '{path}';
+                    frm.fileRealName.value = '{display_name.replace("'", "\\'")}';
+                    frm.fileSaveName.value = '{save_name}';
+                    frm.action = '/common/download.do?temp=' + new Date().getTime();
+                    frm.submit();
+                }}
+                """)
+            download = await dl_info.value
+            tmp_path = await download.path()
+            if tmp_path:
+                with open(tmp_path, "rb") as f:
+                    data = f.read()
+                # 다운로드 임시 파일 삭제
+                await download.delete()
+                if data and data[:4] == b"%PDF":
+                    return data
+                logger.warning("[흥국화재] 다운로드 파일이 PDF가 아님: %s", save_name)
+            return None
+        except Exception as exc:
+            logger.warning("[흥국화재] form 다운로드 실패 (%s): %s", save_name, exc)
+            return None
+
+    async def process_page(pg: Any, sale_status: str) -> int:
+        """현재 페이지의 상품약관을 모두 다운로드한다."""
+        count = 0
+        links = await extract_yakgwan_links(pg)
+        logger.info("[흥국화재] %s 페이지 약관 링크: %d개", sale_status, len(links))
+        for lnk in links:
+            save_name = lnk["save_name"]
+            seen_key = f"{sale_status}:{save_name}"
+            if seen_key in seen:
+                logger.debug("[흥국화재] %s 중복(seen): %s", sale_status, save_name)
+                continue
+            seen.add(seen_key)
+            data_bytes = await download_via_form(pg, lnk["path"], lnk["display_name"], save_name)
+            if data_bytes and len(data_bytes) > 1000:
+                result = save_pdf(
+                    data=data_bytes,
+                    company_id=company_id,
+                    company_name=company_name,
+                    product_name=lnk["product_name"] or save_name.replace(".pdf", ""),
+                    product_category="약관",
+                    source_url=lnk["source_url"],
+                    sale_status=sale_status,
+                )
+                if not result.get("skipped"):
+                    count += 1
+                    logger.info("[흥국화재] 저장 완료: %s", save_name)
+            await asyncio.sleep(1)
+        return count
 
     page = await context.new_page()
-    page.on("response", on_response)
-
     try:
-        # 약관 전용 URL 먼저 시도 (메인보다 응답이 빠름)
-        term_urls = [
-            "https://www.heungkukfire.co.kr/consumer/terms/list.do",
-            "https://www.heungkukfire.co.kr/disclosure/terms/list.do",
-            "https://www.heungkukfire.co.kr",
-        ]
+        logger.info("[흥국화재] 보험상품공시 페이지 로딩: %s", terms_url)
+        await page.goto(terms_url, timeout=PAGE_TIMEOUT, wait_until="networkidle")
+        await asyncio.sleep(3)
 
-        for turl in term_urls:
-            logger.info("[흥국화재] URL 접속 시도: %s", turl)
-            try:
-                await page.goto(turl, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-                content = await page.content()
-                if len(content) > 500:
-                    logger.info("[흥국화재] 접속 성공: %s (%d bytes)", turl, len(content))
+        title = await page.title()
+        if "흥국화재" not in title:
+            logger.warning("[흥국화재] 예상치 못한 페이지 제목: %s", title)
 
-                    # 약관 카테고리 클릭
-                    for cat in ["건강", "상해", "질병", "종합"]:
-                        try:
-                            await page.evaluate(f"""
-                                () => {{
-                                    Array.from(document.querySelectorAll('a, button, li, span')).forEach(el => {{
-                                        if (el.textContent.trim().includes('{cat}')) el.click();
-                                    }});
-                                }}
-                            """)
+        # ── 판매중 탭 전체 페이지 수집 ──────────────────────────────────────
+        total_on_sale = await get_last_page(page)
+        logger.info("[흥국화재] 판매중 총 페이지: %d", total_on_sale)
+
+        for pg_num in range(1, total_on_sale + 1):
+            if pg_num > 1:
+                try:
+                    await page.evaluate(f"goPage({pg_num})")
+                    await asyncio.sleep(2)
+                except Exception as exc:
+                    logger.warning("[흥국화재] 판매중 페이지 %d 이동 오류: %s", pg_num, exc)
+                    continue
+            downloaded += await process_page(page, "ON_SALE")
+
+        # ── 판매중지 탭 클릭 후 전체 페이지 수집 ─────────────────────────────
+        logger.info("[흥국화재] 판매중지 탭 클릭 시도")
+        clicked = await try_click_discontinued_tab_pl(page, company_name)
+        if clicked:
+            total_disc = await get_last_page(page)
+            logger.info("[흥국화재] 판매중지 총 페이지: %d", total_disc)
+
+            for pg_num in range(1, total_disc + 1):
+                if pg_num > 1:
+                    try:
+                        await page.evaluate(f"goPage({pg_num})")
+                        await asyncio.sleep(2)
+                        # goPage() 호출 후 탭이 ON_SALE로 리셋되는 경우 재클릭
+                        tab_status = await page.evaluate("""
+() => {
+    const tabs = Array.from(document.querySelectorAll('a, button, li'));
+    for (const t of tabs) {
+        const txt = t.textContent.trim();
+        const isActive = t.classList.contains('active') || t.classList.contains('on') || t.getAttribute('aria-selected') === 'true';
+        if ((txt === '판매중지' || txt === '판매 중지') && isActive) return 'DISCONTINUED';
+        if ((txt === '판매중' || txt === '판매 중') && isActive) return 'ON_SALE';
+    }
+    return 'UNKNOWN';
+}
+""")
+                        if tab_status != 'DISCONTINUED':
+                            logger.warning("[흥국화재] 페이지 이동 후 탭 전환됨: %s, 재클릭 시도", tab_status)
+                            await try_click_discontinued_tab_pl(page, company_name)
                             await asyncio.sleep(2)
-                        except Exception:
-                            pass
+                    except Exception as exc:
+                        logger.warning("[흥국화재] 판매중지 페이지 %d 이동 오류: %s", pg_num, exc)
+                        continue
+                downloaded += await process_page(page, "DISCONTINUED")
+        else:
+            logger.warning("[흥국화재] 판매중지 탭 클릭 실패")
 
-                    # 판매중 링크 수집 후 경계 기록
-                    on_sale_links = await page.evaluate("""
-                        () => Array.from(document.querySelectorAll('a[href*=".pdf"], a[href*="download"], a[href*="Down"]'))
-                            .map(a => ({href: a.href, text: a.textContent.trim()}))
-                    """)
-                    on_sale_boundary_json = len([f for f in found_pdfs if not isinstance(f, dict) or f.get("type") != "json"])
-
-                    # 판매중지 탭 클릭 시도
-                    await try_click_discontinued_tab_pl(page, company_name)
-
-                    # 판매중지 링크 수집
-                    disc_links = await page.evaluate("""
-                        () => Array.from(document.querySelectorAll('a[href*=".pdf"], a[href*="download"], a[href*="Down"]'))
-                            .map(a => ({href: a.href, text: a.textContent.trim()}))
-                    """)
-
-                    seen: set[str] = set()
-                    for link_status, link_list in [("ON_SALE", on_sale_links), ("DISCONTINUED", disc_links)]:
-                        for link in link_list[:50]:
-                            href = link.get("href", "")
-                            text = link.get("text", "")
-                            if not href or href in seen:
-                                continue
-                            seen.add(href)
-                            data_bytes = await download_pdf_bytes(href, context)
-                            if data_bytes and len(data_bytes) > 1000:
-                                result = save_pdf(
-                                    data=data_bytes,
-                                    company_id=company_id,
-                                    company_name=company_name,
-                                    product_name=text or Path(urlparse(href).path).stem,
-                                    product_category="약관",
-                                    source_url=href,
-                                    sale_status=link_status,
-                                )
-                                if not result.get("skipped"):
-                                    downloaded += 1
-                            await asyncio.sleep(1)
-
-                    # JSON 응답에서 PDF 추출
-                    for item in found_pdfs:
-                        if isinstance(item, dict) and item.get("type") == "json":
-                            pdf_links = extract_pdf_links_from_json(item["data"], "https://www.heungkukfire.co.kr")
-                            for pdf_info in pdf_links:
-                                if pdf_info["url"] in seen:
-                                    continue
-                                if not is_disease_injury(pdf_info["name"]):
-                                    continue
-                                seen.add(pdf_info["url"])
-                                data_bytes = await download_pdf_bytes(pdf_info["url"], context)
-                                if data_bytes and len(data_bytes) > 1000:
-                                    result = save_pdf(
-                                        data=data_bytes,
-                                        company_id=company_id,
-                                        company_name=company_name,
-                                        product_name=pdf_info["name"],
-                                        product_category=pdf_info.get("category", "약관"),
-                                        source_url=pdf_info["url"],
-                                    )
-                                    if not result.get("skipped"):
-                                        downloaded += 1
-                                await asyncio.sleep(1)
-                    break
-            except Exception as exc:
-                logger.warning("[흥국화재] URL 접속 실패 (%s): %s", turl, exc)
-
+    except Exception as exc:
+        logger.error("[흥국화재] 크롤링 오류: %s", exc)
     finally:
         await page.close()
 
@@ -1372,122 +1436,114 @@ async def crawl_heungkuk_fire(context: Any) -> int:
 async def crawl_axa_general(context: Any) -> int:
     """AXA손해보험 약관 PDF를 수집한다.
 
-    # @MX:NOTE: AXA는 SPA (/cui/ 경로), 메뉴 클릭으로 약관 섹션 탐색
+    # @MX:NOTE: AXA는 별도 HTML 공시 페이지에서 PDF 링크를 직접 추출 (EUC-KR 인코딩)
+    # @MX:NOTE: SPA(/cui/) 방식은 네트워크 인터셉트로 PDF를 얻을 수 없음 - 공시 페이지 사용
+    # @MX:ANCHOR: AXA 공시 페이지 URL이 변경되면 이 함수 전체를 재검토해야 함
+    # @MX:REASON: 사이트 구조 조사로 확인된 유일한 PDF 수집 경로
     """
     company_id = "axa_general"
     company_name = "AXA손해보험"
     downloaded = 0
-    found_items: list[dict] = []
-
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(ext in url.lower() for ext in [".css", ".png", ".jpg", ".gif", ".ico", ".woff", ".svg"]):
-            return
-        if url.lower().endswith(".pdf"):
-            found_items.append({"type": "pdf", "url": url})
-            return
-        ct = response.headers.get("content-type", "")
-        if "json" in ct:
-            try:
-                body = await response.body()
-                if len(body) > 300:
-                    try:
-                        data = json.loads(body)
-                        data_str = json.dumps(data, ensure_ascii=False)
-                        if any(kw in data_str for kw in ["약관", "fileNm", "filePath", "pdfUrl"]):
-                            found_items.append({"type": "json", "url": url, "data": data})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+    base_url = "https://www.axa.co.kr"
+    # AXA 공시 페이지: EUC-KR 인코딩된 HTML에 약관 PDF 링크가 직접 포함됨
+    disclosure_url = (
+        "https://www.axa.co.kr/AsianPlatformInternet/html/axacms/common/intro"
+        "/disclosure/insurance/index.html"
+    )
 
     page = await context.new_page()
-    page.on("response", on_response)
-
     try:
-        logger.info("[AXA손해보험] SPA 로딩...")
-        await page.goto("https://www.axa.co.kr/cui/", timeout=PAGE_TIMEOUT, wait_until="networkidle")
-        await asyncio.sleep(4)
+        logger.info("[AXA손해보험] 공시 페이지 로딩: %s", disclosure_url)
+        response = await page.request.get(
+            disclosure_url,
+            headers={"Accept-Charset": "EUC-KR"},
+            timeout=30_000,
+        )
+        if not response.ok:
+            logger.warning("[AXA손해보험] 공시 페이지 로드 실패 (status=%d)", response.status)
+            return 0
 
-        # 약관 메뉴 탐색 및 클릭
-        for nav_text in ["약관", "보험약관", "공시", "약관정보", "상품안내"]:
-            try:
-                clicked = await page.evaluate(f"""
-                    () => {{
-                        const els = Array.from(document.querySelectorAll('a, button, li, nav'));
-                        for (const el of els) {{
-                            if (el.textContent.trim().includes('{nav_text}')) {{
-                                el.click();
-                                return true;
-                            }}
-                        }}
-                        return false;
-                    }}
-                """)
-                if clicked:
-                    await asyncio.sleep(3)
-                    break
-            except Exception:
-                pass
+        raw_bytes = await response.body()
+        # EUC-KR 인코딩 디코딩
+        html_text = raw_bytes.decode("euc-kr", errors="ignore")
+        logger.info("[AXA손해보험] 공시 페이지 수신 (%d bytes)", len(raw_bytes))
 
-        # 약관 전용 URL 시도
-        for turl in ["https://www.axa.co.kr/cui/#/terms", "https://www.axa.co.kr/terms", "https://www.axa.co.kr/info/terms"]:
-            try:
-                await page.goto(turl, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-            except Exception:
-                pass
+        # PDF href 링크 추출: /AsianPlatformInternet/doc/ 경로 포함 링크
+        pdf_pattern = re.compile(r'href=["\']([^"\']*\.pdf)["\']', re.IGNORECASE)
+        all_hrefs = pdf_pattern.findall(html_text)
+        logger.info("[AXA손해보험] 총 %d개 PDF 링크 발견", len(all_hrefs))
 
-        # 판매중지 탭 클릭 전 경계 기록
-        on_sale_boundary = len(found_items)
-        # 판매중지 탭 클릭 시도
-        await try_click_discontinued_tab_pl(page, company_name)
+        # 링크 텍스트와 함께 추출하여 제품명으로 사용
+        link_pattern = re.compile(
+            r'href=["\']([^"\']*\.pdf)["\'][^>]*>([^<]*)</a>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        link_matches = link_pattern.findall(html_text)
 
-        seen: set[str] = set()
-        for idx, item in enumerate(found_items):
-            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
-            if item["type"] == "pdf":
-                url = item["url"]
-                if url not in seen:
-                    seen.add(url)
-                    name = Path(urlparse(url).path).stem
-                    data_bytes = await download_pdf_bytes(url, context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=name,
-                            product_category="약관",
-                            source_url=url,
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
+        # URL -> 제품명 매핑 구성
+        href_name_map: dict[str, str] = {}
+        for href, link_text in link_matches:
+            clean_text = re.sub(r'\s+', ' ', link_text).strip()
+            if clean_text:
+                href_name_map[href] = clean_text
 
-            elif item["type"] == "json":
-                pdf_links = extract_pdf_links_from_json(item["data"], "https://www.axa.co.kr")
-                for pdf_info in pdf_links:
-                    if pdf_info["url"] in seen:
-                        continue
-                    if not is_disease_injury(pdf_info["name"]):
-                        continue
-                    seen.add(pdf_info["url"])
-                    data_bytes = await download_pdf_bytes(pdf_info["url"], context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=pdf_info["name"],
-                            product_category=pdf_info.get("category", "약관"),
-                            source_url=pdf_info["url"],
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
+        # 중복 제거 및 정렬
+        seen_urls: set[str] = set()
+        pdf_items: list[dict[str, str]] = []
+        for href in all_hrefs:
+            # 상대 경로를 절대 URL로 변환
+            if href.startswith("http"):
+                full_url = href
+            elif href.startswith("/"):
+                full_url = base_url + href
+            else:
+                full_url = base_url + "/" + href
+
+            if full_url in seen_urls:
+                continue
+            seen_urls.add(full_url)
+
+            # 제품명: href_name_map에서 찾거나 파일명 사용
+            name = href_name_map.get(href, "")
+            if not name:
+                name = Path(urlparse(full_url).path).stem
+            name = re.sub(r'\s+', ' ', name).strip() or Path(urlparse(full_url).path).stem
+
+            pdf_items.append({"url": full_url, "name": name})
+
+        logger.info("[AXA손해보험] 중복 제거 후 %d개 고유 PDF", len(pdf_items))
+
+        # 약관 PDF 필터링 및 다운로드
+        # /AsianPlatformInternet/doc/ 경로만 대상으로 함 (공시 약관 문서)
+        doc_items = [
+            item for item in pdf_items
+            if "/AsianPlatformInternet/doc/" in item["url"]
+            or "/doc/internet/public/" in item["url"]
+        ]
+        logger.info("[AXA손해보험] 약관 문서 경로 필터링 후 %d개", len(doc_items))
+
+        # 필터 결과가 없으면 전체 PDF를 대상으로 함
+        target_items = doc_items if doc_items else pdf_items
+
+        for item in target_items:
+            url = item["url"]
+            # URL stem을 파일명으로 사용 (링크 텍스트가 '약관' 단어 하나여서 의미 없음)
+            name = Path(urlparse(url).path).stem or item["name"]
+
+            data_bytes = await download_pdf_bytes(url, context)
+            if data_bytes and len(data_bytes) > 1000:
+                result = save_pdf(
+                    data=data_bytes,
+                    company_id=company_id,
+                    company_name=company_name,
+                    product_name=name,
+                    product_category="약관",
+                    source_url=url,
+                    sale_status="ON_SALE",
+                )
+                if not result.get("skipped"):
+                    downloaded += 1
+            await asyncio.sleep(0.5)
 
     finally:
         await page.close()
@@ -1503,147 +1559,198 @@ async def crawl_axa_general(context: Any) -> int:
 async def crawl_mg_insurance(context: Any) -> int:
     """MG손해보험 약관 PDF를 수집한다.
 
-    # @MX:NOTE: yebyeol.co.kr, 독자적인 .scp 확장자 시스템
+    # @MX:NOTE: yebyeol.co.kr, LG CNS SmartChannelPlatform(SCP) 기반
+    # @MX:NOTE: API 흐름:
+    # @MX:NOTE:   1단계: GET /PB031210DM.scp → comToken(CSRF) 획득
+    # @MX:NOTE:   2단계: POST /PB031210_001.ajax → 상품별 dataIdno 목록 조회
+    # @MX:NOTE:   3단계: POST /PB031130_003.form (form submit) → PDF 바이너리 다운로드
+    # @MX:NOTE: searchPrdtLccd: 대분류(L=생명, P=손해보험 등)
+    # @MX:NOTE: searchPrdtMccd: 중분류 코드 (01~21)
+    # @MX:NOTE: searchPrdtSaleYn: 0=판매중, 1=판매중지
+    # @MX:NOTE: docCfcd: 1=상품설명서, 2=약관, 3=보험안내자료
+    # @MX:WARN: comToken은 세션당 1회 발급되는 CSRF 토큰 - Playwright 세션 내에서만 유효
+    # @MX:REASON: SCP 프레임워크는 FRM_TOK_003 오류로 유효하지 않은 토큰 요청을 거부함
     """
     company_id = "mg_insurance"
     company_name = "MG손해보험"
+    base_url = "https://www.yebyeol.co.kr"
     downloaded = 0
-    found_items: list[dict] = []
+    seen: set[str] = set()
 
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(ext in url.lower() for ext in [".css", ".png", ".jpg", ".gif", ".ico", ".woff", ".svg"]):
-            return
-        if url.lower().endswith(".pdf") or "/pdf/" in url.lower():
-            found_items.append({"type": "pdf", "url": url})
-            return
-        ct = response.headers.get("content-type", "")
-        if "json" in ct or "text" in ct:
-            try:
-                body = await response.body()
-                if len(body) > 300:
-                    try:
-                        data = json.loads(body)
-                        data_str = json.dumps(data, ensure_ascii=False)
-                        if any(kw in data_str for kw in ["약관", "fileNm", "filePath", "pdfUrl", "fileName"]):
-                            found_items.append({"type": "json", "url": url, "data": data})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+    # 상품 대분류/중분류 코드 목록 - yebyeol.co.kr select 옵션에서 확인한 실제 코드
+    # prdtLccd: L=장기보험, A=자동차보험, G=일반보험, B/P/C=기타
+    # codeL: 06=건강, 07=운전자, 09=여행, 15=의료, 16=상해, 17=질병(실손), 18~21=기타
+    # @MX:NOTE: prcSts=N이어도 list.rows에 데이터가 있을 수 있음 (API 특성)
+    product_categories = [
+        ("L", "06"),  # 건강보험
+        ("L", "07"),  # 운전자보험
+        ("L", "09"),  # 여행보험
+        ("L", "15"),  # 의료보험
+        ("L", "16"),  # 상해보험
+        ("L", "17"),  # 질병/실손보험
+        ("L", "18"),  # 기타장기1
+        ("L", "19"),  # 기타장기2
+        ("L", "20"),  # 종합보험
+        ("L", "21"),  # 실손의료비
+        ("A", "01"),  # 자동차(개인용)
+        ("A", "02"),  # 자동차(업무용)
+        ("A", "03"),  # 자동차(영업용)
+        ("A", "04"),  # 자동차(이륜차)
+        ("A", "05"),  # 자동차(이동장치)
+        ("G", "01"),  # 일반-재물보험
+        ("G", "02"),  # 일반-일반
+        ("G", "03"),  # 일반-특종보험
+        ("G", "04"),  # 일반-화재보험
+        ("G", "05"),  # 일반-적하보험
+        ("B", "01"),  # B-일반
+        ("B", "02"),  # B-기타
+        ("P", "01"),  # P-단체
+        ("C", "01"),  # C-전체
+    ]
 
     page = await context.new_page()
-    page.on("response", on_response)
 
     try:
-        logger.info("[MG손해보험] 약관 페이지 로딩...")
+        logger.info("[MG손해보험] 약관 페이지 로딩 및 CSRF 토큰 획득...")
         await page.goto(
-            "https://www.yebyeol.co.kr/PB031210DM.scp",
+            f"{base_url}/PB031210DM.scp",
             timeout=PAGE_TIMEOUT,
             wait_until="domcontentloaded",
         )
-        await asyncio.sleep(4)
+        await asyncio.sleep(3)
 
-        # 카테고리 클릭
-        for cat in ["건강", "상해", "질병", "종합", "실손"]:
-            try:
-                await page.evaluate(f"""
-                    () => {{
-                        Array.from(document.querySelectorAll('a, button, li, td')).forEach(el => {{
-                            if (el.textContent.trim().includes('{cat}')) el.click();
-                        }});
-                    }}
-                """)
-                await asyncio.sleep(2)
-            except Exception:
-                pass
-
-        # 판매중지 탭 클릭 전 경계 기록
-        on_sale_boundary = len(found_items)
-        # 판매중지 탭 클릭 시도
-        await try_click_discontinued_tab_pl(page, company_name)
-
-        # PDF 링크 수집
-        links = await page.evaluate("""
+        # CSRF 토큰 획득 (페이지 hidden input에서 추출)
+        com_token = await page.evaluate("""
             () => {
-                const results = [];
-                document.querySelectorAll('a').forEach(a => {
-                    const href = a.href || a.getAttribute('href') || '';
-                    const onclick = a.getAttribute('onclick') || '';
-                    const text = a.textContent.trim();
-                    if (href.includes('pdf') || href.includes('down') || href.endsWith('.pdf') ||
-                        onclick.includes('pdf') || onclick.includes('down')) {
-                        results.push({href, onclick, text});
-                    }
-                });
-                return results;
+                const el = document.querySelector('input[name="comToken"]');
+                return el ? el.value : null;
             }
         """)
+        if not com_token:
+            logger.warning("[MG손해보험] comToken을 찾지 못함 - API 호출 실패 가능성 높음")
+        else:
+            logger.info("[MG손해보험] comToken 획득 성공: %s...", com_token[:10])
 
-        seen: set[str] = set()
-        for idx, item in enumerate(found_items):
-            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
-            if item["type"] == "pdf":
-                url = item["url"]
-                if url not in seen:
-                    seen.add(url)
-                    name = Path(urlparse(url).path).stem
-                    data_bytes = await download_pdf_bytes(url, context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=name,
-                            product_category="약관",
-                            source_url=url,
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
+        # 판매중/판매중지 구분하여 모든 카테고리 조회
+        sale_yn_list = [("0", "ON_SALE"), ("1", "DISCONTINUED")]
 
-            elif item["type"] == "json":
-                pdf_links = extract_pdf_links_from_json(item["data"], "https://www.yebyeol.co.kr")
-                for pdf_info in pdf_links:
-                    if pdf_info["url"] in seen:
+        for sale_yn, sale_status in sale_yn_list:
+            logger.info("[MG손해보험] %s 상품 조회 중...", sale_status)
+
+            for prdtLccd, prdtMccd in product_categories:
+                try:
+                    # Playwright fetch API를 통해 AJAX 호출 (쿠키/세션 자동 포함)
+                    api_result = await page.evaluate(f"""
+                        async () => {{
+                            const tokenEl = document.querySelector('input[name="comToken"]');
+                            const token = tokenEl ? tokenEl.value : '';
+                            const resp = await fetch('/PB031210_001.ajax', {{
+                                method: 'POST',
+                                headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+                                body: new URLSearchParams({{
+                                    searchPrdtLccd: '{prdtLccd}',
+                                    searchPrdtMccd: '{prdtMccd}',
+                                    searchPrdtSaleYn: '{sale_yn}',
+                                    searchText: '',
+                                    comToken: token,
+                                    devonTokenFieldSessionscope: 'comToken',
+                                }}).toString()
+                            }});
+                            const text = await resp.text();
+                            try {{ return JSON.parse(text); }} catch(e) {{ return null; }}
+                        }}
+                    """)
+
+                    if not api_result:
                         continue
-                    if not is_disease_injury(pdf_info["name"]):
-                        continue
-                    seen.add(pdf_info["url"])
-                    data_bytes = await download_pdf_bytes(pdf_info["url"], context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=pdf_info["name"],
-                            product_category=pdf_info.get("category", "약관"),
-                            source_url=pdf_info["url"],
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
 
-        for link in links[:30]:
-            href = link.get("href", "")
-            text = link.get("text", "")
-            if href and href not in seen and not is_disease_injury(text) is False:
-                seen.add(href)
-                data_bytes = await download_pdf_bytes(href, context)
-                if data_bytes and len(data_bytes) > 1000:
-                    result = save_pdf(
-                        data=data_bytes,
-                        company_id=company_id,
-                        company_name=company_name,
-                        product_name=text or Path(urlparse(href).path).stem,
-                        product_category="약관",
-                        source_url=href,
+                    # prcSts=N이어도 list.rows에 데이터가 있을 수 있음 (MG손해보험 API 특성)
+                    rows = api_result.get("list", {}).get("rows", [])
+                    if not rows:
+                        continue
+
+                    logger.info(
+                        "[MG손해보험] Lccd=%s Mccd=%s SaleYn=%s → %d개 항목",
+                        prdtLccd, prdtMccd, sale_yn, len(rows),
                     )
-                    if not result.get("skipped"):
-                        downloaded += 1
-                await asyncio.sleep(1)
+
+                    for row in rows:
+                        data_idno = str(row.get("dataIdno", "")).strip()
+                        if not data_idno:
+                            continue
+
+                        inskd_nm = row.get("inskdAbbrNm", row.get("inskdNm", "알수없음"))
+
+                        # docCfcd: 1=상품설명서, 2=약관, 3=보험안내자료
+                        # doc1Org/doc2Org/doc3Org: None이면 해당 문서 없음
+                        for doc_cf, doc_type_name in [("1", "상품설명서"), ("2", "약관"), ("3", "보험안내자료")]:
+                            doc_key = f"doc{doc_cf}Org"
+                            if row.get(doc_key) is None:
+                                continue  # 해당 문서 없음
+
+                            unique_key = f"{data_idno}_{doc_cf}"
+                            if unique_key in seen:
+                                continue
+                            seen.add(unique_key)
+
+                            # form submit 방식으로 PDF 다운로드
+                            pdf_bytes = await page.evaluate(f"""
+                                async () => {{
+                                    try {{
+                                        const resp = await fetch('/PB031130_003.form', {{
+                                            method: 'POST',
+                                            headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+                                            body: new URLSearchParams({{
+                                                dataIdno: '{data_idno}',
+                                                docCfcd: '{doc_cf}',
+                                            }}).toString()
+                                        }});
+                                        if (!resp.ok) return null;
+                                        const ct = resp.headers.get('content-type') || '';
+                                        if (!ct.includes('pdf') && !ct.includes('octet')) return null;
+                                        const buf = await resp.arrayBuffer();
+                                        return Array.from(new Uint8Array(buf));
+                                    }} catch(e) {{
+                                        return null;
+                                    }}
+                                }}
+                            """)
+
+                            if not pdf_bytes:
+                                continue
+
+                            data_bytes = bytes(pdf_bytes)
+                            if len(data_bytes) < 1000:
+                                continue
+
+                            product_name = f"{inskd_nm}_{doc_type_name}"
+                            source_url = f"{base_url}/PB031130_003.form?dataIdno={data_idno}&docCfcd={doc_cf}"
+
+                            result = save_pdf(
+                                data=data_bytes,
+                                company_id=company_id,
+                                company_name=company_name,
+                                product_name=product_name,
+                                product_category=doc_type_name,
+                                source_url=source_url,
+                                sale_status=sale_status,
+                            )
+                            if not result.get("skipped"):
+                                downloaded += 1
+                                logger.info(
+                                    "[MG손해보험] 저장: %s (%s, %s)",
+                                    product_name, doc_type_name, sale_status,
+                                )
+                            await asyncio.sleep(0.5)
+
+                except Exception as exc:
+                    logger.warning(
+                        "[MG손해보험] 카테고리 처리 오류 (Lccd=%s, Mccd=%s): %s",
+                        prdtLccd, prdtMccd, exc,
+                    )
+                    continue
+
+                await asyncio.sleep(0.3)
 
     finally:
         await page.close()
@@ -1659,155 +1766,272 @@ async def crawl_mg_insurance(context: Any) -> int:
 async def crawl_nh_fire(context: Any) -> int:
     """NH농협손해보험 약관 PDF를 수집한다.
 
-    # @MX:NOTE: nhfire.co.kr, .nhfire 독자 확장자 가능성
+    # @MX:NOTE: API 흐름 파악: 보험상품공시 페이지에서 단계별 AJAX 호출
+    # @MX:NOTE: 1단계: POST /front/announce/retrievePdtDcd.ajax (상품군 코드)
+    # @MX:NOTE: 2단계: POST /front/announce/retrievePdtCd.ajax (상품 목록)
+    # @MX:NOTE: 3단계: POST /front/announce/retrievePdtInfo.ajax (파일 ID)
+    # @MX:NOTE: 4단계: POST /imageView/downloadFile.ajax (PDF 다운로드)
+    # @MX:WARN: jsessionid 없이는 다운로드가 실패할 수 있어 Playwright 컨텍스트 사용 필수
+    # @MX:REASON: nhfire.co.kr은 서버 세션 기반으로 AJAX 요청마다 jsessionid 필요
     """
+    import xml.etree.ElementTree as ET
+
     company_id = "nh_fire"
     company_name = "NH농협손해보험"
     downloaded = 0
-    found_items: list[dict] = []
+    base_url = "https://www.nhfire.co.kr"
 
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(ext in url.lower() for ext in [".css", ".png", ".jpg", ".gif", ".ico", ".woff", ".svg"]):
-            return
-        if url.lower().endswith(".pdf") or "/pdf/" in url.lower():
-            found_items.append({"type": "pdf", "url": url})
-            return
-        ct = response.headers.get("content-type", "")
-        if "json" in ct:
-            try:
-                body = await response.body()
-                if len(body) > 300:
-                    try:
-                        data = json.loads(body)
-                        data_str = json.dumps(data, ensure_ascii=False)
-                        if any(kw in data_str for kw in ["약관", "fileNm", "pdfUrl", "filePath"]):
-                            found_items.append({"type": "json", "url": url, "data": data})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
+    # 세션 획득을 위한 초기 페이지 로딩
     page = await context.new_page()
-    page.on("response", on_response)
+    session_cookies: dict[str, str] = {}
+
+    async def _post_ajax(endpoint: str, data: dict[str, str]) -> bytes | None:
+        """nhfire AJAX 엔드포인트에 JS fetch로 POST 요청을 보낸다.
+
+        # @MX:NOTE: page.request.post()는 세션 쿠키(jsessionid)를 URL에 자동 포함하지 않아
+        # 빈 응답을 받는다. JS fetch는 브라우저 컨텍스트에서 세션을 그대로 사용하므로 정상 동작.
+        """
+        try:
+            body_str = "&".join(f"{k}={v}" for k, v in data.items())
+            result = await page.evaluate(f"""
+                async () => {{
+                    const resp = await fetch('{endpoint}', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }},
+                        body: '{body_str}'
+                    }});
+                    if (!resp.ok) return null;
+                    return await resp.text();
+                }}
+            """)
+            if result is None:
+                logger.warning("[NH농협손해보험] AJAX 실패: %s", endpoint)
+                return None
+            return result.encode("utf-8")
+        except Exception as exc:
+            logger.warning("[NH농협손해보험] AJAX 오류: %s -> %s", endpoint, exc)
+            return None
+
+    def _parse_xml_values(xml_bytes: bytes, tag: str) -> list[str]:
+        """XML 응답에서 특정 태그의 CDATA 값 목록을 추출한다."""
+        try:
+            decoded = xml_bytes.decode("utf-8", errors="replace")
+            return re.findall(rf"<{tag}><!\[CDATA\[([^\]]+)\]\]></{tag}>", decoded)
+        except Exception:
+            return []
+
+    def _parse_pdt_info(xml_bytes: bytes) -> list[dict[str, str]]:
+        """retrievePdtInfo.ajax 응답에서 파일 정보를 추출한다."""
+        try:
+            decoded = xml_bytes.decode("utf-8", errors="replace")
+            results = []
+            # 각 LMultiData 블록 파싱
+            pdt_nms = re.findall(r"<pdtNm><!\[CDATA\[([^\]]*)\]\]>", decoded)
+            file_ids = re.findall(r"<fileId><!\[CDATA\[([^\]]*)\]\]>", decoded)
+            plcnd_seqns = re.findall(r"<plcndAfileSeqn><!\[CDATA\[([^\]]*)\]\]>", decoded)
+            plcnd_nms = re.findall(r"<plcndAfileNm><!\[CDATA\[([^\]]*)\]\]>", decoded)
+            # 판매 상태
+            sel_st_dts = re.findall(r"<pdtSelStDt><!\[CDATA\[([^\]]*)\]\]>", decoded)
+            sel_ed_dts = re.findall(r"<pdtSelEdDt><!\[CDATA\[([^\]]*)\]\]>", decoded)
+
+            for i, file_id in enumerate(file_ids):
+                if not file_id:
+                    continue
+                plcnd_seqn = plcnd_seqns[i] if i < len(plcnd_seqns) else ""
+                plcnd_nm = plcnd_nms[i] if i < len(plcnd_nms) else ""
+                pdt_nm = pdt_nms[i] if i < len(pdt_nms) else ""
+                sel_ed_dt = sel_ed_dts[i] if i < len(sel_ed_dts) else "99991231"
+                # 판매중지 여부: 종료일이 과거이면 판매중지
+                import datetime
+                today = datetime.date.today().strftime("%Y%m%d")
+                status = "DISCONTINUED" if sel_ed_dt < today else "ON_SALE"
+
+                if plcnd_seqn and plcnd_nm:
+                    results.append({
+                        "file_id": file_id,
+                        "seqn": plcnd_seqn,
+                        "name": plcnd_nm.replace(".pdf", "").strip(),
+                        "pdt_name": pdt_nm,
+                        "status": status,
+                    })
+            return results
+        except Exception as exc:
+            logger.warning("[NH농협손해보험] pdt_info 파싱 오류: %s", exc)
+            return []
 
     try:
-        logger.info("[NH농협손해보험] 메인 페이지 로딩...")
-        await page.goto("https://www.nhfire.co.kr", timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+        logger.info("[NH농협손해보험] 보험상품공시 페이지 로딩...")
+        await page.goto(
+            f"{base_url}/announce/productAnnounce/retrieveInsuranceProductsAnnounce.nhfire",
+            timeout=PAGE_TIMEOUT,
+            wait_until="domcontentloaded",
+        )
         await asyncio.sleep(3)
 
-        # 약관 메뉴 탐색
-        for nav_text in ["약관", "보험약관", "공시실", "약관조회"]:
-            try:
-                clicked = await page.evaluate(f"""
-                    () => {{
-                        const els = Array.from(document.querySelectorAll('a, button, li'));
-                        for (const el of els) {{
-                            if (el.textContent.trim().includes('{nav_text}')) {{
-                                el.click();
-                                return true;
+        # 상품군 코드: 01=장기보험, 02=일반보험 (질병/상해 관련만 수집)
+        target_pdt_gr_cds = ["01", "02"]
+
+        seen_keys: set[str] = set()  # (file_id, seqn) 중복 방지
+
+        for pdt_gr_cd in target_pdt_gr_cds:
+            logger.info("[NH농협손해보험] 상품군 %s 처리 중...", pdt_gr_cd)
+
+            # 상품 목록 가져오기
+            pdt_cd_resp = await _post_ajax(
+                "/front/announce/retrievePdtCd.ajax",
+                {"type": "ajax", "pdtSelYn": "Y", "pdtGrCd": pdt_gr_cd, "pdtDcd": ""},
+            )
+            if not pdt_cd_resp:
+                continue
+
+            pdt_cds = _parse_xml_values(pdt_cd_resp, "pdtCd")
+            pdt_nms_raw = _parse_xml_values(pdt_cd_resp, "pdtNm")
+            logger.info("[NH농협손해보험] 상품군 %s: 상품 %d개 발견", pdt_gr_cd, len(pdt_cds))
+
+            # 각 상품의 약관 파일 정보 조회
+            for pdt_idx, pdt_cd in enumerate(pdt_cds):
+                pdt_nm_raw = pdt_nms_raw[pdt_idx] if pdt_idx < len(pdt_nms_raw) else pdt_cd
+
+                # 질병/상해 관련 상품 필터링 (종합, 건강, 실손 등도 포함)
+                # NH농협은 상품명으로 필터링하되 너무 엄격하게 하지 않음
+                # 장기보험은 대부분 질병/상해 관련이므로 전체 수집
+                if pdt_gr_cd == "02" and not is_disease_injury(pdt_nm_raw):
+                    continue
+
+                info_resp = await _post_ajax(
+                    "/front/announce/retrievePdtInfo.ajax",
+                    {"type": "ajax", "fileType": "05", "pdtCd": pdt_cd},
+                )
+                if not info_resp:
+                    continue
+
+                file_infos = _parse_pdt_info(info_resp)
+                if not file_infos:
+                    continue
+
+                for fi in file_infos:
+                    key = f"{fi['file_id']}_{fi['seqn']}"
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+
+                    # PDF 다운로드 (JS fetch + base64)
+                    try:
+                        file_id = fi["file_id"]
+                        seqn = fi["seqn"]
+                        b64 = await page.evaluate(f"""
+                            async () => {{
+                                const resp = await fetch('/imageView/downloadFile.ajax', {{
+                                    method: 'POST',
+                                    headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+                                    body: 'fileId={file_id}&afileSeqn={seqn}'
+                                }});
+                                if (!resp.ok) return null;
+                                const buf = await resp.arrayBuffer();
+                                const bytes = new Uint8Array(buf);
+                                let binary = '';
+                                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                                return btoa(binary);
                             }}
-                        }}
-                        return false;
-                    }}
-                """)
-                if clicked:
-                    await asyncio.sleep(3)
-                    break
-            except Exception:
-                pass
+                        """)
+                        if b64:
+                            import base64
+                            pdf_bytes = base64.b64decode(b64)
+                            if pdf_bytes and len(pdf_bytes) > 1000:
+                                file_name = fi["name"] or pdt_nm_raw
+                                result = save_pdf(
+                                    data=pdf_bytes,
+                                    company_id=company_id,
+                                    company_name=company_name,
+                                    product_name=file_name,
+                                    product_category="약관",
+                                    source_url=f"{base_url}/imageView/downloadFile.ajax",
+                                    sale_status=fi["status"],
+                                )
+                                if not result.get("skipped"):
+                                    downloaded += 1
+                        else:
+                            logger.debug("[NH농협손해보험] 다운로드 실패: %s/%s", fi["file_id"], fi["seqn"])
+                    except Exception as dl_exc:
+                        logger.debug("[NH농협손해보험] 다운로드 오류: %s", dl_exc)
 
-        # 약관 전용 URL 시도
-        term_urls = [
-            "https://www.nhfire.co.kr/front/consumer/publicTerms.nhfire",
-            "https://www.nhfire.co.kr/consumer/terms",
-            "https://www.nhfire.co.kr/about/terms",
-        ]
-        for turl in term_urls:
-            try:
-                await page.goto(turl, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-                content = await page.content()
-                if "약관" in content and len(content) > 1000:
-                    logger.info("[NH농협손해보험] 약관 페이지 접근 성공: %s", turl)
-                    break
-            except Exception:
-                pass
+                    await asyncio.sleep(0.5)
 
-        # 판매중지 탭 클릭 전 경계 기록
-        on_sale_boundary = len(found_items)
-        # 판매중지 탭 클릭 시도
-        await try_click_discontinued_tab_pl(page, company_name)
-
-        seen: set[str] = set()
-        for idx, item in enumerate(found_items):
-            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
-            if item["type"] == "pdf":
-                url = item["url"]
-                if url not in seen:
-                    seen.add(url)
-                    name = Path(urlparse(url).path).stem
-                    data_bytes = await download_pdf_bytes(url, context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=name,
-                            product_category="약관",
-                            source_url=url,
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
+                # 상품 간 대기
+                if (pdt_idx + 1) % 20 == 0:
+                    logger.info("[NH농협손해보험] %d/%d 상품 처리 완료, 현재 %d개 수집", pdt_idx + 1, len(pdt_cds), downloaded)
                     await asyncio.sleep(1)
 
-            elif item["type"] == "json":
-                pdf_links = extract_pdf_links_from_json(item["data"], "https://www.nhfire.co.kr")
-                for pdf_info in pdf_links:
-                    if pdf_info["url"] in seen:
-                        continue
-                    if not is_disease_injury(pdf_info["name"]):
-                        continue
-                    seen.add(pdf_info["url"])
-                    data_bytes = await download_pdf_bytes(pdf_info["url"], context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=pdf_info["name"],
-                            product_category=pdf_info.get("category", "약관"),
-                            source_url=pdf_info["url"],
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
+        # 판매중지 상품도 수집 (pdtSelYn=N)
+        logger.info("[NH농협손해보험] 판매중지 상품 수집 시작...")
+        for pdt_gr_cd in target_pdt_gr_cds:
+            pdt_cd_resp = await _post_ajax(
+                "/front/announce/retrievePdtCd.ajax",
+                {"type": "ajax", "pdtSelYn": "N", "pdtGrCd": pdt_gr_cd, "pdtDcd": ""},
+            )
+            if not pdt_cd_resp:
+                continue
 
-        # 페이지에서 직접 PDF 링크 탐색
-        links = await page.evaluate("""
-            () => Array.from(document.querySelectorAll('a[href*=".pdf"], a[href*="download"], a[href*="Down"]'))
-                .map(a => ({href: a.href, text: a.textContent.trim()}))
-        """)
-        for link in links[:30]:
-            href = link.get("href", "")
-            text = link.get("text", "")
-            if href and href not in seen:
-                seen.add(href)
-                data_bytes = await download_pdf_bytes(href, context)
-                if data_bytes and len(data_bytes) > 1000:
-                    result = save_pdf(
-                        data=data_bytes,
-                        company_id=company_id,
-                        company_name=company_name,
-                        product_name=text or Path(urlparse(href).path).stem,
-                        product_category="약관",
-                        source_url=href,
-                    )
-                    if not result.get("skipped"):
-                        downloaded += 1
-                await asyncio.sleep(1)
+            pdt_cds_disc = _parse_xml_values(pdt_cd_resp, "pdtCd")
+            pdt_nms_disc = _parse_xml_values(pdt_cd_resp, "pdtNm")
+            logger.info("[NH농협손해보험] 판매중지 상품군 %s: %d개", pdt_gr_cd, len(pdt_cds_disc))
+
+            for pdt_idx, pdt_cd in enumerate(pdt_cds_disc[:50]):  # 판매중지는 최대 50개
+                pdt_nm_raw = pdt_nms_disc[pdt_idx] if pdt_idx < len(pdt_nms_disc) else pdt_cd
+
+                info_resp = await _post_ajax(
+                    "/front/announce/retrievePdtInfo.ajax",
+                    {"type": "ajax", "fileType": "05", "pdtCd": pdt_cd},
+                )
+                if not info_resp:
+                    continue
+
+                file_infos = _parse_pdt_info(info_resp)
+                for fi in file_infos:
+                    key = f"{fi['file_id']}_{fi['seqn']}"
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+
+                    try:
+                        file_id = fi["file_id"]
+                        seqn = fi["seqn"]
+                        b64 = await page.evaluate(f"""
+                            async () => {{
+                                const resp = await fetch('/imageView/downloadFile.ajax', {{
+                                    method: 'POST',
+                                    headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+                                    body: 'fileId={file_id}&afileSeqn={seqn}'
+                                }});
+                                if (!resp.ok) return null;
+                                const buf = await resp.arrayBuffer();
+                                const bytes = new Uint8Array(buf);
+                                let binary = '';
+                                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                                return btoa(binary);
+                            }}
+                        """)
+                        if b64:
+                            import base64
+                            pdf_bytes = base64.b64decode(b64)
+                            if pdf_bytes and len(pdf_bytes) > 1000:
+                                result = save_pdf(
+                                    data=pdf_bytes,
+                                    company_id=company_id,
+                                    company_name=company_name,
+                                    product_name=fi["name"] or pdt_nm_raw,
+                                    product_category="약관",
+                                    source_url=f"{base_url}/imageView/downloadFile.ajax",
+                                    sale_status="DISCONTINUED",
+                                )
+                                if not result.get("skipped"):
+                                    downloaded += 1
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.5)
 
     finally:
         await page.close()
@@ -1823,170 +2047,181 @@ async def crawl_nh_fire(context: Any) -> int:
 async def crawl_lotte_insurance(context: Any) -> int:
     """롯데손해보험 약관 PDF를 수집한다.
 
-    # @MX:NOTE: lotteins.co.kr, JSP 기반 사이트
+    # @MX:NOTE: lotteins.co.kr, JSP 기반 사이트 - step2/step3/step4 단계별 약관 조회
+    # @MX:NOTE: /web/C/D/H/cdh190.jsp 페이지에서 CChannelSvl POST로 약관 목록 로드
+    # @MX:NOTE: PDF URL 패턴: https://www.lotteins.co.kr/upload/C/newProduct/XXXX_yak.pdf
     """
+    import re as _re
+
     company_id = "lotte_insurance"
     company_name = "롯데손해보험"
     downloaded = 0
-    found_items: list[dict] = []
+    base_url = "https://www.lotteins.co.kr"
 
-    async def on_response(response: Any) -> None:
-        url = response.url
-        if any(ext in url.lower() for ext in [".css", ".png", ".jpg", ".gif", ".ico", ".woff", ".svg"]):
-            return
-        if url.lower().endswith(".pdf") or "/pdf/" in url.lower():
-            found_items.append({"type": "pdf", "url": url})
-            return
-        ct = response.headers.get("content-type", "")
-        if "json" in ct:
-            try:
-                body = await response.body()
-                if len(body) > 300:
-                    try:
-                        data = json.loads(body)
-                        data_str = json.dumps(data, ensure_ascii=False)
-                        if any(kw in data_str for kw in ["약관", "fileNm", "pdfUrl", "filePath"]):
-                            found_items.append({"type": "json", "url": url, "data": data})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+    # 조회 대상 카테고리: (lcode, mcode, name) - 건강/상해/질병 위주
+    categories = [
+        ("02", "01", "일반"),
+        ("03", "01", "상해,질병"),
+        ("03", "02", "저축"),
+        ("03", "03", "운전자"),
+        ("03", "04", "재물"),
+        ("03", "05", "연금보험"),
+    ]
 
     page = await context.new_page()
-    page.on("response", on_response)
+    await page.set_extra_http_headers({
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    })
 
     try:
-        logger.info("[롯데손해보험] 메인 페이지 로딩...")
-        await page.goto("https://www.lotteins.co.kr", timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
+        logger.info("[롯데손해보험] 약관 페이지 로딩...")
+        # 세션 초기화
+        await page.goto(
+            f"{base_url}/web/main.jsp",
+            timeout=PAGE_TIMEOUT,
+            wait_until="domcontentloaded",
+        )
+        await asyncio.sleep(2)
+
+        # 약관 페이지로 이동
+        await page.goto(
+            f"{base_url}/web/C/D/H/cdh190.jsp",
+            timeout=PAGE_TIMEOUT,
+            wait_until="networkidle",
+        )
         await asyncio.sleep(3)
 
-        # 약관 메뉴 탐색
-        for nav_text in ["약관", "보험약관", "공시", "약관조회", "약관정보"]:
-            try:
-                clicked = await page.evaluate(f"""
-                    () => {{
-                        const els = Array.from(document.querySelectorAll('a, button, li'));
-                        for (const el of els) {{
-                            if (el.textContent.trim().includes('{nav_text}')) {{
-                                el.click();
-                                return true;
-                            }}
-                        }}
-                        return false;
-                    }}
-                """)
-                if clicked:
-                    await asyncio.sleep(3)
-                    break
-            except Exception:
-                pass
-
-        # JSP 특유의 약관 URL 패턴 시도
-        term_urls = [
-            "https://www.lotteins.co.kr/html/terms/termsList.jsp",
-            "https://www.lotteins.co.kr/html/terms/terms.jsp",
-            "https://www.lotteins.co.kr/terms",
-            "https://www.lotteins.co.kr/consumer/terms",
-        ]
-        for turl in term_urls:
-            try:
-                await page.goto(turl, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-                content = await page.content()
-                if "약관" in content and len(content) > 1000:
-                    logger.info("[롯데손해보험] 약관 페이지 접근 성공: %s", turl)
-
-                    # 카테고리 클릭
-                    for cat in ["건강", "상해", "질병", "종합"]:
-                        try:
-                            await page.evaluate(f"""
-                                () => {{
-                                    Array.from(document.querySelectorAll('a, button, li, td')).forEach(el => {{
-                                        if (el.textContent.trim().includes('{cat}')) el.click();
-                                    }});
-                                }}
-                            """)
-                            await asyncio.sleep(2)
-                        except Exception:
-                            pass
-                    break
-            except Exception:
-                pass
-
-        # 판매중지 탭 클릭 전 경계 기록
-        on_sale_boundary = len(found_items)
-        # 판매중지 탭 클릭 시도
-        await try_click_discontinued_tab_pl(page, company_name)
+        content = await page.content()
+        if "약관" not in content or len(content) < 5000:
+            logger.warning("[롯데손해보험] 약관 페이지 접근 실패")
+            return 0
 
         seen: set[str] = set()
-        for idx, item in enumerate(found_items):
-            status = "ON_SALE" if idx < on_sale_boundary else "DISCONTINUED"
-            if item["type"] == "pdf":
-                url = item["url"]
-                if url not in seen:
-                    seen.add(url)
-                    name = Path(urlparse(url).path).stem
-                    data_bytes = await download_pdf_bytes(url, context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=name,
-                            product_category="약관",
-                            source_url=url,
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
 
-            elif item["type"] == "json":
-                pdf_links = extract_pdf_links_from_json(item["data"], "https://www.lotteins.co.kr")
-                for pdf_info in pdf_links:
-                    if pdf_info["url"] in seen:
-                        continue
-                    if not is_disease_injury(pdf_info["name"]):
-                        continue
-                    seen.add(pdf_info["url"])
-                    data_bytes = await download_pdf_bytes(pdf_info["url"], context)
-                    if data_bytes and len(data_bytes) > 1000:
-                        result = save_pdf(
-                            data=data_bytes,
-                            company_id=company_id,
-                            company_name=company_name,
-                            product_name=pdf_info["name"],
-                            product_category=pdf_info.get("category", "약관"),
-                            source_url=pdf_info["url"],
-                            sale_status=status,
-                        )
-                        if not result.get("skipped"):
-                            downloaded += 1
-                    await asyncio.sleep(1)
+        async def collect_pdfs_for_issale(issale: str) -> int:
+            """판매중(Y) 또는 판매중지(N) 상품의 약관 PDF를 수집한다."""
+            count = 0
+            status = "ON_SALE" if issale == "Y" else "DISCONTINUED"
 
-        # 페이지에서 직접 PDF 링크 탐색
-        links = await page.evaluate("""
-            () => Array.from(document.querySelectorAll('a[href*=".pdf"], a[href*="download"], a[href*="Down"]'))
-                .map(a => ({href: a.href, text: a.textContent.trim()}))
-        """)
-        for link in links[:30]:
-            href = link.get("href", "")
-            text = link.get("text", "")
-            if href and href not in seen:
-                seen.add(href)
-                data_bytes = await download_pdf_bytes(href, context)
-                if data_bytes and len(data_bytes) > 1000:
-                    result = save_pdf(
-                        data=data_bytes,
-                        company_id=company_id,
-                        company_name=company_name,
-                        product_name=text or Path(urlparse(href).path).stem,
-                        product_category="약관",
-                        source_url=href,
+            for lcode, mcode, cat_name in categories:
+                try:
+                    # 판매 구분 설정
+                    await page.evaluate(f"procTask('{issale}');")
+                    await asyncio.sleep(0.5)
+
+                    # step2: 카테고리 선택 → 상품 목록 로드
+                    await page.evaluate(f"step2('{lcode}', '{mcode}', 0, 1);")
+                    await asyncio.sleep(3)
+
+                    step2_html = await page.evaluate(
+                        "document.getElementById('step2view') ? document.getElementById('step2view').innerHTML : ''"
                     )
-                    if not result.get("skipped"):
-                        downloaded += 1
-                await asyncio.sleep(1)
+                    if not step2_html:
+                        continue
+
+                    # scode 목록 추출
+                    scode_pattern = rf"step3\('{_re.escape(lcode)}','{_re.escape(mcode)}','(\d+)'\)"
+                    scode_list = _re.findall(scode_pattern, step2_html)
+                    logger.info(
+                        "[롯데손해보험] %s(%s) %s: %d개 상품",
+                        status, cat_name, issale, len(scode_list),
+                    )
+
+                    for scode in scode_list:
+                        try:
+                            # step3: 상품 버전(날짜) 목록 로드
+                            await page.evaluate(f"step3('{lcode}', '{mcode}', '{scode}');")
+                            await asyncio.sleep(2)
+
+                            step3_html = await page.evaluate(
+                                "document.getElementById('step3view') ? document.getElementById('step3view').innerHTML : ''"
+                            )
+                            if not step3_html:
+                                continue
+
+                            # startdate 목록 추출
+                            date_pattern = rf"step4\('{_re.escape(lcode)}','{_re.escape(mcode)}','{_re.escape(scode)}','(\d{{8}})'\)"
+                            startdate_list = _re.findall(date_pattern, step3_html)
+
+                            for startdate in startdate_list:
+                                try:
+                                    # step4: 실제 PDF 링크 로드
+                                    await page.evaluate(
+                                        f"step4('{lcode}', '{mcode}', '{scode}', '{startdate}');"
+                                    )
+                                    await asyncio.sleep(2)
+
+                                    step4_html = await page.evaluate(
+                                        "document.getElementById('step4view') ? document.getElementById('step4view').innerHTML : ''"
+                                    )
+                                    if not step4_html:
+                                        continue
+
+                                    # 상품명 추출
+                                    product_name_match = _re.search(
+                                        r"<dt>상품명</dt><dd><span>([^<]+)</span>",
+                                        step4_html,
+                                    )
+                                    product_name = (
+                                        product_name_match.group(1).strip()
+                                        if product_name_match
+                                        else f"{cat_name}_{scode}_{startdate}"
+                                    )
+
+                                    # 약관(_yak) PDF만 수집
+                                    pdf_hrefs = _re.findall(
+                                        r'href=["\']([^"\']+_yak\.pdf)["\']',
+                                        step4_html,
+                                        _re.IGNORECASE,
+                                    )
+
+                                    for href in pdf_hrefs:
+                                        if not href.startswith("http"):
+                                            href = base_url + href
+                                        if href in seen:
+                                            continue
+                                        seen.add(href)
+
+                                        data_bytes = await download_pdf_bytes(href, context)
+                                        if data_bytes and len(data_bytes) > 1000:
+                                            result = save_pdf(
+                                                data=data_bytes,
+                                                company_id=company_id,
+                                                company_name=company_name,
+                                                product_name=product_name,
+                                                product_category=cat_name,
+                                                source_url=href,
+                                                sale_status=status,
+                                            )
+                                            if not result.get("skipped"):
+                                                count += 1
+                                                logger.info(
+                                                    "[롯데손해보험] 수집: %s (%s)",
+                                                    product_name, status,
+                                                )
+                                        await asyncio.sleep(0.5)
+
+                                except Exception as e:
+                                    logger.debug("[롯데손해보험] step4 오류 scode=%s date=%s: %s", scode, startdate, e)
+
+                        except Exception as e:
+                            logger.debug("[롯데손해보험] step3 오류 scode=%s: %s", scode, e)
+
+                except Exception as e:
+                    logger.warning("[롯데손해보험] 카테고리 %s/%s 오류: %s", lcode, mcode, e)
+
+            return count
+
+        # 판매중 상품 수집
+        on_sale_count = await collect_pdfs_for_issale("Y")
+        downloaded += on_sale_count
+        logger.info("[롯데손해보험] 판매중 %d개 수집", on_sale_count)
+
+        # 판매중지 상품 수집
+        disc_count = await collect_pdfs_for_issale("N")
+        downloaded += disc_count
+        logger.info("[롯데손해보험] 판매중지 %d개 수집", disc_count)
 
     finally:
         await page.close()

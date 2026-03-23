@@ -29,6 +29,8 @@ def _strip_sslmode(database_url: str) -> str:
         .replace("?sslmode=verify-full", "")
         .replace("&ssl=require", "")
         .replace("?ssl=require", "")
+        # postgresql+asyncpg → cockroachdb+asyncpg (sqlalchemy-cockroachdb 다이얼렉트 사용)
+        .replace("postgresql+asyncpg://", "cockroachdb+asyncpg://", 1)
     )
 
 

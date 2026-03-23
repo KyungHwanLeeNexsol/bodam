@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SPEC-INGEST-001: 다중 PC 로컬 PDF 인제스트 스크립트
 
-로컬에 수집된 PDF 파일을 Neon PostgreSQL에 인제스트.
+로컬에 수집된 PDF 파일을 CockroachDB에 인제스트.
 3가지 디렉토리 형식 지원, SHA-256 중복 방지, 파일별 트랜잭션 격리.
 
 Usage:
@@ -73,6 +73,11 @@ COMPANY_MAP: dict[str, tuple[str, str, str]] = {
     "samsung_fire": ("samsung-fire", "삼성화재", "NON_LIFE"),
     "db_insurance": ("db-insurance", "DB손해보험", "NON_LIFE"),
     "heungkuk_fire": ("heungkuk-fire", "흥국화재", "NON_LIFE"),
+    "axa_general": ("axa-general", "AXA손해보험", "NON_LIFE"),
+    "mg_insurance": ("mg-insurance", "MG손해보험", "NON_LIFE"),
+    "nh_fire": ("nh-fire", "NH농협손해보험", "NON_LIFE"),
+    "lotte_insurance": ("lotte-insurance", "롯데손해보험", "NON_LIFE"),
+    "hanwha_general": ("hanwha-general", "한화손해보험", "NON_LIFE"),
     # 생보사
     "abl": ("abl", "ABL생명", "LIFE"),
     "aia": ("aia", "AIA생명", "LIFE"),
@@ -192,7 +197,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         파싱된 argparse.Namespace 객체
     """
     parser = argparse.ArgumentParser(
-        description="로컬 PDF 파일을 Neon PostgreSQL에 인제스트",
+        description="로컬 PDF 파일을 CockroachDB에 인제스트",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 사용 예시:
