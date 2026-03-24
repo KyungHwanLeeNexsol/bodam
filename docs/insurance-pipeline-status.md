@@ -27,50 +27,58 @@
 | 전체 보험사 | 31개 |
 | 손해보험 | 10개 |
 | 생명보험 | 21개 |
+| 크롤러 완료 | 4개 (KB, AXA, NH농협, 롯데) |
 | 크롤링 완료 | 0개 |
 | 인제스트 완료 | 0개 |
 | DB 정책 수 | 0건 |
 | 임베딩 완료 | 0개 |
 
-> 전체 초기화 상태 (2026-03-24 기준)
+> 크롤러 개발 완료 4개, 수집 대기 상태 (2026-03-24 기준)
 
 ---
 
-## 보험사별 파이프라인 현황
+## 손해보험사 파이프라인 현황
 
-| # | 보험사 | company_id | 종류 | 크롤러 | 로컬 PDF | 인제스트 | DB 정책수 | 임베딩 | 최종 실행일 | 비고 |
-|---|--------|-----------|------|--------|---------|---------|---------|------|-----------|------|
-| 1 | 롯데손해보험 | lotte_insurance | 손보 | 🔄 재수집 필요 | 0 | ❌ | 0 | ❌ | - | crawl_nonlife_playwright.py |
-| 2 | AXA손해보험 | axa_general | 손보 | ✅ 크롤러 완료 | 0 | ❌ | 0 | ❌ | - | crawl_axa_general.py (정적 HTML, 371개 대상) |
-| 3 | NH농협손해보험 | nh_fire | 손보 | 🔄 재수집 필요 | 0 | ❌ | 0 | ❌ | - | crawl_nonlife_playwright.py |
-| 4 | MG손해보험 | mg_insurance | 손보 | 🔄 재수집 필요 | 0 | ❌ | 0 | ❌ | - | crawl_nonlife_playwright.py |
-| 5 | 흥국화재 | heungkuk_fire | 손보 | 🔄 재수집 필요 | 0 | ❌ | 0 | ❌ | - | crawl_nonlife_playwright.py |
-| 6 | 삼성화재 | samsung_fire | 손보 | 🔄 크롤러 개선 필요 | 0 | ❌ | 0 | ❌ | - | sale_status 추가 필요 |
-| 7 | 현대해상 | hyundai_marine | 손보 | 🔄 크롤러 개선 필요 | 0 | ❌ | 0 | ❌ | - | sale_status 저장 추가 필요 |
-| 8 | DB손해보험 | db_insurance | 손보 | 🔄 크롤러 개선 필요 | 0 | ❌ | 0 | ❌ | - | sale_status 저장 추가 필요 |
-| 9 | 메리츠화재 | meritz_fire | 손보 | 🔄 크롤러 개선 필요 | 0 | ❌ | 0 | ❌ | - | sale_status 저장 추가 필요 |
-| 10 | KB손해보험 | kb_insurance | 손보 | ✅ 크롤러 완료 | 0 | ❌ | 0 | ❌ | - | sale_status 필터 기반 수집 완료 |
-| 11 | 삼성생명 | samsung_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 12 | 한화생명 | hanwha_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 13 | 교보생명 | kyobo_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 14 | 신한라이프 | shinhan_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 15 | KB라이프생명 | kb_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 16 | DB생명 | db_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 17 | 흥국생명 | heungkuk_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 18 | 푸본현대생명 | fubon_hyundai_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 19 | 메트라이프생명 | metlife | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 20 | NH농협생명 | nh_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 21 | ABL생명 | abl_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 22 | 동양생명 | dongyang_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 23 | KDB생명 | kdb_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 24 | 미래에셋생명 | mirae_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 25 | 교보라이프플래닛 | kyobo_lifeplanet | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 26 | 하나생명 | hana_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 27 | iM라이프 | im_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 28 | IBK연금보험 | ibk_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 29 | 처브라이프생명 | chubb_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 30 | BNP파리바카디프 | bnp_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
-| 31 | 라이나생명 | lina_life | 생보 | 🔄 크롤러 개발 필요 | 0 | ❌ | 0 | ❌ | - | 공식 사이트 크롤러 신규 개발 |
+| # | 보험사 | company_id | 크롤러 파일 | 크롤러 상태 | 로컬 PDF | 인제스트 | DB 정책수 | 임베딩 | 최종 실행일 | 비고 |
+|---|--------|-----------|------------|------------|---------|---------|---------|------|-----------|------|
+| 1 | KB손해보험 | kb_insurance | crawl_kb_insurance.py | ✅ 완료 | 0 | ❌ | 0 | ❌ | - | 필터 기반 + fallback URL 패턴 적용 |
+| 2 | AXA손해보험 | axa_general | crawl_axa_general.py | ✅ 완료 | 0 | ❌ | 0 | ❌ | - | 정적 HTML, ON_SALE 33 / DISC 338 (371개) |
+| 3 | NH농협손해보험 | nh_fire | crawl_nh_fire.py | ✅ 완료 | 0 | ❌ | 0 | ❌ | - | SPA 3단계, ON_SALE 87 / DISC 637+ (dry-run 확인) |
+| 4 | 롯데손해보험 | lotte_insurance | crawl_lotte_insurance.py | ⚠️ 개발완료(검증필요) | 0 | ❌ | 0 | ❌ | - | SPA + iframe, dry-run 미검증 |
+| 5 | MG손해보험 | mg_insurance | - | 🔄 크롤러 미개발 | 0 | ❌ | 0 | ❌ | - | 전용 크롤러 신규 개발 필요 |
+| 6 | 흥국화재 | heungkuk_fire | crawl_heungkuk_fire.py | 🔄 sale_status 개선 필요 | 0 | ❌ | 0 | ❌ | - | 기존 크롤러, sale_status 미지원 |
+| 7 | 삼성화재 | samsung_fire | crawl_samsung_fire.py | 🔄 sale_status 개선 필요 | 0 | ❌ | 0 | ❌ | - | 기존 크롤러, sale_status 미지원 |
+| 8 | 현대해상 | hyundai_marine | crawl_hyundai_marine.py | 🔄 sale_status 개선 필요 | 0 | ❌ | 0 | ❌ | - | 기존 크롤러, sale_status 미지원 |
+| 9 | DB손해보험 | db_insurance | crawl_db_insurance.py | 🔄 sale_status 개선 필요 | 0 | ❌ | 0 | ❌ | - | 기존 크롤러, sale_status 미지원 |
+| 10 | 메리츠화재 | meritz_fire | crawl_meritz_fire.py | 🔄 sale_status 개선 필요 | 0 | ❌ | 0 | ❌ | - | 기존 크롤러, sale_status 미지원 |
+
+---
+
+## 생명보험사 파이프라인 현황
+
+| # | 보험사 | company_id | 크롤러 파일 | 크롤러 상태 | 로컬 PDF | 인제스트 | DB 정책수 | 임베딩 | 최종 실행일 |
+|---|--------|-----------|------------|------------|---------|---------|---------|------|-----------|
+| 11 | 삼성생명 | samsung_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 12 | 한화생명 | hanwha_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 13 | 교보생명 | kyobo_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 14 | 신한라이프 | shinhan_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 15 | KB라이프생명 | kb_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 16 | DB생명 | db_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 17 | 흥국생명 | heungkuk_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 18 | 푸본현대생명 | fubon_hyundai_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 19 | 메트라이프생명 | metlife | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 20 | NH농협생명 | nh_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 21 | ABL생명 | abl_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 22 | 동양생명 | dongyang_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 23 | KDB생명 | kdb_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 24 | 미래에셋생명 | mirae_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 25 | 교보라이프플래닛 | kyobo_lifeplanet | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 26 | 하나생명 | hana_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 27 | iM라이프 | im_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 28 | IBK연금보험 | ibk_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 29 | 처브라이프생명 | chubb_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 30 | BNP파리바카디프 | bnp_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
+| 31 | 라이나생명 | lina_life | - | 🔄 미개발 | 0 | ❌ | 0 | ❌ | - |
 
 ---
 
@@ -78,53 +86,70 @@
 
 | 날짜 | 보험사 | 작업 | 결과 | 메모 |
 |------|--------|------|------|------|
-| 2026-03-24 | AXA손해보험 | 전용 크롤러 개발 | ✅ 완료 | crawl_axa_general.py: 정적 HTML 파싱, ON_SALE 33개/DISCONTINUED 338개 (총 371개) |
-| 2026-03-24 | 5개 손보사 | 로컬 데이터 삭제 | ✅ 완료 | 판매중/판매중지 정확도 개선을 위해 전량 삭제 (1~5번) |
+| 2026-03-24 | KB손해보험 | 크롤러 fallback 로직 추가 | ✅ 완료 | 구형 상품 날짜포함 URL 패턴 대응, 35% 실패율 해결 |
+| 2026-03-24 | NH농협손해보험 | 전용 크롤러 개발 | ✅ 완료 | crawl_nh_fire.py: SPA 3단계 파싱, dry-run 확인 |
+| 2026-03-24 | 롯데손해보험 | 전용 크롤러 개발 | ⚠️ 검증필요 | crawl_lotte_insurance.py: dry-run 미검증 |
+| 2026-03-24 | KB손해보험 | 로컬 데이터 삭제 | ✅ 완료 | 753개 삭제, fallback 적용 크롤러로 재수집 예정 |
+| 2026-03-24 | AXA손해보험 | 전용 크롤러 개발 | ✅ 완료 | crawl_axa_general.py: 정적 HTML, ON_SALE 33개/DISCONTINUED 338개 (총 371개) |
+| 2026-03-24 | 5개 손보사 | 로컬 데이터 삭제 | ✅ 완료 | 판매중/판매중지 정확도 개선을 위해 전량 삭제 |
 | 2026-03-23 | AXA손해보험 | 인제스트 시도 | ❌ 실패 | search_vector 컬럼 누락 → migration t0u1v2w3x4y5로 수정 |
 | 2026-03-23 | 전체 | DB 초기화 | ✅ 완료 | 재수집을 위한 완전 초기화 |
 | 2026-03-23 | - | DB 마이그레이션 | ✅ 완료 | t0u1v2w3x4y5: search_vector TEXT NULL 추가 |
-| 2026-03-23 | 27개사 | 로컬 데이터 삭제 | ✅ 완료 | sale_status 미수집 데이터 전량 삭제 (6~31번) |
+| 2026-03-23 | 27개사 | 로컬 데이터 삭제 | ✅ 완료 | sale_status 미수집 데이터 전량 삭제 |
 
 ---
 
-## 다음 단계
+## 자동 업데이트 방법
 
-### Phase 1a: AXA손해보험 — 전용 크롤러 완료, 인제스트 준비됨
+파이프라인 완료 시 `run_ingest_pipeline.sh`의 [4/4] 단계에서 자동 실행:
 
 ```bash
+# 파이프라인 실행 (완료 시 이 문서 자동 업데이트 + git push)
+bash scripts/run_ingest_pipeline.sh --company kb_insurance
+
+# 수동 업데이트
+python scripts/update_pipeline_status.py --company kb_insurance
+python scripts/update_pipeline_status.py --all
+```
+
+---
+
+## 다음 진행 순서
+
+### Phase 1: 크롤러 완료된 보험사 — 즉시 파이프라인 실행 가능
+
+```bash
+# 1. AXA손해보험 (크롤러 ✅, 371개 대상)
 bash scripts/run_ingest_pipeline.sh --company axa_general
+
+# 2. KB손해보험 (크롤러 ✅ fallback 완성)
+bash scripts/run_ingest_pipeline.sh --company kb_insurance
+
+# 3. NH농협손해보험 (크롤러 ✅, dry-run 확인됨)
+bash scripts/run_ingest_pipeline.sh --company nh_fire
 ```
 
-### Phase 1b: 손보사 1,3~5번 — crawl_nonlife_playwright.py 순차 처리
+### Phase 2: 크롤러 검증 필요
 
 ```bash
+# 롯데손해보험 — dry-run 먼저 검증
+PYTHONIOENCODING=utf-8 PYTHONPATH=. python scripts/crawl_lotte_insurance.py --dry-run
+
+# 검증 후
 bash scripts/run_ingest_pipeline.sh --company lotte_insurance
-bash scripts/run_ingest_pipeline.sh --company nh_fire
-bash scripts/run_ingest_pipeline.sh --company mg_insurance
-bash scripts/run_ingest_pipeline.sh --company heungkuk_fire
 ```
 
-### Phase 2: 손보사 6~10번 — 전용 크롤러 sale_status 추가 후 처리
+### Phase 3: 크롤러 개선 필요 (sale_status 추가)
 
 ```bash
 bash scripts/run_ingest_pipeline.sh --company samsung_fire
 bash scripts/run_ingest_pipeline.sh --company hyundai_marine
 bash scripts/run_ingest_pipeline.sh --company db_insurance
 bash scripts/run_ingest_pipeline.sh --company meritz_fire
-bash scripts/run_ingest_pipeline.sh --company kb_insurance
+bash scripts/run_ingest_pipeline.sh --company heungkuk_fire
 ```
 
-### Phase 3: 생명보험 11~31번 — 공식 사이트 크롤러 신규 개발
+### Phase 4: 크롤러 신규 개발 필요
 
-- 각 보험사 공식 사이트에서 판매중/판매중지 상품 구분 수집
-- 생명보험협회(klia.or.kr) API 또는 Playwright 기반 크롤러 개발
-
----
-
-## 업데이트 방법
-
-```bash
-# 파이프라인 완료 후 자동 업데이트 (run_ingest_pipeline.sh 내부에서 자동 실행)
-python scripts/update_pipeline_status.py --company lotte_insurance
-python scripts/update_pipeline_status.py --all
-```
+- `mg_insurance` — 전용 크롤러 개발
+- 생명보험 21개사 — 공식 사이트 크롤러 신규 개발

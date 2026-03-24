@@ -179,53 +179,64 @@ def _build_sale_status_cell(stats: dict) -> str:
     return "✅ " + ", ".join(parts)
 
 
-def update_table_row(content: str, company_code: str, stats: dict) -> str:
-    """마크다운 테이블에서 company_code가 포함된 행을 업데이트한다.
+def _count_local_pdfs(dir_key: str) -> int:
+    """로컬 data 디렉터리에서 보험사별 PDF 수를 계산한다."""
+    data_dir = _project_root / "data" / dir_key
+    if not data_dir.exists():
+        return 0
+    return len(list(data_dir.glob("*.pdf")))
 
-    테이블 행 형식:
-    | 보험사명 | code | 로컬PDF | 크롤러 | sale_status | 인제스트 | DB정책수 | 청크수 | 임베딩 | 최종실행일 |
-    인덱스:   0      1       2         3       4            5         6          7        8        9
+
+def update_table_row(content: str, dir_key: str, stats: dict) -> str:
+    """마크다운 테이블에서 dir_key(company_id 컬럼)가 포함된 행을 업데이트한다.
+
+    실제 문서 테이블 구조 (| 구분):
+    idx 0=""  1="#"  2="보험사"  3="company_id"  4="크롤러파일"
+        5="크롤러상태"  6="로컬PDF"  7="인제스트"  8="DB정책수"
+        9="임베딩"  10="최종실행일"  11="비고"(손보만)  12=""
+
+    Args:
+        content: 문서 전체 내용
+        dir_key: pipeline company_id (언더스코어, 예: kb_insurance)
+        stats: DB 조회 결과 딕셔너리
     """
     today = datetime.now().strftime("%Y-%m-%d")
     pc = stats["policy_count"]
     cc = stats["chunk_count"]
+    local_pdf = _count_local_pdfs(dir_key)
 
     ingest_cell = _build_ingest_cell(stats)
     embed_cell = _build_embed_cell(stats)
-    sale_cell = _build_sale_status_cell(stats)
 
     lines = content.split("\n")
     updated = False
     for i, line in enumerate(lines):
-        # 보험사 코드가 해당 행에 포함되는지 확인 (| code | 형식)
-        if f"| {company_code} |" not in line and f"| {company_code} |" not in line:
-            # 파이프로 구분된 셀에서 코드 확인
-            cells = [c.strip() for c in line.split("|")]
-            if len(cells) < 4 or cells[2] != company_code:
-                continue
-
-        cells = [c.strip() for c in line.split("|")]
-        if len(cells) < 11:
+        if not line.startswith("|"):
             continue
 
-        # 인덱스 5=인제스트, 6=DB정책수, 7=청크수, 8=임베딩, 9=최종실행일
-        cells[5] = f" {ingest_cell} "
-        cells[6] = f" {pc:,} "
-        cells[7] = f" {cc:,} "
-        cells[8] = f" {embed_cell} "
-        cells[9] = f" {today} "
+        cells = [c.strip() for c in line.split("|")]
+        # cells[3]이 dir_key와 일치하는 데이터 행인지 확인
+        if len(cells) < 11 or cells[3] != dir_key:
+            continue
 
-        # sale_status도 업데이트 (인덱스 4)
-        if pc > 0:
-            cells[4] = f" {sale_cell} "
+        # cells[6]=로컬PDF, cells[7]=인제스트, cells[8]=DB정책수,
+        # cells[9]=임베딩, cells[10]=최종실행일
+        cells[6] = f" {local_pdf} "
+        cells[7] = f" {ingest_cell} "
+        cells[8] = f" {pc:,} "
+        cells[9] = f" {embed_cell} "
+        cells[10] = f" {today} "
 
         lines[i] = "|".join(cells)
         updated = True
-        logger.info("행 업데이트: %s → 정책:%d, 청크:%d", company_code, pc, cc)
+        logger.info(
+            "행 업데이트: %s → 로컬PDF:%d, 정책:%d, 청크:%d",
+            dir_key, local_pdf, pc, cc,
+        )
         break
 
     if not updated:
-        logger.warning("행을 찾을 수 없음: %s", company_code)
+        logger.warning("행을 찾을 수 없음: %s", dir_key)
 
     # 마지막 업데이트 날짜 갱신
     for i, line in enumerate(lines):
@@ -236,76 +247,47 @@ def update_table_row(content: str, company_code: str, stats: dict) -> str:
     return "\n".join(lines)
 
 
+_NONLIFE_KEYS = frozenset({
+    "meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
+    "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
+    "nh_fire", "lotte_insurance", "hanwha_general",
+})
+
+
 def update_summary_section(content: str, all_stats: dict[str, dict]) -> str:
-    """전체 요약 섹션을 업데이트한다."""
-    nonlife_policies = sum(
-        v["policy_count"] for k, v in all_stats.items()
-        if k in {"meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
-                 "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
-                 "nh_fire", "lotte_insurance", "hanwha_general"}
+    """전체 요약 섹션(2컬럼 테이블)을 업데이트한다.
+
+    문서 구조:
+    | 항목 | 수치 |
+    |------|------|
+    | DB 정책 수 | 0건 |
+    | 인제스트 완료 | 0개 |
+    | 임베딩 완료 | 0개 |
+    """
+    total_policies = sum(v["policy_count"] for v in all_stats.values())
+    companies_ingested = sum(1 for v in all_stats.values() if v["policy_count"] > 0)
+    companies_embedded = sum(
+        1 for v in all_stats.values()
+        if v["embedded_count"] > 0 and v["embedded_count"] >= v["chunk_count"] > 0
     )
-    life_policies = sum(
-        v["policy_count"] for k, v in all_stats.items()
-        if k not in {"meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
-                     "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
-                     "nh_fire", "lotte_insurance", "hanwha_general"}
-    )
-    nonlife_embedded = sum(
-        v["embedded_count"] for k, v in all_stats.items()
-        if k in {"meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
-                 "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
-                 "nh_fire", "lotte_insurance", "hanwha_general"}
-    )
-    life_embedded = sum(
-        v["embedded_count"] for k, v in all_stats.items()
-        if k not in {"meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
-                     "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
-                     "nh_fire", "lotte_insurance", "hanwha_general"}
-    )
-    nonlife_chunks = sum(
-        v["chunk_count"] for k, v in all_stats.items()
-        if k in {"meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
-                 "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
-                 "nh_fire", "lotte_insurance", "hanwha_general"}
-    )
-    life_chunks = sum(
-        v["chunk_count"] for k, v in all_stats.items()
-        if k not in {"meritz_fire", "hyundai_marine", "kb_insurance", "samsung_fire",
-                     "db_insurance", "heungkuk_fire", "axa_general", "mg_insurance",
-                     "nh_fire", "lotte_insurance", "hanwha_general"}
-    )
-    total_policies = nonlife_policies + life_policies
-    total_chunks = nonlife_chunks + life_chunks
-    total_embedded = nonlife_embedded + life_embedded
 
     lines = content.split("\n")
-    in_summary = False
     for i, line in enumerate(lines):
-        if "## 전체 요약" in line:
-            in_summary = True
+        if not line.startswith("|"):
             continue
-        if in_summary and line.startswith("## "):
-            in_summary = False
-            continue
-        if not in_summary:
-            continue
-
         cells = [c.strip() for c in line.split("|")]
-        if len(cells) < 6:
+        if len(cells) < 4:
             continue
+        label = cells[1]
 
-        first = cells[1].strip()
-        if "손해보험" in first and "합계" not in first and "기타" not in first:
-            cells[4] = f" {nonlife_policies:,} "
-            cells[5] = f" {nonlife_embedded:,} "
+        if label == "DB 정책 수":
+            cells[2] = f" {total_policies:,}건 "
             lines[i] = "|".join(cells)
-        elif "생명보험" in first and "합계" not in first:
-            cells[4] = f" {life_policies:,} "
-            cells[5] = f" {life_embedded:,} "
+        elif label == "인제스트 완료":
+            cells[2] = f" {companies_ingested}개 "
             lines[i] = "|".join(cells)
-        elif "합계" in first or "**합계**" in first:
-            cells[4] = f" **{total_policies:,}** "
-            cells[5] = f" **{total_embedded:,}** "
+        elif label == "임베딩 완료":
+            cells[2] = f" {companies_embedded}개 "
             lines[i] = "|".join(cells)
 
     return "\n".join(lines)
@@ -338,7 +320,8 @@ async def run_update(company_keys: list[str], update_all: bool = False) -> None:
         try:
             stats = await query_company_stats(code)
             all_stats[key] = stats
-            content = update_table_row(content, code, stats)
+            # dir_key(언더스코어)를 전달해야 문서 company_id 컬럼과 매칭됨
+            content = update_table_row(content, key, stats)
             logger.info(
                 "  → 정책:%d, 청크:%d, 임베딩:%d, ON_SALE:%d, DISC:%d, UNK:%d",
                 stats["policy_count"], stats["chunk_count"], stats["embedded_count"],
@@ -347,8 +330,21 @@ async def run_update(company_keys: list[str], update_all: bool = False) -> None:
         except Exception as e:
             logger.error("조회 실패 [%s]: %s", code, e)
 
-    if update_all and all_stats:
-        content = update_summary_section(content, all_stats)
+    # 요약 섹션: --all이면 조회한 all_stats 그대로, 단일 회사면 전체 DB에서 재집계
+    if all_stats:
+        if update_all:
+            content = update_summary_section(content, all_stats)
+        else:
+            # 단일 회사 업데이트: 전체 보험사 통계를 재조회해 요약 갱신
+            full_stats: dict[str, dict] = {}
+            for k, (c, _) in COMPANY_MAP.items():
+                try:
+                    full_stats[k] = await query_company_stats(c)
+                except Exception:
+                    full_stats[k] = {"policy_count": 0, "chunk_count": 0,
+                                     "embedded_count": 0, "on_sale": 0,
+                                     "discontinued": 0, "unknown": 0}
+            content = update_summary_section(content, full_stats)
 
     STATUS_DOC.write_text(content, encoding="utf-8")
     logger.info("문서 업데이트 완료: %s", STATUS_DOC)
