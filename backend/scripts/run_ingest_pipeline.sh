@@ -75,9 +75,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --no-fail-discontinued DISCONTINUED 0개여도 경고 생략"
       echo "  --warn-is-fail        WARN도 파이프라인 중단 처리"
       echo ""
-      echo "지원 보험사 코드 (Group A - crawl_nonlife_playwright.py):"
-      echo "  lotte_insurance, axa_general, nh_fire, mg_insurance, heungkuk_fire"
-      echo "  hyundai_marine, db_insurance, kb_insurance, meritz_fire, hanwha_general"
+      echo "지원 보험사 코드 (전용 크롤러 보유):"
+      echo "  kb_insurance, samsung_fire, db_insurance, hyundai_marine, meritz_fire, heungkuk_fire, lotte_insurance, axa_general, nh_fire"
       exit 1
       ;;
   esac
@@ -129,7 +128,23 @@ if [[ "$SKIP_CRAWL" == "true" ]]; then
 else
   log_step "1/4" "크롤링 시작: $(date)"
 
-  CRAWL_CMD="$PYTHON scripts/crawl_nonlife_playwright.py --company $COMPANY"
+  # 보험사별 전용 크롤러 선택
+  case "$COMPANY" in
+    kb_insurance)    CRAWL_SCRIPT="scripts/crawl_kb_insurance.py" ;;
+    samsung_fire)    CRAWL_SCRIPT="scripts/crawl_samsung_fire.py" ;;
+    db_insurance)    CRAWL_SCRIPT="scripts/crawl_db_insurance.py" ;;
+    hyundai_marine)  CRAWL_SCRIPT="scripts/crawl_hyundai_marine.py" ;;
+    meritz_fire)     CRAWL_SCRIPT="scripts/crawl_meritz_fire.py" ;;
+    heungkuk_fire)   CRAWL_SCRIPT="scripts/crawl_heungkuk_fire.py" ;;
+    lotte_insurance) CRAWL_SCRIPT="scripts/crawl_lotte_insurance.py" ;;
+    axa_general)     CRAWL_SCRIPT="scripts/crawl_axa_general.py" ;;
+    nh_fire)         CRAWL_SCRIPT="scripts/crawl_nh_fire.py" ;;
+    *)
+      fail_pipeline "전용 크롤러 없음: $COMPANY — 먼저 전용 크롤러를 개발하세요."
+      ;;
+  esac
+
+  CRAWL_CMD="$PYTHON $CRAWL_SCRIPT"
   log "실행: $CRAWL_CMD"
 
   if PYTHONIOENCODING=utf-8 PYTHONPATH=. $CRAWL_CMD 2>&1 | tee -a "$LOG_FILE"; then

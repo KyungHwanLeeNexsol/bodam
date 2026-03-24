@@ -10,7 +10,10 @@
 
 # @MX:NOTE: KB손보 서버렌더링, 폼 필터: search_onsale_yn(Y/N), search_gubun(c/d/a/b)
 # @MX:NOTE: 페이지네이션: goPage(startRow) 10개/페이지
-# @MX:NOTE: PDF 다운: CG802030003.ec?fileNm=상품코드_회차_1.pdf (직접 다운)
+# @MX:NOTE: PDF URL 두 가지 패턴:
+#   - 최신 상품: {bojongNo}_{bojongSeq}_1.pdf (직접 구성 가능)
+#   - 구형 상품: {4자리code}_{seq}_{n}_{날짜YYMMDD or YYYYMMDD}.pdf (상세 페이지 파싱 필요)
+# @MX:NOTE: fallback 전략: 직접 URL 실패 시 POST CG802030002.ec → HTML에서 fileNm 추출
 """
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -55,6 +59,49 @@ SALE_STATUS_MAP: dict[str, str] = {
     "Y": "ON_SALE",
     "N": "DISCONTINUED",
 }
+
+
+async def fetch_pdf_url_from_detail(
+    client: httpx.AsyncClient,
+    code: str,
+    cat_code: str,
+    seq: str,
+) -> str | None:
+    """상세 페이지 POST로 실제 PDF URL을 파싱한다.
+    구형 상품은 날짜 포함 패턴({code}_{seq}_{n}_{date}.pdf)이라 직접 URL 구성 불가.
+    CG802030002.ec에 POST → HTML에서 CG802030003.ec?fileNm= 패턴 추출 → *_1.pdf 최신 버전 반환.
+    """
+    # @MX:NOTE: 구형 상품 PDF URL 패턴: {4자리code}_{seq}_{n}_{날짜}.pdf (상세 페이지만 알 수 있음)
+    try:
+        resp = await client.post(
+            f"{BASE_URL}/CG802030002.ec",
+            data={"bojongNo": code, "gubun": cat_code, "bojongSeq": seq},
+            timeout=15.0,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": f"{BASE_URL}/CG802030001.ec",
+            },
+        )
+        if resp.status_code != 200:
+            return None
+
+        # HTML에서 CG802030003.ec?fileNm=... 패턴 추출
+        # 같은 상품에 여러 날짜 버전이 있을 수 있음 → *_1.pdf 중 마지막(최신) 선택
+        file_names = re.findall(r'CG802030003\.ec\?fileNm=([^"\'&\s<>]+)', resp.text)
+        if not file_names:
+            return None
+
+        # 약관 원본(_1.pdf)만 필터링 (n=1인 파일만, _2.pdf는 별책 등 부록)
+        primary_files = [f for f in file_names if re.search(r"_1(?:_|\.pdf$)", f)]
+        if not primary_files:
+            primary_files = file_names  # _1 없으면 전체에서 선택
+
+        # 마지막 항목이 최신 날짜 버전
+        chosen = primary_files[-1]
+        return f"{BASE_URL}/CG802030003.ec?fileNm={chosen}"
+    except Exception as e:
+        logger.debug("  [DETAIL] 상세 페이지 파싱 실패 code=%s: %s", code, e)
+        return None
 
 
 def save_pdf(
@@ -267,7 +314,13 @@ async def main(dry_run: bool = False) -> None:
             await browser.close()
             return
 
-        # 2. 각 상품 상세 페이지에서 PDF 다운로드
+        # 상품 목록 수집 완료 후 브라우저 닫기 (PDF는 httpx 직접 다운로드)
+        await browser.close()
+
+        # 2. 각 상품 PDF 직접 다운로드 (하이브리드 전략)
+        # @MX:NOTE: 1차: {code}_{seq}_1.pdf 직접 시도 (최신 상품 대부분 성공)
+        # @MX:NOTE: 2차 fallback: POST CG802030002.ec → HTML 파싱으로 실제 URL 획득 (구형 상품 대응)
+        # @MX:NOTE: 구형 상품 패턴: {4자리code}_{seq}_{n}_{날짜}.pdf — 날짜 없이 URL 구성 불가
         total = len(all_products)
         async with httpx.AsyncClient(
             headers={"User-Agent": "Mozilla/5.0", "Referer": f"{BASE_URL}/CG802030001.ec"},
@@ -276,44 +329,29 @@ async def main(dry_run: bool = False) -> None:
             for i, prod in enumerate(all_products):
                 name = prod["name"]
                 code = prod["code"]
+                seq = prod["seq"]
+                cat_code = prod.get("catCode", "c")
                 cat = prod.get("_filter_category", prod.get("category", ""))
                 prod_status = prod.get("_sale_status", "ON_SALE")
 
                 try:
-                    # 상세 페이지 이동 (form POST)
-                    await page.goto(f"{BASE_URL}/CG802030001.ec", timeout=15000, wait_until="networkidle")
-                    await asyncio.sleep(1)
-
-                    await page.evaluate(f"""() => {{
-                        document.getElementById('bojongNo').value = '{code}';
-                        document.getElementById('gubun').value = '{prod["catCode"]}';
-                        document.getElementById('bojongSeq').value = '{prod["seq"]}';
-                        const form = document.prdtList;
-                        form.target = '_self';
-                        form.action = '/CG802030002.ec';
-                        form.submit();
-                    }}""")
-                    await asyncio.sleep(2)
-
-                    # 약관 PDF 링크 추출 (_1.pdf = 약관)
-                    pdf_links = await page.evaluate("""() => {
-                        const links = [];
-                        document.querySelectorAll('a[href*="CG802030003"]').forEach(a => {
-                            const href = a.getAttribute('href') || '';
-                            if (href.includes('_1.pdf')) links.push(href);
-                        });
-                        return links;
-                    }""")
-
-                    if not pdf_links:
-                        failed += 1
-                        continue
-
-                    # 최신(마지막) 약관 PDF 다운로드
-                    pdf_url = f"{BASE_URL}{pdf_links[-1]}"
+                    # 1차: 직접 URL 구성 시도
+                    pdf_url = f"{BASE_URL}/CG802030003.ec?fileNm={code}_{seq}_1.pdf"
                     resp = await client.get(pdf_url, timeout=30.0)
+                    is_valid = resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000
 
-                    if resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000:
+                    # 2차 fallback: 구형 상품 (날짜 포함 URL 패턴)
+                    if not is_valid:
+                        fallback_url = await fetch_pdf_url_from_detail(client, code, cat_code, seq)
+                        if fallback_url:
+                            await asyncio.sleep(0.3)
+                            resp = await client.get(fallback_url, timeout=30.0)
+                            is_valid = resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000
+                            if is_valid:
+                                pdf_url = fallback_url
+                                logger.debug("  [FALLBACK] %s → %s", code, fallback_url.split("fileNm=")[-1])
+
+                    if is_valid:
                         result = save_pdf(resp.content, name, code, cat, pdf_url, sale_status=prod_status)
                         if result.get("skipped"):
                             skipped += 1
@@ -324,19 +362,18 @@ async def main(dry_run: bool = False) -> None:
                             if downloaded % 20 == 0:
                                 logger.info("  진행: %d/%d 다운로드 (%d/%d 처리)", downloaded, total, i + 1, total)
                     else:
+                        logger.debug("  [FAIL] PDF 없음 code=%s seq=%s", code, seq)
                         failed += 1
 
                 except Exception as e:
                     logger.error("  [ERROR] %s: %s", name[:40], e)
                     failed += 1
 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
 
                 # 진행 상황 (100개마다)
                 if (i + 1) % 100 == 0:
                     logger.info("  진행: %d/%d 처리 완료 (다운:%d, 스킵:%d, 실패:%d)", i + 1, total, downloaded, skipped, failed)
-
-        await browser.close()
 
     logger.info("=" * 60)
     logger.info(
