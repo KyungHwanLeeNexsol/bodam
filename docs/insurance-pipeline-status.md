@@ -1,7 +1,8 @@
 # 보험 데이터 파이프라인 현황 추적
 
-> 마지막 업데이트: 2026-03-23
+> 마지막 업데이트: 2026-03-24
 > 목적: 34개 보험사 × (크롤링 → 인제스트 → DB저장 → 임베딩) 상태 추적
+> 파이프라인 원칙: **보험사별 순차 처리** (크롤링 → 인제스트 → 임베딩/DB저장 → 현황 문서 업데이트)
 
 ---
 
@@ -23,11 +24,11 @@
 
 | 보험사 | 코드 | 로컬 PDF | sale_status 수집 | 크롤러 상태 | 인제스트 | DB 정책수 | 임베딩 | 최종 실행일 |
 |--------|------|---------|-----------------|-----------|---------|---------|-------|-----------|
-| 롯데손해보험 | lotte-insurance | 2,512 | ✅ ON_SALE:1,110 / DISC:1,220 | ✅ 수집완료 | ❌ | 0 | ❌ | - |
-| AXA손해보험 | axa-general | 1,587 | ✅ ON_SALE:1,587 | ✅ 수집완료 | ❌ | 0 | ❌ | - |
-| NH농협손해보험 | nh-fire | 417 | ✅ ON_SALE:62 / DISC:355 | ✅ 수집완료 | ❌ | 0 | ❌ | - |
-| MG손해보험 | mg-insurance | 107 | ✅ ON_SALE:9 / DISC:98 | ✅ 수집완료 | ❌ | 0 | ❌ | - |
-| 흥국화재 | heungkuk-fire | 63 | ✅ ON_SALE:53 / DISC:1 / UNK:9 | ✅ 수집완료 | ❌ | 0 | ❌ | - |
+| 롯데손해보험 | lotte-insurance | 0 | ❌ 재수집 필요 | 🔄 판매중/판매중지 정확도 개선 후 재수집 | ❌ | 0 | ❌ | - |
+| AXA손해보험 | axa-general | 0 | ❌ 재수집 필요 | 🔄 판매중/판매중지 정확도 개선 후 재수집 | ❌ | 0 | ❌ | - |
+| NH농협손해보험 | nh-fire | 0 | ❌ 재수집 필요 | 🔄 판매중/판매중지 정확도 개선 후 재수집 | ❌ | 0 | ❌ | - |
+| MG손해보험 | mg-insurance | 0 | ❌ 재수집 필요 | 🔄 판매중/판매중지 정확도 개선 후 재수집 | ❌ | 0 | ❌ | - |
+| 흥국화재 | heungkuk-fire | 0 | ❌ 재수집 필요 | 🔄 판매중/판매중지 정확도 개선 후 재수집 | ❌ | 0 | ❌ | - |
 | 삼성화재 | samsung-fire | 0 | ❌ 재수집 필요 | 🔄 크롤러 개선 후 재수집 | ❌ | 0 | ❌ | - |
 | 현대해상 | hyundai-marine | 0 | ❌ 재수집 필요 | 🔄 크롤러 개선 후 재수집 | ❌ | 0 | ❌ | - |
 | DB손해보험 | db-insurance | 0 | ❌ 재수집 필요 | 🔄 크롤러 개선 후 재수집 | ❌ | 0 | ❌ | - |
@@ -73,24 +74,17 @@
 
 | 구분 | 보험사 수 | 현재 PDF | 재수집 필요 | sale_status 완전수집 | 인제스트됨 |
 |------|---------|---------|-----------|-------------------|---------|
-| 손해보험 | 10 | 4,686 | 5개사 | 5개사 ✅ | 0 |
+| 손해보험 | 10 | 0 | 10개사 | 0개사 | 0 |
 | 생명보험 | 22 | 0 | 22개사 | 0개사 | 0 |
-| **합계** | **32** | **4,686** | **27개사** | **5개사** | **0** |
+| **합계** | **32** | **0** | **32개사** | **0개사** | **0** |
 
 ---
 
-## sale_status 수집 완료 보험사 (5개사)
+## sale_status 수집 완료 보험사 (0개사)
 
-| 보험사 | 코드 | PDF | ON_SALE | DISCONTINUED | UNKNOWN |
-|--------|------|-----|---------|--------------|---------|
-| 롯데손해보험 | lotte-insurance | 2,512 | 1,110 | 1,220 | 0 |
-| AXA손해보험 | axa-general | 1,587 | 1,587 | 0 | 0 |
-| NH농협손해보험 | nh-fire | 417 | 62 | 355 | 0 |
-| MG손해보험 | mg-insurance | 107 | 9 | 98 | 0 |
-| 흥국화재 | heungkuk-fire | 63 | 53 | 1 | 9 |
-| **합계** | | **4,686** | **2,821** | **1,674** | **9** |
-
-> crawl_nonlife_playwright.py 대상 보험사. 인제스트 준비 완료.
+> 2026-03-24: 판매중/판매중지 정확도 개선을 위해 5개사 로컬 데이터 전량 삭제.
+> 새 파이프라인 원칙: **보험사별 순차 처리** (크롤링 → 인제스트 → 임베딩/DB → 현황문서 업데이트)
+> 크롤러 검증 후 보험사별로 재수집 예정.
 
 ---
 
@@ -119,6 +113,7 @@
 
 | 날짜 | 보험사 | 작업 | 결과 | 메모 |
 |------|--------|------|------|------|
+| 2026-03-24 | 5개 손보사 | 로컬 데이터 삭제 | ✅ 완료 | 판매중/판매중지 정확도 개선을 위해 전량 삭제 (lotte, axa, nh_fire, mg, heungkuk) |
 | 2026-03-23 | AXA손해보험 | 인제스트 시도 | ❌ 실패 | search_vector 컬럼 누락 (migration t0u1v2w3x4y5로 수정) |
 | 2026-03-23 | 전체 | DB 초기화 | ✅ 완료 | 재수집을 위한 완전 초기화 |
 | 2026-03-23 | - | DB 마이그레이션 | ✅ 완료 | t0u1v2w3x4y5: search_vector TEXT NULL 추가 |
@@ -129,15 +124,16 @@
 
 ## 다음 단계
 
-### Phase 1: 인제스트 준비 완료 (즉시 실행 가능)
+> **새 파이프라인 원칙**: 여러 보험사를 한꺼번에 수집하지 않음.
+> 보험사별 순서: **크롤링 → 인제스트 → 임베딩/DB저장 → 현황 문서 업데이트**
+
+### Phase 1: 손보 크롤러 정확도 개선 후 보험사별 순차 처리
 
 ```bash
-# sale_status 완전수집 5개사 인제스트
-python scripts/ingest_local_pdfs.py --company lotte_insurance
-python scripts/ingest_local_pdfs.py --company axa_general
-python scripts/ingest_local_pdfs.py --company nh_fire
-python scripts/ingest_local_pdfs.py --company mg_insurance
-python scripts/ingest_local_pdfs.py --company heungkuk_fire
+# 보험사 1개씩 (크롤링 → 인제스트 → 임베딩 → 현황 업데이트)
+python scripts/crawl_nonlife_playwright.py --company lotte_insurance
+python scripts/ingest_local_pdfs.py --company lotte_insurance --embed
+python scripts/update_pipeline_status.py --company lotte_insurance
 ```
 
 ### Phase 2: 크롤러 개선 후 재수집
