@@ -1,17 +1,23 @@
 """KB손해보험 크롤러 (SPEC-DATA-002 Phase 3)
 
-Playwright 기반으로 KB손보 약관 페이지를 크롤링하여 질병/상해 관련 PDF를 수집.
+Playwright 기반으로 KB손보 약관 상세 페이지를 크롤링하여 연도별 PDF를 모두 수집.
 JS 렌더링이 필요하여 Playwright 사용.
 
 # @MX:NOTE: [AUTO] KB손보는 Playwright 필요 (JS 렌더링, euc-kr 인코딩)
-# @MX:NOTE: [AUTO] 페이지네이션: goPage(startRow) 호출, 10개/페이지
+# @MX:NOTE: [AUTO] 상세 페이지 접근: detail() 함수가 POST /CG802030002.ec로 폼 제출
+# @MX:NOTE: [AUTO] PDF URL 패턴: /CG802030003.ec?fileNm={날짜}_{코드}_{1|2|3}.pdf
+#   - 1=보험약관, 2=사업방법서, 3=상품요약서
+#   - 날짜 형식: YYYYMMDD (대소문자 혼용 가능 - .PDF, .pdf)
+# @MX:NOTE: [AUTO] 저장 경로: kb-nonlife/{product_code}/{fileNm} (원본 파일명 보존)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import unquote
 
 from app.services.crawler.base import (
     BaseCrawler,
@@ -27,15 +33,47 @@ logger = logging.getLogger(__name__)
 # KB손보 사이트 진입점
 _BASE_URL = "https://www.kbinsure.co.kr"
 _LIST_URL = f"{_BASE_URL}/CG802030001.ec"
+_DETAIL_URL = f"{_BASE_URL}/CG802030002.ec"
+_DOWNLOAD_URL = f"{_BASE_URL}/CG802030003.ec"
 
-# 다운로드 URL 패턴: CG802030003.ec?fileNm=<코드>_<회차>_1.pdf
-_PDF_URL_TEMPLATE = f"{_BASE_URL}/CG802030003.ec?fileNm={{code}}_{{seq}}_1.pdf"
+
+@dataclass
+class PdfFileInfo:
+    """상세 페이지에서 수집한 개별 PDF 파일 정보
+
+    Attributes:
+        file_name: fileNm 파라미터값 (예: 20240101_10101_1.pdf)
+        download_url: 전체 다운로드 URL
+        start_date: 약관 적용 시작일 (YYYYMMDD)
+        end_date: 약관 적용 종료일 (YYYYMMDD, None이면 현재 적용 중)
+        doc_type: 문서 유형 번호 (1=보험약관, 2=사업방법서, 3=상품요약서)
+    """
+
+    file_name: str
+    download_url: str
+    start_date: str
+    end_date: str | None
+    doc_type: int
+
+
+@dataclass
+class ProductDetail:
+    """상품 상세 페이지 데이터
+
+    Attributes:
+        listing: 상품 기본 정보
+        pdf_files: 상세 페이지에서 수집한 PDF 파일 목록 (연도별 전체)
+    """
+
+    listing: PolicyListing
+    pdf_files: list[PdfFileInfo] = field(default_factory=list)
 
 
 class KBNonLifeCrawler(BaseCrawler):
     """KB손해보험 약관 크롤러
 
-    Playwright로 JS 렌더링된 상품 목록을 수집하고, httpx로 PDF를 다운로드.
+    Playwright로 상품 목록을 수집한 후, 각 상품의 상세 페이지에서
+    연도별 PDF를 모두 수집하고 다운로드.
     질병/상해 관련 카테고리(TARGET_CATEGORIES)만 수집 대상으로 한정.
     """
 
@@ -92,7 +130,7 @@ class KBNonLifeCrawler(BaseCrawler):
         Returns:
             파싱된 PolicyListing 목록 (대상 카테고리만)
         """
-        products: list[dict[str, str]] = await page.evaluate("""() => {
+        products: list[dict[str, str]] = await page.evaluate(r"""() => {
             const results = [];
             document.querySelectorAll('table tr').forEach(tr => {
                 const tds = tr.querySelectorAll('td');
@@ -100,7 +138,7 @@ class KBNonLifeCrawler(BaseCrawler):
                     const anchor = tds[3]?.querySelector('a');
                     if (anchor) {
                         const href = anchor.getAttribute('href') || '';
-                        const match = href.match(/detail\\('(\\d+)','([^']+)','([^']+)'\\)/);
+                        const match = href.match(/detail\('(\d+)','([^']+)','([^']+)'\)/);
                         if (match) {
                             results.push({
                                 code: match[1], catCode: match[2], seq: match[3],
@@ -123,13 +161,15 @@ class KBNonLifeCrawler(BaseCrawler):
 
             code = prod.get("code", "")
             seq = prod.get("seq", "1")
+            cat_code = prod.get("catCode", "")
             name = prod.get("name", "")
             status_str = prod.get("status", "")
 
-            sale_status = SaleStatus.ON_SALE if "판매중" in status_str else SaleStatus.DISCONTINUED
+            sale_status = SaleStatus.ON_SALE if "판매" in status_str and "중지" not in status_str else SaleStatus.DISCONTINUED
 
-            # PDF URL 구성 (직접 다운로드 패턴)
-            pdf_url = _PDF_URL_TEMPLATE.format(code=code, seq=seq)
+            # @MX:NOTE: [AUTO] pdf_url에 catCode와 seq를 포함하여 상세 페이지 접근에 사용
+            #           실제 다운로드 URL은 상세 페이지 파싱 후 결정됨
+            pdf_url = f"{_DETAIL_URL}?bojongNo={code}&gubun={cat_code}&seq={seq}"
 
             listing = PolicyListing(
                 company_name="KB손해보험",
@@ -144,14 +184,158 @@ class KBNonLifeCrawler(BaseCrawler):
 
         return listings
 
-    async def download_pdf(self, listing: PolicyListing) -> bytes:
-        """PDF 다운로드
+    def _is_valid_pdf(self, data: bytes) -> bool:
+        """PDF 바이너리 유효성 검증
 
         Args:
-            listing: 다운로드할 상품 정보
+            data: 다운로드된 바이너리 데이터
 
         Returns:
-            PDF 바이너리 데이터
+            유효한 PDF이면 True
+        """
+        return data[:4] == b"%PDF" and len(data) > 1000
+
+    def _get_storage_path(self, product_code: str, file_name: str) -> str:
+        """PDF 저장 경로 생성
+
+        Args:
+            product_code: 상품 코드
+            file_name: 원본 파일명 (예: 20240101_10101_1.pdf)
+
+        Returns:
+            저장 경로 (예: kb-nonlife/10101/20240101_10101_1.pdf)
+        """
+        # 파일명 소문자 정규화 (.PDF -> .pdf)
+        normalized = file_name.lower()
+        return f"kb-nonlife/{product_code}/{normalized}"
+
+    async def fetch_detail_pdfs(
+        self, page: Any, listing: PolicyListing
+    ) -> list[PdfFileInfo]:
+        """상세 페이지에서 연도별 PDF 파일 목록 수집
+
+        detail() 함수 역할을 직접 수행하여 상세 페이지로 이동 후
+        테이블에서 모든 PDF 링크를 추출.
+
+        Args:
+            page: Playwright 페이지 객체 (목록 페이지 또는 다른 페이지)
+            listing: 상품 기본 정보 (pdf_url에 bojongNo, gubun, seq 포함)
+
+        Returns:
+            PDF 파일 정보 목록 (날짜별 정렬)
+        """
+        from urllib.parse import parse_qs, urlparse
+
+        # pdf_url에서 파라미터 추출
+        parsed = urlparse(listing.pdf_url)
+        params = parse_qs(parsed.query)
+
+        code = params.get("bojongNo", [listing.product_code])[0]
+        cat_code = params.get("gubun", [""])[0]
+        seq = params.get("seq", ["1"])[0]
+
+        # 상세 페이지로 POST 네비게이션
+        # @MX:NOTE: [AUTO] detail() 함수는 폼 POST로 동작하므로 직접 폼 제출 재현
+        try:
+            async with page.expect_navigation(wait_until="networkidle", timeout=20000):
+                await page.evaluate(f"""
+                    (() => {{
+                        document.getElementById('bojongNo').value = '{code}';
+                        document.getElementById('gubun').value = '{cat_code}';
+                        document.getElementById('bojongSeq').value = '{seq}';
+                        var form = document.prdtList;
+                        form.target = '_self';
+                        form.action = '/CG802030002.ec';
+                        form.submit();
+                    }})();
+                """)
+        except Exception as e:
+            logger.warning(
+                "[KB손보] 상세 페이지 네비게이션 실패 [%s]: %s",
+                listing.product_name[:40],
+                e,
+            )
+            return []
+
+        await asyncio.sleep(1)
+
+        # 상세 페이지에서 PDF 링크 추출
+        # @MX:NOTE: [AUTO] 상세 페이지 테이블 구조:
+        #   행2: 헤더 (판매시작일|판매종료일|보험약관|사업방법서|상품요약서|비고)
+        #   행3~: 각 연도별 (시작일|종료일|약관PDF링크|사업방법서링크|요약서링크|비고)
+        raw_pdfs: list[dict] = await page.evaluate(r"""() => {
+            const pdfs = [];
+            document.querySelectorAll('a').forEach(el => {
+                const href = el.getAttribute('href') || '';
+                if (href.includes('CG802030003') && href.includes('fileNm=')) {
+                    pdfs.push({href});
+                }
+            });
+            return pdfs;
+        }""")
+
+        pdf_files: list[PdfFileInfo] = []
+        for item in raw_pdfs:
+            href = item.get("href", "")
+            if not href:
+                continue
+
+            # fileNm 파라미터 추출
+            # 형식: /CG802030003.ec?fileNm=20240101_10101_1.pdf
+            if "fileNm=" not in href:
+                continue
+
+            file_name_raw = href.split("fileNm=", 1)[1]
+            # URL 디코딩 (공백 등)
+            file_name = unquote(file_name_raw).strip()
+
+            if not file_name:
+                continue
+
+            # 파일명에서 날짜, 코드, 문서번호 파싱
+            # 패턴: {날짜}_{코드}_{번호}.{확장자}
+            # 예: 20240101_10101_1.pdf, 20181001_10101_1[0].pdf
+            import re
+            match = re.match(r"(\d{8})_(\d+)_(\d+)", file_name)
+            if not match:
+                # 파싱 불가한 파일명도 수집 (알 수 없는 형식)
+                pdf_files.append(PdfFileInfo(
+                    file_name=file_name,
+                    download_url=f"{_BASE_URL}{href}" if href.startswith("/") else href,
+                    start_date="",
+                    end_date=None,
+                    doc_type=0,
+                ))
+                continue
+
+            start_date = match.group(1)
+            doc_type = int(match.group(3))
+
+            download_url = f"{_BASE_URL}{href}" if href.startswith("/") else href
+
+            pdf_files.append(PdfFileInfo(
+                file_name=file_name,
+                download_url=download_url,
+                start_date=start_date,
+                end_date=None,  # 상세 페이지에서 종료일 추출 가능하지만 파일명으로 충분
+                doc_type=doc_type,
+            ))
+
+        logger.debug(
+            "[KB손보] 상세 페이지 PDF 수집: %s → %d개",
+            listing.product_name[:40],
+            len(pdf_files),
+        )
+        return pdf_files
+
+    async def download_pdf(self, listing: PolicyListing) -> bytes:
+        """PDF 다운로드 (하위 호환성 유지용 - 단일 URL 다운로드)
+
+        Args:
+            listing: 다운로드할 상품 정보 (pdf_url에 직접 다운로드 URL 필요)
+
+        Returns:
+            PDF 바이너리 데이터 (실패시 빈 bytes)
         """
         import httpx
 
@@ -163,9 +347,50 @@ class KBNonLifeCrawler(BaseCrawler):
             follow_redirects=True,
             timeout=30.0,
         ) as client:
-            resp = await client.get(listing.pdf_url)
-            resp.raise_for_status()
-            return resp.content
+            try:
+                resp = await client.get(listing.pdf_url)
+                resp.raise_for_status()
+                if self._is_valid_pdf(resp.content):
+                    return resp.content
+            except Exception as e:
+                logger.debug("[KB손보] PDF 다운로드 실패 [%s]: %s", listing.pdf_url[:80], e)
+
+        return b""
+
+    async def download_pdf_by_url(self, url: str, file_name: str) -> bytes:
+        """URL로 직접 PDF 다운로드
+
+        Args:
+            url: 다운로드 URL
+            file_name: 파일명 (로깅용)
+
+        Returns:
+            PDF 바이너리 데이터 (실패시 빈 bytes)
+        """
+        import httpx
+
+        async with httpx.AsyncClient(
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": _LIST_URL,
+            },
+            follow_redirects=True,
+            timeout=30.0,
+        ) as client:
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                if self._is_valid_pdf(resp.content):
+                    return resp.content
+                logger.debug(
+                    "[KB손보] PDF 아님 (HTML 응답 추정): %s (%d bytes)",
+                    file_name,
+                    len(resp.content),
+                )
+            except Exception as e:
+                logger.debug("[KB손보] PDF 다운로드 실패 [%s]: %s", file_name, e)
+
+        return b""
 
     async def detect_changes(self, listings: list[PolicyListing]) -> DeltaResult:
         """스토리지 존재 여부로 신규/기존 분류
@@ -180,13 +405,10 @@ class KBNonLifeCrawler(BaseCrawler):
         unchanged_listings: list[PolicyListing] = []
 
         for listing in listings:
-            # 저장 경로: kb-nonlife/<product_code>/<product_name>.pdf
-            safe_name = listing.product_name.strip()
-            for ch in ['/', '\\', ':', '?', '"', '<', '>', '*', '|']:
-                safe_name = safe_name.replace(ch, '_')
-            path = f"kb-nonlife/{listing.product_code}/{safe_name}.pdf"
-
-            if self.storage.exists(path):
+            # 상품 디렉터리 존재 여부로 판단
+            # 상세 페이지 접근이 필요하므로 디렉터리 수준 체크
+            dir_path = f"kb-nonlife/{listing.product_code}/"
+            if self.storage.exists(dir_path):
                 unchanged_listings.append(listing)
             else:
                 new_listings.append(listing)
@@ -204,8 +426,9 @@ class KBNonLifeCrawler(BaseCrawler):
 
         1. Playwright로 전체 상품 목록 수집 (페이지네이션)
         2. 대상 카테고리 필터링
-        3. 신규/기존 분류
-        4. 신규 항목 PDF 다운로드 및 저장
+        3. 신규/기존 분류 (상품 디렉터리 단위)
+        4. 신규 상품의 상세 페이지에서 연도별 PDF 목록 수집
+        5. PDF 다운로드 및 저장
 
         Returns:
             크롤링 실행 결과 요약
@@ -260,45 +483,123 @@ class KBNonLifeCrawler(BaseCrawler):
                         await asyncio.sleep(3)
                     await asyncio.sleep(1)
 
-                    if page_num > 100:
-                        logger.warning("[KB손보] 페이지 수 제한 초과 (100페이지), 중단")
+                    if page_num > 2000:
+                        logger.warning("[KB손보] 페이지 수 제한 초과 (2000페이지), 중단")
                         break
 
-                logger.info("[KB손보] 전체 %d개 상품 수집 (%d페이지)", len(all_listings), page_num - 1)
+                logger.info(
+                    "[KB손보] 전체 %d개 상품 수집 (%d페이지)",
+                    len(all_listings),
+                    page_num - 1,
+                )
                 total_found = len(all_listings)
 
-                # 신규/기존 분류
-                delta = await self.detect_changes(all_listings)
+                # 중복 제거 (동일 product_code는 상세 페이지가 동일)
+                seen_codes: set[str] = set()
+                unique_listings: list[PolicyListing] = []
+                for listing in all_listings:
+                    if listing.product_code not in seen_codes:
+                        seen_codes.add(listing.product_code)
+                        unique_listings.append(listing)
+
+                logger.info(
+                    "[KB손보] 중복 제거 후 %d개 (원래 %d개)",
+                    len(unique_listings),
+                    total_found,
+                )
+
+                # 신규/기존 분류 (상품 디렉터리 단위)
+                delta = await self.detect_changes(unique_listings)
                 skipped_count = len(delta.unchanged)
+                logger.info(
+                    "[KB손보] 신규: %d개, 기존(스킵): %d개",
+                    len(delta.new),
+                    skipped_count,
+                )
 
-                # 신규 항목 PDF 다운로드
+                # 신규 상품 처리: 상세 페이지 방문 → PDF 목록 수집 → 다운로드
                 for listing in delta.new:
-                    safe_name = listing.product_name.strip()
-                    for ch in ['/', '\\', ':', '?', '"', '<', '>', '*', '|']:
-                        safe_name = safe_name.replace(ch, '_')
-                    path = f"kb-nonlife/{listing.product_code}/{safe_name}.pdf"
+                    # 목록 페이지로 복귀 (상세 페이지 폼 제출을 위해 필요)
+                    await page.goto(_LIST_URL, timeout=30000, wait_until="networkidle")
+                    await asyncio.sleep(1)
 
-                    try:
-                        pdf_data = await self.download_pdf(listing)
-                        if pdf_data[:4] == b"%PDF" and len(pdf_data) > 1000:
-                            self.storage.save(pdf_data, path)
-                            new_count += 1
-                            results.append({
-                                "product_name": listing.product_name,
-                                "category": listing.category,
-                                "status": "downloaded",
-                            })
-                            logger.info("[KB손보] 다운로드: %s (%d bytes)",
-                                       listing.product_name[:50], len(pdf_data))
-                        else:
-                            failed_count += 1
-                            logger.warning("[KB손보] PDF 검증 실패: %s", listing.product_name[:50])
-                    except Exception as e:
+                    # 상세 페이지에서 연도별 PDF 목록 수집
+                    pdf_files = await self.fetch_detail_pdfs(page, listing)
+
+                    if not pdf_files:
+                        logger.warning(
+                            "[KB손보] 상세 페이지 PDF 없음: %s (code=%s)",
+                            listing.product_name[:50],
+                            listing.product_code,
+                        )
                         failed_count += 1
-                        logger.error("[KB손보] 다운로드 실패 [%s]: %s",
-                                     listing.product_name[:50], e)
+                        continue
 
-                    await asyncio.sleep(self.rate_limit_seconds)
+                    # 각 PDF 파일 다운로드
+                    product_downloaded = 0
+                    product_failed = 0
+
+                    for pdf_info in pdf_files:
+                        storage_path = self._get_storage_path(
+                            listing.product_code, pdf_info.file_name
+                        )
+
+                        # 이미 존재하는 파일 스킵
+                        if self.storage.exists(storage_path):
+                            continue
+
+                        try:
+                            pdf_data = await self.download_pdf_by_url(
+                                pdf_info.download_url, pdf_info.file_name
+                            )
+
+                            if self._is_valid_pdf(pdf_data):
+                                self.storage.save(pdf_data, storage_path)
+                                product_downloaded += 1
+                                logger.debug(
+                                    "[KB손보] 저장: %s (%d bytes)",
+                                    storage_path,
+                                    len(pdf_data),
+                                )
+                            else:
+                                product_failed += 1
+                                logger.debug(
+                                    "[KB손보] PDF 검증 실패 (서버 미제공): %s",
+                                    pdf_info.file_name,
+                                )
+
+                        except Exception as e:
+                            product_failed += 1
+                            logger.error(
+                                "[KB손보] 다운로드 오류 [%s]: %s",
+                                pdf_info.file_name,
+                                e,
+                            )
+
+                        await asyncio.sleep(self.rate_limit_seconds)
+
+                    if product_downloaded > 0:
+                        new_count += product_downloaded
+                        results.append({
+                            "product_name": listing.product_name,
+                            "category": listing.category,
+                            "status": "downloaded",
+                            "pdf_count": product_downloaded,
+                            "failed_count": product_failed,
+                        })
+                        logger.info(
+                            "[KB손보] 완료: %s → %d개 저장, %d개 실패",
+                            listing.product_name[:50],
+                            product_downloaded,
+                            product_failed,
+                        )
+                    elif product_failed > 0 and product_downloaded == 0:
+                        failed_count += 1
+                        logger.warning(
+                            "[KB손보] 파일 없음 (서버 미제공): %s (code=%s)",
+                            listing.product_name[:50],
+                            listing.product_code,
+                        )
 
             finally:
                 await browser.close()

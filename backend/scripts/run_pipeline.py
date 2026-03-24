@@ -224,9 +224,9 @@ def _create_storage(settings: object) -> object:
         스토리지 백엔드 인스턴스
     """
     try:
-        from app.services.crawler.storage import LocalStorage
+        from app.services.crawler.storage import LocalFileStorage
         base_dir = getattr(settings, "crawler_base_dir", "./data/crawled_pdfs")
-        return LocalStorage(base_dir=base_dir)
+        return LocalFileStorage(base_dir=base_dir)
     except ImportError:
         logger.warning("스토리지 모듈을 찾을 수 없습니다. 더미 스토리지 사용")
         return _DummyStorage()

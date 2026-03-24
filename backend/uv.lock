@@ -198,6 +198,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlalchemy-cockroachdb" },
     { name = "structlog" },
     { name = "tenacity" },
     { name = "tiktoken" },
@@ -249,6 +250,7 @@ requires-dist = [
     { name = "redis", specifier = ">=5.2.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
+    { name = "sqlalchemy-cockroachdb", specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=24.0.0" },
     { name = "tenacity", specifier = ">=9.0.0" },
     { name = "tiktoken", specifier = ">=0.8.0" },
@@ -2084,6 +2086,18 @@ wheels = [
 [package.optional-dependencies]
 asyncio = [
     { name = "greenlet" },
+]
+
+[[package]]
+name = "sqlalchemy-cockroachdb"
+version = "2.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/02/2e2e6a0b47259f3c61f3a062653070302eea81f0ae9a57cd3ab7f1dc110e/sqlalchemy_cockroachdb-2.0.3.tar.gz", hash = "sha256:48b763ffd8b2a4dc9d56459934a56d7d5ffad415c6e68d114baee5d12cf79c1d", size = 28539, upload-time = "2025-06-11T00:34:53.619Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/61/ae638b8adaea4bcb5092b7fedad14d53ef2bef2b75877503019ddf06cd89/sqlalchemy_cockroachdb-2.0.3-py3-none-any.whl", hash = "sha256:cd1dca9a8c65ec8564c928ea26d154b7fc02f82948af200d965343894ca0c0f5", size = 22134, upload-time = "2025-06-11T00:34:52.736Z" },
 ]
 
 [[package]]
