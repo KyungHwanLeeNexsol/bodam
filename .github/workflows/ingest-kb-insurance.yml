@@ -1,0 +1,70 @@
+name: KB손해보험 크롤링 + 인제스트
+
+on:
+  # 수동 실행
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run (크롤링만 하고 DB에 저장하지 않음)'
+        required: false
+        default: false
+        type: boolean
+
+  # 주간 자동 실행: 화요일 새벽 2시 KST (월요일 17:00 UTC)
+  # 삼성화재(일요일), DB손보(월요일)와 요일 분리
+  schedule:
+    - cron: '0 17 * * 1'
+
+jobs:
+  crawl-and-ingest:
+    name: KB손해보험 크롤링 + 인제스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 240  # 4시간
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Python 의존성 설치
+        run: |
+          cd backend
+          uv sync --frozen
+
+      # KB손보는 Playwright 필수 (JS 렌더링)
+      - name: Playwright 브라우저 설치
+        run: |
+          cd backend
+          uv run playwright install chromium --with-deps
+
+      - name: KB손해보험 크롤링 + 인제스트 실행
+        run: |
+          cd backend
+
+          DRY_RUN_PARAM=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_PARAM="--dry-run"
+          fi
+
+          PYTHONPATH=. uv run python -m scripts.crawl_and_ingest_kb \
+            $DRY_RUN_PARAM
+
+      - name: 실행 결과 요약
+        if: always()
+        run: |
+          echo "## KB손해보험 인제스트 실행 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S KST')" >> $GITHUB_STEP_SUMMARY
+          echo "- Dry-run: ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
