@@ -530,10 +530,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    asyncio.run(crawl_and_ingest(
+    result = asyncio.run(crawl_and_ingest(
         category_filter=args.category,
         dry_run=args.dry_run,
         fail_threshold=args.fail_threshold,
         resume_state_path=args.resume_state,
         state_output_path=args.state_output,
     ))
+    # DB 초기화 실패 등 오류 시 exit code 1 (GitHub Actions false positive 방지)
+    if isinstance(result, dict) and "error" in result:
+        logger.error("종료 오류: %s", result["error"])
+        sys.exit(1)
