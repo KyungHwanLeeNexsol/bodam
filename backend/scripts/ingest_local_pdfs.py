@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gc
 import hashlib
 import json
 import logging
@@ -70,8 +71,11 @@ COMPANY_MAP: dict[str, tuple[str, str, str]] = {
     "meritz_fire": ("meritz-fire", "메리츠화재", "NON_LIFE"),
     "hyundai_marine": ("hyundai-marine", "현대해상", "NON_LIFE"),
     "kb_insurance": ("kb-insurance", "KB손해보험", "NON_LIFE"),
+    "kb-nonlife": ("kb-nonlife", "KB손해보험", "NON_LIFE"),  # KB손보 크롤러 저장 디렉터리명
     "samsung_fire": ("samsung-fire", "삼성화재", "NON_LIFE"),
+    "samsung-fire": ("samsung-fire", "삼성화재", "NON_LIFE"),  # 삼성화재 크롤러 저장 디렉터리명
     "db_insurance": ("db-insurance", "DB손해보험", "NON_LIFE"),
+    "db-nonlife": ("db-nonlife", "DB손해보험", "NON_LIFE"),  # DB손보 크롤러 저장 디렉터리명
     "heungkuk_fire": ("heungkuk-fire", "흥국화재", "NON_LIFE"),
     "axa_general": ("axa-general", "AXA손해보험", "NON_LIFE"),
     "mg_insurance": ("mg-insurance", "MG손해보험", "NON_LIFE"),
@@ -340,8 +344,8 @@ def scan_data_directory(
             logger.debug("Format C 디렉터리 건너뜀: %s", sub_dir)
             continue
 
-        # PDF 파일 검색
-        for pdf_file in sub_dir.glob("*.pdf"):
+        # PDF 파일 검색 (중첩 디렉터리 포함 재귀 탐색)
+        for pdf_file in sub_dir.rglob("*.pdf"):
             results.append((pdf_file, fmt))
 
     logger.info("스캔 완료: %d개 PDF 발견 (data_dir=%s)", len(results), data_dir)
@@ -384,8 +388,13 @@ def extract_metadata(pdf_path: Path, data_dir: Path) -> dict[str, Any]:
     Returns:
         메타데이터 딕셔너리 (company_code, company_name, product_code, sale_status, ...)
     """
+    # 중첩 디렉터리 지원: 직접 부모에서 회사 디렉터리까지 올라가며 format 감지
+    # 예) samsung-fire/장기-건강/file.pdf → 장기-건강(C) → samsung-fire(B)
     parent_dir = pdf_path.parent
     fmt = detect_format(parent_dir)
+    while fmt == "C" and parent_dir != data_dir and parent_dir.parent != parent_dir:
+        parent_dir = parent_dir.parent
+        fmt = detect_format(parent_dir)
 
     if fmt == "A":
         # Format A: 숫자형 디렉터리 = 공시보험 (LIFE)
@@ -802,31 +811,30 @@ async def main(argv: list[str] | None = None) -> None:
     }
     failures: list[dict[str, Any]] = []
 
-    # 파일별 병렬 처리 (Semaphore로 동시 실행 수 제한)
-    sem = asyncio.Semaphore(10)
+    # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
+    # @MX:REASON: pdfplumber + PDFMiner 내부 캐시가 asyncio gather 환경에서 GC 타이밍이 지연됨
+    # @MX:REASON: 8,000개 이상 파일 처리 시 메모리 점진적 포화로 PC 멈춤 재현됨
+    # @MX:SPEC: SPEC-INGEST-001
+    # 순차 처리: 파일 1개씩 처리 후 즉시 GC → 메모리 일정 수준 유지
+    all_pairs = list(pdf_list)
 
-    async def _process(pdf_path: Path, _fmt: str) -> dict[str, Any]:
-        async with sem:
+    for idx, (pdf_path, _fmt) in enumerate(all_pairs, 1):
+        if idx % 100 == 0 or idx == 1:
+            logger.info("처리 중: %d / %d", idx, len(all_pairs))
+
+        try:
             metadata = extract_metadata(pdf_path, data_dir)
-            return await process_single_file(
+            result = await process_single_file(
                 _db.session_factory,
                 pdf_path,
                 metadata,
                 dry_run=args.dry_run,
                 embedding_service=embedding_service,
             )
+        except Exception as e:
+            result = {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
-    tasks = [_process(pdf_path, _fmt) for pdf_path, _fmt in pdf_list]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    for (pdf_path, _fmt), result in zip(pdf_list, results):
-        if isinstance(result, BaseException):
-            stats["failed"] += 1
-            failures.append({
-                "file": str(pdf_path),
-                "error": str(result),
-            })
-            continue
+        # 즉시 통계 반영
         status = result["status"]
         if status == "success":
             stats["success"] += 1
@@ -847,6 +855,9 @@ async def main(argv: list[str] | None = None) -> None:
                 "file": str(pdf_path),
                 "error": result.get("error", "알 수 없는 오류"),
             })
+
+        # 파일마다 GC 강제 실행 (pdfplumber/PDFMiner 캐시 해제)
+        gc.collect()
 
     # 요약 리포트 출력
     print(generate_report(stats))
