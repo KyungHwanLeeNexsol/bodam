@@ -1,9 +1,9 @@
 name: Daily Embedding Batch
 
 on:
-  schedule:
-    # UTC 17:00 = KST 02:00 (매일 새벽 2시)
-    - cron: '0 17 * * *'
+  # schedule 비활성화 (수동 실행만 허용)
+  # schedule:
+  #   - cron: '0 17 * * *'
   workflow_dispatch:
     inputs:
       max_chunks:
