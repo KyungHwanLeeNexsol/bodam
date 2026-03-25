@@ -27,9 +27,6 @@ on:
         required: false
         default: ''
 
-  # 주간 자동 실행: 일요일 새벽 1시 KST (토요일 16:00 UTC)
-  schedule:
-    - cron: '0 16 * * 6'
 
 jobs:
   crawl-and-ingest:

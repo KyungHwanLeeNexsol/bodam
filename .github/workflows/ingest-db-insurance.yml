@@ -18,10 +18,6 @@ on:
         required: false
         default: ''
 
-  # 주간 자동 실행: 월요일 새벽 2시 KST (일요일 17:00 UTC)
-  # 삼성화재(일요일 새벽 1시)와 겹치지 않도록 1시간 차이
-  schedule:
-    - cron: '0 17 * * 0'
 
 jobs:
   crawl-and-ingest:

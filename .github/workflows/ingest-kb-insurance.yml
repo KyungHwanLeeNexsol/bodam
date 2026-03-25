@@ -10,10 +10,6 @@ on:
         default: false
         type: boolean
 
-  # 주간 자동 실행: 화요일 새벽 2시 KST (월요일 17:00 UTC)
-  # 삼성화재(일요일), DB손보(월요일)와 요일 분리
-  schedule:
-    - cron: '0 17 * * 1'
 
 jobs:
   crawl-and-ingest:

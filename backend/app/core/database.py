@@ -20,8 +20,17 @@ if TYPE_CHECKING:
 
 
 def _strip_sslmode(database_url: str) -> str:
-    """asyncpg가 지원하지 않는 sslmode 파라미터를 URL에서 제거."""
-    return (
+    """asyncpg가 지원하지 않는 sslmode 파라미터를 URL에서 제거하고 드라이버를 정규화.
+
+    지원 URL 형식:
+    - postgresql://...          (CockroachDB 클라우드 대시보드 기본값)
+    - postgresql+asyncpg://...  (asyncpg 드라이버 명시)
+    - cockroachdb://...         (드라이버 없음)
+    - cockroachdb+asyncpg://... (이미 정규화됨)
+
+    모두 cockroachdb+asyncpg://...로 정규화.
+    """
+    url = (
         database_url
         .replace("&sslmode=require", "")
         .replace("?sslmode=require", "")
@@ -32,6 +41,14 @@ def _strip_sslmode(database_url: str) -> str:
         # postgresql+asyncpg → cockroachdb+asyncpg (sqlalchemy-cockroachdb 다이얼렉트 사용)
         .replace("postgresql+asyncpg://", "cockroachdb+asyncpg://", 1)
     )
+    # CockroachDB 대시보드 기본 URL: postgresql:// → cockroachdb+asyncpg://
+    # 주의: postgresql+asyncpg://는 이미 위에서 처리됨
+    if url.startswith("postgresql://"):
+        url = "cockroachdb+asyncpg://" + url[len("postgresql://"):]
+    # cockroachdb:// (드라이버 없음) → cockroachdb+asyncpg://
+    elif url.startswith("cockroachdb://"):
+        url = "cockroachdb+asyncpg://" + url[len("cockroachdb://"):]
+    return url
 
 
 def _build_connect_args(database_url: str) -> dict:
