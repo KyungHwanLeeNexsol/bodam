@@ -14,6 +14,7 @@ JS 렌더링이 필요하여 Playwright 사용.
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -44,6 +45,7 @@ class PdfFileInfo:
     Attributes:
         file_name: fileNm 파라미터값 (예: 20240101_10101_1.pdf)
         download_url: 전체 다운로드 URL
+        page_href: 페이지 내 원본 href 속성값 (클릭 다운로드용, 예: /CG802030003.ec?fileNm=...)
         start_date: 약관 적용 시작일 (YYYYMMDD)
         end_date: 약관 적용 종료일 (YYYYMMDD, None이면 현재 적용 중)
         doc_type: 문서 유형 번호 (1=보험약관, 2=사업방법서, 3=상품요약서)
@@ -51,6 +53,7 @@ class PdfFileInfo:
 
     file_name: str
     download_url: str
+    page_href: str
     start_date: str
     end_date: str | None
     doc_type: int
@@ -91,6 +94,9 @@ class KBNonLifeCrawler(BaseCrawler):
         storage: StorageBackend,
         rate_limit_seconds: float = 2.0,
         max_retries: int = 3,
+        fail_threshold: float = 0.05,
+        fail_min_samples: int = 5,
+        browser_restart_interval: int = 30,
     ) -> None:
         """KB손보 크롤러 초기화
 
@@ -98,6 +104,9 @@ class KBNonLifeCrawler(BaseCrawler):
             storage: PDF 파일 저장 백엔드
             rate_limit_seconds: 요청 간 대기 시간(초)
             max_retries: 최대 재시도 횟수
+            fail_threshold: 실패율 임계값 (초과 시 즉시 중단)
+            fail_min_samples: 최소 처리 건수 이후 임계값 적용
+            browser_restart_interval: 브라우저 컨텍스트 재시작 주기 (상품 수 기준, 메모리 해제용)
         """
         super().__init__(
             crawler_name="kb-nonlife",
@@ -106,6 +115,9 @@ class KBNonLifeCrawler(BaseCrawler):
             rate_limit_seconds=rate_limit_seconds,
             max_retries=max_retries,
         )
+        self.fail_threshold = fail_threshold
+        self.fail_min_samples = fail_min_samples
+        self.browser_restart_interval = browser_restart_interval
 
     def _is_target_category(self, category: str) -> bool:
         """카테고리가 수집 대상인지 확인
@@ -263,13 +275,20 @@ class KBNonLifeCrawler(BaseCrawler):
         # @MX:NOTE: [AUTO] 상세 페이지 테이블 구조:
         #   행2: 헤더 (판매시작일|판매종료일|보험약관|사업방법서|상품요약서|비고)
         #   행3~: 각 연도별 (시작일|종료일|약관PDF링크|사업방법서링크|요약서링크|비고)
+        # @MX:NOTE: [AUTO] 숨겨진 앵커 제외: HTML에는 있으나 display:none인 링크는 서버에 파일 없음
         raw_pdfs: list[dict] = await page.evaluate(r"""() => {
             const pdfs = [];
             document.querySelectorAll('a').forEach(el => {
                 const href = el.getAttribute('href') || '';
-                if (href.includes('CG802030003') && href.includes('fileNm=')) {
-                    pdfs.push({href});
+                if (!href.includes('CG802030003') || !href.includes('fileNm=')) return;
+                // 조상 요소 중 display:none 또는 visibility:hidden이면 제외
+                let node = el;
+                while (node && node.tagName !== 'BODY') {
+                    const s = window.getComputedStyle(node);
+                    if (s.display === 'none' || s.visibility === 'hidden') return;
+                    node = node.parentElement;
                 }
+                pdfs.push({href});
             });
             return pdfs;
         }""")
@@ -302,6 +321,7 @@ class KBNonLifeCrawler(BaseCrawler):
                 pdf_files.append(PdfFileInfo(
                     file_name=file_name,
                     download_url=f"{_BASE_URL}{href}" if href.startswith("/") else href,
+                    page_href=href,
                     start_date="",
                     end_date=None,
                     doc_type=0,
@@ -316,16 +336,20 @@ class KBNonLifeCrawler(BaseCrawler):
             pdf_files.append(PdfFileInfo(
                 file_name=file_name,
                 download_url=download_url,
+                page_href=href,
                 start_date=start_date,
                 end_date=None,  # 상세 페이지에서 종료일 추출 가능하지만 파일명으로 충분
                 doc_type=doc_type,
             ))
 
-        logger.debug(
-            "[KB손보] 상세 페이지 PDF 수집: %s → %d개",
+        logger.info(
+            "[KB손보] 상세 페이지 PDF 수집: %s → %d개 (raw_pdfs=%d개)",
             listing.product_name[:40],
             len(pdf_files),
+            len(raw_pdfs),
         )
+        for pf in pdf_files:
+            logger.debug("[KB손보] 수집된 PDF: %s → %s", pf.file_name, pf.download_url)
         return pdf_files
 
     async def download_pdf(self, listing: PolicyListing) -> bytes:
@@ -357,38 +381,54 @@ class KBNonLifeCrawler(BaseCrawler):
 
         return b""
 
-    async def download_pdf_by_url(self, url: str, file_name: str) -> bytes:
-        """URL로 직접 PDF 다운로드
+    async def download_pdf_by_url(self, page: Any, url: str, file_name: str, page_href: str = "") -> bytes:
+        """상세 페이지 링크 클릭으로 PDF 다운로드 (Playwright 다운로드 인터셉트)
+
+        # @MX:NOTE: KB손보 서버는 Sec-Fetch-Dest=document(링크 클릭 네비게이션)만 허용.
+        # fetch()/XHR/page.request는 Sec-Fetch-Dest=empty로 전송되어 HTML 오류 페이지 반환.
+        # Sec-Fetch-* 헤더는 브라우저가 자동 설정하므로 JS에서 수동 지정 불가.
+        # page.expect_download()로 실제 클릭 → 브라우저 다운로드를 인터셉트하여 바이트 반환.
 
         Args:
-            url: 다운로드 URL
+            page: Playwright 페이지 객체 (상세 페이지가 열려 있어야 함)
+            url: 다운로드 전체 URL (미사용, 하위 호환성 유지)
             file_name: 파일명 (로깅용)
+            page_href: 페이지 내 원본 href 속성값 (링크 탐색용)
 
         Returns:
             PDF 바이너리 데이터 (실패시 빈 bytes)
         """
-        import httpx
+        from pathlib import Path as _Path
 
-        async with httpx.AsyncClient(
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": _LIST_URL,
-            },
-            follow_redirects=True,
-            timeout=30.0,
-        ) as client:
-            try:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                if self._is_valid_pdf(resp.content):
-                    return resp.content
-                logger.debug(
-                    "[KB손보] PDF 아님 (HTML 응답 추정): %s (%d bytes)",
-                    file_name,
-                    len(resp.content),
+        href = page_href
+        if not href:
+            logger.warning("[KB손보] page_href 없음 - 다운로드 불가 [%s]", file_name)
+            return b""
+        try:
+            async with page.expect_download(timeout=30000) as download_info:
+                await page.evaluate(
+                    """(href) => {
+                        const links = Array.from(document.querySelectorAll('a'));
+                        const link = links.find(a => a.getAttribute('href') === href);
+                        if (!link) throw new Error('링크 없음: ' + href);
+                        link.click();
+                    }""",
+                    href,
                 )
-            except Exception as e:
-                logger.debug("[KB손보] PDF 다운로드 실패 [%s]: %s", file_name, e)
+            download = await download_info.value
+            path = await download.path()
+            if path:
+                data = _Path(path).read_bytes()
+                await download.delete()  # 임시 파일 즉시 삭제 (Chromium 다운로드 디렉터리 누적 방지)
+                if self._is_valid_pdf(data):
+                    return data
+                first_bytes = data[:100].decode("utf-8", errors="replace").strip()
+                logger.warning(
+                    "[KB손보] 다운로드 파일 PDF 아님 [%s] %d bytes, 시작: %r",
+                    file_name, len(data), first_bytes,
+                )
+        except Exception as e:
+            logger.warning("[KB손보] 클릭 다운로드 실패 [%s]: %s", file_name, e)
 
         return b""
 
@@ -518,7 +558,25 @@ class KBNonLifeCrawler(BaseCrawler):
                 )
 
                 # 신규 상품 처리: 상세 페이지 방문 → PDF 목록 수집 → 다운로드
-                for listing in delta.new:
+                # @MX:NOTE: fail-stop: 최소 fail_min_samples 이후 실패율 > fail_threshold 시 즉시 중단
+                # @MX:NOTE: browser_restart_interval마다 컨텍스트 재시작 → Chromium 힙 해제
+                products_attempted = 0  # 실제 처리 시도 건수 (스킵 제외)
+                aborted = False
+                for idx, listing in enumerate(delta.new):
+                    # browser_restart_interval마다 컨텍스트 재시작 (메모리 누수 방지)
+                    if idx > 0 and idx % self.browser_restart_interval == 0:
+                        logger.info(
+                            "[KB손보] 브라우저 컨텍스트 재시작 (%d번째 상품, 메모리 해제)",
+                            idx,
+                        )
+                        await context.close()
+                        gc.collect()
+                        context = await browser.new_context(
+                            accept_downloads=True,
+                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        )
+                        page = await context.new_page()
+
                     # 목록 페이지로 복귀 (상세 페이지 폼 제출을 위해 필요)
                     await page.goto(_LIST_URL, timeout=30000, wait_until="networkidle")
                     await asyncio.sleep(1)
@@ -533,6 +591,17 @@ class KBNonLifeCrawler(BaseCrawler):
                             listing.product_code,
                         )
                         failed_count += 1
+                        products_attempted += 1
+                        if products_attempted >= self.fail_min_samples:
+                            fail_rate = failed_count / products_attempted
+                            if fail_rate > self.fail_threshold:
+                                logger.error(
+                                    "[KB손보] 실패율 %.1f%% > 임계값 %.1f%% (처리 %d건 중 %d건 실패) → 수집 중단",
+                                    fail_rate * 100, self.fail_threshold * 100,
+                                    products_attempted, failed_count,
+                                )
+                                aborted = True
+                                break
                         continue
 
                     # 각 PDF 파일 다운로드
@@ -550,7 +619,8 @@ class KBNonLifeCrawler(BaseCrawler):
 
                         try:
                             pdf_data = await self.download_pdf_by_url(
-                                pdf_info.download_url, pdf_info.file_name
+                                page, pdf_info.download_url, pdf_info.file_name,
+                                pdf_info.page_href,
                             )
 
                             if self._is_valid_pdf(pdf_data):
@@ -600,6 +670,21 @@ class KBNonLifeCrawler(BaseCrawler):
                             listing.product_name[:50],
                             listing.product_code,
                         )
+
+                    products_attempted += 1
+                    if products_attempted >= self.fail_min_samples:
+                        fail_rate = failed_count / products_attempted
+                        if fail_rate > self.fail_threshold:
+                            logger.error(
+                                "[KB손보] 실패율 %.1f%% > 임계값 %.1f%% (처리 %d건 중 %d건 실패) → 수집 중단",
+                                fail_rate * 100, self.fail_threshold * 100,
+                                products_attempted, failed_count,
+                            )
+                            aborted = True
+                            break
+
+                if aborted:
+                    logger.error("[KB손보] 실패율 임계값 초과로 수집 중단됨. 디버깅 후 재실행하세요.")
 
             finally:
                 await browser.close()
