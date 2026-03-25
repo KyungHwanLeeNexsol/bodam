@@ -8,10 +8,12 @@ GitHub Actions 환경에서 실행하기 위한 스크립트.
 실행:
     cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_and_ingest_kb
     cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_and_ingest_kb --dry-run
+    cd backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. python -m scripts.crawl_and_ingest_kb --resume-state failure_state_kb.json
 
 # @MX:NOTE: GitHub Actions 전용 통합 파이프라인
 # @MX:NOTE: KB손보는 Playwright 필수 (JS 렌더링, euc-kr 인코딩)
 # @MX:NOTE: 크롤링 완료 후 /tmp/kb-crawl/ 에서 순차 인제스트 - 최대 수백MB 디스크 사용
+# @MX:NOTE: resume-state 사용 시 실패 product_code만 재크롤링 + 재인제스트
 # @MX:SPEC: SPEC-INGEST-001
 """
 from __future__ import annotations
@@ -19,9 +21,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import gc
+import json
 import logging
 import sys
 import tempfile
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 _project_root = Path(__file__).parent.parent
@@ -47,6 +52,40 @@ logger = logging.getLogger(__name__)
 DEFAULT_FAIL_THRESHOLD = 0.05
 
 
+@dataclass
+class FailureRecord:
+    """인제스트 실패 건 기록."""
+    product_code: str
+    pdf_filename: str
+    error: str
+    http_status: int | None = None
+
+
+@dataclass
+class KBIngestState:
+    """KB 인제스트 실패 상태 (재처리용 JSON 직렬화 가능)."""
+    failures: list[FailureRecord] = field(default_factory=list)
+    stop_reason: str = ""
+    crawl_failed_count: int = 0
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def save(self, path: Path) -> None:
+        data = asdict(self)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("실패 상태 저장: %s (%d건)", path, len(self.failures))
+
+    @classmethod
+    def load(cls, path: Path) -> "KBIngestState":
+        data = json.loads(path.read_text(encoding="utf-8"))
+        failures = [FailureRecord(**f) for f in data.get("failures", [])]
+        return cls(
+            failures=failures,
+            stop_reason=data.get("stop_reason", ""),
+            crawl_failed_count=data.get("crawl_failed_count", 0),
+            created_at=data.get("created_at", ""),
+        )
+
+
 async def ingest_pdf_file(
     session_factory: object,
     pdf_path: Path,
@@ -68,13 +107,29 @@ async def ingest_pdf_file(
 async def crawl_and_ingest(
     dry_run: bool = False,
     fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
+    resume_state: Path | None = None,
+    state_output: Path | None = None,
 ) -> dict:
     """KB손해보험 크롤링 + 즉시 인제스트 실행.
 
     Args:
         dry_run: True이면 크롤링만 하고 DB에 저장하지 않음
         fail_threshold: 크롤링 실패율 임계값
+        resume_state: 이전 실패 상태 JSON 경로 (이 파일의 실패 product_code만 재처리)
+        state_output: 실패 상태를 저장할 JSON 경로
     """
+    # 이전 실패 상태 로드 (resume 모드)
+    failed_product_codes: set[str] | None = None
+    if resume_state and resume_state.exists():
+        prev_state = KBIngestState.load(resume_state)
+        failed_product_codes = {f.product_code for f in prev_state.failures}
+        logger.info(
+            "재처리 모드: 이전 실패 product_code %d개만 처리",
+            len(failed_product_codes),
+        )
+    elif resume_state:
+        logger.warning("resume_state 파일 없음 (%s) → 전체 실행", resume_state)
+
     # DB 초기화
     try:
         from app.core.config import Settings
@@ -98,6 +153,8 @@ async def crawl_and_ingest(
         # 1단계: Playwright 크롤링
         logger.info("=" * 60)
         logger.info("KB손해보험 크롤링 시작%s", " (DRY RUN)" if dry_run else "")
+        if failed_product_codes is not None:
+            logger.info("재처리 대상 product_code: %s", sorted(failed_product_codes))
         logger.info("=" * 60)
 
         from app.services.crawler.companies.nonlife.kb_nonlife_crawler import KBNonLifeCrawler
@@ -129,6 +186,12 @@ async def crawl_and_ingest(
                     "크롤링 실패율 %.1f%% > 임계값 %.1f%% → 인제스트 중단",
                     fail_rate * 100, fail_threshold * 100,
                 )
+                state = KBIngestState(
+                    stop_reason=f"crawl_fail_rate={fail_rate:.2%}",
+                    crawl_failed_count=crawl_result.failed_count,
+                )
+                if state_output:
+                    state.save(state_output)
                 return {
                     "error": f"crawl_fail_rate={fail_rate:.2%}",
                     "crawl": {
@@ -161,12 +224,27 @@ async def crawl_and_ingest(
         # 2단계: 저장된 PDF 순차 인제스트
         # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
         # @MX:REASON: pdfplumber + PDFMiner 내부 캐시가 asyncio gather 환경에서 GC 타이밍이 지연됨
-        pdf_files = sorted(
+        all_pdf_files = sorted(
             list(tmp_path.rglob("*.pdf")) + list(tmp_path.rglob("*.PDF"))
         )
-        logger.info("인제스트 대상: %d개 PDF", len(pdf_files))
+
+        # resume 모드: 실패 product_code에 해당하는 파일만 처리
+        if failed_product_codes is not None:
+            pdf_files = [
+                p for p in all_pdf_files
+                if (p.relative_to(tmp_path).parts[1] if len(p.relative_to(tmp_path).parts) >= 2 else p.stem)
+                in failed_product_codes
+            ]
+            logger.info(
+                "인제스트 대상(재처리): %d개 PDF (전체 %d개 중 실패 product_code 필터)",
+                len(pdf_files), len(all_pdf_files),
+            )
+        else:
+            pdf_files = all_pdf_files
+            logger.info("인제스트 대상: %d개 PDF", len(pdf_files))
 
         ingest_stats = {"success": 0, "skipped": 0, "failed": 0}
+        failure_records: list[FailureRecord] = []
 
         for idx, pdf_path in enumerate(pdf_files, start=1):
             # 경로에서 메타데이터 추출: kb-nonlife/{product_code}/{filename}
@@ -214,9 +292,26 @@ async def crawl_and_ingest(
                 ingest_stats["skipped"] += 1
             else:
                 ingest_stats["failed"] += 1
-                logger.warning("[%d] 실패: %s - %s", idx, pdf_path.name, result.get("error", ""))
+                error_msg = result.get("error", "")
+                logger.warning("[%d] 실패: %s - %s", idx, pdf_path.name, error_msg)
+                failure_records.append(FailureRecord(
+                    product_code=product_code,
+                    pdf_filename=pdf_path.name,
+                    error=error_msg,
+                ))
 
             gc.collect()
+
+        # 실패 상태 저장
+        if state_output and failure_records:
+            state = KBIngestState(
+                failures=failure_records,
+                stop_reason="ingest_failures",
+                crawl_failed_count=crawl_result.failed_count,
+            )
+            state.save(state_output)
+        elif state_output:
+            logger.info("실패 건 없음 → 상태 파일 미생성")
 
     # 결과 출력
     sep = "=" * 60
@@ -252,6 +347,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_FAIL_THRESHOLD,
         help=f"크롤링 실패율 임계값 (기본값: {DEFAULT_FAIL_THRESHOLD * 100:.0f}%%)",
     )
+    parser.add_argument(
+        "--resume-state",
+        type=Path,
+        default=None,
+        help="이전 실패 상태 JSON 경로 (이 파일의 실패 product_code만 재처리)",
+    )
+    parser.add_argument(
+        "--state-output",
+        type=Path,
+        default=None,
+        help="실패 상태를 저장할 JSON 경로 (예: failure_state_kb.json)",
+    )
     return parser.parse_args(argv)
 
 
@@ -260,6 +367,8 @@ if __name__ == "__main__":
     result = asyncio.run(crawl_and_ingest(
         dry_run=args.dry_run,
         fail_threshold=args.fail_threshold,
+        resume_state=args.resume_state,
+        state_output=args.state_output,
     ))
     if isinstance(result, dict) and "error" in result:
         logger.error("종료 오류: %s", result["error"])
