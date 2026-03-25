@@ -13,12 +13,26 @@ DocumentProcessor 파이프라인을 트리거하는 서비스.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
+import random
 import uuid
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _is_serialization_error(exc: BaseException) -> bool:
+    """CockroachDB RETRY_SERIALIZABLE 에러 여부 확인."""
+    err: BaseException | None = exc
+    while err is not None:
+        if type(err).__name__ == "SerializationError":
+            return True
+        if "SerializationError" in str(type(err)):
+            return True
+        err = err.__cause__ or err.__context__
+    return "RETRY_SERIALIZABLE" in str(exc) or "SerializationError" in str(exc)
 
 
 @dataclasses.dataclass
@@ -64,10 +78,13 @@ class PolicyIngestor:
     ) -> IngestResult:
         """보험 상품 정보를 DB에 upsert하고 DocumentProcessor를 트리거
 
+        CockroachDB RETRY_SERIALIZABLE 에러 발생 시 지수 백오프로 재시도.
+        실제 처리 로직은 _ingest_once()에 위임.
+
         처리 순서:
         1. content_hash 중복 확인 (REQ-07.5)
-        2. InsuranceCompany 조회/생성
-        3. Policy upsert - (product_code, company_code) 기준 (REQ-07.2)
+        2. InsuranceCompany 원자적 UPSERT (경쟁 조건 방지)
+        3. Policy 원자적 UPSERT - (company_id, product_code) 기준 (REQ-07.2)
         4. Celery 태스크 디스패치 (REQ-07.3)
         5. 오류 발생 시 FAILED 반환 (REQ-07.4)
 
@@ -80,133 +97,171 @@ class PolicyIngestor:
         Returns:
             IngestResult (status: NEW/UPDATED/SKIPPED/FAILED)
         """
-        from sqlalchemy import select
+        max_retries = 5
+        base_backoff = 0.2
+
+        for attempt in range(max_retries):
+            try:
+                return await self._ingest_once(listing, content_hash, crawl_result_id, pdf_path)
+            except Exception as exc:  # noqa: BLE001
+                if _is_serialization_error(exc) and attempt < max_retries - 1:
+                    wait = base_backoff * (2**attempt) + random.uniform(0, 0.05)
+                    logger.warning(
+                        "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): product_code=%s",
+                        attempt + 1,
+                        max_retries,
+                        wait,
+                        listing.product_code,
+                    )
+                    try:
+                        await self.db_session.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    await asyncio.sleep(wait)
+                    continue
+                # REQ-07.4: DB 저장 실패 시 FAILED 반환
+                logger.error(
+                    "Policy 저장 실패: product_code=%s, error=%s",
+                    listing.product_code,
+                    str(exc),
+                )
+                try:
+                    await self.db_session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                return IngestResult(status="FAILED", policy_id=None, error=str(exc))
+
+        return IngestResult(status="FAILED", policy_id=None, error="최대 재시도 횟수 초과")
+
+    async def _ingest_once(
+        self,
+        listing: Any,
+        content_hash: str | None = None,
+        crawl_result_id: uuid.UUID | None = None,
+        pdf_path: str | None = None,
+    ) -> IngestResult:
+        """실제 인제스트 로직 (재시도 없음 - 예외는 ingest()로 전파)
+
+        원자적 UPSERT 패턴으로 CockroachDB 직렬화 충돌 최소화.
+        """
+        from sqlalchemy import func, select
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from app.models.crawler import CrawlResult
         from app.models.insurance import InsuranceCompany, InsuranceCategory, Policy
 
-        try:
-            # REQ-07.5: content_hash 중복 확인
-            if content_hash:
-                dup_result = await self.db_session.execute(
-                    select(CrawlResult).where(
-                        CrawlResult.content_hash == content_hash,
-                        CrawlResult.status.in_(["NEW", "UPDATED"]),
-                    )
-                )
-                existing = dup_result.scalar_one_or_none()
-                if existing is not None:
-                    logger.debug(
-                        "content_hash 중복 감지, SKIPPED: product_code=%s, hash=%s",
-                        listing.product_code,
-                        content_hash[:8],
-                    )
-                    return IngestResult(status="SKIPPED", policy_id=None, error=None)
-
-            # InsuranceCompany 조회
-            company_result = await self.db_session.execute(
-                select(InsuranceCompany).where(
-                    InsuranceCompany.code == listing.company_code
+        # REQ-07.5: content_hash 중복 확인
+        if content_hash:
+            dup_result = await self.db_session.execute(
+                select(CrawlResult).where(
+                    CrawlResult.content_hash == content_hash,
+                    CrawlResult.status.in_(["NEW", "UPDATED"]),
                 )
             )
-            company = company_result.scalar_one_or_none()
-
-            if company is None:
-                # 보험사가 없으면 신규 생성
-                company = InsuranceCompany(
-                    name=listing.company_name,
-                    code=listing.company_code,
-                    is_active=True,
+            existing = dup_result.scalar_one_or_none()
+            if existing is not None:
+                logger.debug(
+                    "content_hash 중복 감지, SKIPPED: product_code=%s, hash=%s",
+                    listing.product_code,
+                    content_hash[:8],
                 )
-                self.db_session.add(company)
-                await self.db_session.flush()
+                return IngestResult(status="SKIPPED", policy_id=None, error=None)
 
-            # Policy 조회 (company_id + product_code 기준)
-            policy_result = await self.db_session.execute(
-                select(Policy).where(
-                    Policy.company_id == company.id,
-                    Policy.product_code == listing.product_code,
-                )
+        # InsuranceCompany 원자적 UPSERT (경쟁 조건 방지)
+        # 동시 트랜잭션이 동일 company_code를 삽입해도 ON CONFLICT DO NOTHING으로 안전
+        await self.db_session.execute(
+            pg_insert(InsuranceCompany)
+            .values(
+                name=listing.company_name,
+                code=listing.company_code,
+                is_active=True,
             )
-            policy = policy_result.scalar_one_or_none()
+            .on_conflict_do_nothing(index_elements=["code"])
+        )
+        await self.db_session.flush()
 
-            # REQ-07.1: sale_status 포함하여 저장
-            is_new = policy is None
-            if is_new:
-                # 카테고리 매핑
-                category_map = {
-                    "LIFE": InsuranceCategory.LIFE,
-                    "NON_LIFE": InsuranceCategory.NON_LIFE,
-                    "THIRD_SECTOR": InsuranceCategory.THIRD_SECTOR,
-                }
-                category = category_map.get(
-                    listing.category.upper(), InsuranceCategory.LIFE
-                )
-                policy = Policy(
-                    company_id=company.id,
-                    name=listing.product_name,
-                    product_code=listing.product_code,
-                    category=category,
-                    effective_date=getattr(listing, "effective_date", None),
-                    expiry_date=getattr(listing, "expiry_date", None),
-                    sale_status=str(listing.sale_status),
-                )
-                self.db_session.add(policy)
-            else:
-                # 기존 Policy 업데이트
-                policy.name = listing.product_name
-                policy.sale_status = str(listing.sale_status)
-                if getattr(listing, "effective_date", None) is not None:
-                    policy.effective_date = listing.effective_date
-                if getattr(listing, "expiry_date", None) is not None:
-                    policy.expiry_date = listing.expiry_date
+        company_result = await self.db_session.execute(
+            select(InsuranceCompany).where(InsuranceCompany.code == listing.company_code)
+        )
+        company = company_result.scalar_one()
 
-            await self.db_session.flush()
-            await self.db_session.commit()
-
-            result_status = "NEW" if is_new else "UPDATED"
-
-            # REQ-07.3: Celery 태스크 디스패치 (성공 시)
-            if crawl_result_id and pdf_path:
-                try:
-                    from app.tasks.crawler_tasks import ingest_policy
-                    ingest_policy.delay(str(crawl_result_id), pdf_path)
-                    logger.info(
-                        "ingest_policy 태스크 디스패치: crawl_result_id=%s",
-                        crawl_result_id,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    # Celery 연결 실패 시에도 인제스트 결과는 반환
-                    logger.warning("Celery 태스크 디스패치 실패: %s", str(exc))
-
-            logger.info(
-                "Policy 저장 완료: product_code=%s, company=%s, status=%s",
-                listing.product_code,
-                listing.company_code,
-                result_status,
+        # Policy 존재 여부 확인 (NEW/UPDATED 상태 결정용)
+        policy_check = await self.db_session.execute(
+            select(Policy.id).where(
+                Policy.company_id == company.id,
+                Policy.product_code == listing.product_code,
             )
-            return IngestResult(
-                status=result_status,
-                policy_id=policy.id,
-                error=None,
-            )
+        )
+        is_new = policy_check.scalar_one_or_none() is None
 
-        except Exception as exc:  # noqa: BLE001
-            # REQ-07.4: DB 저장 실패 시 FAILED 반환
-            logger.error(
-                "Policy 저장 실패: product_code=%s, error=%s",
-                listing.product_code,
-                str(exc),
+        # REQ-07.1: sale_status 포함하여 저장
+        category_map = {
+            "LIFE": InsuranceCategory.LIFE,
+            "NON_LIFE": InsuranceCategory.NON_LIFE,
+            "THIRD_SECTOR": InsuranceCategory.THIRD_SECTOR,
+        }
+        category = category_map.get(listing.category.upper(), InsuranceCategory.LIFE)
+
+        # 충돌 시 업데이트할 필드 구성
+        update_set: dict = {
+            "name": listing.product_name,
+            "sale_status": str(listing.sale_status),
+            "updated_at": func.now(),
+        }
+        if getattr(listing, "effective_date", None) is not None:
+            update_set["effective_date"] = listing.effective_date
+        if getattr(listing, "expiry_date", None) is not None:
+            update_set["expiry_date"] = listing.expiry_date
+
+        # Policy 원자적 UPSERT (경쟁 조건 방지)
+        # 동시 트랜잭션이 동일 (company_id, product_code)를 삽입해도 ON CONFLICT DO UPDATE로 안전
+        policy_id_result = await self.db_session.execute(
+            pg_insert(Policy)
+            .values(
+                company_id=company.id,
+                name=listing.product_name,
+                product_code=listing.product_code,
+                category=category,
+                effective_date=getattr(listing, "effective_date", None),
+                expiry_date=getattr(listing, "expiry_date", None),
+                sale_status=str(listing.sale_status),
             )
+            .on_conflict_do_update(
+                constraint="uq_policy_company_product",
+                set_=update_set,
+            )
+            .returning(Policy.id)
+        )
+        policy_id = policy_id_result.scalar_one()
+
+        await self.db_session.commit()
+
+        result_status = "NEW" if is_new else "UPDATED"
+
+        # REQ-07.3: Celery 태스크 디스패치 (성공 시)
+        if crawl_result_id and pdf_path:
             try:
-                await self.db_session.rollback()
-            except Exception:  # noqa: BLE001
-                pass
-            return IngestResult(
-                status="FAILED",
-                policy_id=None,
-                error=str(exc),
-            )
+                from app.tasks.crawler_tasks import ingest_policy
+                ingest_policy.delay(str(crawl_result_id), pdf_path)
+                logger.info(
+                    "ingest_policy 태스크 디스패치: crawl_result_id=%s",
+                    crawl_result_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Celery 연결 실패 시에도 인제스트 결과는 반환
+                logger.warning("Celery 태스크 디스패치 실패: %s", str(exc))
+
+        logger.info(
+            "Policy 저장 완료: product_code=%s, company=%s, status=%s",
+            listing.product_code,
+            listing.company_code,
+            result_status,
+        )
+        return IngestResult(
+            status=result_status,
+            policy_id=policy_id,
+            error=None,
+        )
 
     async def finalize_crawl_run(
         self,

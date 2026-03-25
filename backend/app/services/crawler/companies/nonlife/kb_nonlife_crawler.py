@@ -500,6 +500,12 @@ class KBNonLifeCrawler(BaseCrawler):
                 while True:
                     listings = await self.parse_listing(page)
                     all_listings.extend(listings)
+                    logger.info(
+                        "[KB손보] 페이지 %d 파싱 완료: %d개 상품 (누적 %d개)",
+                        page_num,
+                        len(listings),
+                        len(all_listings),
+                    )
 
                     # 다음 페이지 확인
                     page_num += 1
