@@ -20,6 +20,7 @@ import gc
 import hashlib
 import json
 import logging
+import random
 import re
 import sys
 import uuid
@@ -619,6 +620,22 @@ async def create_chunks(
 # ─────────────────────────────────────────────────────────────
 
 
+def _is_serialization_error(exc: BaseException) -> bool:
+    """CockroachDB RETRY_SERIALIZABLE 에러 여부 확인."""
+    # asyncpg.exceptions.SerializationError 체인 탐색
+    err: BaseException | None = exc
+    while err is not None:
+        if type(err).__name__ == "SerializationError":
+            return True
+        if "SerializationError" in str(type(err)):
+            return True
+        err = err.__cause__ or err.__context__
+    # 에러 메시지에서도 확인 (SQLAlchemy 래핑 대응)
+    return "RETRY_SERIALIZABLE" in str(exc) or "SerializationError" in str(exc)
+
+
+# @MX:ANCHOR: [AUTO] process_single_file - 파일별 인제스트 핵심 함수
+# @MX:REASON: crawl_and_ingest_samsung/db/kb 등 3개 파이프라인에서 호출됨
 async def process_single_file(
     session_factory: Any,
     pdf_path: Path,
@@ -630,6 +647,7 @@ async def process_single_file(
 
     파일별 독립적인 트랜잭션으로 처리 (REQ-05).
     중복 파일(content_hash 기준)은 스킵 (REQ-06).
+    CockroachDB RETRY_SERIALIZABLE 에러 시 최대 5회 재시도 (지수 백오프).
 
     Args:
         session_factory: SQLAlchemy async_sessionmaker
@@ -642,20 +660,42 @@ async def process_single_file(
         {"status": "success"|"skipped"|"dry_run"|"failed",
          "chunk_count": int, "error": str|None}
     """
-    try:
-        # 파일 해시 계산
-        content_hash = compute_file_hash(str(pdf_path))
+    # @MX:NOTE: [AUTO] CockroachDB는 RETRY_SERIALIZABLE 에러 시 클라이언트가 트랜잭션 전체 재시도 필요
+    max_retries = 5
+    base_backoff = 0.2  # 초
 
-        async with session_factory() as session:
-            # 중복 확인 (REQ-04, REQ-06)
-            is_dup = await check_duplicate(session, content_hash)
-            if is_dup:
-                logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
-                return {"status": "skipped", "chunk_count": 0, "error": None}
+    # 파일 해시는 한 번만 계산 (retry 루프 밖)
+    content_hash = compute_file_hash(str(pdf_path))
 
-            # dry-run 모드: 중복 확인만 하고 반환 (REQ-12)
-            if dry_run:
-                # PDF 텍스트 추출 및 청크 분석만 수행 (DB 쓰기 없음)
+    for attempt in range(max_retries):
+        try:
+            async with session_factory() as session:
+                # 중복 확인 (REQ-04, REQ-06)
+                is_dup = await check_duplicate(session, content_hash)
+                if is_dup:
+                    logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
+                    return {"status": "skipped", "chunk_count": 0, "error": None}
+
+                # dry-run 모드: 중복 확인만 하고 반환 (REQ-12)
+                if dry_run:
+                    # PDF 텍스트 추출 및 청크 분석만 수행 (DB 쓰기 없음)
+                    parser = PDFParser()
+                    cleaner = TextCleaner()
+                    chunker = TextChunker()
+
+                    raw_text = parser.extract_text(str(pdf_path))
+                    clean_text = cleaner.clean(raw_text)
+                    chunks = chunker.chunk_text(clean_text)
+
+                    logger.info(
+                        "[dry-run] %s: %d청크 (hash=%s)",
+                        pdf_path.name,
+                        len(chunks),
+                        content_hash[:8],
+                    )
+                    return {"status": "dry_run", "chunk_count": len(chunks), "error": None}
+
+                # PDF 파싱 및 텍스트 처리
                 parser = PDFParser()
                 cleaner = TextCleaner()
                 chunker = TextChunker()
@@ -664,66 +704,58 @@ async def process_single_file(
                 clean_text = cleaner.clean(raw_text)
                 chunks = chunker.chunk_text(clean_text)
 
+                # 보험사 확보
+                company = await ensure_company(
+                    session,
+                    metadata["company_code"],
+                    metadata["company_name"],
+                    metadata.get("category", "LIFE"),
+                )
+
+                # Policy upsert
+                policy = await upsert_policy(
+                    session, company, metadata, content_hash, clean_text
+                )
+
+                # 임베딩 생성 (--embed 옵션)
+                embeddings: list[list[float] | None] | None = None
+                if embedding_service is not None and chunks:
+                    try:
+                        raw_embeddings = await embedding_service.embed_batch(chunks)
+                        embeddings = raw_embeddings
+                    except Exception as e:
+                        logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
+
+                # PolicyChunk 생성
+                await create_chunks(session, policy.id, chunks, embeddings)
+
+                await session.commit()
+
                 logger.info(
-                    "[dry-run] %s: %d청크 (hash=%s)",
+                    "처리 완료: %s (%d청크, hash=%s)",
                     pdf_path.name,
                     len(chunks),
                     content_hash[:8],
                 )
-                return {"status": "dry_run", "chunk_count": len(chunks), "error": None}
+                return {
+                    "status": "success",
+                    "chunk_count": len(chunks),
+                    "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                    "error": None,
+                }
 
-            # PDF 파싱 및 텍스트 처리
-            parser = PDFParser()
-            cleaner = TextCleaner()
-            chunker = TextChunker()
-
-            raw_text = parser.extract_text(str(pdf_path))
-            clean_text = cleaner.clean(raw_text)
-            chunks = chunker.chunk_text(clean_text)
-
-            # 보험사 확보
-            company = await ensure_company(
-                session,
-                metadata["company_code"],
-                metadata["company_name"],
-                metadata.get("category", "LIFE"),
-            )
-
-            # Policy upsert
-            policy = await upsert_policy(
-                session, company, metadata, content_hash, clean_text
-            )
-
-            # 임베딩 생성 (--embed 옵션)
-            embeddings: list[list[float] | None] | None = None
-            if embedding_service is not None and chunks:
-                try:
-                    raw_embeddings = await embedding_service.embed_batch(chunks)
-                    embeddings = raw_embeddings
-                except Exception as e:
-                    logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
-
-            # PolicyChunk 생성
-            await create_chunks(session, policy.id, chunks, embeddings)
-
-            await session.commit()
-
-            logger.info(
-                "처리 완료: %s (%d청크, hash=%s)",
-                pdf_path.name,
-                len(chunks),
-                content_hash[:8],
-            )
-            return {
-                "status": "success",
-                "chunk_count": len(chunks),
-                "sale_status": metadata.get("sale_status", "UNKNOWN"),
-                "error": None,
-            }
-
-    except Exception as e:
-        logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
-        return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+        except Exception as e:
+            if _is_serialization_error(e) and attempt < max_retries - 1:
+                # CockroachDB RETRY_SERIALIZABLE: 트랜잭션 전체 재시도
+                wait = base_backoff * (2 ** attempt) + random.uniform(0, 0.05)
+                logger.warning(
+                    "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
+                    attempt + 1, max_retries, wait, pdf_path.name,
+                )
+                await asyncio.sleep(wait)
+                continue
+            logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
+            return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
 
 # ─────────────────────────────────────────────────────────────
