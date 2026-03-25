@@ -569,7 +569,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--fail-threshold",
         type=float,
         default=DEFAULT_FAIL_THRESHOLD,
-        help=f"실패율 임계값 (기본값: {DEFAULT_FAIL_THRESHOLD:.0%})",
+        help=f"실패율 임계값 (기본값: {DEFAULT_FAIL_THRESHOLD * 100:.0f}%%)",
     )
     parser.add_argument(
         "--resume-from",
