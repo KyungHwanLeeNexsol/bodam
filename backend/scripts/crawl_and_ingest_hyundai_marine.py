@@ -148,8 +148,8 @@ async def crawl_and_ingest(
     # 크롤러 재시작 시 이미 처리된 URL 스킵 (다운로드 전 체크)
     from scripts.ingest_local_pdfs import load_processed_urls
     async with _db.session_factory() as _session:
-        processed_urls: set[str] = await load_processed_urls(_session)
-    logger.info("이미 처리된 URL: %d개 (재시작 시 스킵됨)", len(processed_urls))
+        processed_urls: set[str] = await load_processed_urls(_session, company_code="hyundai-marine")
+    logger.info("이미 처리된 URL (현대해상): %d개 (재시작 시 스킵됨)", len(processed_urls))
 
     # 임시 디렉터리에 크롤링
     with tempfile.TemporaryDirectory(prefix="hyundai-marine-crawl-") as tmp_dir:

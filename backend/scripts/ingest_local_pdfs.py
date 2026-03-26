@@ -187,29 +187,40 @@ async def check_duplicate(session: "AsyncSession", content_hash: str) -> bool:
     return existing is not None
 
 
-# @MX:ANCHOR: [AUTO] DB에 저장된 source_url 전체 조회 - 크롤러 재시작 시 중복 다운로드 방지
-# @MX:REASON: Samsung/DB/KB 크롤러 3곳에서 호출되는 공유 유틸리티
-async def load_processed_urls(session: "AsyncSession") -> set[str]:
-    """DB에 저장된 Policy의 source_url 전체를 set으로 반환한다.
+# @MX:ANCHOR: [AUTO] DB에 저장된 source_url 조회 - 크롤러 재시작 시 중복 다운로드 방지
+# @MX:REASON: Samsung/DB/KB/현대해상 크롤러에서 호출되는 공유 유틸리티
+async def load_processed_urls(
+    session: "AsyncSession",
+    company_code: str | None = None,
+) -> set[str]:
+    """DB에 저장된 Policy의 source_url을 set으로 반환한다.
 
     크롤러 시작 시 한 번 호출해 in-memory set을 만들면,
     각 PDF 다운로드 전 이미 처리된 URL인지 O(1)로 확인할 수 있다.
 
     Args:
         session: SQLAlchemy 비동기 세션
+        company_code: 보험사 코드로 필터링 (예: "samsung-fire").
+                      None이면 전체 보험사의 URL을 반환한다.
 
     Returns:
         이미 DB에 저장된 source_url 값들의 집합
     """
-    from sqlalchemy import select, text
+    from sqlalchemy import select
 
-    from app.models.insurance import Policy
+    from app.models.insurance import InsuranceCompany, Policy
 
     stmt = select(
         Policy.metadata_["source_url"].astext
     ).where(
         Policy.metadata_["source_url"].astext.isnot(None)
     )
+
+    if company_code is not None:
+        stmt = stmt.join(InsuranceCompany, Policy.company_id == InsuranceCompany.id).where(
+            InsuranceCompany.code == company_code
+        )
+
     result = await session.execute(stmt)
     rows = result.scalars().all()
     return set(rows)
