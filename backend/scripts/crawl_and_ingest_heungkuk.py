@@ -282,7 +282,7 @@ async def run(
     from playwright.async_api import async_playwright
 
     import app.core.database as _db
-    from app.core.database import init_db
+    from app.core.config import Settings
     from scripts.ingest_local_pdfs import load_processed_urls
 
     logger.info("=" * 60)
@@ -291,7 +291,8 @@ async def run(
 
     # DB 초기화
     try:
-        await init_db()
+        settings = Settings()  # type: ignore[call-arg]
+        await _db.init_database(settings)
     except Exception as e:
         logger.error("DB 초기화 실패: %s", e)
         return {"error": str(e)}
@@ -389,6 +390,8 @@ async def run(
 
 
 def main() -> None:
+    import sys
+
     parser = argparse.ArgumentParser(description=f"{COMPANY_NAME} 크롤링 + 인제스트")
     parser.add_argument("--dry-run", action="store_true", help="크롤링만 하고 DB 저장 안 함")
     parser.add_argument(
@@ -407,11 +410,14 @@ def main() -> None:
     resume_path = Path(args.resume_state) if args.resume_state else None
     state_out = Path(args.state_output)
 
-    asyncio.run(run(
+    result = asyncio.run(run(
         dry_run=args.dry_run,
         resume_state_path=resume_path,
         state_output_path=state_out,
     ))
+    if isinstance(result, dict) and "error" in result:
+        logger.error("크롤링 실패 → exit code 1")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
