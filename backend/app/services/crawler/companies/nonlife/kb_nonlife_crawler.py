@@ -196,6 +196,9 @@ class KBNonLifeCrawler(BaseCrawler):
 
         return listings
 
+    # 파수닷컴 DRM 보호 파일 헤더 (복호화 불가 → 스킵 처리)
+    _FASOO_DRM_HEADER = b"<!-- FasooSecureContainer"
+
     def _is_valid_pdf(self, data: bytes) -> bool:
         """PDF 바이너리 유효성 검증
 
@@ -206,6 +209,10 @@ class KBNonLifeCrawler(BaseCrawler):
             유효한 PDF이면 True
         """
         return data[:4] == b"%PDF" and len(data) > 1000
+
+    def _is_fasoo_drm(self, data: bytes) -> bool:
+        """파수닷컴 DRM 암호화 파일 여부 확인 (FasooSecureContainer 헤더)"""
+        return data[:25] == self._FASOO_DRM_HEADER
 
     def _get_storage_path(self, product_code: str, file_name: str) -> str:
         """PDF 저장 경로 생성
@@ -381,7 +388,7 @@ class KBNonLifeCrawler(BaseCrawler):
 
         return b""
 
-    async def download_pdf_by_url(self, page: Any, url: str, file_name: str, page_href: str = "") -> bytes:
+    async def download_pdf_by_url(self, page: Any, url: str, file_name: str, page_href: str = "") -> bytes | None:
         """상세 페이지 링크 클릭으로 PDF 다운로드 (Playwright 다운로드 인터셉트)
 
         # @MX:NOTE: KB손보 서버는 Sec-Fetch-Dest=document(링크 클릭 네비게이션)만 허용.
@@ -422,6 +429,12 @@ class KBNonLifeCrawler(BaseCrawler):
                 await download.delete()  # 임시 파일 즉시 삭제 (Chromium 다운로드 디렉터리 누적 방지)
                 if self._is_valid_pdf(data):
                     return data
+                if self._is_fasoo_drm(data):
+                    logger.info(
+                        "[KB손보] DRM 보호 파일 스킵 (파수닷컴): %s (%d bytes)",
+                        file_name, len(data),
+                    )
+                    return None  # DRM 파일: 실패가 아닌 스킵
                 first_bytes = data[:100].decode("utf-8", errors="replace").strip()
                 logger.warning(
                     "[KB손보] 다운로드 파일 PDF 아님 [%s] %d bytes, 시작: %r",
@@ -628,6 +641,10 @@ class KBNonLifeCrawler(BaseCrawler):
                                 page, pdf_info.download_url, pdf_info.file_name,
                                 pdf_info.page_href,
                             )
+
+                            if pdf_data is None:
+                                # DRM 보호 파일: 실패가 아닌 스킵 (파수닷컴)
+                                continue
 
                             if self._is_valid_pdf(pdf_data):
                                 self.storage.save(pdf_data, storage_path)
