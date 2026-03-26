@@ -104,7 +104,9 @@ class HyundaiMarineCrawler(BaseCrawler):
     # ──────────────────────────────────────────────────────────────────
 
     def _is_valid_pdf(self, data: bytes) -> bool:
-        return data[:4] == b"%PDF" and len(data) > 1000
+        # %PDF 시그니처가 첫 1KB 이내에 있으면 유효한 PDF로 간주
+        # (일부 PDF는 UTF-8 BOM \xef\xbb\xbf 또는 바이너리 헤더를 앞에 붙임)
+        return b"%PDF" in data[:1024] and len(data) > 1000
 
     def _get_storage_path(self, uuid: str, sale_status: str, filename: str) -> str:
         """UUID와 판매상태로 저장 경로 결정.
@@ -219,9 +221,11 @@ class HyundaiMarineCrawler(BaseCrawler):
 
     async def _download_pdf(self, client: httpx.AsyncClient, pdf_url: str) -> bytes:
         """httpx로 PDF 다운로드 (재시도 포함)."""
+        # 연결 10s, 본문 읽기 120s (오래된 PDF 파일은 서버 응답이 느림)
+        _timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=30.0)
         for attempt in range(self.max_retries):
             try:
-                resp = await client.get(pdf_url, timeout=60.0)
+                resp = await client.get(pdf_url, timeout=_timeout)
                 resp.raise_for_status()
                 content_type = resp.headers.get("content-type", "")
                 if "html" in content_type.lower() and not self._is_valid_pdf(resp.content):
