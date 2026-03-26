@@ -701,9 +701,9 @@ async def process_single_file(
     """
     # @MX:NOTE: [AUTO] CockroachDB RETRY_SERIALIZABLE 해결: DB 트랜잭션 시간을 최소화하기 위해
     # @MX:NOTE: [AUTO] CPU/네트워크 집약적 작업(PDF 파싱, 임베딩)을 트랜잭션 밖에서 먼저 실행
-    # @MX:REASON: 기존 코드는 수 분짜리 트랜잭션으로 직렬화 충돌 → 5회 재시도에도 실패
-    max_retries = 5
-    base_backoff = 0.2  # 초
+    # @MX:REASON: 동시 실행 워크플로우 간 락 경합 시 CockroachDB가 ~90s 대기 후 포기 → 더 많은 재시도 + 큰 백오프 필요
+    max_retries = 10
+    base_backoff = 1.0  # 초 (최대 30초로 상한, 지수 백오프)
 
     # 파일 해시는 한 번만 계산 (retry 루프 밖)
     content_hash = compute_file_hash(str(pdf_path))
@@ -789,7 +789,7 @@ async def process_single_file(
         except Exception as e:
             if _is_serialization_error(e) and attempt < max_retries - 1:
                 # CockroachDB RETRY_SERIALIZABLE: DB 쓰기 트랜잭션만 재시도 (전처리 제외)
-                wait = base_backoff * (2 ** attempt) + random.uniform(0, 0.1)
+                wait = min(base_backoff * (2 ** attempt), 30.0) + random.uniform(0, 2.0)
                 logger.warning(
                     "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
                     attempt + 1, max_retries, wait, pdf_path.name,
