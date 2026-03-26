@@ -364,7 +364,20 @@ async def crawl_and_ingest(
             current_state.last_processed_idx = idx
 
             if not pdf_bytes:
+                # HTTP 404: 영구 오류 (파일 없음/삭제됨) → 경고만 로깅하고 재처리 없이 계속
+                if http_status == 404:
+                    logger.warning(
+                        "[%d] HTTP 404 (파일 없음/삭제됨) → 재시도 불필요, 계속 진행: %s",
+                        idx, url[-60:],
+                    )
+                    continue
+
+                # 기타 오류 (5xx, 타임아웃 등): failures에 추가 후 즉시 중단 (fail_immediate)
                 stats["failed"] += 1
+                logger.warning(
+                    "[%d] 다운로드 실패: %s | HTTP=%s | Content-Type=%s",
+                    idx, url[-60:], http_status, content_type,
+                )
                 failure = FailureRecord(
                     idx=idx,
                     url=url,
@@ -377,16 +390,6 @@ async def crawl_and_ingest(
                     file_size=0,
                 )
                 current_state.failures.append(failure)
-                logger.warning(
-                    "[%d] 다운로드 실패: %s | HTTP=%s | Content-Type=%s",
-                    idx, url[-60:], http_status, content_type,
-                )
-
-                # HTTP 404: 영구 오류 (파일 삭제/이동) → skip & continue
-                if http_status == 404:
-                    logger.warning("[%d] HTTP 404 (파일 없음) → 스킵 후 계속", idx)
-                    save_state(current_state, state_output_path)
-                    continue
 
                 # 기타 오류 (5xx, 타임아웃 등): fail_immediate
                 current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
