@@ -509,12 +509,21 @@ async def crawl_and_ingest(
     """
     from playwright.async_api import async_playwright
 
+    try:
+        from app.core.config import Settings
+        import app.core.database as db_module
+        settings = Settings()  # type: ignore[call-arg]
+        await db_module.init_database(settings)
+    except Exception as e:
+        logger.error("DB 초기화 실패: %s", e)
+        return {"error": str(e), "total_processed": 0, "total_skipped": 0, "total_failed": 0, "stop_reason": "db_init_failed"}
+
     import app.core.database as _db
     from scripts.ingest_local_pdfs import load_processed_urls
 
     if _db.session_factory is None:
         logger.error("DB 세션 팩토리 초기화 실패")
-        return {"error": "session_factory is None"}
+        return {"error": "session_factory is None", "total_processed": 0, "total_skipped": 0, "total_failed": 0, "stop_reason": "db_init_failed"}
 
     state = CrawlState()
     retry_mode = False
@@ -649,7 +658,11 @@ def main() -> None:
         )
     )
 
-    if result["total_failed"] > 0:
+    if result.get("error"):
+        logger.error("실행 실패: %s", result["error"])
+        sys.exit(1)
+
+    if result.get("total_failed", 0) > 0:
         logger.warning("실패 건 있음: %d건 → %s에서 재처리 가능", result["total_failed"], state_output_path)
         sys.exit(1)
 
