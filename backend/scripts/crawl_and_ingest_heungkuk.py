@@ -130,7 +130,7 @@ def _extract_items_js() -> str:
 
 def _diagnose_page_js() -> str:
     """디버깅용: 페이지의 다운로드 관련 onclick 요소 샘플 반환."""
-    return """() => {
+    return r"""() => {
         const allOnclicks = Array.from(document.querySelectorAll('a[onclick]'))
             .map(a => a.getAttribute('onclick'));
         // pdf/다운로드 관련 키워드 포함 샘플
@@ -184,28 +184,71 @@ def _diagnose_page_js() -> str:
     }"""
 
 
-async def _click_next_page(page: object) -> bool:
-    """다음 페이지 버튼을 클릭하고 클릭 성공 여부를 반환한다."""
-    from playwright.async_api import Page  # type: ignore[attr-defined]
-    page: Page  # type: ignore[no-redef]
+async def _get_max_page(page: object) -> int:
+    """현재 페이지네이션 영역에서 최대 페이지 수를 감지한다."""
+    max_page = await page.evaluate(r"""() => {
+        // 페이지네이션 영역에서 숫자 링크 찾기
+        const pagingArea = document.querySelector('.paging, .pagination, .page_num, [class*="paging"]');
+        if (!pagingArea) return 1;
 
-    clicked = await page.evaluate("""() => {
-        // 일반적인 '다음' 버튼 패턴 탐색
-        const candidates = document.querySelectorAll('a, button, span, li');
-        for (const el of candidates) {
+        // 숫자 링크들에서 최대값 추출
+        const links = pagingArea.querySelectorAll('a, button, span');
+        let max = 1;
+        for (const el of links) {
             const text = el.textContent.trim();
-            const cls = el.className || '';
             const onclick = el.getAttribute('onclick') || '';
-            // 비활성화된 요소 제외
-            if (cls.includes('disabled') || cls.includes('off') || el.disabled) continue;
-            if (text === '다음' || text === '>' || text === '▶' || text === '다음페이지') {
-                el.click();
-                return true;
+            // 순수 숫자이거나 goPage(N)/fn_pageMove(N) 형태
+            const numMatch = text.match(/^(\d+)$/);
+            if (numMatch) {
+                max = Math.max(max, parseInt(numMatch[1]));
+            }
+            // onclick에서 숫자 추출 (goPage(5), fn_pageMove(3) 등)
+            const ocMatch = onclick.match(/\((\d+)\)/);
+            if (ocMatch) {
+                max = Math.max(max, parseInt(ocMatch[1]));
             }
         }
-        return false;
+        // '다음', '끝' 버튼이 있으면 더 많은 페이지가 있을 수 있음
+        const hasNext = Array.from(links).some(el => {
+            const t = el.textContent.trim();
+            return t === '다음' || t === '>' || t === '끝' || t === '>>';
+        });
+        if (hasNext && max <= 1) max = 2;  // 최소 2페이지
+        return max;
     }""")
-    return bool(clicked)
+    return max_page or 1
+
+
+async def _go_to_page(page: object, page_num: int) -> bool:
+    """특정 페이지 번호로 이동한다. JS 함수 호출 방식."""
+    result = await page.evaluate(r"""(pageNum) => {
+        // 방법 1: 페이지네이션 영역에서 해당 숫자 링크 클릭
+        const pagingArea = document.querySelector('.paging, .pagination, .page_num, [class*="paging"]');
+        if (pagingArea) {
+            const links = pagingArea.querySelectorAll('a, button, span');
+            for (const el of links) {
+                const text = el.textContent.trim();
+                if (text === String(pageNum)) {
+                    // onclick 속성이 있으면 JS 함수 직접 호출
+                    const onclick = el.getAttribute('onclick') || '';
+                    if (onclick) {
+                        try { eval(onclick); return 'eval'; } catch(e) {}
+                    }
+                    el.click();
+                    return 'click';
+                }
+            }
+        }
+        // 방법 2: goPage, fn_pageMove 등 공통 함수 시도
+        const funcs = ['goPage', 'fn_pageMove', 'pageMove', 'fnGoPage', 'goPageMove'];
+        for (const fn of funcs) {
+            if (typeof window[fn] === 'function') {
+                try { window[fn](pageNum); return fn; } catch(e) {}
+            }
+        }
+        return null;
+    }""", page_num)
+    return result is not None
 
 
 async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) -> list[dict]:
@@ -238,7 +281,12 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
         }""")
         if not clicked:
             logger.warning("[%s] 판매중지 탭 클릭 실패 (colum02 컨테이너 미발견)", COMPANY_NAME)
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+        await asyncio.sleep(2)
 
     # 서브카테고리 탭 목록 감지 (colum03 컨테이너 내부로 한정)
     sub_categories: list[str] = await page.evaluate("""() => {
@@ -279,11 +327,27 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
             if not clicked_sub:
                 logger.warning("[%s] %s 탭 > %s 서브탭 클릭 실패, 스킵", COMPANY_NAME, tab_label, sub_cat)
                 continue
-            await asyncio.sleep(3)
+            await asyncio.sleep(1)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=5000)
+            except Exception:
+                pass
+            await asyncio.sleep(2)
 
-        page_num = 1
         sub_cat_display = sub_cat or "(전체)"
-        while True:
+
+        # 최대 페이지 수 감지
+        max_page = await _get_max_page(page)
+        logger.info("[%s] %s 탭 > %s: 총 %d 페이지 감지", COMPANY_NAME, tab_label, sub_cat_display, max_page)
+
+        for page_num in range(1, max_page + 1):
+            if page_num > 1:
+                nav_result = await _go_to_page(page, page_num)
+                if not nav_result:
+                    logger.warning("[%s] 페이지 %d 이동 실패, 중단", COMPANY_NAME, page_num)
+                    break
+                await asyncio.sleep(3)  # AJAX 로딩 대기
+
             page_items: list[dict] = await page.evaluate(_extract_items_js())
 
             # 중복 제거
@@ -293,41 +357,31 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
             all_items.extend(new_items)
 
             logger.info(
-                "[%s] %s 탭 > %s > %d페이지: %d개 수집 (신규 %d개, 누적 %d개)",
-                COMPANY_NAME, tab_label, sub_cat_display, page_num,
+                "[%s] %s 탭 > %s > %d/%d페이지: %d개 수집 (신규 %d개, 누적 %d개)",
+                COMPANY_NAME, tab_label, sub_cat_display, page_num, max_page,
                 len(page_items), len(new_items), len(all_items),
             )
 
             if not new_items and page_num > 1:
-                # 다음 페이지에 신규 항목이 없으면 종료 (같은 페이지 반복 방지)
                 break
-
-            if not page_items and page_num == 1:
-                # 첫 페이지에서 0개면 진단 로그 출력
-                diag = await page.evaluate(_diagnose_page_js())
-                logger.info(
-                    "[%s] 진단 - 전체a=%d, onclick있는a=%d",
-                    COMPANY_NAME,
-                    diag.get("total_anchors", 0),
-                    diag.get("anchors_with_onclick", 0),
-                )
-                logger.info("[%s] 진단 - 현재URL: %s | 제목: %s", COMPANY_NAME, diag.get("current_url", ""), diag.get("page_title", ""))
-                logger.info("[%s] 진단 - pdf/down/file 관련 onclick: %s", COMPANY_NAME, diag.get("pdf_down_file_onclicks", []))
-                logger.info("[%s] 진단 - 함수명 목록: %s", COMPANY_NAME, diag.get("unique_func_names", []))
-                logger.info("[%s] 진단 - 약관 텍스트 a태그: %s", COMPANY_NAME, diag.get("yak_anchors", []))
-                logger.info("[%s] 진단 - PDF href 링크: %s", COMPANY_NAME, diag.get("pdf_href_anchors", []))
-                logger.info("[%s] 진단 - 테이블행=%d, iframe=%s", COMPANY_NAME, diag.get("table_rows", 0), diag.get("iframes", []))
 
             if not page_items:
-                # 빈 페이지면 중단
+                if page_num == 1:
+                    # 첫 페이지에서 0개면 진단 로그 출력
+                    diag = await page.evaluate(_diagnose_page_js())
+                    logger.info(
+                        "[%s] 진단 - 전체a=%d, onclick있는a=%d",
+                        COMPANY_NAME,
+                        diag.get("total_anchors", 0),
+                        diag.get("anchors_with_onclick", 0),
+                    )
+                    logger.info("[%s] 진단 - 현재URL: %s | 제목: %s", COMPANY_NAME, diag.get("current_url", ""), diag.get("page_title", ""))
+                    logger.info("[%s] 진단 - pdf/down/file 관련 onclick: %s", COMPANY_NAME, diag.get("pdf_down_file_onclicks", []))
+                    logger.info("[%s] 진단 - 함수명 목록: %s", COMPANY_NAME, diag.get("unique_func_names", []))
+                    logger.info("[%s] 진단 - 약관 텍스트 a태그: %s", COMPANY_NAME, diag.get("yak_anchors", []))
+                    logger.info("[%s] 진단 - PDF href 링크: %s", COMPANY_NAME, diag.get("pdf_href_anchors", []))
+                    logger.info("[%s] 진단 - 테이블행=%d, iframe=%s", COMPANY_NAME, diag.get("table_rows", 0), diag.get("iframes", []))
                 break
-
-            # 다음 페이지 클릭 시도
-            has_next = await _click_next_page(page)
-            if not has_next:
-                break
-            await asyncio.sleep(2)
-            page_num += 1
 
     logger.info("[%s] %s 탭: 총 %d개 약관 발견", COMPANY_NAME, tab_label, len(all_items))
     return all_items
