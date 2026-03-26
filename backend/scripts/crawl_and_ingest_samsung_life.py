@@ -337,6 +337,11 @@ async def download_and_ingest_all(
                             "[%d] PDF 시그니처 불일치: %s (sig=%s, size=%d)",
                             idx, goods_name[:40], resp.content[:8], len(resp.content),
                         )
+                elif resp.status_code == 404:
+                    # 404: CDN에서 오래된 PDF 삭제됨 — 스킵 (실패 아님)
+                    stats["skipped"] += 1
+                    logger.debug("[%d] HTTP 404 스킵 (CDN 파일 없음): %s", idx, goods_name[:40])
+                    continue
                 else:
                     logger.warning(
                         "[%d] 다운로드 실패: %s | HTTP=%d | size=%d",
@@ -357,7 +362,6 @@ async def download_and_ingest_all(
                     sale_status=sale_status,
                     error="다운로드 실패 또는 PDF 시그니처 불일치",
                 ))
-                state.save(state_output_path)
                 continue
 
             # 인제스트
