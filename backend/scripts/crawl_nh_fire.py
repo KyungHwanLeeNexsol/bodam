@@ -249,8 +249,10 @@ async def get_pdf_links(page: Any, pdt_code: str, sel_yn: str) -> list[dict[str,
     await page.evaluate(f'fnRetrievePdtInfo("{pdt_code}", null)')
     await asyncio.sleep(1.5)
 
-    tbody_class = f"pdtInfoList_{sel_yn}"
-    row_class = f"pdtInfo_{sel_yn}"
+    # NH 사이트는 판매중/판매중지 공통으로 _Y suffix 클래스를 렌더링함
+    # sel_yn 값과 무관하게 항상 pdtInfoList_Y / pdtInfo_Y 사용
+    tbody_class = "pdtInfoList_Y"
+    row_class = "pdtInfo_Y"
 
     links: list[dict[str, str]] = await page.evaluate(
         """([tbodyClass, rowClass]) => {

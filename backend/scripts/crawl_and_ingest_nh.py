@@ -136,14 +136,14 @@ async def download_pdf_bytes(
                 resp = await client.post(
                     DOWNLOAD_AJAX,
                     data={"oFileId": file_id, "oAfileSeqn": a_file_seqn},
-                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    timeout=httpx.Timeout(60.0),
                     follow_redirects=True,
                 )
             else:
                 resp = await client.get(
                     DOWNLOAD_AJAX,
                     params={"oFileId": file_id, "oAfileSeqn": a_file_seqn},
-                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    timeout=httpx.Timeout(60.0),
                     follow_redirects=True,
                 )
 
