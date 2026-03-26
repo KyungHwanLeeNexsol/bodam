@@ -23,6 +23,7 @@ import gc
 import json
 import logging
 import sys
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -139,6 +140,33 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
     return items
 
 
+async def ingest_pdf_bytes(
+    session_factory: object,
+    pdf_bytes: bytes,
+    metadata: dict,
+    dry_run: bool = False,
+) -> dict:
+    """PDF bytes를 임시 파일로 저장 후 인제스트하고 삭제한다."""
+    from scripts.ingest_local_pdfs import process_single_file
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        tmp_path = Path(tmp.name)
+
+    try:
+        result = await process_single_file(
+            session_factory=session_factory,
+            pdf_path=tmp_path,
+            metadata=metadata,
+            dry_run=dry_run,
+        )
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+    return result
+
+
 async def download_and_ingest_all(
     client: object,
     session_factory: object,
@@ -152,7 +180,6 @@ async def download_and_ingest_all(
 ) -> dict[str, int]:
     """수집된 목록을 다운로드하고 인제스트한다."""
     import httpx as _httpx  # type: ignore[attr-defined]
-    from scripts.ingest_local_pdfs import ingest_pdf_bytes
 
     client: _httpx.AsyncClient  # type: ignore[no-redef]
 
