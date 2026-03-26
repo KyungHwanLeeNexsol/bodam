@@ -382,7 +382,13 @@ async def crawl_and_ingest(
                     idx, url[-60:], http_status, content_type,
                 )
 
-                # fail-stop: 재시도 후에도 실패 → 즉시 중단
+                # HTTP 404: 영구 오류 (파일 삭제/이동) → skip & continue
+                if http_status == 404:
+                    logger.warning("[%d] HTTP 404 (파일 없음) → 스킵 후 계속", idx)
+                    save_state(current_state, state_output_path)
+                    continue
+
+                # 기타 오류 (5xx, 타임아웃 등): fail_immediate
                 current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
                 current_state.stop_reason = "fail_immediate"
                 save_state(current_state, state_output_path)
@@ -491,7 +497,11 @@ async def crawl_and_ingest(
         print(f"\n실패 상태 파일: {state_output_path}")
         print(f"재처리 명령: python -m scripts.crawl_and_ingest_axa --resume-state {state_output_path}")
 
-    return {**stats, "state_path": str(state_output_path) if current_state.failures else None}
+    return {
+        **stats,
+        "stop_reason": current_state.stop_reason,
+        "state_path": str(state_output_path) if current_state.failures else None,
+    }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -537,7 +547,10 @@ if __name__ == "__main__":
         resume_state_path=args.resume_state,
         state_output_path=args.state_output,
     ))
-    # DB 초기화 실패 등 오류 시 exit code 1
+    # fail_immediate 또는 DB 오류 시 exit code 1 (GitHub Actions 실패 표시)
     if isinstance(result, dict) and "error" in result:
         logger.error("종료 오류: %s", result["error"])
+        sys.exit(1)
+    if isinstance(result, dict) and result.get("stop_reason") == "fail_immediate":
+        logger.error("fail_immediate 중단 → exit code 1")
         sys.exit(1)
