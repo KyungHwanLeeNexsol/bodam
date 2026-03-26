@@ -136,14 +136,14 @@ async def download_pdf_bytes(
                 resp = await client.post(
                     DOWNLOAD_AJAX,
                     data={"oFileId": file_id, "oAfileSeqn": a_file_seqn},
-                    timeout=httpx.Timeout(60.0),
+                    timeout=httpx.Timeout(120.0),
                     follow_redirects=True,
                 )
             else:
                 resp = await client.get(
                     DOWNLOAD_AJAX,
                     params={"oFileId": file_id, "oAfileSeqn": a_file_seqn},
-                    timeout=httpx.Timeout(60.0),
+                    timeout=httpx.Timeout(120.0),
                     follow_redirects=True,
                 )
 
@@ -483,19 +483,13 @@ async def crawl_and_ingest(
                     )
                     current_state.failures.append(failure)
                     logger.warning(
-                        "[%d] 다운로드 실패: %s | HTTP=%s",
+                        "[%d] 다운로드 실패 (스킵): %s | HTTP=%s",
                         idx, prd_name[:40], http_status,
                     )
-
-                    # fail-stop: 즉시 중단
-                    current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
-                    current_state.stop_reason = "fail_immediate"
+                    # 다운로드 실패는 skip & continue (타임아웃/CDN 불안정은 일시적 오류)
+                    # 인제스트 실패는 여전히 fail_immediate로 처리 (버그 가능성)
                     save_state(current_state, state_output_path)
-                    logger.error(
-                        "다운로드 실패 → 즉시 중단 (인덱스: %d)\n재시작: --resume-state %s",
-                        idx, state_output_path,
-                    )
-                    break
+                    continue
 
                 # 메타데이터 구성
                 metadata = {
