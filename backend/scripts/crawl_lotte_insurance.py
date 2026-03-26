@@ -287,18 +287,32 @@ async def _click_step2_and_get_products(
     """
     products: list[dict[str, Any]] = []
 
-    # 방법 1: 네트워크 응답 캡처 (iframe DOM 접근 대신 HTTP 응답 직접 읽기)
+    # 네트워크 응답 캡처 (iframe DOM 접근과 병행)
+    # @MX:NOTE: [AUTO] CChannelSvl 응답은 AnySign 보안플러그인 래퍼 HTML을 반환하는 경우가 있음
+    # @MX:REASON: 실제 상품목록은 래퍼 내 별도 호출로 로드되므로, 패턴 검증 후 iframe DOM으로 폴백
     captured_responses: list[str] = []
 
     async def _on_response(response: Any) -> None:
-        """CChannelSvl 응답을 캡처한다."""
-        if "CChannelSvl" in response.url or "cdh190" in response.url.lower():
+        """상품목록 관련 응답을 캡처한다 (URL 범위 확대)."""
+        url = response.url
+        # CChannelSvl, cdh190, cdh 계열, JSP 응답 모두 캡처
+        if any(k in url for k in ["CChannelSvl", "cdh190", "cdh", ".jsp", "product", "goods"]):
             try:
                 body = await response.text()
+                # step3/fn_pdf/upload 패턴이 있거나 충분히 큰 HTML만 저장
                 if body and len(body) > 100:
                     captured_responses.append(body)
             except Exception:
                 pass
+
+    def _pick_best_response(responses: list[str]) -> str:
+        """캡처된 응답 중 step3/fn_pdf/upload 패턴이 있는 가장 유용한 응답을 선택한다."""
+        useful_patterns = ["step3", "fn_pdf", "/upload/", "step4", "fn_yakwan"]
+        # 최신 응답부터 역순으로 탐색
+        for resp in reversed(responses):
+            if any(p in resp for p in useful_patterns):
+                return resp
+        return ""
 
     page.on("response", _on_response)
 
@@ -312,22 +326,36 @@ async def _click_step2_and_get_products(
         # gubun이 순수 숫자이면 따옴표 없이 전달 (strict equality 대응)
         gubun_js = gubun if gubun.isdigit() else f"'{gubun}'"
         await page.evaluate(f"step2('{lcode}', '{mcode}', {val}, {gubun_js})")
-        await asyncio.sleep(3)
-        await _wait_for_iframe_load(page, 8000)
+        # iframe 렌더링 대기 시간 증가 (AnySign 초기화 + 실제 콘텐츠 로드)
+        await asyncio.sleep(5)
+        await _wait_for_iframe_load(page, 10000)
 
-        # iframe HTML: 방법1(캡처 응답) → 방법2(DOM 접근) 순서
-        if captured_responses:
-            iframe_html = captured_responses[-1]  # 가장 최신 응답
+        # iframe HTML 획득: 유용한 네트워크 캡처 → iframe DOM → 최대 캡처 응답 순
+        useful_captured = _pick_best_response(captured_responses)
+        if useful_captured:
+            iframe_html = useful_captured
             logger.info(
-                "  [step2] 네트워크 캡처 성공 lcode=%s → %d자 (%d개 응답)",
+                "  [step2] 네트워크 캡처 (유용한 응답) lcode=%s → %d자 (%d개 중 선택)",
                 lcode, len(iframe_html), len(captured_responses),
             )
         else:
+            # 네트워크 캡처가 있어도 유용한 패턴이 없으면 iframe DOM 시도
             iframe_html = await _get_iframe_content(page)
-            logger.info(
-                "  [step2] DOM 접근 lcode=%s mcode=%s → iframe HTML %d자",
-                lcode, mcode, len(iframe_html),
-            )
+            if iframe_html:
+                logger.info(
+                    "  [step2] iframe DOM 접근 lcode=%s → %d자 (캡처 %d개는 패턴 없음)",
+                    lcode, len(iframe_html), len(captured_responses),
+                )
+            elif captured_responses:
+                # 마지막 수단: 캡처된 응답 중 가장 큰 것 사용
+                iframe_html = max(captured_responses, key=len)
+                logger.info(
+                    "  [step2] 최대 캡처 응답 사용 lcode=%s → %d자",
+                    lcode, len(iframe_html),
+                )
+            else:
+                iframe_html = ""
+                logger.info("  [step2] HTML 획득 실패 lcode=%s", lcode)
 
         if not iframe_html:
             logger.warning(
@@ -336,17 +364,28 @@ async def _click_step2_and_get_products(
             )
             return products
 
-        # step3 onclick 패턴
+        # step3 onclick 패턴 (단일/이중 따옴표 모두 지원)
         step3_matches = re.findall(
-            r"step3\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*",
+            r"""step3\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]""",
             iframe_html,
         )
-        logger.info("  [step2] step3 패턴 %d개 발견", len(step3_matches))
+        logger.info("  [step2] step3 패턴 %d개 발견 (HTML %d자)", len(step3_matches), len(iframe_html))
 
         if not step3_matches:
-            # 진단 로그: iframe 내용 스니펫 (패턴 불일치 시 원인 파악용)
-            snippet = iframe_html[:800].replace("\n", " ").replace("\r", "")
-            logger.info("  [step2] HTML 스니펫 (800자): %s", snippet)
+            # 진단 로그: 패턴 카운트 및 HTML 스니펫
+            counts = {
+                "step3": iframe_html.count("step3"),
+                "step4": iframe_html.count("step4"),
+                "fn_pdf": iframe_html.count("fn_pdf"),
+                "upload": iframe_html.count("/upload/"),
+                "onclick": iframe_html.count("onclick"),
+            }
+            logger.info("  [step2] 패턴 카운트: %s", counts)
+            snippet_start = iframe_html[:500].replace("\n", " ").replace("\r", "")
+            logger.info("  [step2] HTML 앞부분 (500자): %s", snippet_start)
+            mid = len(iframe_html) // 2
+            snippet_mid = iframe_html[mid:mid + 500].replace("\n", " ").replace("\r", "")
+            logger.info("  [step2] HTML 중간부분 (500자, 위치 %d): %s", mid, snippet_mid)
 
             # step3 없으면 바로 step4 직접 링크 탐색
             pdf_links = _extract_pdf_links_from_html(iframe_html)
@@ -362,19 +401,16 @@ async def _click_step2_and_get_products(
             await page.evaluate(
                 f"step3('{s3_lcode}', '{s3_mcode}', '{s3_scode}', '{s3_val}', 0)"
             )
-            await asyncio.sleep(2)
-            await _wait_for_iframe_load(page, 6000)
+            await asyncio.sleep(3)
+            await _wait_for_iframe_load(page, 8000)
 
-            # 방법1(캡처) → 방법2(DOM) 폴백
-            if captured_responses:
-                iframe_html = captured_responses[-1]
-            else:
-                iframe_html = await _get_iframe_content(page)
+            # 유용한 캡처 응답 → iframe DOM 폴백
+            step3_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
 
-            # step4 onclick 패턴
+            # step4 onclick 패턴 (단일/이중 따옴표 모두 지원)
             step4_matches = re.findall(
-                r"step4\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'?([^'\")\s]+)",
-                iframe_html,
+                r"""step4\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]?([^'")\s]+)""",
+                step3_html,
             )
 
             if step4_matches:
@@ -383,13 +419,10 @@ async def _click_step2_and_get_products(
                     await page.evaluate(
                         f"step4('{s4_lcode}', '{s4_mcode}', '{s4_scode}', '{s4_startdate}', 0, 0)"
                     )
-                    await asyncio.sleep(2)
-                    await _wait_for_iframe_load(page, 6000)
+                    await asyncio.sleep(3)
+                    await _wait_for_iframe_load(page, 8000)
 
-                    if captured_responses:
-                        final_html = captured_responses[-1]
-                    else:
-                        final_html = await _get_iframe_content(page)
+                    final_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
                     pdf_links = _extract_pdf_links_from_html(final_html)
 
                     # 상품명/상품코드 추출 시도
@@ -400,7 +433,7 @@ async def _click_step2_and_get_products(
                         products.append(link_info)
             else:
                 # step4 없으면 직접 PDF 링크 탐색
-                pdf_links = _extract_pdf_links_from_html(iframe_html)
+                pdf_links = _extract_pdf_links_from_html(step3_html)
                 for link_info in pdf_links:
                     link_info.setdefault("product_code", f"{s3_lcode}{s3_mcode}{s3_scode}")
                     products.append(link_info)
