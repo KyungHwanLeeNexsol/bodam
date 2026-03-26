@@ -509,10 +509,12 @@ async def crawl_and_ingest(
     """
     from playwright.async_api import async_playwright
 
-    from app.database import get_async_session_factory
+    import app.core.database as _db
     from scripts.ingest_local_pdfs import load_processed_urls
 
-    session_factory = get_async_session_factory()
+    if _db.session_factory is None:
+        logger.error("DB 세션 팩토리 초기화 실패")
+        return {"error": "session_factory is None"}
 
     state = CrawlState()
     retry_mode = False
@@ -527,7 +529,7 @@ async def crawl_and_ingest(
             logger.info("재처리 모드: 이전 실패 %d건 처리 예정", len(retry_targets))
 
     # 이미 처리된 URL 로딩
-    async with session_factory() as session:
+    async with _db.session_factory() as session:
         processed_urls = await load_processed_urls(session, COMPANY_CODE)
     logger.info("이미 처리된 URL: %d건", len(processed_urls))
 
@@ -552,7 +554,7 @@ async def crawl_and_ingest(
                 # 재처리 모드: 실패 건만 재시도
                 await retry_failures(
                     page=page,
-                    session_factory=session_factory,
+                    session_factory=_db.session_factory,
                     processed_urls=processed_urls,
                     failures=retry_targets,
                     dry_run=dry_run,
@@ -564,7 +566,7 @@ async def crawl_and_ingest(
                     for sale_status in ["판매", "판매중지"]:
                         should_continue = await process_category(
                             page=page,
-                            session_factory=session_factory,
+                            session_factory=_db.session_factory,
                             processed_urls=processed_urls,
                             category=category,
                             sale_status=sale_status,
