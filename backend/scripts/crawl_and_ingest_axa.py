@@ -167,10 +167,12 @@ async def download_pdf_bytes(
                     if result[0]:
                         logger.info("  fallback 성공: %s", fallback_url[-80:])
                         return result
-                    logger.warning("  fallback도 실패 (HTTP %s): %s", fb_status, fallback_url[-80:])
+                    # fallback도 404: 예상된 삭제 파일 → INFO (에러 아님)
+                    logger.info("  fallback도 없음 (HTTP %s): %s", fb_status, fallback_url[-80:])
                 except Exception as fb_e:
                     logger.warning("  fallback 요청 예외: %s", fb_e)
-            logger.warning("다운로드 HTTP 오류 %d: %s", status, url[-80:])
+            # 404는 예상된 동작 (서버에서 삭제된 파일) → INFO
+            logger.info("HTTP 404 (삭제된 파일): %s", url[-80:])
             return b"", status, content_type
 
         if status is not None and status >= 400:
@@ -411,10 +413,10 @@ async def crawl_and_ingest(
             current_state.last_processed_idx = idx
 
             if not pdf_bytes:
-                # HTTP 404: 영구 오류 (파일 없음/삭제됨) → 경고만 로깅하고 재처리 없이 계속
+                # HTTP 404: 서버에서 삭제된 파일 (예상된 동작) → INFO, 계속 진행
                 if http_status == 404:
-                    logger.warning(
-                        "[%d] HTTP 404 (파일 없음/삭제됨) → 재시도 불필요, 계속 진행: %s",
+                    logger.info(
+                        "[%d] HTTP 404 (삭제된 파일) → 계속 진행: %s",
                         idx, url[-60:],
                     )
                     continue
