@@ -74,7 +74,7 @@ TARGET_GUN_GB: dict[str, set[str]] = {
 MIN_SALE_END_DT = "19000101"
 RATE_LIMIT = 1.0
 DEFAULT_FAIL_THRESHOLD = 0.05
-FAIL_MIN_SAMPLES = 10
+FAIL_MIN_SAMPLES = 50
 
 # 실패 상태 저장 경로 (GitHub Actions artifact로 업로드)
 DEFAULT_STATE_PATH = Path("failure_state.json")

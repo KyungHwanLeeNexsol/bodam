@@ -174,7 +174,7 @@ async def crawl_and_ingest(
             fail_threshold=fail_threshold,
         )
 
-        crawl_result = await crawler.crawl()
+        crawl_result = await crawler.crawl(processed_urls=processed_urls)
 
         logger.info(
             "크롤링 완료: 발견=%d, 신규=%d, 스킵=%d, 실패=%d",
@@ -208,14 +208,19 @@ async def crawl_and_ingest(
                     },
                 }
 
-        # 상품 메타데이터 조회 테이블 생성 (product_code → {name, sale_status})
+        # 상품 메타데이터 조회 테이블 생성 (uid_prefix → {name, sale_status, pdf_url})
+        # 저장 경로: hyundai-marine/{on-sale|discontinued}/{uid_prefix}/{filename}
+        # uid_prefix = uuid.replace("-","")[:8]
         product_meta: dict[str, dict] = {}
         for r in (crawl_result.results or []):
-            code = r.get("product_code", "")
-            if code:
-                product_meta[code] = {
-                    "product_name": r.get("product_name", code),
+            uuid_val = r.get("product_code", "")  # 크롤러가 UUID를 product_code로 저장
+            if uuid_val:
+                uid_prefix = uuid_val.replace("-", "")[:8]
+                product_meta[uid_prefix] = {
+                    "product_name": r.get("product_name", uuid_val),
                     "sale_status": r.get("sale_status", "ON_SALE"),
+                    "product_code": uuid_val,
+                    "pdf_url": r.get("pdf_url", ""),
                 }
 
         if dry_run:
@@ -242,8 +247,8 @@ async def crawl_and_ingest(
             pdf_files = [
                 p for p in all_pdf_files
                 if (
-                    p.relative_to(tmp_path).parts[1]
-                    if len(p.relative_to(tmp_path).parts) >= 2
+                    p.relative_to(tmp_path).parts[2]
+                    if len(p.relative_to(tmp_path).parts) >= 3
                     else p.stem
                 ) in failed_product_codes
             ]
@@ -260,25 +265,16 @@ async def crawl_and_ingest(
         failure_records: list[FailureRecord] = []
 
         for idx, pdf_path in enumerate(pdf_files, start=1):
-            # 경로에서 메타데이터 추출: hyundai-marine/{product_code}/{filename}
+            # 경로에서 메타데이터 추출: hyundai-marine/{on-sale|discontinued}/{uid_prefix}/{filename}
             rel_parts = pdf_path.relative_to(tmp_path).parts
-            product_code = rel_parts[1] if len(rel_parts) >= 2 else pdf_path.stem
-            meta = product_meta.get(product_code, {})
-            product_name = meta.get("product_name", product_code)
+            uid_prefix = rel_parts[2] if len(rel_parts) >= 3 else pdf_path.stem
+            meta = product_meta.get(uid_prefix, {})
+            product_code = meta.get("product_code", uid_prefix)  # 전체 UUID
+            product_name = meta.get("product_name", uid_prefix)
             sale_status = meta.get("sale_status", "ON_SALE")
 
-            # source_url: 크롤링 결과에서 원본 URL 복원 (없으면 로컬 경로 기반)
-            source_url = ""
-            for r in (crawl_result.results or []):
-                if r.get("product_code") == product_code and r.get("pdf_url"):
-                    # 동일 product_code의 여러 PDF 중 파일명으로 매칭
-                    url = r.get("pdf_url", "")
-                    url_filename = url.split("/")[-1].split("?")[0].lower()
-                    if url_filename == pdf_path.name.lower():
-                        source_url = url
-                        break
-
-            # source_url을 못 찾은 경우 현대해상 기본 URL 패턴으로 대체
+            # source_url: product_meta에서 직접 복원
+            source_url = meta.get("pdf_url", "")
             if not source_url:
                 source_url = f"https://www.hi.co.kr/data/{pdf_path.name}"
 
@@ -331,7 +327,7 @@ async def crawl_and_ingest(
                 error_msg = result.get("error", "")
                 logger.warning("[%d] 실패: %s - %s", idx, pdf_path.name, error_msg)
                 failure_records.append(FailureRecord(
-                    product_code=product_code,
+                    product_code=uid_prefix,  # 경로 매칭용 uid_prefix
                     pdf_filename=pdf_path.name,
                     error=error_msg,
                 ))
