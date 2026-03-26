@@ -97,14 +97,20 @@ class HeungkukIngestState:
 
 def _extract_items_js() -> str:
     """현재 페이지에서 fn_filedownX 링크를 추출하는 JS 코드."""
-    return """() => {
+    return r"""() => {
         const results = [];
-        document.querySelectorAll('a[onclick*="fn_filedownX"]').forEach(a => {
+        // fn_filedownX 포함 a 태그 (단일/이중 따옴표 모두 검색)
+        const anchors = Array.from(document.querySelectorAll('a[onclick]')).filter(a =>
+            (a.getAttribute('onclick') || '').includes('fn_filedownX')
+        );
+        anchors.forEach(a => {
             const onclick = a.getAttribute('onclick') || '';
             const text = a.textContent.trim();
-            if (!text.includes('약관')) return;
-            // fn_filedownX('/path/', 'displayName.pdf', 'serverName.pdf')
-            const match = onclick.match(/fn_filedownX\\('([^']+)','([^']+)',\\s*'([^']+)'\\)/);
+            // fn_filedownX('/path/', 'displayName.pdf', 'serverName.pdf') - 단일 따옴표
+            // fn_filedownX("/path/", "displayName.pdf", "serverName.pdf") - 이중 따옴표
+            const matchSingle = onclick.match(/fn_filedownX\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/);
+            const matchDouble = onclick.match(/fn_filedownX\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/);
+            const match = matchSingle || matchDouble;
             if (match) {
                 const tr = a.closest('tr');
                 const tds = tr ? tr.querySelectorAll('td') : [];
@@ -113,11 +119,68 @@ def _extract_items_js() -> str:
                     displayName: match[2],
                     serverName: match[3],
                     category: tds[0]?.textContent?.trim() || '',
-                    productName: tds[2]?.textContent?.trim() || match[2].replace('_약관.pdf', ''),
+                    productName: tds[2]?.textContent?.trim() || match[2].replace('_약관.pdf', '').replace('.pdf', ''),
+                    linkText: text,
                 });
             }
         });
         return results;
+    }"""
+
+
+def _diagnose_page_js() -> str:
+    """디버깅용: 페이지의 다운로드 관련 onclick 요소 샘플 반환."""
+    return """() => {
+        const allOnclicks = Array.from(document.querySelectorAll('a[onclick]'))
+            .map(a => a.getAttribute('onclick'));
+        // pdf/다운로드 관련 키워드 포함 샘플
+        const pdfAnchors = allOnclicks.filter(oc =>
+            oc.toLowerCase().includes('pdf') ||
+            oc.toLowerCase().includes('down') ||
+            oc.toLowerCase().includes('file') ||
+            oc.toLowerCase().includes('약관')
+        ).slice(0, 10);
+        // 전체 onclick 값 중 유니크 패턴 샘플 (함수명 추출)
+        const funcNames = [...new Set(allOnclicks.map(oc => {
+            const m = oc.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/);
+            return m ? m[1] : oc.slice(0, 30);
+        }))].slice(0, 20);
+        // 약관 텍스트가 있는 a 태그 샘플
+        const yakAnchors = Array.from(document.querySelectorAll('a')).filter(a =>
+            a.textContent.includes('약관')
+        ).slice(0, 5).map(a => ({
+            text: a.textContent.trim().slice(0, 50),
+            onclick: a.getAttribute('onclick') || '',
+            href: a.getAttribute('href') || '',
+        }));
+        // PDF href 직접 링크
+        const pdfHrefs = Array.from(document.querySelectorAll('a[href]')).filter(a =>
+            a.getAttribute('href').toLowerCase().includes('.pdf') ||
+            a.getAttribute('href').toLowerCase().includes('download') ||
+            a.getAttribute('href').toLowerCase().includes('filedown')
+        ).slice(0, 5).map(a => ({text: a.textContent.trim().slice(0, 40), href: a.getAttribute('href')}));
+        // 테이블 행 수 (상품 목록이 테이블에 있는 경우)
+        const tableRows = document.querySelectorAll('table tbody tr').length;
+        // iframe 수
+        const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+            src: f.getAttribute('src') || '', id: f.id || ''
+        }));
+        // 현재 페이지 URL
+        const currentUrl = window.location.href;
+        // 페이지 제목
+        const pageTitle = document.title;
+        return {
+            total_anchors: document.querySelectorAll('a').length,
+            anchors_with_onclick: document.querySelectorAll('a[onclick]').length,
+            pdf_down_file_onclicks: pdfAnchors,
+            unique_func_names: funcNames,
+            yak_anchors: yakAnchors,
+            pdf_href_anchors: pdfHrefs,
+            table_rows: tableRows,
+            iframes: iframes,
+            current_url: currentUrl,
+            page_title: pageTitle,
+        };
     }"""
 
 
@@ -149,9 +212,11 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
     """Playwright 페이지에서 약관 다운로드 목록을 추출한다.
 
     사이트 구조:
-    - 판매 / 판매중지 탭
-      - 장기보험 / 일반보험 / 자동차보험 서브카테고리 탭
+    - 판매 / 판매중지 탭 (ul.ul_tab_basic.colum02)
+      - 장기보험 / 일반보험 / 자동차보험 서브카테고리 탭 (ul.ul_tab_basic.colum03)
         - 각 카테고리별 페이지네이션
+    # @MX:NOTE: [AUTO] 탭 클릭 시 ul[class*="colum02/03"] 컨테이너 내부로 한정해야 함
+    # @MX:REASON: 사이드바에도 동일 텍스트(장기보험 등) 링크가 있어 전역 검색 시 이탈
     """
     from playwright.async_api import Page  # type: ignore[attr-defined]
     page: Page  # type: ignore[no-redef]
@@ -160,30 +225,39 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
     await asyncio.sleep(3)
 
     if tab_idx == 1:
-        # 판매중지 탭 클릭
-        await page.evaluate("""() => {
-            const tabs = document.querySelectorAll('a, li, button');
-            for (const t of tabs) {
-                if (t.textContent.trim() === '판매중지') { t.click(); return; }
+        # 판매중지 탭 클릭 (colum02 컨테이너 내부로 한정)
+        clicked = await page.evaluate("""() => {
+            const container = document.querySelector('ul[class*="colum02"]');
+            if (!container) return false;
+            const els = container.querySelectorAll('a, li, span');
+            for (const el of els) {
+                const txt = el.textContent.trim().replace('선택됨', '').trim();
+                if (txt === '판매중지') { el.click(); return true; }
             }
+            return false;
         }""")
+        if not clicked:
+            logger.warning("[%s] 판매중지 탭 클릭 실패 (colum02 컨테이너 미발견)", COMPANY_NAME)
         await asyncio.sleep(3)
 
-    # 서브카테고리 탭 목록 감지 (장기보험, 일반보험, 자동차보험)
+    # 서브카테고리 탭 목록 감지 (colum03 컨테이너 내부로 한정)
     sub_categories: list[str] = await page.evaluate("""() => {
+        const container = document.querySelector('ul[class*="colum03"]');
+        if (!container) return [];
         const keywords = ['장기보험', '일반보험', '자동차보험'];
         const found = [];
         for (const kw of keywords) {
-            const els = document.querySelectorAll('a, li, button, span');
+            const els = container.querySelectorAll('a, li, button, span');
             for (const el of els) {
-                if (el.textContent.trim() === kw) { found.push(kw); break; }
+                const txt = el.textContent.trim().replace('선택됨', '').trim();
+                if (txt === kw) { found.push(kw); break; }
             }
         }
         return found;
     }""")
 
     if not sub_categories:
-        logger.warning("[%s] %s 탭: 서브카테고리 탭을 찾지 못함, 현재 페이지만 수집", COMPANY_NAME, tab_label)
+        logger.warning("[%s] %s 탭: 서브카테고리 탭을 찾지 못함 (colum03 없음), 현재 페이지만 수집", COMPANY_NAME, tab_label)
         sub_categories = [""]  # 빈 문자열 = 서브탭 클릭 없이 현재 상태 수집
 
     all_items: list[dict] = []
@@ -191,18 +265,21 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
 
     for sub_cat in sub_categories:
         if sub_cat:
-            # 서브카테고리 탭 클릭
+            # 서브카테고리 탭 클릭 (colum03 컨테이너 내부로 한정)
             clicked_sub = await page.evaluate(f"""() => {{
-                const els = document.querySelectorAll('a, li, button, span');
+                const container = document.querySelector('ul[class*="colum03"]');
+                if (!container) return false;
+                const els = container.querySelectorAll('a, li, button, span');
                 for (const el of els) {{
-                    if (el.textContent.trim() === '{sub_cat}') {{ el.click(); return true; }}
+                    const txt = el.textContent.trim().replace('선택됨', '').trim();
+                    if (txt === '{sub_cat}') {{ el.click(); return true; }}
                 }}
                 return false;
             }}""")
             if not clicked_sub:
                 logger.warning("[%s] %s 탭 > %s 서브탭 클릭 실패, 스킵", COMPANY_NAME, tab_label, sub_cat)
                 continue
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
         page_num = 1
         sub_cat_display = sub_cat or "(전체)"
@@ -220,6 +297,26 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
                 COMPANY_NAME, tab_label, sub_cat_display, page_num,
                 len(page_items), len(new_items), len(all_items),
             )
+
+            if not new_items and page_num > 1:
+                # 다음 페이지에 신규 항목이 없으면 종료 (같은 페이지 반복 방지)
+                break
+
+            if not page_items and page_num == 1:
+                # 첫 페이지에서 0개면 진단 로그 출력
+                diag = await page.evaluate(_diagnose_page_js())
+                logger.info(
+                    "[%s] 진단 - 전체a=%d, onclick있는a=%d",
+                    COMPANY_NAME,
+                    diag.get("total_anchors", 0),
+                    diag.get("anchors_with_onclick", 0),
+                )
+                logger.info("[%s] 진단 - 현재URL: %s | 제목: %s", COMPANY_NAME, diag.get("current_url", ""), diag.get("page_title", ""))
+                logger.info("[%s] 진단 - pdf/down/file 관련 onclick: %s", COMPANY_NAME, diag.get("pdf_down_file_onclicks", []))
+                logger.info("[%s] 진단 - 함수명 목록: %s", COMPANY_NAME, diag.get("unique_func_names", []))
+                logger.info("[%s] 진단 - 약관 텍스트 a태그: %s", COMPANY_NAME, diag.get("yak_anchors", []))
+                logger.info("[%s] 진단 - PDF href 링크: %s", COMPANY_NAME, diag.get("pdf_href_anchors", []))
+                logger.info("[%s] 진단 - 테이블행=%d, iframe=%s", COMPANY_NAME, diag.get("table_rows", 0), diag.get("iframes", []))
 
             if not page_items:
                 # 빈 페이지면 중단
@@ -413,30 +510,38 @@ async def run(
     import httpx
     from playwright.async_api import async_playwright
 
-    import app.core.database as _db
-    from app.core.config import Settings
-    from scripts.ingest_local_pdfs import load_processed_urls
-
     logger.info("=" * 60)
     logger.info("%s 크롤링 + 인제스트 시작", COMPANY_NAME)
     logger.info("=" * 60)
 
-    # DB 초기화
-    try:
-        settings = Settings()  # type: ignore[call-arg]
-        await _db.init_database(settings)
-    except Exception as e:
-        logger.error("DB 초기화 실패: %s", e)
-        return {"error": str(e)}
+    # DB 초기화 (dry-run 시 스킵)
+    _db = None
+    if not dry_run:
+        import app.core.database as db_module
+        from app.core.config import Settings
+        from scripts.ingest_local_pdfs import load_processed_urls
+        try:
+            settings = Settings()  # type: ignore[call-arg]
+            await db_module.init_database(settings)
+        except Exception as e:
+            logger.error("DB 초기화 실패: %s", e)
+            return {"error": str(e)}
 
-    if _db.session_factory is None:
-        logger.error("DB 세션 팩토리 초기화 실패")
-        return {"error": "session_factory is None"}
+        if db_module.session_factory is None:
+            logger.error("DB 세션 팩토리 초기화 실패")
+            return {"error": "session_factory is None"}
 
-    # 이미 처리된 URL 로드 (재시작 시 중복 다운로드 방지)
-    async with _db.session_factory() as _session:
-        processed_urls: set[str] = await load_processed_urls(_session, company_code=COMPANY_CODE)
-    logger.info("이미 처리된 URL (%s): %d개 (재시작 시 스킵됨)", COMPANY_NAME, len(processed_urls))
+        _db = db_module
+
+    # 이미 처리된 URL 로드 (재시작 시 중복 다운로드 방지, dry-run 시 빈 set)
+    if not dry_run and _db is not None:
+        from scripts.ingest_local_pdfs import load_processed_urls
+        async with _db.session_factory() as _session:
+            processed_urls: set[str] = await load_processed_urls(_session, company_code=COMPANY_CODE)
+        logger.info("이미 처리된 URL (%s): %d개 (재시작 시 스킵됨)", COMPANY_NAME, len(processed_urls))
+    else:
+        processed_urls = set()
+        logger.info("이미 처리된 URL (%s): 0개 (dry-run 모드)", COMPANY_NAME)
 
     # resume 모드: 이전 실패 건 로드
     state = HeungkukIngestState()
@@ -476,7 +581,7 @@ async def run(
                 # Step 2: 다운로드 + 인제스트
                 tab_stats = await download_and_ingest_all(
                     client=client,
-                    session_factory=_db.session_factory,
+                    session_factory=_db.session_factory if _db is not None else None,
                     items=items,
                     sale_status=sale_status,
                     state=state,

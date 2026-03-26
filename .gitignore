@@ -223,3 +223,9 @@ docker-compose.override.yml
 # MoAI temp state
 .moai/cache/
 .moai/tmp/
+
+# ===========================================
+# Crawler Failure State (Runtime Dumps)
+# ===========================================
+backend/failure_state_*.json
+backend/crawler_state_*.json
