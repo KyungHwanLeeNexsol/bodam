@@ -364,9 +364,10 @@ async def _click_step2_and_get_products(
             )
             return products
 
-        # step3 onclick 패턴 (단일/이중 따옴표 모두 지원)
+        # step3 onclick 패턴: step3(lcode, mcode, scode) - 3개 인자
+        # 실제 HTML: onclick=step3('03','01','0537');classchkStep2(...)
         step3_matches = re.findall(
-            r"""step3\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]""",
+            r"""step3\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)""",
             iframe_html,
         )
         logger.info("  [step2] step3 패턴 %d개 발견 (HTML %d자)", len(step3_matches), len(iframe_html))
@@ -395,11 +396,11 @@ async def _click_step2_and_get_products(
                 products.append(link_info)
             return products
 
-        # step3 각 항목 처리
-        for s3_lcode, s3_mcode, s3_scode, s3_val in step3_matches[:20]:
+        # step3 각 항목 처리 (lcode, mcode, scode 3개 인자)
+        for s3_lcode, s3_mcode, s3_scode in step3_matches[:20]:
             captured_responses.clear()
             await page.evaluate(
-                f"step3('{s3_lcode}', '{s3_mcode}', '{s3_scode}', '{s3_val}', 0)"
+                f"step3('{s3_lcode}', '{s3_mcode}', '{s3_scode}')"
             )
             await asyncio.sleep(3)
             await _wait_for_iframe_load(page, 8000)
