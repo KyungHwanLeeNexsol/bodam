@@ -185,10 +185,12 @@ async def _collect_step2_categories(page: Any, issale: str) -> list[dict[str, st
     await asyncio.sleep(2)
 
     # step2 링크 추출
-    # @MX:NOTE: onclick="step2('A','01',0,'1')" 형태 파싱
+    # @MX:NOTE: onclick="step2('01','01', 0, 1)" 형태 파싱
+    # @MX:NOTE: 4번째 인자(gubun)는 따옴표 없는 숫자일 수 있음 (예: step2('01','01', 0, 1))
     categories: list[dict[str, str]] = await page.evaluate("""() => {
         const cats = [];
-        const step2Pattern = /step2\\s*\\(\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*,\\s*(\\d+)\\s*,\\s*'([^']+)'\\s*\\)/;
+        // 4번째 인자가 따옴표 있는 문자열('1') 또는 따옴표 없는 숫자(1) 모두 허용
+        const step2Pattern = /step2\\s*\\(\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*,\\s*(\\d+)\\s*,\\s*'?([^'\\s,)]+)/;
         document.querySelectorAll('[onclick*="step2"]').forEach(el => {
             const onclick = el.getAttribute('onclick') || '';
             const m = onclick.match(step2Pattern);
@@ -421,9 +423,11 @@ async def _collect_products_via_network_intercept(
         await asyncio.sleep(2)
 
         # step2 카테고리 목록 수집
+        # @MX:NOTE: 4번째 인자(gubun)는 따옴표 없는 숫자일 수 있음 (예: step2('01','01', 0, 1))
         categories: list[dict[str, str]] = await page.evaluate("""() => {
             const cats = [];
-            const pat = /step2\\s*\\(\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*,\\s*(\\d+)\\s*,\\s*'([^']+)'/;
+            // 4번째 인자가 따옴표 있는 문자열('1') 또는 따옴표 없는 숫자(1) 모두 허용
+            const pat = /step2\\s*\\(\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*,\\s*(\\d+)\\s*,\\s*'?([^'\\s,)]+)/;
             document.querySelectorAll('[onclick*="step2"]').forEach(el => {
                 const m = el.getAttribute('onclick').match(pat);
                 if (m) cats.push({
