@@ -95,25 +95,9 @@ class HeungkukIngestState:
         )
 
 
-async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) -> list[dict]:
-    """Playwright 페이지에서 약관 다운로드 목록을 추출한다."""
-    from playwright.async_api import Page  # type: ignore[attr-defined]
-    page: Page  # type: ignore[no-redef]
-
-    await page.goto(PAGE_URL, timeout=30000, wait_until="networkidle")
-    await asyncio.sleep(3)
-
-    if tab_idx == 1:
-        # 판매중지 탭 클릭
-        await page.evaluate("""() => {
-            const tabs = document.querySelectorAll('a, li, button');
-            for (const t of tabs) {
-                if (t.textContent.trim() === '판매중지') { t.click(); return; }
-            }
-        }""")
-        await asyncio.sleep(3)
-
-    items: list[dict] = await page.evaluate("""() => {
+def _extract_items_js() -> str:
+    """현재 페이지에서 fn_filedownX 링크를 추출하는 JS 코드."""
+    return """() => {
         const results = [];
         document.querySelectorAll('a[onclick*="fn_filedownX"]').forEach(a => {
             const onclick = a.getAttribute('onclick') || '';
@@ -134,10 +118,122 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
             }
         });
         return results;
+    }"""
+
+
+async def _click_next_page(page: object) -> bool:
+    """다음 페이지 버튼을 클릭하고 클릭 성공 여부를 반환한다."""
+    from playwright.async_api import Page  # type: ignore[attr-defined]
+    page: Page  # type: ignore[no-redef]
+
+    clicked = await page.evaluate("""() => {
+        // 일반적인 '다음' 버튼 패턴 탐색
+        const candidates = document.querySelectorAll('a, button, span, li');
+        for (const el of candidates) {
+            const text = el.textContent.trim();
+            const cls = el.className || '';
+            const onclick = el.getAttribute('onclick') || '';
+            // 비활성화된 요소 제외
+            if (cls.includes('disabled') || cls.includes('off') || el.disabled) continue;
+            if (text === '다음' || text === '>' || text === '▶' || text === '다음페이지') {
+                el.click();
+                return true;
+            }
+        }
+        return false;
+    }""")
+    return bool(clicked)
+
+
+async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) -> list[dict]:
+    """Playwright 페이지에서 약관 다운로드 목록을 추출한다.
+
+    사이트 구조:
+    - 판매 / 판매중지 탭
+      - 장기보험 / 일반보험 / 자동차보험 서브카테고리 탭
+        - 각 카테고리별 페이지네이션
+    """
+    from playwright.async_api import Page  # type: ignore[attr-defined]
+    page: Page  # type: ignore[no-redef]
+
+    await page.goto(PAGE_URL, timeout=30000, wait_until="networkidle")
+    await asyncio.sleep(3)
+
+    if tab_idx == 1:
+        # 판매중지 탭 클릭
+        await page.evaluate("""() => {
+            const tabs = document.querySelectorAll('a, li, button');
+            for (const t of tabs) {
+                if (t.textContent.trim() === '판매중지') { t.click(); return; }
+            }
+        }""")
+        await asyncio.sleep(3)
+
+    # 서브카테고리 탭 목록 감지 (장기보험, 일반보험, 자동차보험)
+    sub_categories: list[str] = await page.evaluate("""() => {
+        const keywords = ['장기보험', '일반보험', '자동차보험'];
+        const found = [];
+        for (const kw of keywords) {
+            const els = document.querySelectorAll('a, li, button, span');
+            for (const el of els) {
+                if (el.textContent.trim() === kw) { found.push(kw); break; }
+            }
+        }
+        return found;
     }""")
 
-    logger.info("[%s] %s 탭: %d개 약관 발견", COMPANY_NAME, tab_label, len(items))
-    return items
+    if not sub_categories:
+        logger.warning("[%s] %s 탭: 서브카테고리 탭을 찾지 못함, 현재 페이지만 수집", COMPANY_NAME, tab_label)
+        sub_categories = [""]  # 빈 문자열 = 서브탭 클릭 없이 현재 상태 수집
+
+    all_items: list[dict] = []
+    seen_server_names: set[str] = set()
+
+    for sub_cat in sub_categories:
+        if sub_cat:
+            # 서브카테고리 탭 클릭
+            clicked_sub = await page.evaluate(f"""() => {{
+                const els = document.querySelectorAll('a, li, button, span');
+                for (const el of els) {{
+                    if (el.textContent.trim() === '{sub_cat}') {{ el.click(); return true; }}
+                }}
+                return false;
+            }}""")
+            if not clicked_sub:
+                logger.warning("[%s] %s 탭 > %s 서브탭 클릭 실패, 스킵", COMPANY_NAME, tab_label, sub_cat)
+                continue
+            await asyncio.sleep(2)
+
+        page_num = 1
+        sub_cat_display = sub_cat or "(전체)"
+        while True:
+            page_items: list[dict] = await page.evaluate(_extract_items_js())
+
+            # 중복 제거
+            new_items = [i for i in page_items if i["serverName"] not in seen_server_names]
+            for i in new_items:
+                seen_server_names.add(i["serverName"])
+            all_items.extend(new_items)
+
+            logger.info(
+                "[%s] %s 탭 > %s > %d페이지: %d개 수집 (신규 %d개, 누적 %d개)",
+                COMPANY_NAME, tab_label, sub_cat_display, page_num,
+                len(page_items), len(new_items), len(all_items),
+            )
+
+            if not page_items:
+                # 빈 페이지면 중단
+                break
+
+            # 다음 페이지 클릭 시도
+            has_next = await _click_next_page(page)
+            if not has_next:
+                break
+            await asyncio.sleep(2)
+            page_num += 1
+
+    logger.info("[%s] %s 탭: 총 %d개 약관 발견", COMPANY_NAME, tab_label, len(all_items))
+    return all_items
 
 
 async def ingest_pdf_bytes(

@@ -307,10 +307,18 @@ async def _click_step2_and_get_products(
 
     def _pick_best_response(responses: list[str]) -> str:
         """캡처된 응답 중 step3/fn_pdf/upload 패턴이 있는 가장 유용한 응답을 선택한다."""
-        useful_patterns = ["step3", "fn_pdf", "/upload/", "step4", "fn_yakwan"]
-        # 최신 응답부터 역순으로 탐색
+        # fn_pdf, /upload/, fn_yakwan 이 있는 응답 최우선 (실제 PDF 링크)
+        priority_patterns = ["fn_pdf", "/upload/", "fn_yakwan"]
         for resp in reversed(responses):
-            if any(p in resp for p in useful_patterns):
+            if any(p in resp for p in priority_patterns):
+                return resp
+        # step3 함수 호출 패턴 (step3view DOM ID 제외)
+        for resp in reversed(responses):
+            if re.search(r"step3\s*\(", resp):
+                return resp
+        # step4 함수 호출 패턴 (step4view DOM ID 제외)
+        for resp in reversed(responses):
+            if re.search(r"step4\s*\(", resp):
                 return resp
         return ""
 
@@ -405,8 +413,25 @@ async def _click_step2_and_get_products(
             await asyncio.sleep(3)
             await _wait_for_iframe_load(page, 8000)
 
-            # 유용한 캡처 응답 → iframe DOM 폴백
-            step3_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
+            # 1순위: 메인 페이지 DOM에서 step4view/step3view 직접 읽기
+            # (AnySign 래퍼가 parent.document.getElementById("step4view").innerHTML 으로 주입)
+            step3_html = await page.evaluate("""() => {
+                const s3 = document.getElementById('step3view');
+                const s4 = document.getElementById('step4view');
+                return (s3 ? s3.innerHTML : '') + (s4 ? s4.innerHTML : '');
+            }""") or ""
+            if step3_html and len(step3_html) > 50:
+                logger.info(
+                    "  [step3] DOM 직접 읽기 성공 (%s/%s/%s): %d자",
+                    s3_lcode, s3_mcode, s3_scode, len(step3_html),
+                )
+            else:
+                # 2순위: 네트워크 캡처 → iframe DOM 폴백
+                step3_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
+                logger.info(
+                    "  [step3] 네트워크/iframe 폴백 (%s/%s/%s): %d자",
+                    s3_lcode, s3_mcode, s3_scode, len(step3_html),
+                )
 
             # step4 onclick 패턴 (단일/이중 따옴표 모두 지원)
             step4_matches = re.findall(
@@ -423,7 +448,15 @@ async def _click_step2_and_get_products(
                     await asyncio.sleep(3)
                     await _wait_for_iframe_load(page, 8000)
 
-                    final_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
+                    # 1순위: 메인 페이지 step4view DOM 직접 읽기
+                    final_html = await page.evaluate("""() => {
+                        const el = document.getElementById('step4view');
+                        return el ? el.innerHTML : '';
+                    }""") or ""
+                    if not final_html or len(final_html) < 50:
+                        # 폴백: 네트워크 캡처 → iframe DOM
+                        final_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
+
                     pdf_links = _extract_pdf_links_from_html(final_html)
 
                     # 상품명/상품코드 추출 시도
@@ -438,6 +471,11 @@ async def _click_step2_and_get_products(
                 for link_info in pdf_links:
                     link_info.setdefault("product_code", f"{s3_lcode}{s3_mcode}{s3_scode}")
                     products.append(link_info)
+                if pdf_links:
+                    logger.info(
+                        "  [step3] step4 없이 PDF 직접 발견 (%s/%s/%s): %d개",
+                        s3_lcode, s3_mcode, s3_scode, len(pdf_links),
+                    )
 
     except Exception as e:
         logger.warning("  [WARN] step2 처리 오류 (lcode=%s, mcode=%s): %s", lcode, mcode, e)
