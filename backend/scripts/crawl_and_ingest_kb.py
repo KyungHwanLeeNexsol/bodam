@@ -217,22 +217,29 @@ async def crawl_and_ingest(
 
         if dry_run:
             pdf_files = list(tmp_path.rglob("*.pdf")) + list(tmp_path.rglob("*.PDF"))
-            logger.info("[DRY RUN] 수집된 PDF: %d개 (인제스트 생략)", len(pdf_files))
+            zip_files = list(tmp_path.rglob("*.zip")) + list(tmp_path.rglob("*.ZIP"))
+            logger.info(
+                "[DRY RUN] 수집된 PDF: %d개, ZIP: %d개 (인제스트 생략)",
+                len(pdf_files), len(zip_files),
+            )
             return {
                 "crawl": {
                     "total_found": crawl_result.total_found,
                     "new_count": crawl_result.new_count,
                     "failed_count": crawl_result.failed_count,
                 },
-                "ingest": {"skipped": len(pdf_files), "reason": "dry_run"},
+                "ingest": {"skipped": len(pdf_files), "zip_skipped": len(zip_files), "reason": "dry_run"},
             }
 
-        # 2단계: 저장된 PDF 순차 인제스트
+        # 2단계: 저장된 PDF 순차 인제스트 (ZIP은 임베딩 미지원으로 스킵)
         # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
         # @MX:REASON: pdfplumber + PDFMiner 내부 캐시가 asyncio gather 환경에서 GC 타이밍이 지연됨
         all_pdf_files = sorted(
             list(tmp_path.rglob("*.pdf")) + list(tmp_path.rglob("*.PDF"))
         )
+        zip_count = len(list(tmp_path.rglob("*.zip")) + list(tmp_path.rglob("*.ZIP")))
+        if zip_count > 0:
+            logger.info("[KB손보] ZIP 파일 %d개 발견 (인제스트 보류, 임베딩 미지원)", zip_count)
 
         # resume 모드: 실패 product_code에 해당하는 파일만 처리
         if failed_product_codes is not None:

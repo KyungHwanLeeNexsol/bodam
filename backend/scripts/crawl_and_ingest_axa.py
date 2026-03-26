@@ -146,6 +146,12 @@ async def download_pdf_bytes(
             logger.warning("다운로드 응답 너무 작음 (%d bytes): %s", len(data), src_url[-80:])
             return b"", status, content_type
         if not data.startswith(b"%PDF"):
+            if data[:2] == b"PK":
+                logger.info(
+                    "ZIP 파일 수신: %s (%d bytes) → 저장 보류",
+                    src_url[-80:], len(data),
+                )
+                return data, status, content_type
             logger.warning(
                 "PDF 시그니처 불일치: %s (앞 20바이트: %r, Content-Type: %s)",
                 src_url[-80:], data[:20], content_type,
@@ -449,6 +455,13 @@ async def crawl_and_ingest(
                     idx, state_output_path,
                 )
                 break
+            elif pdf_bytes[:2] == b"PK":
+                # ZIP 파일: 임베딩 보류, 실패 아님
+                logger.info(
+                    "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                    idx, prd_name[:40], len(pdf_bytes),
+                )
+                continue
 
             # 메타데이터 구성
             metadata = {

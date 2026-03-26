@@ -320,7 +320,7 @@ async def crawl_category_and_ingest(
             http_status = resp_pdf.status_code
             content_type = resp_pdf.headers.get("content-type", "")
 
-            if http_status != 200 or resp_pdf.content[:4] != b"%PDF" or len(resp_pdf.content) < 1000:
+            if http_status != 200 or len(resp_pdf.content) < 1000:
                 logger.warning(
                     "[실패] PDF 다운로드 실패 [%s] HTTP=%d size=%d type=%s",
                     pdc_nm[:50], http_status, len(resp_pdf.content), content_type,
@@ -333,6 +333,28 @@ async def crawl_category_and_ingest(
                     error_type="download_failed",
                     http_status=http_status,
                     error_msg=f"size={len(resp_pdf.content)}, content_type={content_type}",
+                ))
+                continue
+
+            if resp_pdf.content[:4] != b"%PDF":
+                if resp_pdf.content[:2] == b"PK":
+                    logger.info(
+                        "[ZIP] ZIP 파일 인제스트 보류 [%s] (%d bytes)",
+                        pdc_nm[:50], len(resp_pdf.content),
+                    )
+                    continue
+                logger.warning(
+                    "[실패] PDF 시그니처 불일치 [%s] (앞 20바이트: %r)",
+                    pdc_nm[:50], resp_pdf.content[:20],
+                )
+                stats["failed"] += 1
+                state.failures.append(FailureRecord(
+                    product_name=pdc_nm,
+                    category=label,
+                    url=pdf_url,
+                    error_type="download_failed",
+                    http_status=http_status,
+                    error_msg=f"PDF 시그니처 불일치, content_type={content_type}",
                 ))
                 continue
 

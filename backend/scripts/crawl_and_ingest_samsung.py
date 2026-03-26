@@ -195,6 +195,12 @@ async def download_pdf(
 
             # 파일 시그니처 검증
             if ext == ".pdf" and data[:4] != b"%PDF":
+                if data[:2] == b"PK":
+                    logger.info(
+                        "ZIP 파일 수신 (.pdf 확장자): %s (%d bytes) → 저장 보류",
+                        url, len(data),
+                    )
+                    return data, status, content_type
                 logger.warning(
                     "PDF 시그니처 불일치: %s (받은 데이터 앞 20바이트: %r, Content-Type: %s)",
                     url, data[:20], content_type,
@@ -471,6 +477,13 @@ async def crawl_and_ingest(
                     idx, state_output_path,
                 )
                 break
+            elif pdf_bytes[:2] == b"PK" and Path(fpath).suffix.lower() not in {".docx", ".hwp"}:
+                # ZIP 파일 (DOCX는 이미 정상 처리됨): 임베딩 보류, 실패 아님
+                logger.info(
+                    "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                    idx, Path(fpath).name, len(pdf_bytes),
+                )
+                continue
 
             # 메타데이터 구성
             fname_stem = Path(fpath).stem

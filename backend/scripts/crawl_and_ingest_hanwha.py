@@ -352,6 +352,12 @@ async def download_pdf_bytes(
             return b"", status
 
         if data[:4] != b"%PDF":
+            if data[:2] == b"PK":
+                logger.info(
+                    "ZIP 파일 수신: %s (%d bytes) → 저장 보류",
+                    url[-80:], len(data),
+                )
+                return data, status
             logger.warning(
                 "PDF 시그니처 불일치: %s (앞 20바이트: %r)",
                 url[-80:], data[:20],
@@ -470,6 +476,13 @@ async def download_and_ingest_all(
             ))
             state.last_processed_idx = idx
             save_state(state, state_output_path)
+            continue
+        elif pdf_bytes[:2] == b"PK":
+            # ZIP 파일: 임베딩 보류, 실패 아님
+            logger.info(
+                "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                idx, goods_name[:40], len(pdf_bytes),
+            )
             continue
 
         # 인제스트 메타데이터 구성

@@ -275,6 +275,12 @@ async def download_and_ingest_product(
         pdf_bytes = Path(tmp_path).read_bytes()
 
         if pdf_bytes[:4] != b"%PDF" or len(pdf_bytes) < 1000:
+            if pdf_bytes[:2] == b"PK" and len(pdf_bytes) >= 100:
+                logger.info(
+                    "  [ZIP] %s - ZIP 파일 인제스트 보류 (%d bytes)",
+                    product_name, len(pdf_bytes),
+                )
+                return {"status": "zip_skipped", "size": len(pdf_bytes)}
             logger.warning(
                 "  [INVALID] %s - PDF 시그니처 불일치 (%d bytes)",
                 product_name, len(pdf_bytes),

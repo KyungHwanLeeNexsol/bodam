@@ -154,6 +154,12 @@ async def download_pdf_bytes(
             return b"", status, content_type
 
         if data[:4] != b"%PDF":
+            if data[:2] == b"PK":
+                logger.info(
+                    "ZIP 파일 수신: %s (%d bytes) → 저장 보류",
+                    url[-80:], len(data),
+                )
+                return data, status, content_type
             logger.warning(
                 "PDF 시그니처 불일치: %s (앞 20바이트: %r, Content-Type: %s)",
                 url[-80:], data[:20], content_type,
@@ -220,26 +226,32 @@ async def crawl_and_ingest(
         _collect_products_via_network_intercept,
     )
 
-    # DB 초기화
-    try:
-        from app.core.config import Settings
-        import app.core.database as db_module
-        settings = Settings()  # type: ignore[call-arg]
-        await db_module.init_database(settings)
-    except Exception as e:
-        logger.error("DB 초기화 실패: %s", e)
-        return {"error": str(e)}
+    # DB 초기화 (dry-run 시 스킵)
+    _db = None
+    if not dry_run:
+        try:
+            from app.core.config import Settings
+            import app.core.database as db_module
+            settings = Settings()  # type: ignore[call-arg]
+            await db_module.init_database(settings)
+        except Exception as e:
+            logger.error("DB 초기화 실패: %s", e)
+            return {"error": str(e)}
 
-    import app.core.database as _db
-    if _db.session_factory is None:
-        logger.error("DB 세션 팩토리 초기화 실패")
-        return {"error": "session_factory is None"}
+        import app.core.database as _db  # type: ignore[no-redef]
+        if _db.session_factory is None:
+            logger.error("DB 세션 팩토리 초기화 실패")
+            return {"error": "session_factory is None"}
 
-    # 이미 처리된 URL 로드 (재시작 시 중복 스킵)
-    from scripts.ingest_local_pdfs import load_processed_urls
-    async with _db.session_factory() as _session:
-        processed_urls: set[str] = await load_processed_urls(_session, company_code=COMPANY_CODE)
-    logger.info("이미 처리된 URL (%s): %d개 (재시작 시 스킵됨)", COMPANY_NAME, len(processed_urls))
+    # 이미 처리된 URL 로드 (재시작 시 중복 스킵, dry-run 시 빈 set)
+    if not dry_run and _db is not None:
+        from scripts.ingest_local_pdfs import load_processed_urls
+        async with _db.session_factory() as _session:
+            processed_urls: set[str] = await load_processed_urls(_session, company_code=COMPANY_CODE)
+        logger.info("이미 처리된 URL (%s): %d개 (재시작 시 스킵됨)", COMPANY_NAME, len(processed_urls))
+    else:
+        processed_urls = set()
+        logger.info("이미 처리된 URL (%s): 0개 (dry-run 모드)", COMPANY_NAME)
 
     stats = {
         "total": 0,
@@ -432,6 +444,13 @@ async def crawl_and_ingest(
                     idx, state_output_path,
                 )
                 break
+            elif pdf_bytes[:2] == b"PK":
+                # ZIP 파일: 임베딩 보류, 실패 아님
+                logger.info(
+                    "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                    idx, prd_name[:40], len(pdf_bytes),
+                )
+                continue
 
             # 메타데이터 구성
             metadata = {

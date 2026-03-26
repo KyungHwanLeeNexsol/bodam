@@ -168,6 +168,12 @@ async def download_pdf_bytes(
                 continue
 
             if data[:4] != b"%PDF":
+                if data[:2] == b"PK":
+                    logger.info(
+                        "ZIP 파일 수신: fileId=%s (%s) (%d bytes) → 저장 보류",
+                        file_id, method, len(data),
+                    )
+                    return data, status, content_type
                 logger.warning(
                     "PDF 시그니처 불일치: fileId=%s (%s) (앞 20바이트: %r)",
                     file_id, method, data[:20],
@@ -507,6 +513,15 @@ async def crawl_and_ingest(
                     # 다운로드 실패는 skip & continue (타임아웃/CDN 불안정은 일시적 오류)
                     # 인제스트 실패는 여전히 fail_immediate로 처리 (버그 가능성)
                     save_state(current_state, state_output_path)
+                    continue
+
+                # ZIP 파일: 임베딩 보류, 실패 아님
+                if pdf_bytes[:2] == b"PK":
+                    stats["skipped"] = stats.get("skipped", 0) + 1
+                    logger.info(
+                        "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                        idx, prd_name[:40], len(pdf_bytes),
+                    )
                     continue
 
                 # 메타데이터 구성

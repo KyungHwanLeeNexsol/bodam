@@ -328,6 +328,15 @@ async def download_and_ingest_all(
             http_status = resp.status_code
             if resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000:
                 pdf_bytes = resp.content
+            elif resp.status_code == 200 and resp.content[:2] == b"PK" and len(resp.content) > 100:
+                # ZIP 파일: 임베딩 보류, 실패 아님
+                logger.info(
+                    "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                    idx, product_name[:40], len(resp.content),
+                )
+                stats["skipped"] = stats.get("skipped", 0) + 1
+                state.save(state_output_path)
+                continue
             else:
                 logger.warning(
                     "[%d] 다운로드 실패: %s | HTTP=%d | size=%d",

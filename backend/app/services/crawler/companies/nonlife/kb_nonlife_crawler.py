@@ -214,6 +214,10 @@ class KBNonLifeCrawler(BaseCrawler):
         """파수닷컴 DRM 암호화 파일 여부 확인 (FasooSecureContainer 헤더)"""
         return data[:25] == self._FASOO_DRM_HEADER
 
+    def _is_zip(self, data: bytes) -> bool:
+        """ZIP 아카이브 파일 여부 확인 (PK 시그니처)"""
+        return data[:2] == b"PK" and len(data) > 100
+
     def _get_storage_path(self, product_code: str, file_name: str) -> str:
         """PDF 저장 경로 생성
 
@@ -381,7 +385,7 @@ class KBNonLifeCrawler(BaseCrawler):
             try:
                 resp = await client.get(listing.pdf_url)
                 resp.raise_for_status()
-                if self._is_valid_pdf(resp.content):
+                if self._is_valid_pdf(resp.content) or self._is_zip(resp.content):
                     return resp.content
             except Exception as e:
                 logger.debug("[KB손보] PDF 다운로드 실패 [%s]: %s", listing.pdf_url[:80], e)
@@ -435,6 +439,12 @@ class KBNonLifeCrawler(BaseCrawler):
                         file_name, len(data),
                     )
                     return None  # DRM 파일: 실패가 아닌 스킵
+                if self._is_zip(data):
+                    logger.info(
+                        "[KB손보] ZIP 파일 다운로드: %s (%d bytes)",
+                        file_name, len(data),
+                    )
+                    return data
                 first_bytes = data[:100].decode("utf-8", errors="replace").strip()
                 logger.warning(
                     "[KB손보] 다운로드 파일 PDF 아님 [%s] %d bytes, 시작: %r",
@@ -646,7 +656,7 @@ class KBNonLifeCrawler(BaseCrawler):
                                 # DRM 보호 파일: 실패가 아닌 스킵 (파수닷컴)
                                 continue
 
-                            if self._is_valid_pdf(pdf_data):
+                            if self._is_valid_pdf(pdf_data) or self._is_zip(pdf_data):
                                 self.storage.save(pdf_data, storage_path)
                                 product_downloaded += 1
                                 logger.debug(

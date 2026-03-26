@@ -420,27 +420,43 @@ async def _click_step2_and_get_products(
                 const s4 = document.getElementById('step4view');
                 return (s3 ? s3.innerHTML : '') + (s4 ? s4.innerHTML : '');
             }""") or ""
-            if step3_html and len(step3_html) > 50:
+            # DOM이 내용이 있어도 step4 패턴이 없으면 empty placeholder일 수 있음
+            # (iframe이 parent.document.getElementById("step4view").innerHTML 으로 주입하지 않은 경우)
+            dom_has_step4 = bool(step3_html) and (
+                "step4(" in step3_html
+                or "/upload/" in step3_html
+                or "fn_pdf(" in step3_html
+            )
+            if step3_html and len(step3_html) > 50 and dom_has_step4:
                 logger.info(
                     "  [step3] DOM 직접 읽기 성공 (%s/%s/%s): %d자",
                     s3_lcode, s3_mcode, s3_scode, len(step3_html),
                 )
             else:
                 # 2순위: 네트워크 캡처 → iframe DOM 폴백
-                step3_html = _pick_best_response(captured_responses) or await _get_iframe_content(page)
+                # DOM이 empty placeholder(버튼 이미지만 있는 템플릿)인 경우도 이 경로 사용
+                if step3_html and len(step3_html) > 50:
+                    logger.info(
+                        "  [step3] DOM %d자이나 step4 패턴 없음 → 네트워크 캡처 폴백 (%s/%s/%s)",
+                        len(step3_html), s3_lcode, s3_mcode, s3_scode,
+                    )
+                captured_html = _pick_best_response(captured_responses)
+                step3_html = captured_html or await _get_iframe_content(page) or step3_html
                 logger.info(
                     "  [step3] 네트워크/iframe 폴백 (%s/%s/%s): %d자",
                     s3_lcode, s3_mcode, s3_scode, len(step3_html),
                 )
 
-            # step4 onclick 패턴 (단일/이중 따옴표 모두 지원)
+            # step4 onclick 패턴: step4('lcode','mcode','scode','startdate') 4인자 형식
+            # (단일/이중 따옴표 모두 지원, 5번째 인자는 선택적)
+            step3_html_decoded = step3_html.replace("&quot;", '"')
             step4_matches = re.findall(
-                r"""step4\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]?([^'")\s]+)""",
-                step3_html,
+                r"""step4\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]""",
+                step3_html_decoded,
             )
 
             if step4_matches:
-                for s4_lcode, s4_mcode, s4_scode, s4_startdate, _val in step4_matches[:50]:
+                for s4_lcode, s4_mcode, s4_scode, s4_startdate in step4_matches[:50]:
                     captured_responses.clear()
                     await page.evaluate(
                         f"step4('{s4_lcode}', '{s4_mcode}', '{s4_scode}', '{s4_startdate}', 0, 0)"
