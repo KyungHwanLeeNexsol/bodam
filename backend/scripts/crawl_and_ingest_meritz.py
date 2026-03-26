@@ -283,10 +283,12 @@ async def download_and_ingest_product(
 
         status_code = "ON_SALE" if sale_status == "판매" else "DISCONTINUED"
         metadata = {
+            "format_type": "B",
             "company_code": COMPANY_CODE,
             "company_name": COMPANY_NAME,
+            "product_code": product_name,  # 메리츠화재: 상품명을 product_code로 사용
             "product_name": product_name,
-            "category": category,
+            "category": "NON_LIFE",
             "sale_status": status_code,
             "source_url": source_url,
         }
