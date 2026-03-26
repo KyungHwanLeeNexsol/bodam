@@ -98,38 +98,85 @@ class CrawlState:
         return state
 
 
+_ICSFILES_BASE = "https://www.axa.co.kr"
+_ICSFILES_MARKER = "__icsFiles/afieldfile/"
+_FALLBACK_BASE = f"{_ICSFILES_BASE}/AsianPlatformInternet/doc/internet/public/"
+
+
+def _build_fallback_url(url: str) -> str | None:
+    """__icsFiles 경로에서 /doc/internet/public/ fallback URL 생성.
+
+    AXA가 구형 Plone CMS의 __icsFiles 경로에서 신형 경로로 PDF를 마이그레이션했으나
+    공시 페이지 HTML의 href는 아직 구형 경로를 가리키는 경우 사용.
+    예: .../onsale/__icsFiles/afieldfile/2019/04/23/direct_acc_provision1904.pdf
+     → https://www.axa.co.kr/AsianPlatformInternet/doc/internet/public/direct_acc_provision1904.pdf
+    """
+    if _ICSFILES_MARKER not in url:
+        return None
+    filename = url.rsplit("/", 1)[-1]
+    return _FALLBACK_BASE + filename
+
+
+async def _fetch_url(
+    client: httpx.AsyncClient,
+    url: str,
+) -> tuple[bytes, int | None, str]:
+    """단일 URL GET 요청 → (bytes, status, content_type)."""
+    resp = await client.get(url, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
+    content_type = resp.headers.get("content-type", "")
+    return resp.content, resp.status_code, content_type
+
+
 async def download_pdf_bytes(
     client: httpx.AsyncClient,
     url: str,
 ) -> tuple[bytes, int | None, str]:
     """PDF URL에서 바이트를 다운로드한다.
 
+    __icsFiles 경로에서 404가 발생하면 /doc/internet/public/ 경로로 fallback 시도.
+
     Returns:
         (content_bytes, http_status, content_type)
         content_bytes가 빈 bytes면 실패.
     """
-    try:
-        resp = await client.get(url, timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
-        content_type = resp.headers.get("content-type", "")
-        status = resp.status_code
-
-        if status >= 400:
-            logger.warning("다운로드 HTTP 오류 %d: %s", status, url[-80:])
+    def _validate(data: bytes, status: int | None, content_type: str, src_url: str) -> tuple[bytes, int | None, str]:
+        if status is not None and status >= 400:
             return b"", status, content_type
-
-        data = resp.content
         if len(data) < 1000:
-            logger.warning("다운로드 응답 너무 작음 (%d bytes): %s", len(data), url[-80:])
+            logger.warning("다운로드 응답 너무 작음 (%d bytes): %s", len(data), src_url[-80:])
             return b"", status, content_type
-
         if not data.startswith(b"%PDF"):
             logger.warning(
                 "PDF 시그니처 불일치: %s (앞 20바이트: %r, Content-Type: %s)",
-                url[-80:], data[:20], content_type,
+                src_url[-80:], data[:20], content_type,
             )
             return b"", status, content_type
-
         return data, status, content_type
+
+    try:
+        data, status, content_type = await _fetch_url(client, url)
+
+        # __icsFiles 경로 404 → /doc/internet/public/ fallback 시도
+        if status == 404:
+            fallback_url = _build_fallback_url(url)
+            if fallback_url:
+                logger.info("  __icsFiles 404 → fallback 시도: %s", fallback_url[-80:])
+                try:
+                    fb_data, fb_status, fb_ct = await _fetch_url(client, fallback_url)
+                    result = _validate(fb_data, fb_status, fb_ct, fallback_url)
+                    if result[0]:
+                        logger.info("  fallback 성공: %s", fallback_url[-80:])
+                        return result
+                    logger.warning("  fallback도 실패 (HTTP %s): %s", fb_status, fallback_url[-80:])
+                except Exception as fb_e:
+                    logger.warning("  fallback 요청 예외: %s", fb_e)
+            logger.warning("다운로드 HTTP 오류 %d: %s", status, url[-80:])
+            return b"", status, content_type
+
+        if status is not None and status >= 400:
+            logger.warning("다운로드 HTTP 오류 %d: %s", status, url[-80:])
+
+        return _validate(data, status, content_type, url)
 
     except httpx.TimeoutException as e:
         logger.warning("다운로드 타임아웃: %s (%s)", url[-80:], e)
