@@ -218,12 +218,14 @@ async def crawl_category_and_ingest(
                 logger.debug("Step3 실패 [%s]: %s", pdc_nm[:30], e)
                 break
 
-        # sl_yn=0 empty 시 sl_yn=1 폴백
-        if not periods and sl_yn == "0":
+        # empty 시 반대 sl_yn으로 폴백 (양방향)
+        # sl_yn=0 empty → sl_yn=1 시도, sl_yn=1 empty → sl_yn=0 시도
+        if not periods:
+            fallback_sl_yn = "1" if sl_yn == "0" else "0"
             try:
                 resp3_fb = await client.post(
                     STEP3_URL,
-                    json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": "1"},
+                    json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": fallback_sl_yn},
                     headers={"Content-Type": "application/json"},
                     timeout=60.0,
                 )
