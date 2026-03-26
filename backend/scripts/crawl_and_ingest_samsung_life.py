@@ -111,20 +111,43 @@ class SamsungLifeIngestState:
         )
 
 
-def _samsung_pdf_url(goods_code: str, filename: str, doc_type: str = "301") -> str:
+def _samsung_pdf_url(goods_code: str, filename: str, doc_type: str = "301", from_date: str = "") -> str:
     """삼성생명 PDF 직접 다운로드 URL을 구성한다.
 
-    # @MX:NOTE: [AUTO] filename은 Unix timestamp(ms) 형식 - 날짜 경로로 변환
+    # @MX:NOTE: [AUTO] CDN URL 패턴: /uploadDir/doc/{year}/{mmdd}/{goodsCode}001/{docType}/{filename}.pdf
+    # @MX:NOTE: [AUTO] goodsCode에 '001' suffix 추가 필요 (순수 숫자 코드인 경우)
+    # @MX:NOTE: [AUTO] 날짜: fromdate 우선 사용, 없으면 filename timestamp에서 추출
     # @MX:NOTE: [AUTO] doc_type: "301"=보험약관, "401"=사업방법서, "101"=상품요약서
     """
     try:
-        ts_sec = int(filename) / 1000.0
-        dt = datetime.datetime.fromtimestamp(ts_sec, tz=datetime.timezone.utc)
-        year = dt.strftime("%Y")
-        mmdd = dt.strftime("%m%d")
+        is_short_numeric = goods_code.isdigit() and len(goods_code) <= 6
+
+        if is_short_numeric:
+            # 구형 코드 (12970 등): goodsCode + '001' suffix + fromdate 기반 날짜
+            cdn_code = f"{goods_code}001"
+            if from_date and len(from_date) >= 8:
+                clean_date = from_date.replace("-", "")
+                year = clean_date[:4]
+                mmdd = clean_date[4:8]
+            else:
+                ts_sec = int(filename) / 1000.0
+                dt = datetime.datetime.fromtimestamp(ts_sec, tz=datetime.timezone.utc)
+                year = dt.strftime("%Y")
+                mmdd = dt.strftime("%m%d")
+        else:
+            # 신형 코드 (LP0257009P20470 등): 원본 goodsCode + timestamp 기반 날짜
+            cdn_code = goods_code
+            ts_sec = int(filename) / 1000.0
+            dt = datetime.datetime.fromtimestamp(ts_sec, tz=datetime.timezone.utc)
+            year = dt.strftime("%Y")
+            mmdd = dt.strftime("%m%d")
+
+        if not year or not mmdd:
+            return ""
+
         return (
             f"https://pcms.samsunglife.com/uploadDir/doc"
-            f"/{year}/{mmdd}/{goods_code}/{doc_type}/{filename}.pdf"
+            f"/{year}/{mmdd}/{cdn_code}/{doc_type}/{filename}.pdf"
         )
     except (ValueError, OSError):
         return ""
@@ -298,7 +321,7 @@ async def download_and_ingest_all(
             stats["total"] += 1
 
             sale_status = "DISCONTINUED" if l_code == "판매중지" else "ON_SALE"
-            pdf_url = _samsung_pdf_url(goods_code, filename3, "301")
+            pdf_url = _samsung_pdf_url(goods_code, filename3, "301", from_date)
             if not pdf_url:
                 stats["skipped"] += 1
                 continue
@@ -489,7 +512,8 @@ async def run(
             goods_name = p.get("goodsName", "")
             filename3 = p.get("filename3", "")
             l_code = p.get("lCode", "")
-            pdf_url = _samsung_pdf_url(goods_code, filename3) if filename3 else ""
+            from_date = p.get("fromdate", "")
+            pdf_url = _samsung_pdf_url(goods_code, filename3, "301", from_date) if filename3 else ""
             logger.info(
                 "  [%d] goodsCode=%s | %s | %s | %s",
                 i, goods_code, goods_name[:50], l_code, pdf_url[:80],
