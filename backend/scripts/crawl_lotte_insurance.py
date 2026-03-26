@@ -135,30 +135,64 @@ async def _wait_for_iframe_load(page: Any, timeout_ms: int = 10000) -> None:
 
     # @MX:WARN: iframe 접근은 cross-origin 정책에 의해 차단될 수 있음
     # @MX:REASON: 롯데손보 cdh190_result.jsp가 iframe "common" 안에 렌더됨
+    # @MX:NOTE: Playwright frame API 우선, JS DOM 접근은 same-origin 한정
     """
-    try:
-        await page.wait_for_function(
-            """() => {
+    deadline = asyncio.get_event_loop().time() + timeout_ms / 1000
+    while asyncio.get_event_loop().time() < deadline:
+        # 방법 1: Playwright 네이티브 frame API
+        try:
+            frame = page.frame(name="common")
+            if frame:
+                html = await frame.evaluate(
+                    "() => document.body ? document.body.innerHTML : ''"
+                )
+                if html and len(html) > 100:
+                    return
+        except Exception:
+            pass
+
+        # 방법 2: JS DOM 접근 (same-origin 전용)
+        try:
+            result = await page.evaluate("""() => {
                 const iframe = document.querySelector('iframe[name="common"]');
-                if (!iframe) return false;
+                if (!iframe) return 0;
                 try {
                     const doc = iframe.contentDocument || iframe.contentWindow.document;
-                    return doc && doc.body && doc.body.innerHTML.length > 100;
-                } catch (e) {
-                    return false;
-                }
-            }""",
-            timeout=timeout_ms,
-        )
-    except Exception:
-        # iframe 접근 불가 시 단순 대기
-        await asyncio.sleep(2)
+                    return doc && doc.body ? doc.body.innerHTML.length : 0;
+                } catch (e) { return 0; }
+            }""")
+            if result and result > 100:
+                return
+        except Exception:
+            pass
+
+        await asyncio.sleep(0.5)
+
+    # 타임아웃 시 단순 대기
+    await asyncio.sleep(1)
 
 
 async def _get_iframe_content(page: Any) -> str:
-    """iframe "common" 내부 HTML을 추출한다."""
+    """iframe "common" 내부 HTML을 추출한다.
+
+    # @MX:NOTE: Playwright frame API → JS DOM 접근 순서로 시도
+    """
+    # 방법 1: Playwright 네이티브 frame API (cross-origin도 접근 가능)
     try:
-        return await page.evaluate("""() => {
+        frame = page.frame(name="common")
+        if frame:
+            html = await frame.evaluate(
+                "() => document.body ? document.body.innerHTML : ''"
+            )
+            if html and len(html) > 50:
+                logger.debug("  [iframe] Playwright frame API로 %d자 추출", len(html))
+                return html
+    except Exception as e:
+        logger.debug("  [iframe] frame API 실패: %s", e)
+
+    # 방법 2: JS DOM 접근 (same-origin 전용)
+    try:
+        result = await page.evaluate("""() => {
             const iframe = document.querySelector('iframe[name="common"]');
             if (!iframe) return '';
             try {
@@ -168,8 +202,34 @@ async def _get_iframe_content(page: Any) -> str:
                 return '';
             }
         }""")
-    except Exception:
-        return ""
+        if result and len(result) > 50:
+            logger.debug("  [iframe] JS DOM 접근으로 %d자 추출", len(result))
+            return result
+    except Exception as e:
+        logger.debug("  [iframe] JS DOM 접근 실패: %s", e)
+
+    # 방법 3: 모든 child frame 탐색 (name="common" 외 다른 이름일 경우 대비)
+    try:
+        frames = page.frames
+        frame_names = [f.name for f in frames]
+        logger.info("  [iframe] 사용 가능한 frame 목록: %s", frame_names)
+        for frame in frames:
+            if frame == page.main_frame:
+                continue
+            try:
+                html = await frame.evaluate(
+                    "() => document.body ? document.body.innerHTML : ''"
+                )
+                if html and len(html) > 100 and ("step3" in html or "fn_pdf" in html or "/upload/" in html):
+                    logger.info("  [iframe] frame '%s'에서 유효한 HTML %d자 발견", frame.name, len(html))
+                    return html
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug("  [iframe] 전체 frame 탐색 실패: %s", e)
+
+    logger.warning("  [iframe] 모든 접근 방법 실패 (frame 없음 또는 step3/PDF 패턴 없음)")
+    return ""
 
 
 async def _collect_step2_categories(page: Any, issale: str) -> list[dict[str, str]]:
@@ -232,20 +292,37 @@ async def _click_step2_and_get_products(
             if (!frm) return;
             frm.issale.value = '{issale}';
         }}""")
-        await page.evaluate(f"step2('{lcode}', '{mcode}', {val}, '{gubun}')")
+        # gubun이 순수 숫자이면 따옴표 없이 전달 (strict equality 대응)
+        gubun_js = gubun if gubun.isdigit() else f"'{gubun}'"
+        await page.evaluate(f"step2('{lcode}', '{mcode}', {val}, {gubun_js})")
         await asyncio.sleep(3)
         await _wait_for_iframe_load(page, 8000)
 
         # iframe에서 step3 링크 추출
         iframe_html = await _get_iframe_content(page)
+        logger.info(
+            "  [step2] lcode=%s mcode=%s → iframe HTML %d자",
+            lcode, mcode, len(iframe_html),
+        )
+        if not iframe_html:
+            logger.warning(
+                "  [step2] iframe HTML 비어있음 (lcode=%s, mcode=%s) — iframe 이름 또는 구조 확인 필요",
+                lcode, mcode,
+            )
+            return products
 
         # step3 onclick 패턴
         step3_matches = re.findall(
             r"step3\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*",
             iframe_html,
         )
+        logger.info("  [step2] step3 패턴 %d개 발견", len(step3_matches))
 
         if not step3_matches:
+            # iframe 내용 진단 로그 (한 번만 출력)
+            snippet = iframe_html[:600].replace("\n", " ").replace("\r", "")
+            logger.info("  [step2] iframe 내용 스니펫 (600자): %s", snippet)
+
             # step3 없으면 바로 step4 직접 링크 탐색
             pdf_links = _extract_pdf_links_from_html(iframe_html)
             for link_info in pdf_links:

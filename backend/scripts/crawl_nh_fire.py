@@ -395,32 +395,29 @@ async def download_pdf_via_playwright(
     """Playwright download 이벤트로 PDF를 수신한다.
 
     fnFileDownload form submit을 트리거 후 다운로드 파일을 읽는다.
+
+    # @MX:WARN: form.target="_blank" 필수 — 미설정 시 현재 페이지(공시 목록)가 덮어써짐
+    # @MX:REASON: form.submit() without target navigates the main frame away from ANNOUNCE_URL
     """
     try:
-        async with page.expect_download(timeout=30000) as dl_info:
+        async with page.expect_download(timeout=40000) as dl_info:
             await page.evaluate(
                 """([fileId, seqn]) => {
-                    // oDownloadForm이 있으면 사용, 없으면 직접 생성
-                    let form = document.getElementById("oDownloadForm")
-                        || document.querySelector("form[action*='downloadFile']");
-                    if (!form) {
-                        form = document.createElement("form");
-                        form.method = "POST";
-                        form.action = "/imageView/downloadFile.ajax";
-                        document.body.appendChild(form);
-                    } else {
-                        form.method = "POST";
-                        form.action = "/imageView/downloadFile.ajax";
-                    }
-                    // 기존 hidden input 제거 후 재설정
-                    Array.from(form.querySelectorAll("input")).forEach(i => i.remove());
+                    // 항상 새 form 생성: 기존 form 재사용 시 target 오염 가능
+                    // target="_blank"로 현재 페이지(공시 목록) 보존
+                    const form = document.createElement("form");
+                    form.method = "POST";
+                    form.action = "/imageView/downloadFile.ajax";
+                    form.target = "_blank";
                     const i1 = document.createElement("input");
                     i1.type = "hidden"; i1.name = "oFileId"; i1.value = fileId;
                     const i2 = document.createElement("input");
                     i2.type = "hidden"; i2.name = "oAfileSeqn"; i2.value = seqn;
                     form.appendChild(i1);
                     form.appendChild(i2);
+                    document.body.appendChild(form);
                     form.submit();
+                    document.body.removeChild(form);
                 }""",
                 [file_id, a_file_seqn],
             )
