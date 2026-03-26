@@ -133,7 +133,7 @@ async def download_pdf_bytes(
         content_bytes가 빈 bytes면 실패.
     """
     # connect/read 타임아웃 분리: connect는 짧게, 대용량 PDF 읽기는 길게
-    _timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
+    _timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
 
     for method in ("POST", "GET"):
         try:
@@ -153,6 +153,12 @@ async def download_pdf_bytes(
                 )
 
             status = resp.status_code
+
+            # 302 리다이렉트 URL 로그 (디버깅용)
+            if resp.history:
+                for redir in resp.history:
+                    redir_url = str(redir.headers.get("location", ""))
+                    logger.info("  302 리다이렉트: %s → %s", redir.url, redir_url)
 
             content_type = resp.headers.get("content-type", "")
             if status >= 400:
@@ -431,7 +437,7 @@ async def crawl_and_ingest(
             headers=HEADERS,
             cookies=cookie_dict,
             follow_redirects=True,  # 세션 쿠키 유지하며 302 리다이렉트 따라감
-            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
+            timeout=httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0),
         ) as client:
             for loop_i, prod in enumerate(pdf_tasks):
                 idx = loop_i + 1 + base_idx

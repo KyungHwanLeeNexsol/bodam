@@ -394,23 +394,23 @@ async def download_pdf_via_playwright(
 ) -> bytes | None:
     """Playwright download 이벤트로 PDF를 수신한다.
 
-    fnFileDownload form submit을 트리거 후 다운로드 파일을 읽는다.
+    전용 페이지를 생성하여 form submit → download 이벤트를 캡처.
 
-    # @MX:WARN: form.target="_blank"로 새 팝업 생성 → context.expect_page()로 팝업 캡처
-    # @MX:REASON: page.expect_download()는 메인 페이지 이벤트만 감지, 팝업 다운로드는 누락됨
+    # @MX:WARN: [AUTO] 전용 페이지에서 expect_download 선설정 후 form submit 트리거
+    # @MX:REASON: 기존 popup 방식은 race condition 발생 — expect_download 설정 전에 다운로드 이벤트 소실
     """
-    popup: Any = None
+    download_page: Any = None
     try:
-        # target="_blank" 팝업을 context 레벨에서 캡처
-        async with page.context.expect_page(timeout=15000) as popup_info:
-            await page.evaluate(
-                """([fileId, seqn]) => {
-                    // 항상 새 form 생성: 기존 form 재사용 시 target 오염 가능
-                    // target="_blank"로 현재 페이지(공시 목록) 보존
+        context = page.context
+        download_page = await context.new_page()
+
+        # expect_download를 먼저 설정한 후 form submit 트리거
+        async with download_page.expect_download(timeout=90000) as dl_info:
+            await download_page.evaluate(
+                """([fileId, seqn, baseUrl]) => {
                     const form = document.createElement("form");
                     form.method = "POST";
-                    form.action = "/imageView/downloadFile.ajax";
-                    form.target = "_blank";
+                    form.action = baseUrl + "/imageView/downloadFile.ajax";
                     const i1 = document.createElement("input");
                     i1.type = "hidden"; i1.name = "oFileId"; i1.value = fileId;
                     const i2 = document.createElement("input");
@@ -419,28 +419,24 @@ async def download_pdf_via_playwright(
                     form.appendChild(i2);
                     document.body.appendChild(form);
                     form.submit();
-                    document.body.removeChild(form);
                 }""",
-                [file_id, a_file_seqn],
+                [file_id, a_file_seqn, BASE_URL],
             )
-        popup = await popup_info.value
-        # 팝업에서 다운로드 이벤트 대기 (302 → CDN URL → PDF 다운로드)
-        async with popup.expect_download(timeout=90000) as dl_info:
-            pass  # form submit으로 이미 트리거됨
         dl = await dl_info.value
         path = await dl.path()
-        if popup and not popup.is_closed():
-            await popup.close()
         if path:
             data = Path(path).read_bytes()
             if b"%PDF" in data[:1024] and len(data) > 1000:
                 return data
+            if data[:2] == b"PK" and len(data) > 1000:
+                return data  # ZIP 파일도 허용
     except Exception as e:
-        logger.debug("  Playwright 다운로드 실패 (fileId=%s, seqn=%s): %s", file_id, a_file_seqn, e)
-        if popup is not None:
+        logger.info("  Playwright 다운로드 실패 (fileId=%s, seqn=%s): %s", file_id, a_file_seqn, e)
+    finally:
+        if download_page is not None:
             try:
-                if not popup.is_closed():
-                    await popup.close()
+                if not download_page.is_closed():
+                    await download_page.close()
             except Exception:
                 pass
     return None
