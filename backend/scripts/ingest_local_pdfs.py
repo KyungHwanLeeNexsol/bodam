@@ -637,21 +637,24 @@ async def create_chunks(
         chunks: 청크 텍스트 목록
         embeddings: 청크별 임베딩 벡터 목록 (None이면 embedding=NULL)
     """
+    # @MX:NOTE: [AUTO] bulk insert로 N개 개별 INSERT → 단일 배치 INSERT로 최적화
+    # @MX:REASON: CockroachDB에서 4000+ 청크 개별 INSERT 시 ~13분 소요, bulk insert로 수십 초로 단축
+    from sqlalchemy import insert
+
     from app.models.insurance import PolicyChunk
 
-    for idx, chunk_text in enumerate(chunks):
-        embedding = None
-        if embeddings is not None and idx < len(embeddings):
-            embedding = embeddings[idx]
-
-        chunk = PolicyChunk(
-            id=uuid.uuid4(),
-            policy_id=policy_id,
-            chunk_text=chunk_text,
-            chunk_index=idx,
-            embedding=embedding,
-        )
-        session.add(chunk)
+    rows = [
+        {
+            "id": uuid.uuid4(),
+            "policy_id": policy_id,
+            "chunk_text": chunk_text,
+            "chunk_index": idx,
+            "embedding": (embeddings[idx] if embeddings is not None and idx < len(embeddings) else None),
+        }
+        for idx, chunk_text in enumerate(chunks)
+    ]
+    if rows:
+        await session.execute(insert(PolicyChunk), rows)
 
 
 # ─────────────────────────────────────────────────────────────
