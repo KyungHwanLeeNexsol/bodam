@@ -462,21 +462,15 @@ async def crawl_and_ingest(
                     idx, Path(fpath).name, http_status, content_type,
                 )
 
-                # fail-stop 로직: 임계값 초과 시 상태 저장 후 중단
-                if processed >= FAIL_MIN_SAMPLES:
-                    fail_rate = stats["failed"] / processed
-                    if fail_rate > fail_threshold:
-                        current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
-                        current_state.stop_reason = "fail_threshold"
-                        save_state(current_state, state_output_path)
-                        logger.error(
-                            "실패율 %.1f%% > 임계값 %.1f%% → 수집 중단 (마지막 인덱스: %d)\n"
-                            "재시작: --resume-state %s",
-                            fail_rate * 100, fail_threshold * 100,
-                            idx, state_output_path,
-                        )
-                        break
-                continue
+                # fail-stop 로직: 재시도 후에도 실패 → 즉시 중단
+                current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                current_state.stop_reason = "fail_immediate"
+                save_state(current_state, state_output_path)
+                logger.error(
+                    "다운로드 실패 → 즉시 중단 (인덱스: %d)\n재시작: --resume-state %s",
+                    idx, state_output_path,
+                )
+                break
 
             # 메타데이터 구성
             fname_stem = Path(fpath).stem
