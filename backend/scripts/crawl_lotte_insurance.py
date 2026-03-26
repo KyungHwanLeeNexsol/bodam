@@ -282,8 +282,25 @@ async def _click_step2_and_get_products(
 
     # @MX:WARN: 각 step은 폼 POST를 iframe에 렌더하므로 타이밍이 중요
     # @MX:REASON: 네트워크 지연 시 빈 결과 반환 가능 → asyncio.sleep으로 보완
+    # @MX:NOTE: 방법1 - /CChannelSvl 응답 직접 캡처 (iframe DOM보다 신뢰도 높음)
+    #           방법2 - iframe DOM 접근 (방법1 실패 시 폴백)
     """
     products: list[dict[str, Any]] = []
+
+    # 방법 1: 네트워크 응답 캡처 (iframe DOM 접근 대신 HTTP 응답 직접 읽기)
+    captured_responses: list[str] = []
+
+    async def _on_response(response: Any) -> None:
+        """CChannelSvl 응답을 캡처한다."""
+        if "CChannelSvl" in response.url or "cdh190" in response.url.lower():
+            try:
+                body = await response.text()
+                if body and len(body) > 100:
+                    captured_responses.append(body)
+            except Exception:
+                pass
+
+    page.on("response", _on_response)
 
     try:
         # issale 값 설정 및 step2 실행
@@ -298,15 +315,23 @@ async def _click_step2_and_get_products(
         await asyncio.sleep(3)
         await _wait_for_iframe_load(page, 8000)
 
-        # iframe에서 step3 링크 추출
-        iframe_html = await _get_iframe_content(page)
-        logger.info(
-            "  [step2] lcode=%s mcode=%s → iframe HTML %d자",
-            lcode, mcode, len(iframe_html),
-        )
+        # iframe HTML: 방법1(캡처 응답) → 방법2(DOM 접근) 순서
+        if captured_responses:
+            iframe_html = captured_responses[-1]  # 가장 최신 응답
+            logger.info(
+                "  [step2] 네트워크 캡처 성공 lcode=%s → %d자 (%d개 응답)",
+                lcode, len(iframe_html), len(captured_responses),
+            )
+        else:
+            iframe_html = await _get_iframe_content(page)
+            logger.info(
+                "  [step2] DOM 접근 lcode=%s mcode=%s → iframe HTML %d자",
+                lcode, mcode, len(iframe_html),
+            )
+
         if not iframe_html:
             logger.warning(
-                "  [step2] iframe HTML 비어있음 (lcode=%s, mcode=%s) — iframe 이름 또는 구조 확인 필요",
+                "  [step2] HTML 획득 실패 (lcode=%s, mcode=%s)",
                 lcode, mcode,
             )
             return products
@@ -319,9 +344,9 @@ async def _click_step2_and_get_products(
         logger.info("  [step2] step3 패턴 %d개 발견", len(step3_matches))
 
         if not step3_matches:
-            # iframe 내용 진단 로그 (한 번만 출력)
-            snippet = iframe_html[:600].replace("\n", " ").replace("\r", "")
-            logger.info("  [step2] iframe 내용 스니펫 (600자): %s", snippet)
+            # 진단 로그: iframe 내용 스니펫 (패턴 불일치 시 원인 파악용)
+            snippet = iframe_html[:800].replace("\n", " ").replace("\r", "")
+            logger.info("  [step2] HTML 스니펫 (800자): %s", snippet)
 
             # step3 없으면 바로 step4 직접 링크 탐색
             pdf_links = _extract_pdf_links_from_html(iframe_html)
@@ -333,13 +358,18 @@ async def _click_step2_and_get_products(
 
         # step3 각 항목 처리
         for s3_lcode, s3_mcode, s3_scode, s3_val in step3_matches[:20]:
+            captured_responses.clear()
             await page.evaluate(
                 f"step3('{s3_lcode}', '{s3_mcode}', '{s3_scode}', '{s3_val}', 0)"
             )
             await asyncio.sleep(2)
             await _wait_for_iframe_load(page, 6000)
 
-            iframe_html = await _get_iframe_content(page)
+            # 방법1(캡처) → 방법2(DOM) 폴백
+            if captured_responses:
+                iframe_html = captured_responses[-1]
+            else:
+                iframe_html = await _get_iframe_content(page)
 
             # step4 onclick 패턴
             step4_matches = re.findall(
@@ -349,13 +379,17 @@ async def _click_step2_and_get_products(
 
             if step4_matches:
                 for s4_lcode, s4_mcode, s4_scode, s4_startdate, _val in step4_matches[:50]:
+                    captured_responses.clear()
                     await page.evaluate(
                         f"step4('{s4_lcode}', '{s4_mcode}', '{s4_scode}', '{s4_startdate}', 0, 0)"
                     )
                     await asyncio.sleep(2)
                     await _wait_for_iframe_load(page, 6000)
 
-                    final_html = await _get_iframe_content(page)
+                    if captured_responses:
+                        final_html = captured_responses[-1]
+                    else:
+                        final_html = await _get_iframe_content(page)
                     pdf_links = _extract_pdf_links_from_html(final_html)
 
                     # 상품명/상품코드 추출 시도
@@ -373,6 +407,8 @@ async def _click_step2_and_get_products(
 
     except Exception as e:
         logger.warning("  [WARN] step2 처리 오류 (lcode=%s, mcode=%s): %s", lcode, mcode, e)
+    finally:
+        page.remove_listener("response", _on_response)
 
     return products
 
