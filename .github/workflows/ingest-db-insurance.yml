@@ -23,7 +23,7 @@ jobs:
   crawl-and-ingest:
     name: DB손해보험 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # 3시간 (DB손보는 삼성화재보다 데이터 적음)
+    timeout-minutes: 350  # 5시간 50분 (Actions 최대 6시간 근접, 데이터 초과 시 resume 활용)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

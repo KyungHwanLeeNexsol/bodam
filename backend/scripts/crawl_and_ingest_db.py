@@ -153,6 +153,7 @@ async def crawl_category_and_ingest(
     state: CrawlState,
     retry_keys: set[str] | None,
     dry_run: bool = False,
+    processed_urls: set[str] | None = None,
 ) -> dict[str, int]:
     """특정 카테고리 크롤링 + 즉시 인제스트."""
     stats = {"products": 0, "success": 0, "skipped": 0, "failed": 0, "dry_run": 0}
@@ -305,6 +306,13 @@ async def crawl_category_and_ingest(
 
         # PDF 다운로드
         pdf_url = f"{DOWNLOAD_URL}?FilePath=InsProduct/{quote(inpl_finm)}"
+
+        # 이미 DB에 저장된 URL이면 다운로드 없이 스킵
+        if processed_urls is not None and pdf_url in processed_urls:
+            stats["skipped"] += 1
+            logger.debug("[스킵] URL 이미 처리됨: %s", pdc_nm[:50])
+            continue
+
         try:
             resp_pdf = await client.get(pdf_url, timeout=30.0)
             http_status = resp_pdf.status_code
@@ -423,6 +431,12 @@ async def crawl_and_ingest(
         logger.error("DB 세션 팩토리 초기화 실패")
         return {"error": "session_factory is None"}
 
+    # 크롤러 재시작 시 이미 처리된 URL 스킵 (다운로드 전 체크)
+    from scripts.ingest_local_pdfs import load_processed_urls
+    async with _db.session_factory() as _session:
+        processed_urls: set[str] = await load_processed_urls(_session)
+    logger.info("이미 처리된 URL: %d개 (재시작 시 스킵됨)", len(processed_urls))
+
     # 이전 실패 상태 로드
     retry_keys: set[str] | None = None
     if resume_state_path and resume_state_path.exists():
@@ -454,7 +468,7 @@ async def crawl_and_ingest(
             logger.info("[DB손해보험] 카테고리: %s", label)
 
             cat_stats = await crawl_category_and_ingest(
-                client, _db.session_factory, cat, state, retry_keys, dry_run
+                client, _db.session_factory, cat, state, retry_keys, dry_run, processed_urls
             )
 
             for k in total:

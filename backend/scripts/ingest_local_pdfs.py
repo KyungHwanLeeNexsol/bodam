@@ -187,6 +187,34 @@ async def check_duplicate(session: "AsyncSession", content_hash: str) -> bool:
     return existing is not None
 
 
+# @MX:ANCHOR: [AUTO] DB에 저장된 source_url 전체 조회 - 크롤러 재시작 시 중복 다운로드 방지
+# @MX:REASON: Samsung/DB/KB 크롤러 3곳에서 호출되는 공유 유틸리티
+async def load_processed_urls(session: "AsyncSession") -> set[str]:
+    """DB에 저장된 Policy의 source_url 전체를 set으로 반환한다.
+
+    크롤러 시작 시 한 번 호출해 in-memory set을 만들면,
+    각 PDF 다운로드 전 이미 처리된 URL인지 O(1)로 확인할 수 있다.
+
+    Args:
+        session: SQLAlchemy 비동기 세션
+
+    Returns:
+        이미 DB에 저장된 source_url 값들의 집합
+    """
+    from sqlalchemy import select, text
+
+    from app.models.insurance import Policy
+
+    stmt = select(
+        Policy.metadata_["source_url"].astext
+    ).where(
+        Policy.metadata_["source_url"].astext.isnot(None)
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return set(rows)
+
+
 # ─────────────────────────────────────────────────────────────
 # TASK-008: parse_args()
 # ─────────────────────────────────────────────────────────────
@@ -660,13 +688,53 @@ async def process_single_file(
         {"status": "success"|"skipped"|"dry_run"|"failed",
          "chunk_count": int, "error": str|None}
     """
-    # @MX:NOTE: [AUTO] CockroachDB는 RETRY_SERIALIZABLE 에러 시 클라이언트가 트랜잭션 전체 재시도 필요
+    # @MX:NOTE: [AUTO] CockroachDB RETRY_SERIALIZABLE 해결: DB 트랜잭션 시간을 최소화하기 위해
+    # @MX:NOTE: [AUTO] CPU/네트워크 집약적 작업(PDF 파싱, 임베딩)을 트랜잭션 밖에서 먼저 실행
+    # @MX:REASON: 기존 코드는 수 분짜리 트랜잭션으로 직렬화 충돌 → 5회 재시도에도 실패
     max_retries = 5
     base_backoff = 0.2  # 초
 
     # 파일 해시는 한 번만 계산 (retry 루프 밖)
     content_hash = compute_file_hash(str(pdf_path))
 
+    # dry-run 모드: DB 없이 전처리만 수행
+    if dry_run:
+        parser = PDFParser()
+        cleaner = TextCleaner()
+        chunker = TextChunker()
+
+        raw_text = parser.extract_text(str(pdf_path))
+        clean_text = cleaner.clean(raw_text)
+        chunks = chunker.chunk_text(clean_text)
+
+        logger.info(
+            "[dry-run] %s: %d청크 (hash=%s)",
+            pdf_path.name,
+            len(chunks),
+            content_hash[:8],
+        )
+        return {"status": "dry_run", "chunk_count": len(chunks), "error": None}
+
+    # 1단계: 트랜잭션 밖에서 전처리 (멱등성 보장 - 재시도 시 재실행 불필요)
+    # PDF 파싱 및 텍스트 처리 (CPU 집약적, 수 분 소요 가능)
+    parser = PDFParser()
+    cleaner = TextCleaner()
+    chunker = TextChunker()
+
+    raw_text = parser.extract_text(str(pdf_path))
+    clean_text = cleaner.clean(raw_text)
+    chunks = chunker.chunk_text(clean_text)
+
+    # 임베딩 생성 (네트워크 I/O, 수십 초 소요 가능)
+    embeddings: list[list[float] | None] | None = None
+    if embedding_service is not None and chunks:
+        try:
+            raw_embeddings = await embedding_service.embed_batch(chunks)
+            embeddings = raw_embeddings
+        except Exception as e:
+            logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
+
+    # 2단계: 짧은 DB 트랜잭션만 재시도 (수백ms 수준)
     for attempt in range(max_retries):
         try:
             async with session_factory() as session:
@@ -675,34 +743,6 @@ async def process_single_file(
                 if is_dup:
                     logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
                     return {"status": "skipped", "chunk_count": 0, "error": None}
-
-                # dry-run 모드: 중복 확인만 하고 반환 (REQ-12)
-                if dry_run:
-                    # PDF 텍스트 추출 및 청크 분석만 수행 (DB 쓰기 없음)
-                    parser = PDFParser()
-                    cleaner = TextCleaner()
-                    chunker = TextChunker()
-
-                    raw_text = parser.extract_text(str(pdf_path))
-                    clean_text = cleaner.clean(raw_text)
-                    chunks = chunker.chunk_text(clean_text)
-
-                    logger.info(
-                        "[dry-run] %s: %d청크 (hash=%s)",
-                        pdf_path.name,
-                        len(chunks),
-                        content_hash[:8],
-                    )
-                    return {"status": "dry_run", "chunk_count": len(chunks), "error": None}
-
-                # PDF 파싱 및 텍스트 처리
-                parser = PDFParser()
-                cleaner = TextCleaner()
-                chunker = TextChunker()
-
-                raw_text = parser.extract_text(str(pdf_path))
-                clean_text = cleaner.clean(raw_text)
-                chunks = chunker.chunk_text(clean_text)
 
                 # 보험사 확보
                 company = await ensure_company(
@@ -716,15 +756,6 @@ async def process_single_file(
                 policy = await upsert_policy(
                     session, company, metadata, content_hash, clean_text
                 )
-
-                # 임베딩 생성 (--embed 옵션)
-                embeddings: list[list[float] | None] | None = None
-                if embedding_service is not None and chunks:
-                    try:
-                        raw_embeddings = await embedding_service.embed_batch(chunks)
-                        embeddings = raw_embeddings
-                    except Exception as e:
-                        logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
 
                 # PolicyChunk 생성
                 await create_chunks(session, policy.id, chunks, embeddings)
@@ -746,8 +777,8 @@ async def process_single_file(
 
         except Exception as e:
             if _is_serialization_error(e) and attempt < max_retries - 1:
-                # CockroachDB RETRY_SERIALIZABLE: 트랜잭션 전체 재시도
-                wait = base_backoff * (2 ** attempt) + random.uniform(0, 0.05)
+                # CockroachDB RETRY_SERIALIZABLE: DB 쓰기 트랜잭션만 재시도 (전처리 제외)
+                wait = base_backoff * (2 ** attempt) + random.uniform(0, 0.1)
                 logger.warning(
                     "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
                     attempt + 1, max_retries, wait, pdf_path.name,

@@ -19,7 +19,7 @@ jobs:
   crawl-and-ingest:
     name: KB손해보험 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 240  # 4시간
+    timeout-minutes: 350  # 5시간 50분 (Actions 최대 6시간 근접, 데이터 초과 시 resume 활용)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

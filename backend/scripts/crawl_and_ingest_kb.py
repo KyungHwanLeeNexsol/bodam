@@ -145,6 +145,12 @@ async def crawl_and_ingest(
         logger.error("DB 세션 팩토리 초기화 실패")
         return {"error": "session_factory is None"}
 
+    # 크롤러 재시작 시 이미 처리된 URL 스킵 (다운로드 전 체크)
+    from scripts.ingest_local_pdfs import load_processed_urls
+    async with _db.session_factory() as _session:
+        processed_urls: set[str] = await load_processed_urls(_session)
+    logger.info("이미 처리된 URL: %d개 (재시작 시 스킵됨)", len(processed_urls))
+
     # 임시 디렉터리에 크롤링
     with tempfile.TemporaryDirectory(prefix="kb-crawl-") as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -272,6 +278,12 @@ async def crawl_and_ingest(
                     idx, len(pdf_files),
                     ingest_stats["success"], ingest_stats["skipped"], ingest_stats["failed"],
                 )
+
+            # 이미 DB에 저장된 URL이면 인제스트 없이 스킵
+            if metadata["source_url"] in processed_urls:
+                ingest_stats["skipped"] += 1
+                logger.debug("[%d] URL 스킵 (이미 처리됨): %s", idx, pdf_path.name)
+                continue
 
             try:
                 result = await ingest_pdf_file(
