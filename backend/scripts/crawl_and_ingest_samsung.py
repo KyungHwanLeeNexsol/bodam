@@ -156,10 +156,14 @@ def filter_targets(items: list[dict], gun_filter: str | None = None) -> list[dic
     return result
 
 
+_DOWNLOAD_MAX_RETRIES = 3
+_DOWNLOAD_RETRY_BASE_WAIT = 2.0  # 초 (exponential: 2s, 4s, 8s)
+
+
 async def download_pdf(
     client: httpx.AsyncClient, path: str
 ) -> tuple[bytes, int | None, str]:
-    """약관 PDF/DOCX를 다운로드한다.
+    """약관 PDF/DOCX를 다운로드한다 (RemoteProtocolError 재시도 포함).
 
     Returns:
         (content_bytes, http_status_code, content_type)
@@ -167,52 +171,69 @@ async def download_pdf(
     """
     url = f"{PDF_BASE}{path}"
     ext = Path(path).suffix.lower()
-    try:
-        resp = await client.get(url, timeout=30.0, follow_redirects=True)
-        content_type = resp.headers.get("content-type", "")
-        status = resp.status_code
 
-        if status >= 400:
-            logger.warning(
-                "다운로드 HTTP 오류 %d: %s (Content-Type: %s)",
-                status, url, content_type,
-            )
-            return b"", status, content_type
+    for attempt in range(_DOWNLOAD_MAX_RETRIES + 1):
+        try:
+            resp = await client.get(url, timeout=30.0, follow_redirects=True)
+            content_type = resp.headers.get("content-type", "")
+            status = resp.status_code
 
-        data = resp.content
-        if len(data) < 1000:
-            logger.warning(
-                "다운로드 응답 너무 작음 (%d bytes): %s (Content-Type: %s)",
-                len(data), url, content_type,
-            )
-            return b"", status, content_type
+            if status >= 400:
+                logger.warning(
+                    "다운로드 HTTP 오류 %d: %s (Content-Type: %s)",
+                    status, url, content_type,
+                )
+                return b"", status, content_type
 
-        # 파일 시그니처 검증
-        if ext == ".pdf" and data[:4] != b"%PDF":
-            logger.warning(
-                "PDF 시그니처 불일치: %s (받은 데이터 앞 20바이트: %r, Content-Type: %s)",
-                url, data[:20], content_type,
-            )
-            return b"", status, content_type
+            data = resp.content
+            if len(data) < 1000:
+                logger.warning(
+                    "다운로드 응답 너무 작음 (%d bytes): %s (Content-Type: %s)",
+                    len(data), url, content_type,
+                )
+                return b"", status, content_type
 
-        if ext == ".docx" and data[:2] != b"PK":
-            logger.warning(
-                "DOCX 시그니처 불일치: %s (받은 데이터 앞 20바이트: %r, Content-Type: %s)",
-                url, data[:20], content_type,
-            )
-            return b"", status, content_type
+            # 파일 시그니처 검증
+            if ext == ".pdf" and data[:4] != b"%PDF":
+                logger.warning(
+                    "PDF 시그니처 불일치: %s (받은 데이터 앞 20바이트: %r, Content-Type: %s)",
+                    url, data[:20], content_type,
+                )
+                return b"", status, content_type
 
-        return data, status, content_type
+            if ext == ".docx" and data[:2] != b"PK":
+                logger.warning(
+                    "DOCX 시그니처 불일치: %s (받은 데이터 앞 20바이트: %r, Content-Type: %s)",
+                    url, data[:20], content_type,
+                )
+                return b"", status, content_type
 
-    except httpx.TimeoutException as e:
-        logger.warning("다운로드 타임아웃 %s: %s", url, e)
-        return b"", None, ""
-    except httpx.ConnectError as e:
-        logger.warning("다운로드 연결 실패 %s: %s", url, e)
-        return b"", None, ""
-    except Exception as e:
-        logger.warning("다운로드 예외 %s: %s (%s)", url, e, type(e).__name__)
-        return b"", None, ""
+            return data, status, content_type
+
+        except (httpx.RemoteProtocolError, httpx.ReadError) as e:
+            # 삼성화재 서버가 간헐적으로 연결을 끊는 일시적 오류 → 재시도
+            if attempt < _DOWNLOAD_MAX_RETRIES:
+                wait = _DOWNLOAD_RETRY_BASE_WAIT * (2 ** attempt)
+                logger.warning(
+                    "다운로드 연결 끊김 (재시도 %d/%d, %.0f초 후): %s",
+                    attempt + 1, _DOWNLOAD_MAX_RETRIES, wait, Path(path).name,
+                )
+                await asyncio.sleep(wait)
+                continue
+            logger.warning("다운로드 예외 %s: %s (%s)", url, e, type(e).__name__)
+            return b"", None, ""
+
+        except httpx.TimeoutException as e:
+            logger.warning("다운로드 타임아웃 %s: %s", url, e)
+            return b"", None, ""
+        except httpx.ConnectError as e:
+            logger.warning("다운로드 연결 실패 %s: %s", url, e)
+            return b"", None, ""
+        except Exception as e:
+            logger.warning("다운로드 예외 %s: %s (%s)", url, e, type(e).__name__)
+            return b"", None, ""
+
+    return b"", None, ""  # unreachable
 
 
 async def ingest_pdf_bytes(
