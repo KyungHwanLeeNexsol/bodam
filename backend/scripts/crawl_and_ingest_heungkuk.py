@@ -185,70 +185,63 @@ def _diagnose_page_js() -> str:
 
 
 async def _get_max_page(page: object) -> int:
-    """현재 페이지네이션 영역에서 최대 페이지 수를 감지한다."""
-    max_page = await page.evaluate(r"""() => {
-        // 페이지네이션 영역에서 숫자 링크 찾기
-        const pagingArea = document.querySelector('.paging, .pagination, .page_num, [class*="paging"]');
-        if (!pagingArea) return 1;
+    """현재 페이지네이션 영역에서 최대 페이지 수를 감지한다.
 
-        // 숫자 링크들에서 최대값 추출
-        const links = pagingArea.querySelectorAll('a, button, span');
-        let max = 1;
-        for (const el of links) {
-            const text = el.textContent.trim();
-            const onclick = el.getAttribute('onclick') || '';
-            // 순수 숫자이거나 goPage(N)/fn_pageMove(N) 형태
-            const numMatch = text.match(/^(\d+)$/);
-            if (numMatch) {
-                max = Math.max(max, parseInt(numMatch[1]));
-            }
-            // onclick에서 숫자 추출 (goPage(5), fn_pageMove(3) 등)
-            const ocMatch = onclick.match(/\((\d+)\)/);
-            if (ocMatch) {
-                max = Math.max(max, parseInt(ocMatch[1]));
+    # @MX:NOTE: 흥국화재 페이지네이션은 div.paginate 클래스 사용
+    # @MX:NOTE: FlexSlider 도트(.flex-control-paging)를 제외해야 함
+    """
+    max_page = await page.evaluate(r"""() => {
+        // 흥국화재 전용: div.paginate 영역 (goPage(N) 호출 링크 포함)
+        // flex-control-paging은 이미지 슬라이더 도트이므로 반드시 제외
+        const selectors = ['.paginate', '.paging:not(.flex-control-paging)', '.pagination', '.page_num'];
+        let pagingArea = null;
+        for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && !el.classList.contains('flex-control-paging')) {
+                pagingArea = el;
+                break;
             }
         }
-        // '다음', '끝' 버튼이 있으면 더 많은 페이지가 있을 수 있음
-        const hasNext = Array.from(links).some(el => {
-            const t = el.textContent.trim();
-            return t === '다음' || t === '>' || t === '끝' || t === '>>';
-        });
-        if (hasNext && max <= 1) max = 2;  // 최소 2페이지
+        if (!pagingArea) return 1;
+
+        // href="javascript:goPage(N)" 패턴에서 최대 페이지 추출
+        const links = pagingArea.querySelectorAll('a');
+        let max = 1;
+        for (const el of links) {
+            const href = el.getAttribute('href') || '';
+            const onclick = el.getAttribute('onclick') || '';
+            const text = el.textContent.trim();
+            // href="javascript:goPage(6)" 또는 onclick="goPage(6)"
+            const hrefMatch = href.match(/goPage\((\d+)\)/);
+            if (hrefMatch) max = Math.max(max, parseInt(hrefMatch[1]));
+            const ocMatch = onclick.match(/goPage\((\d+)\)/);
+            if (ocMatch) max = Math.max(max, parseInt(ocMatch[1]));
+            // 순수 숫자 텍스트
+            const numMatch = text.match(/^(\d+)$/);
+            if (numMatch) max = Math.max(max, parseInt(numMatch[1]));
+        }
+        // go_end 링크에서 마지막 페이지 추출
+        const endLink = pagingArea.querySelector('.go_end');
+        if (endLink) {
+            const endHref = endLink.getAttribute('href') || '';
+            const endMatch = endHref.match(/goPage\((\d+)\)/);
+            if (endMatch) max = Math.max(max, parseInt(endMatch[1]));
+        }
         return max;
     }""")
     return max_page or 1
 
 
 async def _go_to_page(page: object, page_num: int) -> bool:
-    """특정 페이지 번호로 이동한다. JS 함수 호출 방식."""
-    result = await page.evaluate(r"""(pageNum) => {
-        // 방법 1: 페이지네이션 영역에서 해당 숫자 링크 클릭
-        const pagingArea = document.querySelector('.paging, .pagination, .page_num, [class*="paging"]');
-        if (pagingArea) {
-            const links = pagingArea.querySelectorAll('a, button, span');
-            for (const el of links) {
-                const text = el.textContent.trim();
-                if (text === String(pageNum)) {
-                    // onclick 속성이 있으면 JS 함수 직접 호출
-                    const onclick = el.getAttribute('onclick') || '';
-                    if (onclick) {
-                        try { eval(onclick); return 'eval'; } catch(e) {}
-                    }
-                    el.click();
-                    return 'click';
-                }
-            }
-        }
-        // 방법 2: goPage, fn_pageMove 등 공통 함수 시도
-        const funcs = ['goPage', 'fn_pageMove', 'pageMove', 'fnGoPage', 'goPageMove'];
-        for (const fn of funcs) {
-            if (typeof window[fn] === 'function') {
-                try { window[fn](pageNum); return fn; } catch(e) {}
-            }
-        }
-        return null;
-    }""", page_num)
-    return result is not None
+    """goPage(N) 호출로 특정 페이지로 이동한다.
+
+    # @MX:NOTE: 흥국화재 goPage()는 $('#page').val(N); $('#frm').submit() — 폼 서브밋 기반
+    """
+    try:
+        await page.evaluate(f"goPage({page_num})")
+        return True
+    except Exception:
+        return False
 
 
 async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) -> list[dict]:
@@ -346,7 +339,12 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
                 if not nav_result:
                     logger.warning("[%s] 페이지 %d 이동 실패, 중단", COMPANY_NAME, page_num)
                     break
-                await asyncio.sleep(3)  # AJAX 로딩 대기
+                # goPage()는 폼 서브밋으로 전체 페이지 리로드 — networkidle 대기 필수
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
+                await asyncio.sleep(2)
 
             page_items: list[dict] = await page.evaluate(_extract_items_js())
 
