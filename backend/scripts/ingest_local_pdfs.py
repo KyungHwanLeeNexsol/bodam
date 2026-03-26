@@ -701,9 +701,10 @@ async def process_single_file(
     """
     # @MX:NOTE: [AUTO] CockroachDB RETRY_SERIALIZABLE 해결: DB 트랜잭션 시간을 최소화하기 위해
     # @MX:NOTE: [AUTO] CPU/네트워크 집약적 작업(PDF 파싱, 임베딩)을 트랜잭션 밖에서 먼저 실행
-    # @MX:REASON: 동시 실행 워크플로우 간 락 경합 시 CockroachDB가 ~90s 대기 후 포기 → 더 많은 재시도 + 큰 백오프 필요
-    max_retries = 10
-    base_backoff = 1.0  # 초 (최대 30초로 상한, 지수 백오프)
+    # @MX:REASON: READ COMMITTED 격리 수준으로 SerializationError 근본 해소 (아래 session.connection 참조)
+    # @MX:REASON: 재시도는 네트워크 오류 등 다른 일시적 오류를 위한 안전망으로만 유지
+    max_retries = 5
+    base_backoff = 0.5  # 초 (SerializationError 재시도 불필요, 안전망용)
 
     # 파일 해시는 한 번만 계산 (retry 루프 밖)
     content_hash = compute_file_hash(str(pdf_path))
@@ -749,6 +750,11 @@ async def process_single_file(
     for attempt in range(max_retries):
         try:
             async with session_factory() as session:
+                # READ COMMITTED: 동시 인제스트 워크플로우 간 SerializationError 방지
+                # 각 보험사가 서로 다른 데이터를 삽입(겹침 없음) + UPSERT 멱등성 보장
+                # → Serializable 불필요, READ COMMITTED으로 충분
+                await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+
                 # 중복 확인 (REQ-04, REQ-06)
                 is_dup = await check_duplicate(session, content_hash)
                 if is_dup:
@@ -789,7 +795,7 @@ async def process_single_file(
         except Exception as e:
             if _is_serialization_error(e) and attempt < max_retries - 1:
                 # CockroachDB RETRY_SERIALIZABLE: DB 쓰기 트랜잭션만 재시도 (전처리 제외)
-                wait = min(base_backoff * (2 ** attempt), 30.0) + random.uniform(0, 2.0)
+                wait = base_backoff * (2 ** attempt) + random.uniform(0, 0.5)
                 logger.warning(
                     "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
                     attempt + 1, max_retries, wait, pdf_path.name,
