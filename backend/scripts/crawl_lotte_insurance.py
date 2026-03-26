@@ -405,7 +405,8 @@ async def _click_step2_and_get_products(
             return products
 
         # step3 각 항목 처리 (lcode, mcode, scode 3개 인자)
-        for s3_lcode, s3_mcode, s3_scode in step3_matches[:20]:
+        # 제한 없이 전체 순회 (판매중지 상해질병 카테고리 1043건 등)
+        for s3_lcode, s3_mcode, s3_scode in step3_matches:
             captured_responses.clear()
             await page.evaluate(
                 f"step3('{s3_lcode}', '{s3_mcode}', '{s3_scode}')"
