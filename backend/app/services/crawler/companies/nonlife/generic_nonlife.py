@@ -177,10 +177,12 @@ class GenericNonLifeCrawler(BaseCrawler):
 
                     results.append({
                         "product_code": listing.product_code,
+                        "product_name": listing.product_name,
                         "company_code": listing.company_code,
                         "status": "NEW" if is_new else "UPDATED",
                         "pdf_path": str(pdf_path),
                         "sale_status": listing.sale_status.value,
+                        "source_url": listing.pdf_url,
                     })
                 else:
                     failed_count += 1
