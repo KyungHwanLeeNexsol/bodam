@@ -392,35 +392,20 @@ async def download_pdf_via_playwright(
     file_id: str,
     a_file_seqn: str,
 ) -> bytes | None:
-    """Playwright download 이벤트로 PDF를 수신한다.
+    """SPA 페이지의 fnFileDownload()를 호출하여 PDF를 다운로드한다.
 
-    전용 페이지를 생성하여 form submit → download 이벤트를 캡처.
-
-    # @MX:WARN: [AUTO] 전용 페이지에서 expect_download 선설정 후 form submit 트리거
-    # @MX:REASON: 기존 popup 방식은 race condition 발생 — expect_download 설정 전에 다운로드 이벤트 소실
+    # @MX:WARN: [AUTO] fnFileDownload()는 oDownloadForm에 JSESSIONID가 인라인 포함됨
+    # @MX:REASON: 별도 페이지에서 form 생성 시 JSESSIONID 누락 → filename="nullnull" 반환
+    # @MX:NOTE: target="_self"로 SPA 페이지 자체에서 다운로드 트리거 → expect_download 캡처
+    # @MX:NOTE: 다운로드 후 SPA 페이지가 리다이렉트될 수 있으므로 재로딩 필요
     """
-    download_page: Any = None
     try:
-        context = page.context
-        download_page = await context.new_page()
-
-        # expect_download를 먼저 설정한 후 form submit 트리거
-        async with download_page.expect_download(timeout=90000) as dl_info:
-            await download_page.evaluate(
-                """([fileId, seqn, baseUrl]) => {
-                    const form = document.createElement("form");
-                    form.method = "POST";
-                    form.action = baseUrl + "/imageView/downloadFile.ajax";
-                    const i1 = document.createElement("input");
-                    i1.type = "hidden"; i1.name = "oFileId"; i1.value = fileId;
-                    const i2 = document.createElement("input");
-                    i2.type = "hidden"; i2.name = "oAfileSeqn"; i2.value = seqn;
-                    form.appendChild(i1);
-                    form.appendChild(i2);
-                    document.body.appendChild(form);
-                    form.submit();
+        async with page.expect_download(timeout=90000) as dl_info:
+            await page.evaluate(
+                """([fileId, seqn]) => {
+                    fnFileDownload(fileId, seqn);
                 }""",
-                [file_id, a_file_seqn, BASE_URL],
+                [file_id, a_file_seqn],
             )
         dl = await dl_info.value
         path = await dl.path()
@@ -432,13 +417,14 @@ async def download_pdf_via_playwright(
                 return data  # ZIP 파일도 허용
     except Exception as e:
         logger.info("  Playwright 다운로드 실패 (fileId=%s, seqn=%s): %s", file_id, a_file_seqn, e)
-    finally:
-        if download_page is not None:
-            try:
-                if not download_page.is_closed():
-                    await download_page.close()
-            except Exception:
-                pass
+        # fnFileDownload가 target="_self"로 동작하므로 페이지가 리다이렉트될 수 있음
+        # SPA 페이지를 다시 로드해야 다음 다운로드가 정상 동작
+        try:
+            if page.url != ANNOUNCE_URL:
+                await page.goto(ANNOUNCE_URL, timeout=60000, wait_until="networkidle")
+                await asyncio.sleep(3)
+        except Exception:
+            pass
     return None
 
 
