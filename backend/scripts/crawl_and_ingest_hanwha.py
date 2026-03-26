@@ -170,27 +170,29 @@ async def _post_api(
     url: str,
     form_data: dict[str, str],
 ) -> list[dict]:
-    """Playwright 페이지를 통해 POST API를 호출하고 list 응답을 반환한다.
-
-    evfw 토큰(WSPHii)이 페이지 JS 컨텍스트에서만 생성되므로
-    fetch()를 직접 evaluate하여 쿠키/토큰이 자동 포함되게 한다.
-    """
-    # form-urlencoded 데이터 구성
-    body_str = "&".join(f"{k}={v}" for k, v in form_data.items())
+    """Playwright 페이지를 통해 POST API를 호출하고 list 응답을 반환한다."""
+    # @MX:NOTE: [AUTO] evfw WAF 우회 핵심: fetch()가 아닌 jQuery $.ajax()로 호출해야 함
+    # @MX:NOTE: [AUTO] fetch()는 evfw 토큰(WSPHii, 6mpyB4Zcu)이 자동 주입되지 않아 400 응답
+    # @MX:NOTE: [AUTO] $.ajax()는 jQuery ajaxSetup/beforeSend 훅을 통해 토큰이 자동 포함됨
+    # JSON 직렬화로 JS 인젝션 방지
+    import json as _json
+    data_json = _json.dumps(form_data)
 
     script = f"""
     async () => {{
-        const resp = await fetch("{url}", {{
-            method: "POST",
-            headers: {{
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest",
-            }},
-            body: "{body_str}",
+        const formData = {data_json};
+        return new Promise((resolve) => {{
+            $.ajax({{
+                method: "POST",
+                url: "{url}",
+                data: formData,
+                dataType: "json"
+            }}).done(function(data) {{
+                resolve(data.list || []);
+            }}).fail(function(xhr, status, err) {{
+                resolve([]);
+            }});
         }});
-        if (!resp.ok) return [];
-        const data = await resp.json();
-        return data.list || data.data || data || [];
     }}
     """
     try:
@@ -214,20 +216,22 @@ async def collect_pdf_items(
             "goods_name": str,
             "goods_code": str,
             "goods_grp": str,
-            "path": str,   # 약관 유형 경로 (step3에서 확정)
             "file_url": str,  # 최종 PDF 절대 URL
             "sale_status": str,
         }
     """
-    # @MX:NOTE: [AUTO] step1: goodsGrp 목록 (gdFlgnm=01)
-    # @MX:NOTE: [AUTO] step2: goodsCode/goodsName (gdFlgnm=02, goodsGrp=grp)
-    # @MX:NOTE: [AUTO] step3: 약관유형 목록 (gdFlgnm=03, goodsCode=code, goodsName=name)
-    # @MX:NOTE: [AUTO] step4: PDF 파일 경로 (gdFlgnm=04, goodsCode=code, goodsName=name, path=path)
+    # @MX:NOTE: [AUTO] Step1 응답 구조: goodsCode=null이면 그룹 헤더(dt), 있으면 선택 항목(dd)
+    # @MX:NOTE: [AUTO] Step1 선택값: goodsGrp=item["goodsGrp"], goodsCode=item["goodsCode"](=코드분류)
+    # @MX:NOTE: [AUTO] Step2 요청: goodsGrp+goodsCode로 상품명 목록 조회
+    # @MX:NOTE: [AUTO] Step3 응답: 판매기간(path)별 항목, 각 항목에 file1~file3 직접 포함
+    # @MX:NOTE: [AUTO] Step4 생략 가능: step3 결과에 이미 file1~file3 있음 (최신 path 자동 선택)
 
     collected: list[dict] = []
+    seen_urls: set[str] = set()  # 판매기간별 중복 PDF 방지
 
-    # --- Step 1: 상품 그룹 목록 ---
-    step1_items = await _post_api(page, api_url, {
+    # --- Step 1: 상품 분류 목록 조회 ---
+    # 응답: [{goodsGrp: "자동차보험", goodsCode: None}, {goodsGrp: "자동차보험", goodsCode: "개인용"}, ...]
+    step1_raw = await _post_api(page, api_url, {
         "isActive": is_active,
         "company": POST_COMPANY,
         "goodsGrp": "",
@@ -236,36 +240,46 @@ async def collect_pdf_items(
         "path": "",
         "gdFlgnm": "01",
     })
-    logger.info("[%s] %s step1 상품그룹: %d개", COMPANY_NAME, sale_status, len(step1_items))
+    logger.info("[%s] %s step1 상품그룹: %d개", COMPANY_NAME, sale_status, len(step1_raw))
+
+    # goodsCode가 있는 항목만 실제 선택 항목 (그룹 헤더 제외)
+    step1_items = [item for item in step1_raw if item.get("goodsCode")]
 
     for grp_item in step1_items:
         goods_grp = grp_item.get("goodsGrp", "")
-        if not goods_grp:
+        goods_code_cls = grp_item.get("goodsCode", "")  # 분류코드 (예: "개인용", "건강")
+
+        if not goods_grp or not goods_code_cls:
             continue
 
-        # 대상 그룹 필터 적용
-        if not _is_target_group(goods_grp):
-            logger.debug("그룹 제외: %s", goods_grp)
+        # 대상 그룹 필터 적용 (goodsGrp 또는 goodsCode 분류명으로 판별)
+        # @MX:NOTE: [AUTO] 한화손보는 goodsGrp="장기보험"/"일반보험", 분류코드에 "상해/질병" 등 포함
+        if not _is_target_group(goods_grp) and not _is_target_group(goods_code_cls):
+            logger.debug("그룹 제외: %s / %s", goods_grp, goods_code_cls)
             continue
 
-        # --- Step 2: 상품 코드/명 목록 ---
+        # --- Step 2: 상품명 목록 조회 ---
+        # 요청: goodsGrp=그룹명, goodsCode=분류코드
         step2_items = await _post_api(page, api_url, {
             "isActive": is_active,
             "company": POST_COMPANY,
             "goodsGrp": goods_grp,
             "goodsName": "",
-            "goodsCode": "",
+            "goodsCode": goods_code_cls,
             "path": "",
             "gdFlgnm": "02",
         })
 
         for prod_item in step2_items:
-            goods_code = prod_item.get("goodsCode", "")
             goods_name = prod_item.get("goodsName", "")
-            if not goods_code or not goods_name:
+            goods_code = prod_item.get("goodsCode", "")
+            if not goods_name:
                 continue
+            if not goods_code:
+                goods_code = goods_code_cls
 
-            # --- Step 3: 약관 유형 목록 ---
+            # --- Step 3: 판매기간별 PDF 파일 목록 조회 ---
+            # 응답: 각 항목에 path(판매기간) + file1~file3(PDF 경로) 포함
             step3_items = await _post_api(page, api_url, {
                 "isActive": is_active,
                 "company": POST_COMPANY,
@@ -276,39 +290,28 @@ async def collect_pdf_items(
                 "gdFlgnm": "03",
             })
 
-            for type_item in step3_items:
-                term_path = type_item.get("path", "")
-                # path가 없으면 step4로 직접 조회
-                # (일부 상품은 약관유형 없이 바로 파일 목록 반환)
+            for period_item in step3_items:
+                term_path = period_item.get("path", "")
 
-                # --- Step 4: PDF 파일 목록 ---
-                step4_items = await _post_api(page, api_url, {
-                    "isActive": is_active,
-                    "company": POST_COMPANY,
-                    "goodsGrp": goods_grp,
-                    "goodsName": goods_name,
-                    "goodsCode": goods_code,
-                    "path": term_path,
-                    "gdFlgnm": "04",
-                })
-
-                for file_item in step4_items:
-                    # file1~file3 필드에 PDF 경로가 담겨 있음
-                    for file_key in ("file1", "file2", "file3"):
-                        file_path = file_item.get(file_key, "")
-                        if not file_path:
-                            continue
-                        # 절대 경로 구성 (/upload/... 형태)
-                        file_url = f"{BASE_URL}{file_path}"
-                        collected.append({
-                            "goods_name": goods_name,
-                            "goods_code": goods_code,
-                            "goods_grp": goods_grp,
-                            "term_path": term_path,
-                            "file_key": file_key,
-                            "file_url": file_url,
-                            "sale_status": sale_status,
-                        })
+                # file1~file3 필드에 PDF 경로가 담겨 있음
+                for file_key in ("file1", "file2", "file3"):
+                    file_path = period_item.get(file_key, "") or ""
+                    if not file_path:
+                        continue
+                    # 절대 경로 구성 (/upload/... 형태)
+                    file_url = f"{BASE_URL}{file_path}"
+                    if file_url in seen_urls:
+                        continue
+                    seen_urls.add(file_url)
+                    collected.append({
+                        "goods_name": goods_name,
+                        "goods_code": goods_code,
+                        "goods_grp": goods_grp,
+                        "term_path": term_path,
+                        "file_key": file_key,
+                        "file_url": file_url,
+                        "sale_status": sale_status,
+                    })
 
         await asyncio.sleep(0.1)  # step2 루프 과부하 방지
 
@@ -608,11 +611,20 @@ async def run(
             follow_redirects=True,
         ) as client:
             # 판매중 + 판매중지 순차 처리
-            for api_url, is_active, sale_status, label in [
-                (PRODUCT_ING_URL,  "1", "ON_SALE",      "판매중"),
-                (PRODUCT_STOP_URL, "0", "DISCONTINUED", "판매중지"),
+            # @MX:NOTE: [AUTO] 각 탭마다 해당 페이지로 이동해야 evfw 토큰이 올바른 API URL용으로 발급됨
+            for api_url, page_url, is_active, sale_status, label in [
+                (PRODUCT_ING_URL,  f"{BASE_URL}/notice/ir/product-ing01.do",  "1", "ON_SALE",      "판매중"),
+                (PRODUCT_STOP_URL, f"{BASE_URL}/notice/ir/product-stop01.do", "0", "DISCONTINUED", "판매중지"),
             ]:
                 logger.info("--- [%s] %s 처리 시작 ---", COMPANY_NAME, label)
+
+                # 해당 탭 페이지로 이동 (evfw 세션/토큰 초기화)
+                try:
+                    await page.goto(page_url, wait_until="networkidle", timeout=30000)
+                    await asyncio.sleep(2)
+                    logger.info("페이지 이동 완료: %s", await page.title())
+                except Exception as e:
+                    logger.warning("페이지 이동 실패 (계속 진행): %s", e)
 
                 # Phase 1: Playwright로 PDF 목록 수집
                 try:
