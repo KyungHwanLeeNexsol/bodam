@@ -25,6 +25,7 @@ import httpx
 from app.services.crawler.base import (
     BaseCrawler,
     CrawlRunResult,
+    DeltaResult,
     PolicyListing,
     SaleStatus,
 )
@@ -240,6 +241,19 @@ class HyundaiMarineCrawler(BaseCrawler):
     # ──────────────────────────────────────────────────────────────────
     # Public interface
     # ──────────────────────────────────────────────────────────────────
+
+    # ── BaseCrawler 추상 메서드 스텁 ─────────────────────────────────────
+    # 현대해상 크롤러는 crawl()에서 모든 로직을 직접 처리하므로
+    # 이 템플릿 메서드들은 사용되지 않음.
+
+    async def parse_listing(self, page: Any) -> list[PolicyListing]:
+        raise NotImplementedError("현대해상 크롤러는 crawl()에서 직접 처리합니다.")
+
+    async def download_pdf(self, listing: PolicyListing) -> bytes:
+        raise NotImplementedError("현대해상 크롤러는 crawl()에서 직접 처리합니다.")
+
+    async def detect_changes(self, listings: list[PolicyListing]) -> DeltaResult:
+        raise NotImplementedError("현대해상 크롤러는 crawl()에서 직접 처리합니다.")
 
     # @MX:ANCHOR: [AUTO] HyundaiMarineCrawler.crawl - 현대해상 크롤링 진입점
     # @MX:REASON: crawl_and_ingest_hyundai_marine.py에서 직접 호출됨
