@@ -502,6 +502,7 @@ async def crawl_and_ingest(
             status = result.get("status", "failed")
             if status == "success":
                 stats["success"] += 1
+                processed_urls.add(url)  # 런 중 중복 다운로드 방지
                 ss = result.get("sale_status", sale_status)
                 if ss == "ON_SALE":
                     stats["on_sale"] += 1

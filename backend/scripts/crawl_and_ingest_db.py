@@ -375,6 +375,7 @@ async def crawl_category_and_ingest(
         status = result.get("status", "failed")
         if status == "success":
             stats["success"] += 1
+            processed_urls.add(pdf_url)  # 런 중 중복 다운로드 방지
             logger.info("[OK] %s (%s)", pdc_nm[:50], label)
         elif status == "skipped":
             stats["skipped"] += 1

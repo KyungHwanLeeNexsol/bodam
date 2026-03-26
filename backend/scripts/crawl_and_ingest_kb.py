@@ -299,6 +299,7 @@ async def crawl_and_ingest(
             status = result.get("status", "failed")
             if status == "success":
                 ingest_stats["success"] += 1
+                processed_urls.add(metadata["source_url"])  # 런 중 중복 다운로드 방지
                 logger.debug("[%d] 완료: %s (%s)", idx, pdf_path.name, product_code)
             elif status == "skipped":
                 ingest_stats["skipped"] += 1
