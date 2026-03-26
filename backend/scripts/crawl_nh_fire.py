@@ -396,11 +396,13 @@ async def download_pdf_via_playwright(
 
     fnFileDownload form submit을 트리거 후 다운로드 파일을 읽는다.
 
-    # @MX:WARN: form.target="_blank" 필수 — 미설정 시 현재 페이지(공시 목록)가 덮어써짐
-    # @MX:REASON: form.submit() without target navigates the main frame away from ANNOUNCE_URL
+    # @MX:WARN: form.target="_blank"로 새 팝업 생성 → context.expect_page()로 팝업 캡처
+    # @MX:REASON: page.expect_download()는 메인 페이지 이벤트만 감지, 팝업 다운로드는 누락됨
     """
+    popup: Any = None
     try:
-        async with page.expect_download(timeout=40000) as dl_info:
+        # target="_blank" 팝업을 context 레벨에서 캡처
+        async with page.context.expect_page(timeout=15000) as popup_info:
             await page.evaluate(
                 """([fileId, seqn]) => {
                     // 항상 새 form 생성: 기존 form 재사용 시 target 오염 가능
@@ -421,14 +423,26 @@ async def download_pdf_via_playwright(
                 }""",
                 [file_id, a_file_seqn],
             )
+        popup = await popup_info.value
+        # 팝업에서 다운로드 이벤트 대기 (302 → CDN URL → PDF 다운로드)
+        async with popup.expect_download(timeout=90000) as dl_info:
+            pass  # form submit으로 이미 트리거됨
         dl = await dl_info.value
         path = await dl.path()
+        if popup and not popup.is_closed():
+            await popup.close()
         if path:
             data = Path(path).read_bytes()
-            if data[:4] == b"%PDF" and len(data) > 1000:
+            if b"%PDF" in data[:1024] and len(data) > 1000:
                 return data
     except Exception as e:
         logger.debug("  Playwright 다운로드 실패 (fileId=%s, seqn=%s): %s", file_id, a_file_seqn, e)
+        if popup is not None:
+            try:
+                if not popup.is_closed():
+                    await popup.close()
+            except Exception:
+                pass
     return None
 
 

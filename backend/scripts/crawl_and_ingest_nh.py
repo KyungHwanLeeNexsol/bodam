@@ -119,20 +119,6 @@ class CrawlState:
         return state
 
 
-async def _download_from_cdn(cdn_url: str) -> bytes:
-    """302 리다이렉트로 얻은 CDN URL에서 직접 PDF를 다운로드한다.
-
-    # @MX:NOTE: CDN URL은 세션 쿠키 없이도 접근 가능 (presigned URL 또는 public CDN)
-    """
-    if not cdn_url.startswith("http"):
-        cdn_url = BASE_URL + cdn_url
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0), follow_redirects=True) as cdn_client:
-        resp = await cdn_client.get(cdn_url)
-        if resp.status_code == 200 and resp.content[:4] == b"%PDF" and len(resp.content) > 1000:
-            return resp.content
-    return b""
-
-
 async def download_pdf_bytes(
     client: httpx.AsyncClient,
     file_id: str,
@@ -140,48 +126,33 @@ async def download_pdf_bytes(
 ) -> tuple[bytes, int | None, str]:
     """httpx POST/GET으로 PDF를 다운로드한다.
 
-    # @MX:NOTE: downloadFile.ajax는 302로 CDN에 리다이렉트 → follow_redirects=False로
-    #           Location URL 추출 후 CDN 직접 접근 (120s 타임아웃 방지)
+    # @MX:NOTE: downloadFile.ajax는 302로 CDN 또는 파일 서버에 리다이렉트
+    # @MX:NOTE: 세션 쿠키가 필요한 리다이렉트이므로 authenticated client로 follow_redirects=True
     Returns:
         (content_bytes, http_status, content_type)
         content_bytes가 빈 bytes면 실패.
     """
+    # connect/read 타임아웃 분리: connect는 짧게, 대용량 PDF 읽기는 길게
+    _timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
+
     for method in ("POST", "GET"):
         try:
             if method == "POST":
                 resp = await client.post(
                     DOWNLOAD_AJAX,
                     data={"oFileId": file_id, "oAfileSeqn": a_file_seqn},
-                    timeout=httpx.Timeout(20.0),
-                    follow_redirects=False,
+                    timeout=_timeout,
+                    follow_redirects=True,  # 세션 쿠키 유지하며 302 리다이렉트 따라감
                 )
             else:
                 resp = await client.get(
                     DOWNLOAD_AJAX,
                     params={"oFileId": file_id, "oAfileSeqn": a_file_seqn},
-                    timeout=httpx.Timeout(20.0),
-                    follow_redirects=False,
+                    timeout=_timeout,
+                    follow_redirects=True,
                 )
 
             status = resp.status_code
-
-            # 302 리다이렉트: Location URL에서 CDN 직접 다운로드
-            if status in (301, 302, 303, 307, 308):
-                cdn_url = resp.headers.get("location", "")
-                if not cdn_url:
-                    logger.warning("302 Location 헤더 없음: fileId=%s (%s)", file_id, method)
-                    continue
-                logger.debug("  CDN 리다이렉트: %s → %s", file_id, cdn_url[:80])
-                try:
-                    data = await _download_from_cdn(cdn_url)
-                    if data:
-                        return data, 200, "application/pdf"
-                    logger.warning("CDN 다운로드 실패 (빈 응답): fileId=%s (%s)", file_id, method)
-                except httpx.TimeoutException:
-                    logger.warning("CDN 타임아웃: fileId=%s (%s)", file_id, method)
-                except Exception as e:
-                    logger.warning("CDN 예외: fileId=%s (%s) %s", file_id, method, e)
-                continue
 
             content_type = resp.headers.get("content-type", "")
             if status >= 400:
@@ -453,8 +424,8 @@ async def crawl_and_ingest(
         async with httpx.AsyncClient(
             headers=HEADERS,
             cookies=cookie_dict,
-            follow_redirects=False,  # download_pdf_bytes가 302 Location 직접 처리
-            timeout=httpx.Timeout(20.0),
+            follow_redirects=True,  # 세션 쿠키 유지하며 302 리다이렉트 따라감
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
         ) as client:
             for loop_i, prod in enumerate(pdf_tasks):
                 idx = loop_i + 1 + base_idx
