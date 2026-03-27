@@ -1,7 +1,7 @@
 """임베딩 백필 스크립트
 
 DB에 이미 저장된 PolicyChunk 중 embedding=NULL인 항목에 대해
-Google Gemini 임베딩을 일괄 생성하여 UPDATE한다.
+BAAI/bge-m3 로컬 모델로 임베딩을 일괄 생성하여 UPDATE한다.
 
 Usage:
     # AXA 전체 백필
@@ -13,12 +13,12 @@ Usage:
     # Dry-run (DB 쓰기 없이 통계만)
     PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --dry-run
 
-    # 배치 크기 조정 (기본 50, 최대 100)
-    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 80
+    # 배치 크기 조정 (기본 128)
+    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 128
 
-# @MX:NOTE: PolicyChunk.embedding IS NULL → Gemini text-embedding-004(768차원) → UPDATE
+# @MX:NOTE: PolicyChunk.embedding IS NULL → BAAI/bge-m3 로컬 모델(1024차원) → UPDATE
 # @MX:NOTE: 보험사 필터: --company 옵션으로 InsuranceCompany.code 기준 필터링
-# @MX:NOTE: 배치 크기: Gemini API 최대 100개 제한에 맞춰 기본 50개 단위로 처리
+# @MX:NOTE: 배치 크기: 로컬 CPU 추론 최적값 128개 단위 처리, API 키 불필요
 """
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("backfill_embeddings")
 
-# 기본 배치 크기 (Gemini API 최대 100개 제한 이하)
-DEFAULT_BATCH_SIZE = 50
+# 기본 배치 크기 (bge-m3 CPU 추론 최적값)
+DEFAULT_BATCH_SIZE = 128
 # UPDATE 트랜잭션당 청크 수
 # @MX:NOTE: 1로 설정 — 각 UPDATE를 독립 트랜잭션으로 처리
 # @MX:REASON: CockroachDB ABORT_REASON_CLIENT_REJECT 방지
@@ -176,22 +176,23 @@ async def update_embeddings(
     return updated, failed
 
 
-async def _embed_with_key_rotation(
-    api_keys: list[str],
+async def _embed_local(
+    model: object,
     texts: list[str],
-    model: str,
-    dimensions: int,
-    batch_index: int,
 ) -> list[list[float]]:
-    """API 키 즉시-전환 임베딩 생성
+    """BAAI/bge-m3 로컬 모델 임베딩 생성
 
-    genai.configure()가 전역 상태이므로 EmbeddingService 인스턴스 대신
-    호출 시점에 키를 직접 설정한다.
-    429 오류 시 35초 대기 없이 즉시 다음 키로 전환.
-    모든 키가 429이면 마지막 예외를 전파.
+    동기 추론을 asyncio.to_thread로 비동기 루프에서 비블로킹 실행.
     50자 미만 텍스트는 빈 리스트로 반환.
+
+    Args:
+        model: SentenceTransformer 인스턴스 (backfill() 시작 시 1회 로드)
+        texts: 임베딩할 텍스트 목록
+
+    Returns:
+        임베딩 벡터 목록 (50자 미만 위치에는 빈 리스트)
     """
-    import google.generativeai as _genai
+    from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
 
     MIN_CHARS = 50
     valid_indices = [i for i, t in enumerate(texts) if len(t) >= MIN_CHARS]
@@ -201,47 +202,20 @@ async def _embed_with_key_rotation(
     if not valid_texts:
         return results
 
-    n = len(api_keys)
-    last_exc: Exception | None = None
+    def _encode() -> list[list[float]]:
+        st_model: SentenceTransformer = model  # type: ignore[assignment]
+        embeddings = st_model.encode(
+            valid_texts,
+            batch_size=128,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return [emb.tolist() for emb in embeddings]
 
-    for attempt in range(n):
-        key_idx = (batch_index + attempt) % n
-        _genai.configure(api_key=api_keys[key_idx])
-        try:
-            if len(valid_texts) == 1:
-                response = await asyncio.to_thread(
-                    _genai.embed_content,
-                    model=model,
-                    content=valid_texts[0],
-                    task_type="RETRIEVAL_DOCUMENT",
-                    output_dimensionality=dimensions,
-                )
-                embeddings = [response["embedding"]]
-            else:
-                response = await asyncio.to_thread(
-                    _genai.embed_content,
-                    model=model,
-                    content=valid_texts,
-                    task_type="RETRIEVAL_DOCUMENT",
-                    output_dimensionality=dimensions,
-                )
-                embeddings = response["embedding"]
-
-            for orig_idx, emb in zip(valid_indices, embeddings):
-                results[orig_idx] = emb
-            return results
-
-        except Exception as e:
-            last_exc = e
-            if "429" in str(e) and attempt < n - 1:
-                logger.warning(
-                    "키 %d/%d 429 오류, 즉시 키 %d/%d로 전환",
-                    key_idx + 1, n, (key_idx + 1) % n + 1, n,
-                )
-                continue
-            raise
-
-    raise last_exc  # type: ignore[misc]
+    embeddings = await asyncio.to_thread(_encode)
+    for orig_idx, emb in zip(valid_indices, embeddings):
+        results[orig_idx] = emb
+    return results
 
 
 async def backfill(
@@ -263,33 +237,18 @@ async def backfill(
     await db_module.init_database(settings)
     session_factory = db_module.session_factory
 
-    # ── 임베딩 API 키 초기화 (다중 키 즉시 전환 지원) ──────────
-    # @MX:NOTE: genai.configure()가 전역 상태이므로 EmbeddingService 인스턴스 대신
-    #           _embed_with_key_rotation 함수에서 호출 시점에 키를 직접 설정한다.
-    _model = getattr(settings, "embedding_model", "models/text-embedding-004")
-    _dimensions = getattr(settings, "embedding_dimensions", 768)
-    _api_keys: list[str] = [
-        k for k in [
-            os.environ.get("GEMINI_API_KEY1"),
-            os.environ.get("GEMINI_API_KEY2"),
-            os.environ.get("GEMINI_API_KEY3"),
-        ]
-        if k
-    ]
-    if not _api_keys:
-        _single = getattr(settings, "gemini_api_key", None) or os.environ.get("GEMINI_API_KEY", "")
-        if _single:
-            _api_keys = [_single]
+    # ── 로컬 임베딩 모델 초기화 (BAAI/bge-m3, 1회 로드) ─────────
+    # @MX:NOTE: BAAI/bge-m3 모델을 백필 시작 시 1회 로드 — API 키 불필요
+    # @MX:NOTE: ~600MB HuggingFace 캐시에서 로드, GitHub Actions에서 캐시 적중 시 빠름
+    _model_name = getattr(settings, "embedding_model", "BAAI/bge-m3")
 
-    if not _api_keys and not dry_run:
-        logger.error("GEMINI_API_KEY1/2/3 또는 GEMINI_API_KEY가 설정되지 않았습니다.")
-        sys.exit(1)
-
-    if not dry_run and _api_keys:
-        logger.info(
-            "임베딩 초기화 완료 (model=%s, dim=%d, 키 %d개 즉시-전환 활성화)",
-            _model, _dimensions, len(_api_keys),
-        )
+    if not dry_run:
+        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
+        logger.info("BAAI/bge-m3 모델 로드 중 (model=%s)...", _model_name)
+        _st_model = SentenceTransformer(_model_name)
+        logger.info("임베딩 초기화 완료 (model=%s, dim=1024, 로컬 CPU 추론)", _model_name)
+    else:
+        _st_model = None
 
     # ── 대상 건수 확인 ─────────────────────────────────────────
     total = await count_null_embeddings(session_factory, company_code)
@@ -322,11 +281,9 @@ async def backfill(
             offset += len(rows)
             continue
 
-        # Gemini 임베딩 생성 (429 시 즉시 다음 키로 전환)
+        # bge-m3 로컬 임베딩 생성
         try:
-            embeddings = await _embed_with_key_rotation(
-                _api_keys, chunk_texts, _model, _dimensions, batch_index
-            )
+            embeddings = await _embed_local(_st_model, chunk_texts)
         except Exception as e:
             logger.error("임베딩 생성 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
             stats["failed"] += len(rows)
@@ -393,7 +350,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help=f"Gemini API 호출당 청크 수 (기본: {DEFAULT_BATCH_SIZE}, 최대: 100)",
+        help=f"bge-m3 인코딩 배치 크기 (기본: {DEFAULT_BATCH_SIZE})",
     )
     parser.add_argument(
         "--dry-run",
@@ -408,9 +365,9 @@ async def main() -> None:
     """진입점."""
     args = parse_args()
 
-    if args.batch_size > 100:
-        logger.warning("batch-size 최대 100 (Gemini API 제한). 100으로 조정합니다.")
-        args.batch_size = 100
+    if args.batch_size > 512:
+        logger.warning("batch-size 최대 512 (메모리 제한). 512로 조정합니다.")
+        args.batch_size = 512
 
     logger.info("=" * 60)
     logger.info("임베딩 백필 시작")
