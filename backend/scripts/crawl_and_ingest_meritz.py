@@ -69,9 +69,10 @@ DISCLOSURE_URL = "https://www.meritzfire.com/disclosure/product-announcement/pro
 # 수집 대상 카테고리 (기존 crawl_meritz_fire.py와 동일)
 TARGET_CATEGORIES = ["질병보험", "상해보험", "암보험", "어린이보험", "통합보험"]
 
-# 제외 키워드 (기업보험·단체보험·자동차보험 등)
+# 제외 키워드 (기업보험·자동차보험 등 — 상해/질병 무관 상품만 제외)
 # @MX:NOTE: [AUTO] 판매중지 탭은 카테고리 무관 전체 목록 반환 → 자동차보험도 포함됨 → 제외 필요
-NEGATIVE_KEYWORDS = ["단체", "기업", "법인", "퇴직", "저축", "자동차"]
+# @MX:NOTE: 단체상해보험·단체생활보험 등은 상해/질병 관련이므로 수집 대상에 포함
+NEGATIVE_KEYWORDS = ["기업", "법인", "퇴직", "저축", "자동차"]
 
 RATE_LIMIT = 0.5  # 초 (상품 간 대기)
 DEFAULT_STATE_PATH = Path("failure_state_meritz.json")
