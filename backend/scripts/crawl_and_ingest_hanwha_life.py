@@ -32,7 +32,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
@@ -297,6 +297,13 @@ async def collect_products(page: object) -> list[dict]:
                 )
                 continue
 
+            # getList3.do 응답 필드 구조 파악을 위한 첫 번째 버전 덤프 (최초 1회)
+            if not all_products:
+                logger.info(
+                    "[DEBUG] getList3.do 첫 버전 raw 필드 (idx=%s, product=%s): %s",
+                    idx, product_name[:40], json.dumps(pdf_versions[0], ensure_ascii=False),
+                )
+
             # 각 버전의 PDF 파일 수집
             # # @MX:NOTE: [AUTO] 최신 버전(SELL_END_DT가 공백)의 약관 PDF만 수집 (FILE_NAME3 = 약관)
             for version in pdf_versions:
@@ -390,13 +397,21 @@ async def download_and_ingest_all(
 
         # PDF 다운로드
         # # @MX:NOTE: [AUTO] file.hanwhalife.com은 POST download_chk.asp 사용
-        # # @MX:NOTE: [AUTO] file_name 파라미터는 EUC-KR URL 인코딩으로 전송됨 (브라우저 동작)
-        # # @MX:NOTE: [AUTO] page.request.post는 file.hanwhalife.com에서는 SSL 이슈 없음
+        # # @MX:NOTE: [AUTO] file_name 파라미터는 EUC-KR URL 인코딩으로 전송해야 함 (IIS/ASP CODEPAGE=949)
+        # # @MX:NOTE: [AUTO] page.request.post(form={})는 UTF-8 인코딩 → 서버가 파일을 못 찾음
+        # # @MX:NOTE: [AUTO] 수정: file_name을 EUC-KR bytes로 percent-encode 후 data=로 전송
         pdf_bytes: bytes | None = None
         try:
+            # EUC-KR 인코딩: ASP CODEPAGE=949 서버가 EUC-KR percent-encoded 파라미터를 기대함
+            try:
+                file_name_encoded = quote(file_name.encode("euc-kr"), safe="")
+            except (UnicodeEncodeError, LookupError):
+                file_name_encoded = quote(file_name, safe="")
+            form_body = f"file_name={file_name_encoded}"
             resp = await page.request.post(  # type: ignore[attr-defined]
                 PDF_DOWNLOAD_URL,
-                form={"file_name": file_name},
+                data=form_body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30_000,
             )
             if resp.status == 200:
@@ -404,9 +419,14 @@ async def download_and_ingest_all(
                 if len(data) > 1000 and data[:4] == b"%PDF":
                     pdf_bytes = data
                 else:
+                    # 오류 응답 내용을 EUC-KR로 디코딩해서 로그에 출력
+                    try:
+                        err_msg = data.decode("euc-kr", errors="replace").strip()[:120]
+                    except Exception:
+                        err_msg = repr(data[:80])
                     logger.warning(
-                        "[%d] PDF 시그니처 불일치: %s (sig=%s, size=%d)",
-                        idx_loop, product_name[:40], data[:8], len(data),
+                        "[%d] PDF 시그니처 불일치: %s (size=%d, msg=%s)",
+                        idx_loop, product_name[:40], len(data), err_msg,
                     )
             else:
                 logger.warning(
