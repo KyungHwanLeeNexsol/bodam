@@ -24,28 +24,21 @@ depends_on: str | tuple[str, ...] | None = None
 def upgrade() -> None:
     """policy_chunks.embedding을 vector(768) → vector(1024)로 변경
 
-    768차원과 1024차원은 직접 캐스팅 불가이므로:
-    1단계: 기존 임베딩을 NULL로 초기화 (백필 스크립트로 재생성 예정)
-    2단계: 컬럼 타입을 vector(1024)로 변경
+    CockroachDB에서 ALTER COLUMN TYPE은 동시 쓰기가 있을 때 RETRY_SERIALIZABLE 오류 발생.
+    DROP + ADD COLUMN 방식이 CockroachDB 온라인 스키마 변경에 더 안전함.
+    기존 임베딩 데이터는 어차피 재생성 예정이므로 손실 없음.
     """
-    # 1단계: 기존 768차원 임베딩 무효화
-    op.execute("UPDATE policy_chunks SET embedding = NULL WHERE embedding IS NOT NULL")
+    # 기존 컬럼 삭제 (모든 임베딩 데이터 제거)
+    op.execute("ALTER TABLE policy_chunks DROP COLUMN IF EXISTS embedding")
 
-    # 2단계: 컬럼 타입 변경 (NULL 상태에서만 가능)
-    op.execute(
-        "ALTER TABLE policy_chunks ALTER COLUMN embedding TYPE vector(1024)"
-    )
+    # 새 컬럼 추가 (1024차원)
+    op.execute("ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS embedding vector(1024)")
 
 
 def downgrade() -> None:
-    """policy_chunks.embedding을 vector(1024) → vector(768)으로 롤백
+    """policy_chunks.embedding을 vector(1024) → vector(768)으로 롤백"""
+    # 기존 컬럼 삭제
+    op.execute("ALTER TABLE policy_chunks DROP COLUMN IF EXISTS embedding")
 
-    롤백 시에도 기존 임베딩은 호환 불가이므로 NULL로 초기화.
-    """
-    # 기존 1024차원 임베딩 무효화
-    op.execute("UPDATE policy_chunks SET embedding = NULL WHERE embedding IS NOT NULL")
-
-    # 컬럼 타입 롤백
-    op.execute(
-        "ALTER TABLE policy_chunks ALTER COLUMN embedding TYPE vector(768)"
-    )
+    # 768차원 컬럼 복원
+    op.execute("ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS embedding vector(768)")
