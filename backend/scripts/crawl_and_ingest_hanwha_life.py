@@ -603,6 +603,20 @@ async def run(
             total_stats["total"] = len(products)
             total_stats["dry_run"] = len(products)
         else:
+            # Step 1.5: file.hanwhalife.com 세션 확보
+            # download_chk.asp는 ASPSESSIONID 쿠키가 없으면 JavaScript redirect(138B) 반환
+            # www.hanwhalife.com 쿠키는 file.hanwhalife.com 도메인에 전달 안 됨
+            try:
+                await page.goto(  # type: ignore[attr-defined]
+                    "https://file.hanwhalife.com/",
+                    timeout=15_000,
+                    wait_until="domcontentloaded",
+                )
+                await asyncio.sleep(1)
+                logger.info("[%s] file.hanwhalife.com 세션 쿠키 확보 완료", COMPANY_NAME)
+            except Exception as exc:
+                logger.warning("[%s] file.hanwhalife.com 방문 실패 (계속): %s", COMPANY_NAME, exc)
+
             # Step 2: PDF 다운로드 + 인제스트
             total_stats = await download_and_ingest_all(
                 page=page,
