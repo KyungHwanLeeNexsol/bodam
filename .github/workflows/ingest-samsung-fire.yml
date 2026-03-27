@@ -28,6 +28,10 @@ on:
         default: ''
 
 
+concurrency:
+  group: ingest-samsung-fire
+  cancel-in-progress: false  # 기존 실행 완료 후 진행 (동시 실행 차단)
+
 jobs:
   crawl-and-ingest:
     name: 삼성화재 크롤링 + 인제스트

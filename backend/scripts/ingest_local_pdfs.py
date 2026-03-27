@@ -578,8 +578,8 @@ async def upsert_policy(
 ) -> Any:
     """Policy 레코드를 upsert한다 (company_id + product_code 기준).
 
-    기존 레코드가 있으면 raw_text와 metadata_를 업데이트,
-    없으면 새로 생성한다.
+    INSERT ... ON CONFLICT DO UPDATE 단일 원자적 구문으로 처리.
+    SELECT+INSERT 패턴의 stale intent 누적으로 인한 ABORT_REASON_CLIENT_REJECT 방지.
 
     Args:
         session: SQLAlchemy 비동기 세션
@@ -589,9 +589,12 @@ async def upsert_policy(
         raw_text: 추출 및 정제된 약관 텍스트
 
     Returns:
-        Policy 인스턴스
+        policy.id를 담은 SimpleNamespace (id 속성)
     """
-    from sqlalchemy import select
+    from types import SimpleNamespace
+
+    from sqlalchemy import func
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from app.models.insurance import InsuranceCategory, Policy
 
@@ -604,13 +607,6 @@ async def upsert_policy(
         category = InsuranceCategory(category_str)
     except ValueError:
         category = InsuranceCategory.LIFE
-
-    stmt = select(Policy).where(
-        Policy.company_id == company.id,
-        Policy.product_code == product_code,
-    )
-    result = await session.execute(stmt)
-    policy = result.scalar_one_or_none()
 
     policy_metadata = {"content_hash": content_hash}
     if metadata.get("source_url"):
@@ -627,28 +623,40 @@ async def upsert_policy(
         )
         raw_text = raw_text[:_MAX_POLICY_RAW_TEXT]
 
-    if policy is None:
-        policy = Policy(
-            id=uuid.uuid4(),
-            company_id=company.id,
-            name=product_name,
-            product_code=product_code,
-            category=category,
-            raw_text=raw_text,
-            metadata_=policy_metadata,
-            sale_status=sale_status,
-        )
-        session.add(policy)
-        await session.flush()
+    # @MX:NOTE: [AUTO] INSERT ... ON CONFLICT DO UPDATE: SELECT+INSERT 패턴 대비 stale intent 누적 방지
+    # @MX:REASON: SELECT+INSERT는 unique index에 stale intent 잔류 시 ABORT_REASON_CLIENT_REJECT 연쇄 유발
+    # @MX:NOTE: [AUTO] ON CONFLICT 충돌 시 DO UPDATE로 원자 처리 → timestamp 전진 없이 즉시 해소
+    new_id = uuid.uuid4()
+    insert_stmt = pg_insert(Policy).values(
+        id=new_id,
+        company_id=company.id,
+        name=product_name,
+        product_code=product_code,
+        category=category,
+        raw_text=raw_text,
+        metadata_=policy_metadata,
+        sale_status=sale_status,
+    )
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        constraint="uq_policy_company_product",
+        set_={
+            "name": insert_stmt.excluded.name,
+            "raw_text": insert_stmt.excluded.raw_text,
+            "metadata_": insert_stmt.excluded.metadata_,
+            "sale_status": insert_stmt.excluded.sale_status,
+            "updated_at": func.now(),
+        },
+    ).returning(Policy.id)
+
+    result = await session.execute(upsert_stmt)
+    policy_id = result.scalar_one()
+
+    if policy_id == new_id:
         logger.debug("Policy 생성: %s / %s (sale_status=%s)", company.code, product_code, sale_status)
     else:
-        # 기존 레코드 업데이트
-        policy.raw_text = raw_text
-        policy.metadata_ = policy_metadata
-        policy.sale_status = sale_status
         logger.debug("Policy 업데이트: %s / %s (sale_status=%s)", company.code, product_code, sale_status)
 
-    return policy
+    return SimpleNamespace(id=policy_id)
 
 
 async def create_chunks(
