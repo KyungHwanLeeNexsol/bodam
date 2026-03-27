@@ -69,8 +69,9 @@ DISCLOSURE_URL = "https://www.meritzfire.com/disclosure/product-announcement/pro
 # 수집 대상 카테고리 (기존 crawl_meritz_fire.py와 동일)
 TARGET_CATEGORIES = ["질병보험", "상해보험", "암보험", "어린이보험", "통합보험"]
 
-# 제외 키워드 (기업보험·단체보험 등)
-NEGATIVE_KEYWORDS = ["단체", "기업", "법인", "퇴직", "저축"]
+# 제외 키워드 (기업보험·단체보험·자동차보험 등)
+# @MX:NOTE: [AUTO] 판매중지 탭은 카테고리 무관 전체 목록 반환 → 자동차보험도 포함됨 → 제외 필요
+NEGATIVE_KEYWORDS = ["단체", "기업", "법인", "퇴직", "저축", "자동차"]
 
 RATE_LIMIT = 0.5  # 초 (상품 간 대기)
 DEFAULT_STATE_PATH = Path("failure_state_meritz.json")
@@ -170,13 +171,33 @@ async def navigate_to_category(
 ) -> bool:
     """DISCLOSURE_URL로 이동 후 카테고리·판매상태 탭을 선택한다.
 
+    # @MX:NOTE: [AUTO] 판매중지 탭(goSuspPdLst)은 카테고리 무관 전체 목록 반환
+    # @MX:NOTE: [AUTO] 판매중지 시 카테고리 클릭 불필요 → 바로 goSuspPdLst() 클릭
+    # @MX:NOTE: [AUTO] category="전체"로 호출 시 판매중지 전용 단일 수집 경로
+
     Returns:
         True if navigation succeeded.
     """
     await page.goto(DISCLOSURE_URL, timeout=30_000, wait_until="networkidle")  # type: ignore[attr-defined]
     await asyncio.sleep(4)
 
-    # 카테고리 클릭
+    if sale_status == "판매중지":
+        # 판매중지 탭은 카테고리 무관 → 카테고리 클릭 없이 바로 탭 클릭
+        # HTML: <a href="#" data-ng-click="goSuspPdLst()">판매중지상품목록</a>
+        tab_clicked = await page.evaluate(  # type: ignore[attr-defined]
+            """() => {
+            const el = document.querySelector('a[data-ng-click="goSuspPdLst()"]');
+            if (el) { el.click(); return true; }
+            return false;
+        }"""
+        )
+        if not tab_clicked:
+            logger.warning("[%s] 판매중지 탭(goSuspPdLst) 없음", COMPANY_NAME)
+            return False
+        await asyncio.sleep(4)
+        return True
+
+    # 판매 탭: 카테고리 클릭
     clicked = await page.evaluate(  # type: ignore[attr-defined]
         f"""() => {{
         const anchors = Array.from(document.querySelectorAll('a'));
@@ -195,39 +216,21 @@ async def navigate_to_category(
         return False
 
     await asyncio.sleep(4)
-
-    # 판매중지 탭 클릭
-    if sale_status == "판매중지":
-        tab_clicked = await page.evaluate(  # type: ignore[attr-defined]
-            """() => {
-            const elements = document.querySelectorAll('a, li, button, span');
-            for (const el of elements) {
-                if (el.textContent.trim() === '판매중지') {
-                    el.click();
-                    return true;
-                }
-            }
-            return false;
-        }"""
-        )
-        if not tab_clicked:
-            logger.warning("[%s] 판매중지 탭 없음 (%s)", COMPANY_NAME, category)
-            return False
-        await asyncio.sleep(3)
-
     return True
 
 
 async def get_row_info(page: object) -> list[dict]:
-    """현재 페이지에서 테이블 행 정보(이름, 파일 버튼 존재 여부)를 수집한다."""
+    """현재 페이지에서 테이블 행 정보(이름, 파일 버튼 존재 여부, 버튼 수)를 수집한다."""
     return await page.evaluate(  # type: ignore[attr-defined]
         """() => {
         const rows = document.querySelectorAll('table tbody tr');
         return Array.from(rows).map((tr, idx) => {
             const tds = tr.querySelectorAll('td');
             const name = tds[0] ? tds[0].textContent.trim() : '';
-            const hasFile = tds[3] && tds[3].querySelector('a.btn_file') !== null;
-            return {idx, name, hasFile};
+            const buttons = tds[3] ? tds[3].querySelectorAll('a.btn_file') : [];
+            const hasFile = buttons.length > 0;
+            const fileCount = buttons.length;
+            return {idx, name, hasFile, fileCount};
         });
     }"""
     )
@@ -242,15 +245,17 @@ async def download_and_ingest_product(
     sale_status: str,
     source_url: str,
     dry_run: bool,
+    btn_idx: int = 0,
 ) -> dict:
     """단일 상품 PDF를 Playwright download event로 수신 후 즉시 인제스트한다.
 
     # @MX:NOTE: Playwright expect_download 필수 - POST /hp/fileDownload.do는 직접 GET 불가
+    # @MX:NOTE: btn_idx=0이 최신 판매기간 약관, btn_idx=1이 바로 이전 판매기간 약관
     Returns:
-        {"status": "ok"|"invalid"|"failed"|"dry_run", "size": int}
+        {"status": "ok"|"invalid"|"failed"|"ingest_failed"|"dry_run", "size": int}
     """
     if dry_run:
-        logger.info("  [DRY] %s", product_name)
+        logger.info("  [DRY] %s (btn_idx=%d)", product_name, btn_idx)
         return {"status": "dry_run", "size": 0}
 
     try:
@@ -260,8 +265,8 @@ async def download_and_ingest_product(
                 const rows = document.querySelectorAll('table tbody tr');
                 const row = rows[{row_idx}];
                 if (row) {{
-                    const btn = row.querySelectorAll('td')[3]?.querySelector('a.btn_file');
-                    if (btn) btn.click();
+                    const btns = row.querySelectorAll('td')[3]?.querySelectorAll('a.btn_file');
+                    if (btns && btns[{btn_idx}]) btns[{btn_idx}].click();
                 }}
             }}"""
             )
@@ -299,10 +304,14 @@ async def download_and_ingest_product(
             "source_url": source_url,
         }
 
+        pdf_size = len(pdf_bytes)
         ingest_result = await ingest_pdf_bytes(session_factory, pdf_bytes, metadata, dry_run)
 
         del pdf_bytes
         gc.collect()
+
+        if ingest_result.get("status") == "failed":
+            return {"status": "ingest_failed", "error": ingest_result.get("error", "인제스트 실패"), "size": pdf_size}
 
         logger.info(
             "  [OK] %s (%s) → %s",
@@ -310,7 +319,7 @@ async def download_and_ingest_product(
             sale_status,
             ingest_result.get("status", "?"),
         )
-        return {"status": "ok", "size": len(pdf_bytes) if "pdf_bytes" in dir() else 0}
+        return {"status": "ok", "size": pdf_size}
 
     except TimeoutError:
         return {"status": "timeout", "error": "Playwright download timeout", "size": 0}
@@ -374,15 +383,44 @@ async def process_category(
             sale_status=sale_status,
             source_url=source_url,
             dry_run=dry_run,
+            btn_idx=0,
         )
 
-        if result["status"] in ("failed", "timeout", "invalid"):
+        # 최신 약관 손상 시 이전 판매기간 약관으로 폴백
+        # @MX:NOTE: btn_idx=0이 최신, btn_idx=1이 바로 이전 판매기간 약관
+        if result["status"] == "ingest_failed" and r.get("fileCount", 1) > 1:
+            logger.warning(
+                "  [FALLBACK] %s: 최신 약관 손상 → 이전 판매기간 약관 시도 (fileCount=%d)",
+                name, r["fileCount"],
+            )
+            result = await download_and_ingest_product(
+                page=page,
+                session_factory=session_factory,
+                row_idx=idx,
+                product_name=name,
+                category=category,
+                sale_status=sale_status,
+                source_url=source_url,
+                dry_run=dry_run,
+                btn_idx=1,
+            )
+            if result["status"] not in ("failed", "timeout", "invalid", "ingest_failed"):
+                logger.info("  [FALLBACK-OK] %s: 이전 판매기간 약관 인제스트 성공", name)
+
+        if result["status"] in ("failed", "timeout", "invalid", "ingest_failed"):
             error_type = result["status"]
             error_msg = result.get("error", "")
-            logger.error(
-                "  [FAIL] %s: %s - %s",
-                name, error_type, error_msg,
-            )
+            # # @MX:NOTE: ingest_failed(PDF 손상/파싱 불가)는 warn-and-continue; 다운로드/타임아웃 실패만 fail-stop
+            if error_type == "ingest_failed":
+                logger.warning(
+                    "  [WARN-SKIP] %s: PDF 인제스트 실패 (계속 진행) - %s",
+                    name, error_msg,
+                )
+            else:
+                logger.error(
+                    "  [FAIL] %s: %s - %s",
+                    name, error_type, error_msg,
+                )
             state.failures.append(
                 FailureRecord(
                     category=category,
@@ -393,7 +431,7 @@ async def process_category(
                     error_msg=error_msg,
                 )
             )
-            if fail_stop:
+            if fail_stop and error_type != "ingest_failed":
                 logger.error("[fail-stop] 실패 발생 → 중단")
                 return False
         else:
@@ -478,7 +516,7 @@ async def retry_failures(
             dry_run=dry_run,
         )
 
-        if result["status"] in ("failed", "timeout", "invalid"):
+        if result["status"] in ("failed", "timeout", "invalid", "ingest_failed"):
             logger.error("  [RETRY-FAIL] %s: %s", product_name, result.get("error", ""))
             state.failures.append(
                 FailureRecord(
@@ -578,26 +616,39 @@ async def crawl_and_ingest(
                     state=state,
                 )
             else:
-                # 전체 실행 모드: 카테고리 × 판매상태 조합 순차 처리
+                # 전체 실행 모드
+                # 1단계: 카테고리별 판매 상품 수집
+                stop_early = False
                 for category in TARGET_CATEGORIES:
-                    for sale_status in ["판매", "판매중지"]:
-                        should_continue = await process_category(
-                            page=page,
-                            session_factory=_db.session_factory,
-                            processed_urls=processed_urls,
-                            category=category,
-                            sale_status=sale_status,
-                            dry_run=dry_run,
-                            state=state,
-                            fail_stop=True,
-                        )
-                        if not should_continue:
-                            state.stop_reason = "fail_immediate"
-                            state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
-                            break
-                    else:
-                        continue
-                    break
+                    should_continue = await process_category(
+                        page=page,
+                        session_factory=_db.session_factory,
+                        processed_urls=processed_urls,
+                        category=category,
+                        sale_status="판매",
+                        dry_run=dry_run,
+                        state=state,
+                        fail_stop=True,
+                    )
+                    if not should_continue:
+                        state.stop_reason = "fail_immediate"
+                        state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                        stop_early = True
+                        break
+
+                # 2단계: 판매중지 상품 수집 (카테고리 무관 1회)
+                # @MX:NOTE: [AUTO] goSuspPdLst() 는 카테고리 무관 전체 판매중지 목록 반환 → 1회만 수집
+                if not stop_early:
+                    await process_category(
+                        page=page,
+                        session_factory=_db.session_factory,
+                        processed_urls=processed_urls,
+                        category="전체",
+                        sale_status="판매중지",
+                        dry_run=dry_run,
+                        state=state,
+                        fail_stop=True,
+                    )
 
         except Exception as e:
             logger.error("크롤링 중 예외 발생: %s", e)

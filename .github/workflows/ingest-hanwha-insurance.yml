@@ -23,7 +23,7 @@ jobs:
   crawl-and-ingest:
     name: 한화손해보험 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # 2시간
+    timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

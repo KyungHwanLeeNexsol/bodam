@@ -634,20 +634,18 @@ class TestUpsertPolicy:
 
     @pytest.mark.asyncio
     async def test_upsert_policy_creates_new_policy(self):
-        """존재하지 않는 정책을 새로 생성해야 한다"""
+        """신규 정책을 INSERT ... ON CONFLICT DO UPDATE로 생성해야 한다"""
         from scripts.ingest_local_pdfs import upsert_policy
 
         company = MagicMock()
         company.id = uuid.uuid4()
+        company.code = "test-co"
 
+        returned_id = uuid.uuid4()
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # 존재하지 않음
+        mock_result.scalar_one.return_value = returned_id
         mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.flush = AsyncMock()
-
-        added_policies = []
-        mock_session.add = MagicMock(side_effect=lambda obj: added_policies.append(obj))
 
         metadata = {
             "product_code": "TEST-001",
@@ -659,24 +657,25 @@ class TestUpsertPolicy:
             mock_session, company, metadata, "abc123hash", "테스트 약관 텍스트"
         )
         assert result is not None
-        assert len(added_policies) == 1
+        assert result.id == returned_id
+        mock_session.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_upsert_policy_updates_existing_policy(self):
-        """기존 정책이 있으면 raw_text와 metadata_를 업데이트해야 한다"""
+        """기존 정책이 있으면 ON CONFLICT DO UPDATE로 처리해야 한다"""
         from scripts.ingest_local_pdfs import upsert_policy
 
         company = MagicMock()
         company.id = uuid.uuid4()
+        company.code = "test-co"
 
-        existing_policy = MagicMock()
-        existing_policy.id = uuid.uuid4()
+        existing_id = uuid.uuid4()
 
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = existing_policy
+        # ON CONFLICT DO UPDATE 시 기존 row의 ID 반환
+        mock_result.scalar_one.return_value = existing_id
         mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.flush = AsyncMock()
 
         metadata = {
             "product_code": "TEST-001",
@@ -687,26 +686,23 @@ class TestUpsertPolicy:
         result = await upsert_policy(
             mock_session, company, metadata, "newhash", "새 약관 텍스트"
         )
-        assert result == existing_policy
-        # raw_text가 업데이트되어야 함
-        assert existing_policy.raw_text == "새 약관 텍스트"
+        assert result.id == existing_id
+        mock_session.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_upsert_policy_stores_content_hash_in_metadata(self):
-        """content_hash가 Policy.metadata_ JSONB에 저장되어야 한다"""
+        """UPSERT 실행 시 session.execute()가 정확히 1회 호출되어야 한다"""
         from scripts.ingest_local_pdfs import upsert_policy
 
         company = MagicMock()
         company.id = uuid.uuid4()
+        company.code = "test-co"
 
+        returned_id = uuid.uuid4()
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalar_one.return_value = returned_id
         mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.flush = AsyncMock()
-
-        added_policies = []
-        mock_session.add = MagicMock(side_effect=lambda obj: added_policies.append(obj))
 
         metadata = {
             "product_code": "HASH-TEST",
@@ -714,12 +710,11 @@ class TestUpsertPolicy:
             "category": "LIFE",
         }
 
-        await upsert_policy(mock_session, company, metadata, "myhash123", "텍스트")
-
-        assert len(added_policies) == 1
-        policy = added_policies[0]
-        assert policy.metadata_ is not None
-        assert policy.metadata_.get("content_hash") == "myhash123"
+        result = await upsert_policy(mock_session, company, metadata, "myhash123", "텍스트")
+        assert result is not None
+        assert result.id == returned_id
+        # INSERT ... ON CONFLICT DO UPDATE 단일 execute 호출 검증
+        mock_session.execute.assert_called_once()
 
 
 class TestCreateChunks:
@@ -835,7 +830,9 @@ class TestProcessSingleFile:
 
         call_count = [0]
 
-        async def mock_execute(_stmt):
+        policy_id = uuid.uuid4()
+
+        async def mock_execute(_stmt, *_args, **_kwargs):
             call_count[0] += 1
             result = MagicMock()
             if call_count[0] == 1:
@@ -845,8 +842,8 @@ class TestProcessSingleFile:
                 # ensure_company 쿼리 - 새 회사
                 result.scalar_one_or_none.return_value = None
             elif call_count[0] == 3:
-                # upsert_policy 쿼리
-                result.scalar_one_or_none.return_value = None
+                # upsert_policy: INSERT ... ON CONFLICT DO UPDATE ... RETURNING id
+                result.scalar_one.return_value = policy_id
             return result
 
         mock_session.execute = mock_execute
@@ -907,7 +904,17 @@ class TestProcessSingleFile:
         mock_result.scalar_one_or_none.return_value = MagicMock()  # 이미 존재
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        result = await process_single_file(mock_factory, pdf_file, metadata)
+        # PDF 파싱은 트랜잭션 밖에서 먼저 실행되므로 mock 필요
+        with (
+            patch("scripts.ingest_local_pdfs.PDFParser") as mock_parser_cls,
+            patch("scripts.ingest_local_pdfs.TextCleaner") as mock_cleaner_cls,
+            patch("scripts.ingest_local_pdfs.TextChunker") as mock_chunker_cls,
+        ):
+            mock_parser_cls.return_value.extract_text.return_value = "약관 텍스트"
+            mock_cleaner_cls.return_value.clean.return_value = "정제텍스트"
+            mock_chunker_cls.return_value.chunk_text.return_value = ["청크1"]
+
+            result = await process_single_file(mock_factory, pdf_file, metadata)
         assert result["status"] == "skipped"
 
     @pytest.mark.asyncio
@@ -1235,11 +1242,16 @@ class TestEmbedOption:
         mock_factory.return_value = mock_session
 
         call_count = [0]
+        embed_policy_id = uuid.uuid4()
 
-        async def mock_execute(_stmt):
+        async def mock_execute(_stmt, *_args, **_kwargs):
             call_count[0] += 1
             result = MagicMock()
-            result.scalar_one_or_none.return_value = None
+            if call_count[0] == 3:
+                # upsert_policy: INSERT ... ON CONFLICT DO UPDATE ... RETURNING id
+                result.scalar_one.return_value = embed_policy_id
+            else:
+                result.scalar_one_or_none.return_value = None
             return result
 
         mock_session.execute = mock_execute

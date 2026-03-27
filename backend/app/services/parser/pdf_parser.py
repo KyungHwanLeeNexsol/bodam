@@ -6,6 +6,8 @@ pdfplumber를 사용하여 PDF 파일에서 텍스트 추출.
 
 from __future__ import annotations
 
+import warnings
+
 import pdfplumber
 
 
@@ -44,10 +46,16 @@ class PDFParser:
             페이지별 텍스트 리스트 (PDF 페이지 수와 동일한 길이)
         """
         # # @MX:NOTE: [AUTO] pdfplumber는 한국어를 포함한 유니코드 텍스트 추출 지원
-        with pdfplumber.open(file_path) as pdf:
-            page_texts = []
-            for page in pdf.pages:
-                text = page.extract_text()
-                # None인 경우(빈 페이지 또는 이미지 전용 페이지) 빈 문자열로 처리
-                page_texts.append(text if text is not None else "")
+        # pypdf 내부: 순환참조 PDF 메타데이터 파싱 시 재귀 한도 경고 억제 (텍스트 추출 무관)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*could not be parsed due to exception.*",
+            )
+            with pdfplumber.open(file_path) as pdf:
+                page_texts = []
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    # None인 경우(빈 페이지 또는 이미지 전용 페이지) 빈 문자열로 처리
+                    page_texts.append(text if text is not None else "")
         return page_texts

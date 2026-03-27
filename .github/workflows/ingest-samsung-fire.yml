@@ -28,11 +28,15 @@ on:
         default: ''
 
 
+concurrency:
+  group: ingest-samsung-fire
+  cancel-in-progress: false  # 기존 실행 완료 후 진행 (동시 실행 차단)
+
 jobs:
   crawl-and-ingest:
     name: 삼성화재 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # 5시간 50분 (Actions 최대 6시간)
+    timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

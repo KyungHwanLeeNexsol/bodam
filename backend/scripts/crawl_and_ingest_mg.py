@@ -212,6 +212,66 @@ async def collect_products(page: object) -> list[dict]:
     return all_products
 
 
+def hwpx_to_text(raw_bytes: bytes) -> str:
+    """HWPX(ZIP+XML) 파일에서 텍스트를 추출한다.
+
+    HWPX 포맷: ZIP 컨테이너 내 Contents/section*.xml 파일
+    텍스트는 <hp:t> 태그에 저장됨. 표준 라이브러리만 사용.
+    """
+    import io
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    # @MX:NOTE: HWPX 네임스페이스 — 한컴 표준 (http://www.hancom.co.kr/hwpml/2012/paragraph)
+    hp_ns = "http://www.hancom.co.kr/hwpml/2012/paragraph"
+
+    texts: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+        section_files = sorted(
+            name for name in zf.namelist()
+            if name.startswith("Contents/section") and name.endswith(".xml")
+        )
+        for section_name in section_files:
+            with zf.open(section_name) as f:
+                try:
+                    tree = ET.parse(f)
+                    for elem in tree.iter(f"{{{hp_ns}}}t"):
+                        if elem.text:
+                            texts.append(elem.text)
+                except ET.ParseError as e:
+                    logger.warning("HWPX 섹션 파싱 오류 (%s): %s", section_name, e)
+                    continue
+
+    return "\n".join(texts)
+
+
+async def ingest_hwpx_bytes(
+    session_factory: object,
+    hwpx_bytes: bytes,
+    metadata: dict,
+    dry_run: bool = False,
+) -> dict:
+    """HWPX bytes를 텍스트로 변환 후 인제스트한다."""
+    from scripts.ingest_local_pdfs import process_text_content
+
+    source_name = metadata.get("product_name", "hwpx")[:40]
+    try:
+        raw_text = hwpx_to_text(hwpx_bytes)
+    except Exception as e:
+        return {"status": "failed", "chunk_count": 0, "error": f"HWPX 파싱 실패: {e}"}
+
+    if not raw_text.strip():
+        return {"status": "failed", "chunk_count": 0, "error": "HWPX 텍스트 추출 결과 비어 있음"}
+
+    return await process_text_content(
+        session_factory=session_factory,
+        raw_text=raw_text,
+        metadata=metadata,
+        dry_run=dry_run,
+        source_name=source_name,
+    )
+
+
 async def ingest_pdf_bytes(
     session_factory: object,
     pdf_bytes: bytes,
@@ -284,6 +344,18 @@ async def download_and_ingest_all(
 
         await asyncio.sleep(RATE_LIMIT)
 
+        # 인제스트 메타데이터 (PDF/HWPX 공통 — 다운로드 전 미리 구성)
+        metadata = {
+            "format_type": "B",
+            "company_code": COMPANY_CODE,
+            "company_name": COMPANY_NAME,
+            "product_code": data_idno,
+            "product_name": product_name,
+            "category": "NON_LIFE",
+            "source_url": source_url,
+            "sale_status": sale_status,
+        }
+
         # PDF 다운로드 (Playwright fetch - Devon.js 세션 쿠키 필요)
         # @MX:NOTE: [AUTO] fetch 후 ArrayBuffer → base64 변환하여 Python으로 전달
         pdf_bytes: bytes | None = None
@@ -331,6 +403,47 @@ async def download_and_ingest_all(
                     # PDF 시그니처 확인
                     if raw_bytes[:4] == b"%PDF":
                         pdf_bytes = raw_bytes
+                    elif raw_bytes[:4] == b"PK\x03\x04":
+                        # HWPX 파일 (ZIP 컨테이너): 텍스트 추출 후 인제스트
+                        logger.info(
+                            "[%d] HWPX 감지: %s (size=%d) — 텍스트 추출 시도",
+                            idx, product_name[:40], size,
+                        )
+                        try:
+                            hwpx_result = await ingest_hwpx_bytes(
+                                session_factory, raw_bytes, metadata, dry_run=dry_run
+                            )
+                        except Exception as exc:
+                            hwpx_result = {"status": "failed", "error": str(exc)}
+
+                        hwpx_status = hwpx_result.get("status", "failed")
+                        if hwpx_status == "success":
+                            stats["success"] += 1
+                            processed_urls.add(source_url)
+                            logger.info(
+                                "[%d] 완료(HWPX): %s (%s, %s, %d청크)",
+                                idx, product_name[:40], cat_name, sale_status,
+                                hwpx_result.get("chunk_count", 0),
+                            )
+                        elif hwpx_status == "skipped":
+                            stats["skipped"] += 1
+                            processed_urls.add(source_url)
+                            logger.debug("[%d] 스킵(중복/HWPX): %s", idx, product_name[:40])
+                        elif hwpx_status == "dry_run":
+                            stats["dry_run"] += 1
+                        else:
+                            stats["failed"] += 1
+                            err = hwpx_result.get("error", "")
+                            logger.warning("[%d] HWPX 인제스트 실패 %s: %s", idx, product_name[:40], err)
+                            state.failures.append(FailureRecord(
+                                product_name=product_name,
+                                category=cat_name,
+                                source_url=source_url,
+                                sale_status=sale_status,
+                                error=f"HWPX 파싱 실패: {err}",
+                            ))
+                            state.save(state_output_path)
+                        continue
                     else:
                         logger.warning(
                             "[%d] PDF 시그니처 불일치: %s (sig=%s, size=%d)",
@@ -355,18 +468,6 @@ async def download_and_ingest_all(
             ))
             state.save(state_output_path)
             continue
-
-        # 인제스트
-        metadata = {
-            "format_type": "B",
-            "company_code": COMPANY_CODE,
-            "company_name": COMPANY_NAME,
-            "product_code": data_idno,
-            "product_name": product_name,
-            "category": "NON_LIFE",
-            "source_url": source_url,
-            "sale_status": sale_status,
-        }
 
         try:
             result = await ingest_pdf_bytes(session_factory, pdf_bytes, metadata, dry_run=dry_run)

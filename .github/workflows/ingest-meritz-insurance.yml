@@ -19,7 +19,7 @@ jobs:
   crawl-and-ingest:
     name: 메리츠화재 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 300  # 5시간 (5카테고리 × 2탭 × 상품 수 × 다운로드 시간)
+    timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

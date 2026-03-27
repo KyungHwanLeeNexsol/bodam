@@ -24,11 +24,15 @@ class Settings(BaseSettings):
     # 테스트 환경에서는 빈 문자열로 설정 가능
     openai_api_key: str = ""
 
-    # 임베딩 모델명 (Gemini gemini-embedding-001: 768차원, EmbeddingService가 models/ 접두사 추가)
-    embedding_model: str = "gemini-embedding-001"
+    # 임베딩 제공자: "local" (BAAI/bge-m3 로컬 모델) 또는 "gemini" (Google Gemini, deprecated)
+    embedding_provider: str = "local"
+
+    # 임베딩 모델명 (로컬: BAAI/bge-m3 1024차원, Gemini: gemini-embedding-001 768차원)
+    embedding_model: str = "BAAI/bge-m3"
 
     # 임베딩 벡터 차원 수 (pgvector Vector 타입과 일치해야 함)
-    embedding_dimensions: int = 768
+    # bge-m3: 1024차원, gemini-embedding-001: 768차원
+    embedding_dimensions: int = 1024
 
     # RAG 청크 분할 설정
     # 청크 최대 토큰 수 (tiktoken 기준)

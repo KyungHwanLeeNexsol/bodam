@@ -443,7 +443,9 @@ async def download_and_ingest_all(
 
         stats["total"] += 1
         file_path_str = f"{path}{server_name}"
-        source_url = f"{DOWNLOAD_URL}?FILE_NAME={file_path_str}"
+        # @MX:NOTE: [AUTO] sale_status를 source_url에 포함 → 판매/판매중지 탭 중복 방지
+        # @MX:NOTE: [AUTO] 동일 파일이 두 탭에 노출될 때 각각 별도 레코드로 인제스트
+        source_url = f"{DOWNLOAD_URL}?FILE_NAME={file_path_str}&sale_status={sale_status}"
 
         # resume 모드: 지정된 URL만 재처리
         if resume_urls is not None and source_url not in resume_urls:
