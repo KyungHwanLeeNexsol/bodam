@@ -158,8 +158,6 @@ secret-*.*
 # ===========================================
 # Claude Code Configuration
 # ===========================================
-.mcp.json
-*/.claude/
 .claude/settings.local.json
 .claude/settings.local.*.json
 .claude/.env.local*
@@ -207,25 +205,20 @@ dist-ssr/
 .netlify/
 .firebase/
 
-# ===========================================
-# Bodam Project Specific
-# ===========================================
-# Data uploads (로컬 PDF 파일 - R2/OCI Object Storage에 저장됨)
+# User Custom Patterns (preserved by moai update)
+.mcp.json
+*/.claude/
 data/uploads/
 backend/data/
-
-# 프로덕션 환경 변수 (절대 커밋 금지)
 .env.prod
-
-# Docker override
 docker-compose.override.yml
-
-# MoAI temp state
 .moai/cache/
 .moai/tmp/
-
-# ===========================================
-# Crawler Failure State (Runtime Dumps)
-# ===========================================
 backend/failure_state_*.json
 backend/crawler_state_*.json
+
+# ===========================================
+# MoAI & Claude Full Directory Ignore
+# ===========================================
+.moai/
+.claude/
