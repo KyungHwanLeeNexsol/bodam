@@ -862,6 +862,106 @@ async def process_single_file(
             return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
 
+async def process_text_content(
+    session_factory: Any,
+    raw_text: str,
+    metadata: dict[str, Any],
+    dry_run: bool = False,
+    embedding_service: Any | None = None,
+    source_name: str = "unknown",
+) -> dict[str, Any]:
+    """추출된 텍스트를 직접 인제스트한다 (HWPX 등 비-PDF 포맷 지원).
+
+    PDF 파싱 단계를 건너뛰고 raw_text에서 바로 청킹·저장한다.
+    process_single_file과 동일한 DB 트랜잭션 패턴 사용.
+
+    Args:
+        session_factory: SQLAlchemy async_sessionmaker
+        raw_text: 이미 추출된 원본 텍스트
+        metadata: extract_metadata()로 추출한 메타데이터
+        dry_run: True이면 DB에 실제로 쓰지 않음
+        embedding_service: 임베딩 서비스 인스턴스 (None이면 임베딩 생략)
+        source_name: 로그용 파일/상품명
+
+    Returns:
+        {"status": "success"|"skipped"|"dry_run"|"failed",
+         "chunk_count": int, "error": str|None}
+    """
+    import hashlib
+
+    content_hash = hashlib.sha256(raw_text.encode()).hexdigest()
+
+    cleaner = TextCleaner()
+    chunker = TextChunker()
+
+    if dry_run:
+        clean_text = cleaner.clean(raw_text)
+        chunks = chunker.chunk_text(clean_text)
+        logger.info("[dry-run] %s: %d청크 (hash=%s)", source_name, len(chunks), content_hash[:8])
+        return {"status": "dry_run", "chunk_count": len(chunks), "error": None}
+
+    clean_text = cleaner.clean(raw_text)
+    chunks = chunker.chunk_text(clean_text)
+
+    if not chunks:
+        return {"status": "failed", "chunk_count": 0, "error": "텍스트 추출 결과가 비어 있음"}
+
+    # 임베딩 생성 (네트워크 I/O)
+    embeddings: list[list[float] | None] | None = None
+    if embedding_service is not None:
+        try:
+            raw_embeddings = await embedding_service.embed_batch(chunks)
+            embeddings = raw_embeddings
+        except Exception as e:
+            logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
+
+    max_retries = 5
+    base_backoff = 0.5
+
+    for attempt in range(max_retries):
+        try:
+            async with session_factory() as session:
+                await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+
+                is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
+                if is_dup:
+                    logger.debug("중복 스킵: %s (hash=%s)", source_name, content_hash[:8])
+                    return {"status": "skipped", "chunk_count": 0, "error": None}
+
+                company = await ensure_company(
+                    session,
+                    metadata["company_code"],
+                    metadata["company_name"],
+                    metadata.get("category", "LIFE"),
+                )
+
+                _MAX_RAW_TEXT = 100_000
+                clean_text_for_db = clean_text[:_MAX_RAW_TEXT] if len(clean_text) > _MAX_RAW_TEXT else clean_text
+                policy = await upsert_policy(session, company, metadata, content_hash, clean_text_for_db)
+                await create_chunks(session, policy.id, chunks, embeddings)
+                await session.commit()
+
+                logger.info("처리 완료: %s (%d청크, hash=%s)", source_name, len(chunks), content_hash[:8])
+                return {
+                    "status": "success",
+                    "chunk_count": len(chunks),
+                    "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                    "error": None,
+                }
+
+        except Exception as e:
+            if _is_serialization_error(e) and attempt < max_retries - 1:
+                wait = base_backoff * (2**attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
+                    attempt + 1, max_retries, wait, source_name,
+                )
+                await asyncio.sleep(wait)
+                continue
+            logger.error("처리 실패: %s (%s)", source_name, e, exc_info=True)
+            return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+
+
 # ─────────────────────────────────────────────────────────────
 # TASK-012: main() + TASK-009: dry-run + TASK-013: --embed
 # ─────────────────────────────────────────────────────────────
