@@ -811,8 +811,15 @@ async def process_single_file(
                 )
 
                 # Policy upsert
+                # raw_text 크기 제한: DB 직렬화 충돌 방지 (전체 텍스트는 PolicyChunks에 저장됨)
+                _MAX_RAW_TEXT = 100_000
+                if len(clean_text) > _MAX_RAW_TEXT:
+                    logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
+                    clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
+                else:
+                    clean_text_for_db = clean_text
                 policy = await upsert_policy(
-                    session, company, metadata, content_hash, clean_text
+                    session, company, metadata, content_hash, clean_text_for_db
                 )
 
                 # PolicyChunk 생성
