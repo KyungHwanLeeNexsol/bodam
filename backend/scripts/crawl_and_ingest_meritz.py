@@ -69,8 +69,9 @@ DISCLOSURE_URL = "https://www.meritzfire.com/disclosure/product-announcement/pro
 # 수집 대상 카테고리 (기존 crawl_meritz_fire.py와 동일)
 TARGET_CATEGORIES = ["질병보험", "상해보험", "암보험", "어린이보험", "통합보험"]
 
-# 제외 키워드 (기업보험·단체보험 등)
-NEGATIVE_KEYWORDS = ["단체", "기업", "법인", "퇴직", "저축"]
+# 제외 키워드 (기업보험·단체보험·자동차보험 등)
+# @MX:NOTE: [AUTO] 판매중지 탭은 카테고리 무관 전체 목록 반환 → 자동차보험도 포함됨 → 제외 필요
+NEGATIVE_KEYWORDS = ["단체", "기업", "법인", "퇴직", "저축", "자동차"]
 
 RATE_LIMIT = 0.5  # 초 (상품 간 대기)
 DEFAULT_STATE_PATH = Path("failure_state_meritz.json")
@@ -170,13 +171,33 @@ async def navigate_to_category(
 ) -> bool:
     """DISCLOSURE_URL로 이동 후 카테고리·판매상태 탭을 선택한다.
 
+    # @MX:NOTE: [AUTO] 판매중지 탭(goSuspPdLst)은 카테고리 무관 전체 목록 반환
+    # @MX:NOTE: [AUTO] 판매중지 시 카테고리 클릭 불필요 → 바로 goSuspPdLst() 클릭
+    # @MX:NOTE: [AUTO] category="전체"로 호출 시 판매중지 전용 단일 수집 경로
+
     Returns:
         True if navigation succeeded.
     """
     await page.goto(DISCLOSURE_URL, timeout=30_000, wait_until="networkidle")  # type: ignore[attr-defined]
     await asyncio.sleep(4)
 
-    # 카테고리 클릭
+    if sale_status == "판매중지":
+        # 판매중지 탭은 카테고리 무관 → 카테고리 클릭 없이 바로 탭 클릭
+        # HTML: <a href="#" data-ng-click="goSuspPdLst()">판매중지상품목록</a>
+        tab_clicked = await page.evaluate(  # type: ignore[attr-defined]
+            """() => {
+            const el = document.querySelector('a[data-ng-click="goSuspPdLst()"]');
+            if (el) { el.click(); return true; }
+            return false;
+        }"""
+        )
+        if not tab_clicked:
+            logger.warning("[%s] 판매중지 탭(goSuspPdLst) 없음", COMPANY_NAME)
+            return False
+        await asyncio.sleep(4)
+        return True
+
+    # 판매 탭: 카테고리 클릭
     clicked = await page.evaluate(  # type: ignore[attr-defined]
         f"""() => {{
         const anchors = Array.from(document.querySelectorAll('a'));
@@ -195,26 +216,6 @@ async def navigate_to_category(
         return False
 
     await asyncio.sleep(4)
-
-    # 판매중지 탭 클릭
-    if sale_status == "판매중지":
-        tab_clicked = await page.evaluate(  # type: ignore[attr-defined]
-            """() => {
-            const elements = document.querySelectorAll('a, li, button, span');
-            for (const el of elements) {
-                if (el.textContent.trim() === '판매중지') {
-                    el.click();
-                    return true;
-                }
-            }
-            return false;
-        }"""
-        )
-        if not tab_clicked:
-            logger.warning("[%s] 판매중지 탭 없음 (%s)", COMPANY_NAME, category)
-            return False
-        await asyncio.sleep(3)
-
     return True
 
 
@@ -615,26 +616,39 @@ async def crawl_and_ingest(
                     state=state,
                 )
             else:
-                # 전체 실행 모드: 카테고리 × 판매상태 조합 순차 처리
+                # 전체 실행 모드
+                # 1단계: 카테고리별 판매 상품 수집
+                stop_early = False
                 for category in TARGET_CATEGORIES:
-                    for sale_status in ["판매", "판매중지"]:
-                        should_continue = await process_category(
-                            page=page,
-                            session_factory=_db.session_factory,
-                            processed_urls=processed_urls,
-                            category=category,
-                            sale_status=sale_status,
-                            dry_run=dry_run,
-                            state=state,
-                            fail_stop=True,
-                        )
-                        if not should_continue:
-                            state.stop_reason = "fail_immediate"
-                            state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
-                            break
-                    else:
-                        continue
-                    break
+                    should_continue = await process_category(
+                        page=page,
+                        session_factory=_db.session_factory,
+                        processed_urls=processed_urls,
+                        category=category,
+                        sale_status="판매",
+                        dry_run=dry_run,
+                        state=state,
+                        fail_stop=True,
+                    )
+                    if not should_continue:
+                        state.stop_reason = "fail_immediate"
+                        state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                        stop_early = True
+                        break
+
+                # 2단계: 판매중지 상품 수집 (카테고리 무관 1회)
+                # @MX:NOTE: [AUTO] goSuspPdLst() 는 카테고리 무관 전체 판매중지 목록 반환 → 1회만 수집
+                if not stop_early:
+                    await process_category(
+                        page=page,
+                        session_factory=_db.session_factory,
+                        processed_urls=processed_urls,
+                        category="전체",
+                        sale_status="판매중지",
+                        dry_run=dry_run,
+                        state=state,
+                        fail_stop=True,
+                    )
 
         except Exception as e:
             logger.error("크롤링 중 예외 발생: %s", e)
