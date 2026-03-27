@@ -44,8 +44,13 @@ logger = logging.getLogger("backfill_embeddings")
 
 # 기본 배치 크기 (Gemini API 최대 100개 제한 이하)
 DEFAULT_BATCH_SIZE = 50
-# UPDATE 트랜잭션당 청크 수 (DB 트랜잭션 크기 제한)
-UPDATE_BATCH_SIZE = 200
+# UPDATE 트랜잭션당 청크 수
+# @MX:NOTE: 1로 설정 — 각 UPDATE를 독립 트랜잭션으로 처리
+# @MX:REASON: CockroachDB ABORT_REASON_CLIENT_REJECT 방지
+#             (다수 UPDATE 단일 트랜잭션 → gul 초과 → 연쇄 실패)
+UPDATE_BATCH_SIZE = 1
+# 직렬화 에러 재시도 횟수
+_MAX_RETRIES = 3
 
 
 async def count_null_embeddings(
@@ -99,35 +104,76 @@ async def fetch_null_embedding_chunks(
         return result.all()
 
 
+def _is_serialization_error(exc: Exception) -> bool:
+    """CockroachDB 직렬화/재시도 오류 여부 판별."""
+    msg = str(exc)
+    return any(
+        kw in msg
+        for kw in (
+            "SerializationError",
+            "TransactionRetryWithProtoRefreshError",
+            "ABORT_REASON_CLIENT_REJECT",
+            "restart transaction",
+        )
+    )
+
+
 async def update_embeddings(
     session_factory: object,
     id_to_embedding: dict[object, list[float]],
-) -> int:
-    """PolicyChunk.embedding을 일괄 UPDATE한다. 성공한 건수를 반환한다."""
+) -> tuple[int, int]:
+    """PolicyChunk.embedding을 단건 트랜잭션으로 UPDATE한다.
+
+    # @MX:NOTE: UPDATE_BATCH_SIZE=1 — 각 청크를 독립 트랜잭션으로 처리
+    # @MX:REASON: CockroachDB ABORT_REASON_CLIENT_REJECT 방지
+    #             (다수 UPDATE 단일 트랜잭션 → 트랜잭션 지속시간 → gul 초과)
+
+    Returns:
+        (updated, failed) 튜플
+    """
     from sqlalchemy import update
 
     from app.models.insurance import PolicyChunk
 
     if not id_to_embedding:
-        return 0
+        return 0, 0
 
     updated = 0
-    # UPDATE_BATCH_SIZE 단위로 나눠서 CockroachDB 트랜잭션 크기 제한 방지
-    items = list(id_to_embedding.items())
-    for i in range(0, len(items), UPDATE_BATCH_SIZE):
-        batch = items[i : i + UPDATE_BATCH_SIZE]
-        async with session_factory() as session:  # type: ignore[union-attr]
-            await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
-            for chunk_id, embedding in batch:
-                stmt = (
-                    update(PolicyChunk)
-                    .where(PolicyChunk.id == chunk_id)
-                    .values(embedding=embedding)
-                )
-                await session.execute(stmt)
-            await session.commit()
-            updated += len(batch)
-    return updated
+    failed = 0
+
+    for chunk_id, embedding in id_to_embedding.items():
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                async with session_factory() as session:  # type: ignore[union-attr]
+                    await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+                    stmt = (
+                        update(PolicyChunk)
+                        .where(PolicyChunk.id == chunk_id)
+                        .values(embedding=embedding)
+                    )
+                    await session.execute(stmt)
+                    await session.commit()
+                    updated += 1
+                    last_exc = None
+                    break
+            except Exception as exc:
+                last_exc = exc
+                if _is_serialization_error(exc) and attempt < _MAX_RETRIES - 1:
+                    wait = 0.5 * (2**attempt)
+                    logger.warning(
+                        "직렬화 오류 (id=%s, 시도 %d/%d), %.1f초 후 재시도: %s",
+                        chunk_id, attempt + 1, _MAX_RETRIES, wait, exc,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                break
+
+        if last_exc is not None:
+            logger.error("단건 UPDATE 실패 (id=%s): %s", chunk_id, last_exc)
+            failed += 1
+
+    return updated, failed
 
 
 async def _embed_with_key_rotation(
@@ -298,8 +344,9 @@ async def backfill(
                 stats["skipped"] += 1
 
         try:
-            updated = await update_embeddings(session_factory, id_to_embedding)
-            stats["updated"] += updated
+            batch_updated, batch_failed = await update_embeddings(session_factory, id_to_embedding)
+            stats["updated"] += batch_updated
+            stats["failed"] += batch_failed
         except Exception as e:
             logger.error("DB UPDATE 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
             stats["failed"] += len(rows)
