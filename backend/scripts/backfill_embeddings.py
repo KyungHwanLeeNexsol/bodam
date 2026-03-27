@@ -138,7 +138,7 @@ async def backfill(
     """임베딩 백필 메인 로직."""
     # ── DB 초기화 ─────────────────────────────────────────────
     from app.core.config import Settings
-    from app.core.database import init_db
+    import app.core.database as db_module
 
     settings = Settings()  # type: ignore[call-arg]
     database_url = getattr(settings, "database_url", None) or os.environ.get("DATABASE_URL", "")
@@ -146,8 +146,8 @@ async def backfill(
         logger.error("DATABASE_URL이 설정되지 않았습니다.")
         sys.exit(1)
 
-    _db = await init_db(database_url)
-    session_factory = _db.session_factory
+    await db_module.init_database(settings)
+    session_factory = db_module.session_factory
 
     # ── 임베딩 서비스 초기화 ───────────────────────────────────
     from app.services.rag.embeddings import EmbeddingService
