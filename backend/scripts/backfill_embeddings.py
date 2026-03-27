@@ -319,7 +319,7 @@ async def backfill(
     # ── 로컬 임베딩 모델 초기화 (BAAI/bge-m3, 1회 로드) ─────────
     # @MX:NOTE: BAAI/bge-m3 모델을 백필 시작 시 1회 로드 — API 키 불필요
     # @MX:NOTE: ~600MB HuggingFace 캐시에서 로드, GitHub Actions에서 캐시 적중 시 빠름
-    _model_name = getattr(settings, "embedding_model", "BAAI/bge-m3")
+    _model_name = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 
     if not dry_run:
         from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
