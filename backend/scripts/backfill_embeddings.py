@@ -149,24 +149,41 @@ async def backfill(
     await db_module.init_database(settings)
     session_factory = db_module.session_factory
 
-    # ── 임베딩 서비스 초기화 ───────────────────────────────────
+    # ── 임베딩 서비스 초기화 (다중 API 키 라운드 로빈) ──────────
     from app.services.rag.embeddings import EmbeddingService
 
-    api_key = getattr(settings, "gemini_api_key", None) or os.environ.get("GEMINI_API_KEY", "")
-    if not api_key and not dry_run:
-        logger.error("GEMINI_API_KEY가 설정되지 않았습니다.")
+    # GEMINI_API_KEY1/2/3 우선, 없으면 GEMINI_API_KEY 단일 키로 폴백
+    _model = getattr(settings, "embedding_model", "models/text-embedding-004")
+    _dimensions = getattr(settings, "embedding_dimensions", 768)
+    _api_keys = [
+        k for k in [
+            os.environ.get("GEMINI_API_KEY1"),
+            os.environ.get("GEMINI_API_KEY2"),
+            os.environ.get("GEMINI_API_KEY3"),
+        ]
+        if k
+    ]
+    if not _api_keys:
+        # 단일 키 폴백
+        _single = getattr(settings, "gemini_api_key", None) or os.environ.get("GEMINI_API_KEY", "")
+        if _single:
+            _api_keys = [_single]
+
+    if not _api_keys and not dry_run:
+        logger.error("GEMINI_API_KEY1/2/3 또는 GEMINI_API_KEY가 설정되지 않았습니다.")
         sys.exit(1)
 
-    embedding_service: EmbeddingService | None = None
-    if not dry_run and api_key:
-        embedding_service = EmbeddingService(
-            api_key=api_key,
-            model=getattr(settings, "embedding_model", "models/text-embedding-004"),
-            dimensions=getattr(settings, "embedding_dimensions", 768),
+    # 키별 EmbeddingService 인스턴스 생성
+    embedding_services: list[EmbeddingService] = []
+    if not dry_run and _api_keys:
+        for _key in _api_keys:
+            embedding_services.append(
+                EmbeddingService(api_key=_key, model=_model, dimensions=_dimensions)
+            )
+        logger.info(
+            "임베딩 서비스 초기화 완료 (model=%s, dim=%d, 키 %d개 라운드 로빈)",
+            _model, _dimensions, len(embedding_services),
         )
-        logger.info("임베딩 서비스 초기화 완료 (model=%s, dim=%d)",
-                    getattr(settings, "embedding_model", "models/text-embedding-004"),
-                    getattr(settings, "embedding_dimensions", 768))
 
     # ── 대상 건수 확인 ─────────────────────────────────────────
     total = await count_null_embeddings(session_factory, company_code)
@@ -179,6 +196,7 @@ async def backfill(
 
     stats = {"total": total, "updated": 0, "skipped": 0, "failed": 0}
     offset = 0
+    batch_index = 0
     start_time = time.time()
 
     while offset < total:
@@ -198,9 +216,13 @@ async def backfill(
             offset += len(rows)
             continue
 
+        # 라운드 로빈으로 EmbeddingService 선택
+        svc = embedding_services[batch_index % len(embedding_services)]
+        batch_index += 1
+
         # Gemini 임베딩 생성
         try:
-            embeddings = await embedding_service.embed_batch(chunk_texts)  # type: ignore[union-attr]
+            embeddings = await svc.embed_batch(chunk_texts)
         except Exception as e:
             logger.error("임베딩 생성 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
             stats["failed"] += len(rows)
