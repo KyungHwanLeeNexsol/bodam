@@ -158,8 +158,6 @@ secret-*.*
 # ===========================================
 # Claude Code Configuration
 # ===========================================
-.mcp.json
-*/.claude/
 .claude/settings.local.json
 .claude/settings.local.*.json
 .claude/.env.local*
@@ -208,24 +206,29 @@ dist-ssr/
 .firebase/
 
 # ===========================================
-# Bodam Project Specific
+# MoAI Framework Files (auto-updated by moai update)
 # ===========================================
-# Data uploads (로컬 PDF 파일 - R2/OCI Object Storage에 저장됨)
+.claude/agents/moai/
+.claude/commands/moai/
+.claude/hooks/moai/
+.claude/rules/moai/
+.claude/skills/moai*/
+.moai/design/
+.moai/config/sections/
+
+# ===========================================
+# Claude Code Auto-Updated Files
+# ===========================================
+.claude/skills/moai-design-craft/
+
+# User Custom Patterns (preserved by moai update)
+.mcp.json
+*/.claude/
 data/uploads/
 backend/data/
-
-# 프로덕션 환경 변수 (절대 커밋 금지)
 .env.prod
-
-# Docker override
 docker-compose.override.yml
-
-# MoAI temp state
 .moai/cache/
 .moai/tmp/
-
-# ===========================================
-# Crawler Failure State (Runtime Dumps)
-# ===========================================
 backend/failure_state_*.json
 backend/crawler_state_*.json
