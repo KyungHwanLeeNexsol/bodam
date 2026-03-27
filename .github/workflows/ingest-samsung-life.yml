@@ -18,7 +18,7 @@ jobs:
   crawl-and-ingest:
     name: 삼성생명 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 600  # 10시간 (6500개 × PDF 다운로드 + 인제스트)
+    timeout-minutes: 360  # 6시간 (Actions 최대치 — 6500개 초과 시 --resume-state 활용)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

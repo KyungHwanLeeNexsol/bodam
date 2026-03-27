@@ -18,7 +18,7 @@ jobs:
   crawl-and-ingest:
     name: 흥국화재보험 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # 3시간 (흥국화재 약관 수 기준)
+    timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

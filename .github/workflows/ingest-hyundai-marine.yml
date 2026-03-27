@@ -19,7 +19,7 @@ jobs:
   crawl-and-ingest:
     name: 현대해상화재보험 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # 5시간 50분 (Actions 최대 6시간 근접, 데이터 초과 시 resume 활용)
+    timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}

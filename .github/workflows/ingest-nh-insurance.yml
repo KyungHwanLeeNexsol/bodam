@@ -23,7 +23,7 @@ jobs:
   crawl-and-ingest:
     name: NH농협손해보험 크롤링 + 인제스트
     runs-on: ubuntu-latest
-    timeout-minutes: 300  # 5시간 (Phase1 수집 ~10분 + Phase2 724개 × 0.5초 = ~6분 + 인제스트)
+    timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
