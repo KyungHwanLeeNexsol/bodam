@@ -667,6 +667,9 @@ async def create_chunks(
     """
     # @MX:NOTE: [AUTO] bulk insert로 N개 개별 INSERT → 단일 배치 INSERT로 최적화
     # @MX:REASON: CockroachDB에서 4000+ 청크 개별 INSERT 시 ~13분 소요, bulk insert로 수십 초로 단축
+    # @MX:NOTE: [AUTO] insertmanyvalues_page_size=200: 대형 PDF(2999청크) 단일 INSERT → 직렬화 충돌 감소
+    # @MX:REASON: SQLAlchemy 기본 page_size=1000 시 ~2MB INSERT문 3개 생성 → 트랜잭션 2분+ 소요 → 재시도 폭증
+    _CHUNK_PAGE_SIZE = 200  # CockroachDB 트랜잭션 크기 제한 완화용
     from sqlalchemy import insert
 
     from app.models.insurance import PolicyChunk
@@ -682,7 +685,10 @@ async def create_chunks(
         for idx, chunk_text in enumerate(chunks)
     ]
     if rows:
-        await session.execute(insert(PolicyChunk), rows)
+        await session.execute(
+            insert(PolicyChunk).execution_options(insertmanyvalues_page_size=_CHUNK_PAGE_SIZE),
+            rows,
+        )
 
 
 # ─────────────────────────────────────────────────────────────
