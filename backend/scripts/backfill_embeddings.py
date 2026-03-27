@@ -130,6 +130,74 @@ async def update_embeddings(
     return updated
 
 
+async def _embed_with_key_rotation(
+    api_keys: list[str],
+    texts: list[str],
+    model: str,
+    dimensions: int,
+    batch_index: int,
+) -> list[list[float]]:
+    """API 키 즉시-전환 임베딩 생성
+
+    genai.configure()가 전역 상태이므로 EmbeddingService 인스턴스 대신
+    호출 시점에 키를 직접 설정한다.
+    429 오류 시 35초 대기 없이 즉시 다음 키로 전환.
+    모든 키가 429이면 마지막 예외를 전파.
+    50자 미만 텍스트는 빈 리스트로 반환.
+    """
+    import google.generativeai as _genai
+
+    MIN_CHARS = 50
+    valid_indices = [i for i, t in enumerate(texts) if len(t) >= MIN_CHARS]
+    valid_texts = [texts[i] for i in valid_indices]
+    results: list[list[float]] = [[] for _ in texts]
+
+    if not valid_texts:
+        return results
+
+    n = len(api_keys)
+    last_exc: Exception | None = None
+
+    for attempt in range(n):
+        key_idx = (batch_index + attempt) % n
+        _genai.configure(api_key=api_keys[key_idx])
+        try:
+            if len(valid_texts) == 1:
+                response = await asyncio.to_thread(
+                    _genai.embed_content,
+                    model=model,
+                    content=valid_texts[0],
+                    task_type="RETRIEVAL_DOCUMENT",
+                    output_dimensionality=dimensions,
+                )
+                embeddings = [response["embedding"]]
+            else:
+                response = await asyncio.to_thread(
+                    _genai.embed_content,
+                    model=model,
+                    content=valid_texts,
+                    task_type="RETRIEVAL_DOCUMENT",
+                    output_dimensionality=dimensions,
+                )
+                embeddings = response["embedding"]
+
+            for orig_idx, emb in zip(valid_indices, embeddings):
+                results[orig_idx] = emb
+            return results
+
+        except Exception as e:
+            last_exc = e
+            if "429" in str(e) and attempt < n - 1:
+                logger.warning(
+                    "키 %d/%d 429 오류, 즉시 키 %d/%d로 전환",
+                    key_idx + 1, n, (key_idx + 1) % n + 1, n,
+                )
+                continue
+            raise
+
+    raise last_exc  # type: ignore[misc]
+
+
 async def backfill(
     company_code: str | None,
     batch_size: int,
@@ -149,13 +217,12 @@ async def backfill(
     await db_module.init_database(settings)
     session_factory = db_module.session_factory
 
-    # ── 임베딩 서비스 초기화 (다중 API 키 라운드 로빈) ──────────
-    from app.services.rag.embeddings import EmbeddingService
-
-    # GEMINI_API_KEY1/2/3 우선, 없으면 GEMINI_API_KEY 단일 키로 폴백
+    # ── 임베딩 API 키 초기화 (다중 키 즉시 전환 지원) ──────────
+    # @MX:NOTE: genai.configure()가 전역 상태이므로 EmbeddingService 인스턴스 대신
+    #           _embed_with_key_rotation 함수에서 호출 시점에 키를 직접 설정한다.
     _model = getattr(settings, "embedding_model", "models/text-embedding-004")
     _dimensions = getattr(settings, "embedding_dimensions", 768)
-    _api_keys = [
+    _api_keys: list[str] = [
         k for k in [
             os.environ.get("GEMINI_API_KEY1"),
             os.environ.get("GEMINI_API_KEY2"),
@@ -164,7 +231,6 @@ async def backfill(
         if k
     ]
     if not _api_keys:
-        # 단일 키 폴백
         _single = getattr(settings, "gemini_api_key", None) or os.environ.get("GEMINI_API_KEY", "")
         if _single:
             _api_keys = [_single]
@@ -173,16 +239,10 @@ async def backfill(
         logger.error("GEMINI_API_KEY1/2/3 또는 GEMINI_API_KEY가 설정되지 않았습니다.")
         sys.exit(1)
 
-    # 키별 EmbeddingService 인스턴스 생성
-    embedding_services: list[EmbeddingService] = []
     if not dry_run and _api_keys:
-        for _key in _api_keys:
-            embedding_services.append(
-                EmbeddingService(api_key=_key, model=_model, dimensions=_dimensions)
-            )
         logger.info(
-            "임베딩 서비스 초기화 완료 (model=%s, dim=%d, 키 %d개 라운드 로빈)",
-            _model, _dimensions, len(embedding_services),
+            "임베딩 초기화 완료 (model=%s, dim=%d, 키 %d개 즉시-전환 활성화)",
+            _model, _dimensions, len(_api_keys),
         )
 
     # ── 대상 건수 확인 ─────────────────────────────────────────
@@ -216,23 +276,23 @@ async def backfill(
             offset += len(rows)
             continue
 
-        # 라운드 로빈으로 EmbeddingService 선택
-        svc = embedding_services[batch_index % len(embedding_services)]
-        batch_index += 1
-
-        # Gemini 임베딩 생성
+        # Gemini 임베딩 생성 (429 시 즉시 다음 키로 전환)
         try:
-            embeddings = await svc.embed_batch(chunk_texts)
+            embeddings = await _embed_with_key_rotation(
+                _api_keys, chunk_texts, _model, _dimensions, batch_index
+            )
         except Exception as e:
             logger.error("임베딩 생성 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
             stats["failed"] += len(rows)
             offset += len(rows)
+            batch_index += 1
             continue
+        batch_index += 1
 
         # 유효한 임베딩만 UPDATE
         id_to_embedding: dict[object, list[float]] = {}
         for chunk_id, embedding in zip(chunk_ids, embeddings):
-            if embedding is not None:
+            if embedding:  # 빈 리스트(50자 미만 텍스트)는 스킵
                 id_to_embedding[chunk_id] = embedding
             else:
                 stats["skipped"] += 1
