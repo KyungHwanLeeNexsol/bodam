@@ -331,6 +331,16 @@ async def download_and_ingest_all(
                     # PDF 시그니처 확인
                     if raw_bytes[:4] == b"%PDF":
                         pdf_bytes = raw_bytes
+                    elif raw_bytes[:4] == b"PK\x03\x04":
+                        # HWPX 파일 (ZIP 컨테이너): MG손보 서버가 PDF 없는 상품에 대해 HWPX 반환
+                        # 파싱 불가 포맷 → processed_urls에 추가하여 재시도 방지, failure_state 제외
+                        logger.warning(
+                            "[%d] HWP-SKIP: %s — HWPX(ZIP) 포맷, PDF 없음 (size=%d, doc2Org=%s)",
+                            idx, product_name[:40], size, product.get("doc2Org", "?"),
+                        )
+                        processed_urls.add(source_url)
+                        stats["skipped"] += 1
+                        continue
                     else:
                         logger.warning(
                             "[%d] PDF 시그니처 불일치: %s (sig=%s, size=%d)",
