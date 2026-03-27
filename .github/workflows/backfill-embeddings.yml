@@ -4,9 +4,27 @@ on:
   workflow_dispatch:
     inputs:
       company:
-        description: '대상 보험사 코드 (미입력 시 전체)'
-        required: false
-        default: ''
+        description: '대상 보험사 (all = 전체)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - axa-general
+          - db-insurance
+          - hanwha-general
+          - hanwha-life
+          - heungkuk-fire
+          - hyundai-marine
+          - kb-nonlife
+          - kyobo-life
+          - lotte-insurance
+          - meritz-fire
+          - mg-insurance
+          - nh-fire
+          - samsung-fire
+          - samsung-life
+          - shinhan-life
       batch_size:
         description: '배치 크기'
         required: false
@@ -52,7 +70,7 @@ jobs:
         run: |
           cd backend
           COMPANY_PARAM=""
-          if [ -n "${{ inputs.company }}" ]; then
+          if [ "${{ inputs.company }}" != "all" ]; then
             COMPANY_PARAM="--company ${{ inputs.company }}"
           fi
           DRY_RUN_PARAM=""
@@ -68,5 +86,5 @@ jobs:
         run: |
           echo "## 임베딩 백필 실행 결과" >> $GITHUB_STEP_SUMMARY
           echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "- 대상 보험사: ${{ inputs.company || '전체' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 대상 보험사: ${{ inputs.company }}" >> $GITHUB_STEP_SUMMARY
           echo "- Dry-run: ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
