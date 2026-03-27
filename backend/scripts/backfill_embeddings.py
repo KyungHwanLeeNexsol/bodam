@@ -4,14 +4,14 @@ DB에 이미 저장된 PolicyChunk 중 embedding=NULL인 항목에 대해
 BAAI/bge-m3 로컬 모델로 임베딩을 일괄 생성하여 UPDATE한다.
 
 Usage:
-    # AXA 전체 백필
-    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general
-
-    # 전체 보험사 백필 (embedding=NULL인 모든 청크)
+    # 인터랙티브 선택 메뉴 (--company 미지정 + 터미널 실행)
     PYTHONPATH=. uv run python -m scripts.backfill_embeddings
 
+    # 보험사 직접 지정
+    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general
+
     # Dry-run (DB 쓰기 없이 통계만)
-    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --dry-run
+    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --dry-run
 
     # 배치 크기 조정 (기본 128)
     PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 128
@@ -51,6 +51,78 @@ DEFAULT_BATCH_SIZE = 128
 UPDATE_BATCH_SIZE = 1
 # 직렬화 에러 재시도 횟수
 _MAX_RETRIES = 3
+
+
+async def fetch_companies_with_null_embeddings(
+    session_factory: object,
+) -> list[tuple[str, str, int]]:
+    """NULL 임베딩이 있는 보험사 목록을 (code, name, count) 형태로 반환한다."""
+    from sqlalchemy import func, select
+
+    from app.models.insurance import InsuranceCompany, Policy, PolicyChunk
+
+    async with session_factory() as session:  # type: ignore[union-attr]
+        stmt = (
+            select(
+                InsuranceCompany.code,
+                InsuranceCompany.name,
+                func.count(PolicyChunk.id).label("null_count"),
+            )
+            .join(Policy, PolicyChunk.policy_id == Policy.id)
+            .join(InsuranceCompany, Policy.company_id == InsuranceCompany.id)
+            .where(PolicyChunk.embedding.is_(None))
+            .group_by(InsuranceCompany.code, InsuranceCompany.name)
+            .order_by(InsuranceCompany.name)
+        )
+        result = await session.execute(stmt)
+        return [(row.code, row.name, row.null_count) for row in result.all()]
+
+
+async def prompt_company_select(session_factory: object) -> str | None:
+    """NULL 임베딩 보험사 목록을 출력하고 사용자가 선택한 code를 반환한다.
+
+    Returns:
+        선택된 InsuranceCompany.code, 또는 전체 선택 시 None
+    """
+    companies = await fetch_companies_with_null_embeddings(session_factory)
+
+    if not companies:
+        logger.info("임베딩 백필 대상 보험사가 없습니다 (embedding=NULL 청크 없음).")
+        return None
+
+    print()
+    print("=" * 50)
+    print("  임베딩 백필 대상 보험사 선택")
+    print("=" * 50)
+    print(f"  {'번호':<4} {'보험사명':<20} {'코드':<25} {'미완료'}")
+    print("-" * 50)
+    print(f"  {'0':<4} {'전체 (all)':<20}")
+    for i, (code, name, count) in enumerate(companies, 1):
+        print(f"  {i:<4} {name:<20} {code:<25} {count:>8,}개")
+    print("=" * 50)
+
+    while True:
+        try:
+            raw = input("\n번호 입력 (0=전체): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            logger.info("취소됨.")
+            sys.exit(0)
+
+        if raw == "0":
+            logger.info("선택: 전체 보험사")
+            return None
+
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(companies):
+                code, name, count = companies[idx]
+                logger.info("선택: %s (%s) — %d개", name, code, count)
+                return code
+        except ValueError:
+            pass
+
+        print(f"  올바른 번호를 입력하세요 (0~{len(companies)}).")
 
 
 async def count_null_embeddings(
@@ -218,13 +290,8 @@ async def _embed_local(
     return results
 
 
-async def backfill(
-    company_code: str | None,
-    batch_size: int,
-    dry_run: bool,
-) -> dict[str, int]:
-    """임베딩 백필 메인 로직."""
-    # ── DB 초기화 ─────────────────────────────────────────────
+async def init_db() -> object:
+    """DB를 초기화하고 session_factory를 반환한다."""
     from app.core.config import Settings
     import app.core.database as db_module
 
@@ -235,7 +302,19 @@ async def backfill(
         sys.exit(1)
 
     await db_module.init_database(settings)
-    session_factory = db_module.session_factory
+    return db_module.session_factory
+
+
+async def backfill(
+    company_code: str | None,
+    batch_size: int,
+    dry_run: bool,
+    session_factory: object = None,
+) -> dict[str, int]:
+    """임베딩 백필 메인 로직."""
+    # ── DB 초기화 (외부에서 이미 초기화된 경우 재사용) ─────────
+    if session_factory is None:
+        session_factory = await init_db()
 
     # ── 로컬 임베딩 모델 초기화 (BAAI/bge-m3, 1회 로드) ─────────
     # @MX:NOTE: BAAI/bge-m3 모델을 백필 시작 시 1회 로드 — API 키 불필요
@@ -369,6 +448,12 @@ async def main() -> None:
         logger.warning("batch-size 최대 512 (메모리 제한). 512로 조정합니다.")
         args.batch_size = 512
 
+    # --company 미지정 + 인터랙티브 터미널: 보험사 선택 메뉴 표시
+    session_factory = None
+    if args.company is None and sys.stdin.isatty():
+        session_factory = await init_db()
+        args.company = await prompt_company_select(session_factory)
+
     logger.info("=" * 60)
     logger.info("임베딩 백필 시작")
     logger.info("  대상 보험사: %s", args.company or "전체")
@@ -380,6 +465,7 @@ async def main() -> None:
         company_code=args.company,
         batch_size=args.batch_size,
         dry_run=args.dry_run,
+        session_factory=session_factory,
     )
 
     print()
