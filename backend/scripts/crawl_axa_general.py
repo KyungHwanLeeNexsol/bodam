@@ -81,6 +81,19 @@ INCLUDE_URL_PATTERNS: list[str] = [
     "partnership_driver",
     "onlinesmartdriver",
     "smart_driver",
+    # 어린이보험
+    "the_better_kids",
+    "withkids_",
+    # 실버/어르신보험
+    "silver_",
+    # 운전자보험 (CM채널 오타 URL 포함)
+    "cm_gi_drvier",
+    # 무심사/간편심사보험
+    "guaranteed_issuance",
+    # 입원비보험
+    "direct_hospitalization",
+    # 종합보험 (언더스코어 버전)
+    "all_in_one",
     # 기타 장기보험
     "senior",
     "ms_ci",
@@ -114,6 +127,7 @@ EXCLUDE_URL_PATTERNS: list[str] = [
     "grp_",             # 단체
     "inland",           # 국내여행
     "overseas",         # 해외여행
+    "axa_dtpa",         # AXA국내여행보험(단체용)
 ]
 
 HEADERS: dict[str, str] = {
@@ -222,10 +236,18 @@ def _infer_category(product_name: str, url: str) -> str:
         return "상해보험"
     if "건강" in product_name or "health" in text or "ci" in text:
         return "건강보험"
-    if "종합" in product_name or "통합" in product_name or "all-in-one" in text:
+    if "종합" in product_name or "통합" in product_name or "all-in-one" in text or "all_in_one" in text:
         return "종합보험"
-    if "어린이" in product_name:
+    if "어린이" in product_name or "자녀" in product_name or "the_better_kids" in text or "withkids" in text:
         return "어린이보험"
+    if "실버" in product_name or "silver_" in text:
+        return "암보험"
+    if "무심사" in product_name or "간편심사" in product_name or "guaranteed_issuance" in text:
+        return "건강보험"
+    if "입원비" in product_name or "direct_hospitalization" in text:
+        return "건강보험"
+    if "drvier" in text or "cm_gi_drvier" in text:
+        return "운전자보험"
     if "당뇨" in product_name or "diabetes" in text:
         return "건강보험"
     return "장기보험"

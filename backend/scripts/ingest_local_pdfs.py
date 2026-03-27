@@ -736,7 +736,10 @@ async def process_single_file(
     cleaner = TextCleaner()
     chunker = TextChunker()
 
-    raw_text = parser.extract_text(str(pdf_path))
+    try:
+        raw_text = parser.extract_text(str(pdf_path))
+    except Exception as e:
+        return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 실패: {e}"}
     clean_text = cleaner.clean(raw_text)
     chunks = chunker.chunk_text(clean_text)
 
