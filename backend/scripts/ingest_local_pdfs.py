@@ -61,6 +61,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ingest_local_pdfs")
 
+# @MX:NOTE: [AUTO] policies.raw_text 최대 저장 길이
+# 대용량 PDF(7MB+) 텍스트(1M+자) INSERT 시 CockroachDB 트랜잭션 타임아웃 방지
+# 청크(PolicyChunk)는 full text로 생성하므로 검색 품질에 영향 없음
+_MAX_POLICY_RAW_TEXT = 500_000  # 약 500KB 텍스트
+
 # ─────────────────────────────────────────────────────────────
 # COMPANY_MAP: 크롤러 디렉터리명 → (code, name, category)
 # ─────────────────────────────────────────────────────────────
@@ -612,6 +617,15 @@ async def upsert_policy(
         policy_metadata["source_url"] = metadata["source_url"]
 
     sale_status = metadata.get("sale_status", "UNKNOWN")
+
+    # 대용량 텍스트 트런케이션: CockroachDB INSERT 타임아웃 방지 (ABORT_REASON_CLIENT_REJECT)
+    # PolicyChunk는 트런케이션 전 full text로 생성되므로 검색 품질에 영향 없음
+    if len(raw_text) > _MAX_POLICY_RAW_TEXT:
+        logger.warning(
+            "raw_text 트런케이션: %s/%s (%d자 → %d자)",
+            company.code, product_code, len(raw_text), _MAX_POLICY_RAW_TEXT,
+        )
+        raw_text = raw_text[:_MAX_POLICY_RAW_TEXT]
 
     if policy is None:
         policy = Policy(
