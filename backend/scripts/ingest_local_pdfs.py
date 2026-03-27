@@ -163,25 +163,39 @@ def compute_file_hash(file_path: str) -> str:
     return sha256.hexdigest()
 
 
-async def check_duplicate(session: "AsyncSession", content_hash: str) -> bool:
+async def check_duplicate(
+    session: "AsyncSession",
+    content_hash: str,
+    sale_status: str | None = None,
+) -> bool:
     """content_hash가 이미 Policy.metadata_에 존재하는지 확인한다.
+
+    # @MX:NOTE: [AUTO] sale_status 지정 시 (content_hash, sale_status) 조합으로 체크
+    # @MX:NOTE: [AUTO] 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드 허용
 
     Args:
         session: SQLAlchemy 비동기 세션
         content_hash: 확인할 SHA-256 해시 문자열
+        sale_status: 판매상태 ("ON_SALE", "DISCONTINUED" 등). None이면 content_hash만 체크.
 
     Returns:
         True: 중복 존재, False: 신규
     """
-    from sqlalchemy import select, cast
-    from sqlalchemy.dialects.postgresql import JSONB
+    from sqlalchemy import select
 
     from app.models.insurance import Policy
 
-    # metadata_ JSONB에서 content_hash 검색
-    stmt = select(Policy).where(
-        Policy.metadata_["content_hash"].astext == content_hash
-    )
+    # sale_status가 주어지면 (content_hash, sale_status) 조합으로 체크
+    # → 동일 PDF가 판매/판매중지 탭 양쪽에 노출되는 경우 각각 별도 레코드 허용
+    if sale_status is not None:
+        stmt = select(Policy).where(
+            Policy.metadata_["content_hash"].astext == content_hash,
+            Policy.sale_status == sale_status,
+        )
+    else:
+        stmt = select(Policy).where(
+            Policy.metadata_["content_hash"].astext == content_hash
+        )
     result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
     return existing is not None
@@ -762,7 +776,8 @@ async def process_single_file(
                 await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
 
                 # 중복 확인 (REQ-04, REQ-06)
-                is_dup = await check_duplicate(session, content_hash)
+                # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
+                is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
                 if is_dup:
                     logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
                     return {"status": "skipped", "chunk_count": 0, "error": None}
