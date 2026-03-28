@@ -43,11 +43,26 @@ jobs:
 
       - name: Fly.io DB 프록시 터널
         uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: fly proxy 시작 (localhost:5432 → bodam-db:5432)
+      - name: fly proxy 시작 + 연결 확인
         run: |
           flyctl proxy 5432 -a bodam-db &
-          sleep 3
-          echo "Fly proxy started"
+          PROXY_PID=$!
+          echo "Fly proxy PID: $PROXY_PID"
+          for i in $(seq 1 30); do
+            if nc -z localhost 5432 2>/dev/null; then
+              echo "Fly proxy ready (${i}s)"
+              break
+            fi
+            if ! kill -0 $PROXY_PID 2>/dev/null; then
+              echo "ERROR: fly proxy process died"
+              exit 1
+            fi
+            sleep 1
+          done
+          if ! nc -z localhost 5432 2>/dev/null; then
+            echo "ERROR: fly proxy failed to start within 30s"
+            exit 1
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
