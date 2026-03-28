@@ -34,9 +34,11 @@ def _normalize_url(database_url: str) -> str:
         .replace("&sslmode=verify-full", "")
         .replace("?sslmode=verify-full", "")
     )
-    # postgresql:// → postgresql+asyncpg://
+    # postgres:// 또는 postgresql:// → postgresql+asyncpg://
     if url.startswith("postgresql://"):
         url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    elif url.startswith("postgres://"):
+        url = "postgresql+asyncpg://" + url[len("postgres://"):]
     return url
 
 
