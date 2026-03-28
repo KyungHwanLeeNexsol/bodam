@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 360  # 6시간 (Actions 최대치)
 
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.FLY_DB_PASSWORD }}@localhost:5432/bodam
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -35,9 +35,13 @@ jobs:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: Fly.io WireGuard 터널
+      - name: Fly.io DB 프록시 터널
         uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl wireguard websockets -a bodam-db &
+      - name: fly proxy 시작 (localhost:5432 → bodam-db:5432)
+        run: |
+          flyctl proxy 5432 -a bodam-db &
+          sleep 3
+          echo "Fly proxy started"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
