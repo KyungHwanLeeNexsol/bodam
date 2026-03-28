@@ -1,7 +1,7 @@
 """시맨틱 검색 API 라우터 (TAG-017)
 
 POST /api/v1/search/semantic 엔드포인트 제공.
-VectorSearchService와 EmbeddingService를 의존성 주입으로 사용.
+VectorSearchService와 LocalEmbeddingService를 의존성 주입으로 사용.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.schemas.insurance import SearchResult, SemanticSearchRequest, SemanticSearchResponse
-from app.services.rag.embeddings import EmbeddingService
+from app.services.rag.embeddings import LocalEmbeddingService
 from app.services.rag.vector_store import VectorSearchService
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -26,29 +26,26 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 async def get_embedding_service(
     settings: Annotated[Settings, Depends(get_settings)],
-) -> EmbeddingService:
-    """EmbeddingService 의존성 공급자
+) -> LocalEmbeddingService:
+    """LocalEmbeddingService 의존성 공급자
 
-    FastAPI DI 컨테이너에서 설정 기반으로 EmbeddingService를 생성.
+    BAAI/bge-m3 로컬 모델 기반 임베딩 서비스를 반환.
+    싱글턴 패턴으로 모델은 최초 1회만 로드됨.
 
     Args:
         settings: 애플리케이션 설정
 
     Returns:
-        EmbeddingService 인스턴스
+        LocalEmbeddingService 인스턴스
     """
-    return EmbeddingService(
-        api_key=settings.openai_api_key,
-        model=settings.embedding_model,
-        dimensions=settings.embedding_dimensions,
-    )
+    return LocalEmbeddingService(model_name=settings.embedding_model)
 
 
 @router.post("/semantic", response_model=SemanticSearchResponse)
 async def semantic_search(
     request: SemanticSearchRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
-    embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
+    embedding_service: Annotated[LocalEmbeddingService, Depends(get_embedding_service)],
 ) -> SemanticSearchResponse:
     """보험 약관 시맨틱 검색
 
