@@ -83,7 +83,7 @@ TARGET_CATEGORIES = [
 ]
 
 DEFAULT_FAIL_THRESHOLD = 0.05
-FAIL_MIN_SAMPLES = 10
+FAIL_MIN_SAMPLES = 50
 DEFAULT_STATE_PATH = Path("failure_state_db.json")
 
 
@@ -218,20 +218,25 @@ async def crawl_category_and_ingest(
                 logger.debug("Step3 실패 [%s]: %s", pdc_nm[:30], e)
                 break
 
-        # empty 시 반대 sl_yn으로 폴백 (양방향)
+        # empty 시 반대 sl_yn으로 폴백 (양방향, 3회 재시도)
         # sl_yn=0 empty → sl_yn=1 시도, sl_yn=1 empty → sl_yn=0 시도
         if not periods:
             fallback_sl_yn = "1" if sl_yn == "0" else "0"
-            try:
-                resp3_fb = await client.post(
-                    STEP3_URL,
-                    json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": fallback_sl_yn},
-                    headers={"Content-Type": "application/json"},
-                    timeout=60.0,
-                )
-                periods = resp3_fb.json().get("result", [])
-            except Exception:
-                pass
+            for attempt in range(3):
+                try:
+                    resp3_fb = await client.post(
+                        STEP3_URL,
+                        json={"pdc_nm": pdc_nm, "arc_pdc_sl_yn": fallback_sl_yn},
+                        headers={"Content-Type": "application/json"},
+                        timeout=60.0,
+                    )
+                    if resp3_fb.status_code == 503:
+                        await asyncio.sleep(5.0 * (attempt + 1))
+                        continue
+                    periods = resp3_fb.json().get("result", [])
+                    break
+                except Exception:
+                    pass
 
         if not periods:
             logger.warning("[실패] Step3 empty [%s]", pdc_nm[:50])
