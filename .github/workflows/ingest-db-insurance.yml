@@ -33,10 +33,17 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
+
+      - name: Fly.io WireGuard 터널
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl wireguard websockets -a bodam-db &
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: uv 설치
         uses: astral-sh/setup-uv@v5
