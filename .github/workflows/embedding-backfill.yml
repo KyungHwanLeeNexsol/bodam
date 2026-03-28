@@ -1,0 +1,150 @@
+name: 임베딩 백필 (BAAI/bge-m3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '임베딩 대상'
+        required: false
+        default: '3개사 (현대해상, DB손보, 삼성화재)'
+        type: choice
+        options:
+          - '3개사 (현대해상, DB손보, 삼성화재)'
+          - '현대해상만'
+          - 'DB손보만'
+          - '삼성화재만'
+          - '전체 (embedding=NULL인 모든 보험사)'
+      batch_size:
+        description: '배치 크기 (기본: 64, 메모리 부족 시 줄이기)'
+        required: false
+        default: '64'
+      dry_run:
+        description: 'Dry-run (실제 DB 업데이트 없이 대상 건수만 확인)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  embedding:
+    name: "임베딩 백필"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6시간
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fly.io CLI 설치 + WireGuard 터널
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl wireguard websockets -a bodam-db &
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Python 의존성 설치
+        run: cd backend && uv sync --frozen
+
+      # ── 현대해상 ──
+      - name: 현대해상 임베딩
+        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '현대해상만' }}
+        run: |
+          cd backend
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          echo "=== 현대해상 임베딩 시작 ==="
+          PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
+            --company hyundai-marine \
+            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+          echo "=== 현대해상 임베딩 완료 ==="
+
+      # ── DB손보 ──
+      - name: DB손보 임베딩
+        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == 'DB손보만' }}
+        run: |
+          cd backend
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          echo "=== DB손보 임베딩 시작 ==="
+          PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
+            --company db-insurance \
+            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+          echo "=== DB손보 임베딩 완료 ==="
+
+      # ── 삼성화재 ──
+      - name: 삼성화재 임베딩
+        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '삼성화재만' }}
+        run: |
+          cd backend
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          echo "=== 삼성화재 임베딩 시작 ==="
+          PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
+            --company samsung-fire \
+            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+          echo "=== 삼성화재 임베딩 완료 ==="
+
+      # ── 전체 ──
+      - name: 전체 임베딩 (모든 보험사)
+        if: ${{ inputs.target == '전체 (embedding=NULL인 모든 보험사)' }}
+        run: |
+          cd backend
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
+          echo "=== 전체 임베딩 시작 ==="
+          PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
+            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+          echo "=== 전체 임베딩 완료 ==="
+
+      # ── 결과 검증 ──
+      - name: 임베딩 결과 검증
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          cd backend
+          PYTHONPATH=. uv run python -c "
+          import asyncio
+          from app.core.database import init_database
+          from app.core.config import get_settings
+          from sqlalchemy import text
+
+          async def verify():
+              settings = get_settings()
+              await init_database(settings)
+              from app.core.database import session_factory
+              async with session_factory() as session:
+                  total = await session.execute(text('SELECT COUNT(*) FROM policy_chunks'))
+                  null_embed = await session.execute(text('SELECT COUNT(*) FROM policy_chunks WHERE embedding IS NULL'))
+                  stats = await session.execute(text('''
+                      SELECT ic.name, COUNT(pc.id) as chunks,
+                             SUM(CASE WHEN pc.embedding IS NOT NULL THEN 1 ELSE 0 END) as embedded
+                      FROM policy_chunks pc
+                      JOIN policies p ON pc.policy_id = p.id
+                      JOIN insurance_companies ic ON p.company_id = ic.id
+                      WHERE ic.code IN ('hyundai-marine', 'db-insurance', 'samsung-fire')
+                      GROUP BY ic.name ORDER BY ic.name
+                  '''))
+                  print(f'총 청크: {total.scalar()}')
+                  print(f'NULL 임베딩: {null_embed.scalar()}')
+                  for row in stats:
+                      pct = (row[2]/row[1]*100) if row[1] > 0 else 0
+                      print(f'{row[0]}: {row[1]}개 청크, {row[2]}개 임베딩 ({pct:.1f}%)')
+          asyncio.run(verify())
+          "
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          echo "## 임베딩 백필 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- 대상: ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 배치 크기: ${{ inputs.batch_size || '64' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dry-run: ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
