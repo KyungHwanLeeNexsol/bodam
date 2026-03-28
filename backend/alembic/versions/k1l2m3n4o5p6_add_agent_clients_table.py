@@ -27,7 +27,13 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """agent_clients 테이블 및 consentstatus enum 타입 생성"""
     # consentstatus ENUM 타입 생성
-    op.execute("CREATE TYPE IF NOT EXISTS consentstatus AS ENUM ('PENDING', 'ACTIVE', 'REVOKED')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE consentstatus AS ENUM ('PENDING', 'ACTIVE', 'REVOKED');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # agent_clients 테이블 생성
     op.create_table(

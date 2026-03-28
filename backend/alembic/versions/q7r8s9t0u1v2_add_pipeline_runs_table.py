@@ -25,10 +25,22 @@ def upgrade() -> None:
     """파이프라인 실행 테이블 및 enum 타입 생성 (순수 SQL)"""
 
     # pipelinestatus enum 생성
-    op.execute("CREATE TYPE IF NOT EXISTS pipelinestatus AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'PARTIAL')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE pipelinestatus AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'PARTIAL');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # pipelinetriggertype enum 생성
-    op.execute("CREATE TYPE IF NOT EXISTS pipelinetriggertype AS ENUM ('SCHEDULED', 'MANUAL')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE pipelinetriggertype AS ENUM ('SCHEDULED', 'MANUAL');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # pipeline_runs 테이블 생성 (순수 SQL - asyncpg enum 충돌 방지)
     op.execute("""

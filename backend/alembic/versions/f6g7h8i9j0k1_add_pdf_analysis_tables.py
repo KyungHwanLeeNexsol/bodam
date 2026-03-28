@@ -48,11 +48,29 @@ def upgrade() -> None:
     """PDF 분석 테이블 및 enum 타입 생성"""
 
     # Enum 타입 생성 (duplicate_object 예외 무시)
-    op.execute("CREATE TYPE IF NOT EXISTS pdf_upload_status_enum AS ENUM ('uploaded', 'analyzing', 'completed', 'failed', 'expired')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE pdf_upload_status_enum AS ENUM ('uploaded', 'analyzing', 'completed', 'failed', 'expired');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
-    op.execute("CREATE TYPE IF NOT EXISTS pdf_session_status_enum AS ENUM ('active', 'expired', 'deleted')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE pdf_session_status_enum AS ENUM ('active', 'expired', 'deleted');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
-    op.execute("CREATE TYPE IF NOT EXISTS pdf_message_role_enum AS ENUM ('user', 'assistant')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE pdf_message_role_enum AS ENUM ('user', 'assistant');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # pdf_uploads 테이블 생성
     op.create_table(

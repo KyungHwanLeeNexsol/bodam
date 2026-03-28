@@ -32,7 +32,13 @@ def upgrade() -> None:
     # ─────────────────────────────────────────────
     # InsuranceCategory enum 타입 생성
     # ─────────────────────────────────────────────
-    op.execute("CREATE TYPE IF NOT EXISTS insurance_category_enum AS ENUM ('LIFE', 'NON_LIFE', 'THIRD_SECTOR')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE insurance_category_enum AS ENUM ('LIFE', 'NON_LIFE', 'THIRD_SECTOR');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # ─────────────────────────────────────────────
     # insurance_companies 테이블 생성

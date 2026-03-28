@@ -30,7 +30,13 @@ def upgrade() -> None:
     # ─────────────────────────────────────────────
     # message_role_enum 타입 생성
     # ─────────────────────────────────────────────
-    op.execute("CREATE TYPE IF NOT EXISTS message_role_enum AS ENUM ('user', 'assistant', 'system')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE message_role_enum AS ENUM ('user', 'assistant', 'system');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # ─────────────────────────────────────────────
     # chat_sessions 테이블 생성
