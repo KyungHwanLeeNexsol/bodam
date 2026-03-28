@@ -2,7 +2,6 @@
 # SQLAlchemy 비동기 엔진을 사용하는 Alembic 환경
 import asyncio
 import os
-import ssl
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -25,30 +24,19 @@ if config.config_file_name is not None:
 target_metadata = None
 
 # 환경변수에서 데이터베이스 URL 가져오기 (alembic.ini 값을 오버라이드)
-# asyncpg는 sslmode 파라미터를 지원하지 않으므로 제거 후 connect_args로 처리
 database_url = os.environ.get("DATABASE_URL", "")
-_use_ssl = False
-_ssl_no_verify = False
 if database_url:
-    if "sslmode=require" in database_url or "ssl=require" in database_url:
-        _use_ssl = True
-        database_url = (
-            database_url
-            .replace("&sslmode=require", "")
-            .replace("?sslmode=require", "")
-            .replace("&ssl=require", "")
-            .replace("?ssl=require", "")
-        )
-    if "sslmode=verify-full" in database_url:
-        _use_ssl = True
-        database_url = (
-            database_url
-            .replace("&sslmode=verify-full", "")
-            .replace("?sslmode=verify-full", "")
-        )
-    # CockroachDB Cloud: 인증서 검증 비활성화 (CA cert 없이 SSL 연결)
-    if "cockroachlabs.cloud" in database_url or ":26257" in database_url:
-        _ssl_no_verify = True
+    # asyncpg는 sslmode URL 파라미터를 지원하지 않으므로 제거
+    database_url = (
+        database_url
+        .replace("&sslmode=require", "")
+        .replace("?sslmode=require", "")
+        .replace("&sslmode=verify-full", "")
+        .replace("?sslmode=verify-full", "")
+    )
+    # postgresql:// → postgresql+asyncpg:// 정규화
+    if database_url.startswith("postgresql://"):
+        database_url = "postgresql+asyncpg://" + database_url[len("postgresql://"):]
     config.set_main_option("sqlalchemy.url", database_url)
 
 
@@ -80,18 +68,10 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """비동기 엔진을 사용하여 온라인 모드에서 마이그레이션 실행"""
     url = config.get_main_option("sqlalchemy.url")
-    connect_args: dict = {}
-    if _use_ssl or _ssl_no_verify:
-        ssl_ctx = ssl.create_default_context()
-        if _ssl_no_verify:
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-        connect_args["ssl"] = ssl_ctx
 
     connectable = create_async_engine(
         url,
         poolclass=pool.NullPool,
-        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:

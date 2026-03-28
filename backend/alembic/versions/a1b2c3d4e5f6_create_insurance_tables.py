@@ -213,23 +213,12 @@ def upgrade() -> None:
         USING embedding::vector(1536)
     """)
 
-    try:
-        op.execute("""
-            CREATE INDEX idx_policy_chunks_embedding
-            ON policy_chunks
-            USING hnsw (embedding vector_cosine_ops)
-            WITH (m = 16, ef_construction = 64)
-        """)
-    except Exception:
-        # CockroachDB: HNSW WITH 파라미터 미지원 → 기본 HNSW 인덱스 생성
-        try:
-            op.execute("""
-                CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding
-                ON policy_chunks
-                USING hnsw (embedding vector_cosine_ops)
-            """)
-        except Exception:
-            pass
+    op.execute("""
+        CREATE INDEX idx_policy_chunks_embedding
+        ON policy_chunks
+        USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 16, ef_construction = 64)
+    """)
 
 
 def downgrade() -> None:

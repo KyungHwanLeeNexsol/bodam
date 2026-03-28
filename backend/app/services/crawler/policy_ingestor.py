@@ -13,26 +13,12 @@ DocumentProcessor 파이프라인을 트리거하는 서비스.
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import logging
-import random
 import uuid
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-
-def _is_serialization_error(exc: BaseException) -> bool:
-    """CockroachDB RETRY_SERIALIZABLE 에러 여부 확인."""
-    err: BaseException | None = exc
-    while err is not None:
-        if type(err).__name__ == "SerializationError":
-            return True
-        if "SerializationError" in str(type(err)):
-            return True
-        err = err.__cause__ or err.__context__
-    return "RETRY_SERIALIZABLE" in str(exc) or "SerializationError" in str(exc)
 
 
 @dataclasses.dataclass
@@ -78,9 +64,6 @@ class PolicyIngestor:
     ) -> IngestResult:
         """보험 상품 정보를 DB에 upsert하고 DocumentProcessor를 트리거
 
-        CockroachDB RETRY_SERIALIZABLE 에러 발생 시 지수 백오프로 재시도.
-        실제 처리 로직은 _ingest_once()에 위임.
-
         처리 순서:
         1. content_hash 중복 확인 (REQ-07.5)
         2. InsuranceCompany 원자적 UPSERT (경쟁 조건 방지)
@@ -97,41 +80,20 @@ class PolicyIngestor:
         Returns:
             IngestResult (status: NEW/UPDATED/SKIPPED/FAILED)
         """
-        max_retries = 5
-        base_backoff = 0.2
-
-        for attempt in range(max_retries):
+        try:
+            return await self._ingest_once(listing, content_hash, crawl_result_id, pdf_path)
+        except Exception as exc:  # noqa: BLE001
+            # REQ-07.4: DB 저장 실패 시 FAILED 반환
+            logger.error(
+                "Policy 저장 실패: product_code=%s, error=%s",
+                listing.product_code,
+                str(exc),
+            )
             try:
-                return await self._ingest_once(listing, content_hash, crawl_result_id, pdf_path)
-            except Exception as exc:  # noqa: BLE001
-                if _is_serialization_error(exc) and attempt < max_retries - 1:
-                    wait = base_backoff * (2**attempt) + random.uniform(0, 0.05)
-                    logger.warning(
-                        "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): product_code=%s",
-                        attempt + 1,
-                        max_retries,
-                        wait,
-                        listing.product_code,
-                    )
-                    try:
-                        await self.db_session.rollback()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    await asyncio.sleep(wait)
-                    continue
-                # REQ-07.4: DB 저장 실패 시 FAILED 반환
-                logger.error(
-                    "Policy 저장 실패: product_code=%s, error=%s",
-                    listing.product_code,
-                    str(exc),
-                )
-                try:
-                    await self.db_session.rollback()
-                except Exception:  # noqa: BLE001
-                    pass
-                return IngestResult(status="FAILED", policy_id=None, error=str(exc))
-
-        return IngestResult(status="FAILED", policy_id=None, error="최대 재시도 횟수 초과")
+                await self.db_session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return IngestResult(status="FAILED", policy_id=None, error=str(exc))
 
     async def _ingest_once(
         self,
@@ -140,9 +102,9 @@ class PolicyIngestor:
         crawl_result_id: uuid.UUID | None = None,
         pdf_path: str | None = None,
     ) -> IngestResult:
-        """실제 인제스트 로직 (재시도 없음 - 예외는 ingest()로 전파)
+        """실제 인제스트 로직 (예외는 ingest()로 전파)
 
-        원자적 UPSERT 패턴으로 CockroachDB 직렬화 충돌 최소화.
+        원자적 UPSERT 패턴으로 동시 삽입 안전 처리.
         """
         from sqlalchemy import func, select
         from sqlalchemy.dialects.postgresql import insert as pg_insert

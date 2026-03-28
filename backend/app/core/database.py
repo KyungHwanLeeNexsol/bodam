@@ -1,4 +1,4 @@
-"""데이터베이스 연결 관리 모듈 (TAG-006 업데이트)
+"""데이터베이스 연결 관리 모듈
 
 SQLAlchemy 비동기 엔진 및 세션 팩토리 설정.
 모듈 레벨 싱글턴 패턴으로 앱 전역에서 공유.
@@ -7,7 +7,6 @@ FastAPI 의존성 주입용 get_db() 제너레이터 포함.
 
 from __future__ import annotations
 
-import ssl
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
@@ -19,46 +18,27 @@ if TYPE_CHECKING:
     pass
 
 
-def _strip_sslmode(database_url: str) -> str:
-    """asyncpg가 지원하지 않는 sslmode 파라미터를 URL에서 제거하고 드라이버를 정규화.
+def _normalize_url(database_url: str) -> str:
+    """DATABASE_URL을 postgresql+asyncpg:// 형식으로 정규화.
 
-    지원 URL 형식:
-    - postgresql://...          (CockroachDB 클라우드 대시보드 기본값)
-    - postgresql+asyncpg://...  (asyncpg 드라이버 명시)
-    - cockroachdb://...         (드라이버 없음)
-    - cockroachdb+asyncpg://... (이미 정규화됨)
-
-    모두 cockroachdb+asyncpg://...로 정규화.
+    다양한 URL 형식 지원:
+    - postgresql://...          → postgresql+asyncpg://...
+    - postgresql+asyncpg://...  → 그대로 유지
+    - sslmode 파라미터 제거 (asyncpg는 connect_args로 처리)
     """
+    # sslmode 파라미터 제거 (asyncpg는 URL 파라미터로 sslmode를 지원하지 않음)
     url = (
         database_url
         .replace("&sslmode=require", "")
         .replace("?sslmode=require", "")
         .replace("&sslmode=verify-full", "")
         .replace("?sslmode=verify-full", "")
-        .replace("&ssl=require", "")
-        .replace("?ssl=require", "")
-        # postgresql+asyncpg → cockroachdb+asyncpg (sqlalchemy-cockroachdb 다이얼렉트 사용)
-        .replace("postgresql+asyncpg://", "cockroachdb+asyncpg://", 1)
     )
-    # CockroachDB 대시보드 기본 URL: postgresql:// → cockroachdb+asyncpg://
-    # 주의: postgresql+asyncpg://는 이미 위에서 처리됨
+    # postgresql:// → postgresql+asyncpg://
     if url.startswith("postgresql://"):
-        url = "cockroachdb+asyncpg://" + url[len("postgresql://"):]
-    # cockroachdb:// (드라이버 없음) → cockroachdb+asyncpg://
-    elif url.startswith("cockroachdb://"):
-        url = "cockroachdb+asyncpg://" + url[len("cockroachdb://"):]
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
     return url
 
-
-def _build_connect_args(database_url: str) -> dict:
-    """CockroachDB 연결 시 SSL 컨텍스트를 asyncpg connect_args로 반환."""
-    if "cockroachlabs.cloud" in database_url or ":26257" in database_url:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return {"ssl": ctx}
-    return {}
 
 # ─────────────────────────────────────────────
 # 모듈 레벨 싱글턴 (앱 시작 시 init_database()로 초기화)
@@ -79,14 +59,13 @@ async def init_database(settings: Settings) -> None:
     """
     global engine, session_factory
 
-    clean_url = _strip_sslmode(settings.database_url)
+    clean_url = _normalize_url(settings.database_url)
     engine = create_async_engine(
         clean_url,
         echo=settings.debug,
         pool_pre_ping=True,  # 유효하지 않은 연결 자동 재연결
-        pool_size=5,  # CockroachDB Basic 연결 제한 고려
-        max_overflow=10,
-        connect_args=_build_connect_args(clean_url),
+        pool_size=10,  # 표준 PostgreSQL: 연결 풀 확대
+        max_overflow=20,
     )
 
     session_factory = async_sessionmaker(
@@ -133,7 +112,6 @@ async def init_db(settings: Settings) -> tuple[AsyncEngine, async_sessionmaker[A
     _engine = create_async_engine(
         settings.database_url,
         echo=settings.debug,
-        # 연결 풀 설정 (프로덕션 최적화)
         pool_pre_ping=True,
     )
     _session_factory = async_sessionmaker(

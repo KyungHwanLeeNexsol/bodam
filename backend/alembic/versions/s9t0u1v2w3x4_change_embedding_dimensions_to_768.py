@@ -40,23 +40,12 @@ def upgrade() -> None:
     )
 
     # 768차원 HNSW 인덱스 재생성 (코사인 유사도 최적화)
-    try:
-        op.execute(
-            "CREATE INDEX idx_policy_chunks_embedding "
-            "ON policy_chunks "
-            "USING hnsw (embedding vector_cosine_ops) "
-            "WITH (m = 16, ef_construction = 64)"
-        )
-    except Exception:
-        # CockroachDB: WITH 파라미터 미지원 → 기본 HNSW 인덱스
-        try:
-            op.execute(
-                "CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding "
-                "ON policy_chunks "
-                "USING hnsw (embedding vector_cosine_ops)"
-            )
-        except Exception:
-            pass
+    op.execute(
+        "CREATE INDEX idx_policy_chunks_embedding "
+        "ON policy_chunks "
+        "USING hnsw (embedding vector_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
 
     # ─────────────────────────────────────────────
     # case_precedents 테이블 임베딩 차원 변경
@@ -95,22 +84,12 @@ def downgrade() -> None:
         "USING NULL"
     )
 
-    try:
-        op.execute(
-            "CREATE INDEX idx_policy_chunks_embedding "
-            "ON policy_chunks "
-            "USING hnsw (embedding vector_cosine_ops) "
-            "WITH (m = 16, ef_construction = 64)"
-        )
-    except Exception:
-        try:
-            op.execute(
-                "CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding "
-                "ON policy_chunks "
-                "USING hnsw (embedding vector_cosine_ops)"
-            )
-        except Exception:
-            pass
+    op.execute(
+        "CREATE INDEX idx_policy_chunks_embedding "
+        "ON policy_chunks "
+        "USING hnsw (embedding vector_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
 
     # ─────────────────────────────────────────────
     # case_precedents 롤백

@@ -1,14 +1,12 @@
-"""add_search_vector_to_cockroachdb
+"""add_search_vector_to_cockroachdb (no-op: PostgreSQL 전용 환경)
 
 Revision ID: t0u1v2w3x4y5
 Revises: s9t0u1v2w3x4
 Create Date: 2026-03-23 00:00:00.000000
 
-r8s9t0u1v2w3 마이그레이션에서 CockroachDB는 tsvector 미지원으로 search_vector 컬럼 추가를
-스킵했음. 하지만 SQLAlchemy 모델에 search_vector가 FetchedValue()로 정의되어 있어
-INSERT 시 RETURNING 절에 포함되어 에러 발생.
-
-해결: CockroachDB에 search_vector TEXT NULL 컬럼 추가 (tsvector 없이 단순 TEXT로).
+기존 CockroachDB 환경에서 search_vector TEXT NULL 컬럼을 추가했던 마이그레이션.
+PostgreSQL로 마이그레이션 완료 후에는 r8s9t0u1v2w3에서 이미 tsvector 컬럼이 생성되므로
+이 마이그레이션은 no-op. 체인 유지를 위해 남겨둠.
 """
 
 from __future__ import annotations
@@ -23,14 +21,10 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    """CockroachDB에 search_vector TEXT NULL 컬럼 추가 (IF NOT EXISTS)"""
-    op.execute(
-        "ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS search_vector TEXT NULL"
-    )
+    """no-op: 표준 PostgreSQL에서는 r8s9t0u1v2w3에서 tsvector 컬럼이 이미 생성됨"""
+    pass
 
 
 def downgrade() -> None:
-    """search_vector 컬럼 제거"""
-    op.execute(
-        "ALTER TABLE policy_chunks DROP COLUMN IF EXISTS search_vector"
-    )
+    """no-op"""
+    pass

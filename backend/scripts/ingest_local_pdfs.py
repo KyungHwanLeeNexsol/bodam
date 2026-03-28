@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SPEC-INGEST-001: 다중 PC 로컬 PDF 인제스트 스크립트
 
-로컬에 수집된 PDF 파일을 CockroachDB에 인제스트.
+로컬에 수집된 PDF 파일을 PostgreSQL에 인제스트.
 3가지 디렉토리 형식 지원, SHA-256 중복 방지, 파일별 트랜잭션 격리.
 
 Usage:
@@ -20,7 +20,6 @@ import gc
 import hashlib
 import json
 import logging
-import random
 import re
 import sys
 import uuid
@@ -62,7 +61,7 @@ logging.basicConfig(
 logger = logging.getLogger("ingest_local_pdfs")
 
 # @MX:NOTE: [AUTO] policies.raw_text 최대 저장 길이
-# 대용량 PDF(7MB+) 텍스트(1M+자) INSERT 시 CockroachDB 트랜잭션 타임아웃 방지
+# 대용량 PDF(7MB+) 텍스트를 제한하여 DB 부하 최소화
 # 청크(PolicyChunk)는 full text로 생성하므로 검색 품질에 영향 없음
 _MAX_POLICY_RAW_TEXT = 500_000  # 약 500KB 텍스트
 
@@ -260,7 +259,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         파싱된 argparse.Namespace 객체
     """
     parser = argparse.ArgumentParser(
-        description="로컬 PDF 파일을 CockroachDB에 인제스트",
+        description="로컬 PDF 파일을 PostgreSQL에 인제스트",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 사용 예시:
@@ -579,7 +578,6 @@ async def upsert_policy(
     """Policy 레코드를 upsert한다 (company_id + product_code 기준).
 
     INSERT ... ON CONFLICT DO UPDATE 단일 원자적 구문으로 처리.
-    SELECT+INSERT 패턴의 stale intent 누적으로 인한 ABORT_REASON_CLIENT_REJECT 방지.
 
     Args:
         session: SQLAlchemy 비동기 세션
@@ -614,7 +612,7 @@ async def upsert_policy(
 
     sale_status = metadata.get("sale_status", "UNKNOWN")
 
-    # 대용량 텍스트 트런케이션: CockroachDB INSERT 타임아웃 방지 (ABORT_REASON_CLIENT_REJECT)
+    # 대용량 텍스트 트런케이션: DB 부하 최소화
     # PolicyChunk는 트런케이션 전 full text로 생성되므로 검색 품질에 영향 없음
     if len(raw_text) > _MAX_POLICY_RAW_TEXT:
         logger.warning(
@@ -623,9 +621,7 @@ async def upsert_policy(
         )
         raw_text = raw_text[:_MAX_POLICY_RAW_TEXT]
 
-    # @MX:NOTE: [AUTO] INSERT ... ON CONFLICT DO UPDATE: SELECT+INSERT 패턴 대비 stale intent 누적 방지
-    # @MX:REASON: SELECT+INSERT는 unique index에 stale intent 잔류 시 ABORT_REASON_CLIENT_REJECT 연쇄 유발
-    # @MX:NOTE: [AUTO] ON CONFLICT 충돌 시 DO UPDATE로 원자 처리 → timestamp 전진 없이 즉시 해소
+    # @MX:NOTE: [AUTO] INSERT ... ON CONFLICT DO UPDATE: 동시 삽입 안전한 원자적 UPSERT 패턴
     new_id = uuid.uuid4()
     insert_stmt = pg_insert(Policy).values(
         id=new_id,
@@ -674,10 +670,6 @@ async def create_chunks(
         embeddings: 청크별 임베딩 벡터 목록 (None이면 embedding=NULL)
     """
     # @MX:NOTE: [AUTO] bulk insert로 N개 개별 INSERT → 단일 배치 INSERT로 최적화
-    # @MX:REASON: CockroachDB에서 4000+ 청크 개별 INSERT 시 ~13분 소요, bulk insert로 수십 초로 단축
-    # @MX:NOTE: [AUTO] insertmanyvalues_page_size=200: 대형 PDF(2999청크) 단일 INSERT → 직렬화 충돌 감소
-    # @MX:REASON: SQLAlchemy 기본 page_size=1000 시 ~2MB INSERT문 3개 생성 → 트랜잭션 2분+ 소요 → 재시도 폭증
-    _CHUNK_PAGE_SIZE = 200  # CockroachDB 트랜잭션 크기 제한 완화용
     from sqlalchemy import insert
 
     from app.models.insurance import PolicyChunk
@@ -694,7 +686,7 @@ async def create_chunks(
     ]
     if rows:
         await session.execute(
-            insert(PolicyChunk).execution_options(insertmanyvalues_page_size=_CHUNK_PAGE_SIZE),
+            insert(PolicyChunk),
             rows,
         )
 
@@ -702,20 +694,6 @@ async def create_chunks(
 # ─────────────────────────────────────────────────────────────
 # TASK-007: process_single_file()
 # ─────────────────────────────────────────────────────────────
-
-
-def _is_serialization_error(exc: BaseException) -> bool:
-    """CockroachDB RETRY_SERIALIZABLE 에러 여부 확인."""
-    # asyncpg.exceptions.SerializationError 체인 탐색
-    err: BaseException | None = exc
-    while err is not None:
-        if type(err).__name__ == "SerializationError":
-            return True
-        if "SerializationError" in str(type(err)):
-            return True
-        err = err.__cause__ or err.__context__
-    # 에러 메시지에서도 확인 (SQLAlchemy 래핑 대응)
-    return "RETRY_SERIALIZABLE" in str(exc) or "SerializationError" in str(exc)
 
 
 # @MX:ANCHOR: [AUTO] process_single_file - 파일별 인제스트 핵심 함수
@@ -731,7 +709,6 @@ async def process_single_file(
 
     파일별 독립적인 트랜잭션으로 처리 (REQ-05).
     중복 파일(content_hash 기준)은 스킵 (REQ-06).
-    CockroachDB RETRY_SERIALIZABLE 에러 시 최대 5회 재시도 (지수 백오프).
 
     Args:
         session_factory: SQLAlchemy async_sessionmaker
@@ -744,14 +721,7 @@ async def process_single_file(
         {"status": "success"|"skipped"|"dry_run"|"failed",
          "chunk_count": int, "error": str|None}
     """
-    # @MX:NOTE: [AUTO] CockroachDB RETRY_SERIALIZABLE 해결: DB 트랜잭션 시간을 최소화하기 위해
-    # @MX:NOTE: [AUTO] CPU/네트워크 집약적 작업(PDF 파싱, 임베딩)을 트랜잭션 밖에서 먼저 실행
-    # @MX:REASON: READ COMMITTED 격리 수준으로 SerializationError 근본 해소 (아래 session.connection 참조)
-    # @MX:REASON: 재시도는 네트워크 오류 등 다른 일시적 오류를 위한 안전망으로만 유지
-    max_retries = 5
-    base_backoff = 0.5  # 초 (SerializationError 재시도 불필요, 안전망용)
-
-    # 파일 해시는 한 번만 계산 (retry 루프 밖)
+    # 파일 해시 계산
     content_hash = compute_file_hash(str(pdf_path))
 
     # dry-run 모드: DB 없이 전처리만 수행
@@ -794,72 +764,57 @@ async def process_single_file(
         except Exception as e:
             logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
 
-    # 2단계: 짧은 DB 트랜잭션만 재시도 (수백ms 수준)
-    for attempt in range(max_retries):
-        try:
-            async with session_factory() as session:
-                # READ COMMITTED: 동시 인제스트 워크플로우 간 SerializationError 방지
-                # 각 보험사가 서로 다른 데이터를 삽입(겹침 없음) + UPSERT 멱등성 보장
-                # → Serializable 불필요, READ COMMITTED으로 충분
-                await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+    # DB 트랜잭션: 전처리 결과를 저장
+    try:
+        async with session_factory() as session:
+            # 중복 확인 (REQ-04, REQ-06)
+            # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
+            is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
+            if is_dup:
+                logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
+                return {"status": "skipped", "chunk_count": 0, "error": None}
 
-                # 중복 확인 (REQ-04, REQ-06)
-                # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
-                is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
-                if is_dup:
-                    logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
-                    return {"status": "skipped", "chunk_count": 0, "error": None}
+            # 보험사 확보
+            company = await ensure_company(
+                session,
+                metadata["company_code"],
+                metadata["company_name"],
+                metadata.get("category", "LIFE"),
+            )
 
-                # 보험사 확보
-                company = await ensure_company(
-                    session,
-                    metadata["company_code"],
-                    metadata["company_name"],
-                    metadata.get("category", "LIFE"),
-                )
+            # Policy upsert
+            # raw_text 크기 제한: DB 부하 최소화 (전체 텍스트는 PolicyChunks에 저장됨)
+            _MAX_RAW_TEXT = 100_000
+            if len(clean_text) > _MAX_RAW_TEXT:
+                logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
+                clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
+            else:
+                clean_text_for_db = clean_text
+            policy = await upsert_policy(
+                session, company, metadata, content_hash, clean_text_for_db
+            )
 
-                # Policy upsert
-                # raw_text 크기 제한: DB 직렬화 충돌 방지 (전체 텍스트는 PolicyChunks에 저장됨)
-                _MAX_RAW_TEXT = 100_000
-                if len(clean_text) > _MAX_RAW_TEXT:
-                    logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
-                    clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
-                else:
-                    clean_text_for_db = clean_text
-                policy = await upsert_policy(
-                    session, company, metadata, content_hash, clean_text_for_db
-                )
+            # PolicyChunk 생성
+            await create_chunks(session, policy.id, chunks, embeddings)
 
-                # PolicyChunk 생성
-                await create_chunks(session, policy.id, chunks, embeddings)
+            await session.commit()
 
-                await session.commit()
+            logger.info(
+                "처리 완료: %s (%d청크, hash=%s)",
+                pdf_path.name,
+                len(chunks),
+                content_hash[:8],
+            )
+            return {
+                "status": "success",
+                "chunk_count": len(chunks),
+                "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                "error": None,
+            }
 
-                logger.info(
-                    "처리 완료: %s (%d청크, hash=%s)",
-                    pdf_path.name,
-                    len(chunks),
-                    content_hash[:8],
-                )
-                return {
-                    "status": "success",
-                    "chunk_count": len(chunks),
-                    "sale_status": metadata.get("sale_status", "UNKNOWN"),
-                    "error": None,
-                }
-
-        except Exception as e:
-            if _is_serialization_error(e) and attempt < max_retries - 1:
-                # CockroachDB RETRY_SERIALIZABLE: DB 쓰기 트랜잭션만 재시도 (전처리 제외)
-                wait = base_backoff * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(
-                    "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
-                    attempt + 1, max_retries, wait, pdf_path.name,
-                )
-                await asyncio.sleep(wait)
-                continue
-            logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
-            return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+    except Exception as e:
+        logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
+        return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
 
 async def process_text_content(
@@ -915,51 +870,37 @@ async def process_text_content(
         except Exception as e:
             logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
 
-    max_retries = 5
-    base_backoff = 0.5
+    try:
+        async with session_factory() as session:
+            is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
+            if is_dup:
+                logger.debug("중복 스킵: %s (hash=%s)", source_name, content_hash[:8])
+                return {"status": "skipped", "chunk_count": 0, "error": None}
 
-    for attempt in range(max_retries):
-        try:
-            async with session_factory() as session:
-                await session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+            company = await ensure_company(
+                session,
+                metadata["company_code"],
+                metadata["company_name"],
+                metadata.get("category", "LIFE"),
+            )
 
-                is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
-                if is_dup:
-                    logger.debug("중복 스킵: %s (hash=%s)", source_name, content_hash[:8])
-                    return {"status": "skipped", "chunk_count": 0, "error": None}
+            _MAX_RAW_TEXT = 100_000
+            clean_text_for_db = clean_text[:_MAX_RAW_TEXT] if len(clean_text) > _MAX_RAW_TEXT else clean_text
+            policy = await upsert_policy(session, company, metadata, content_hash, clean_text_for_db)
+            await create_chunks(session, policy.id, chunks, embeddings)
+            await session.commit()
 
-                company = await ensure_company(
-                    session,
-                    metadata["company_code"],
-                    metadata["company_name"],
-                    metadata.get("category", "LIFE"),
-                )
+            logger.info("처리 완료: %s (%d청크, hash=%s)", source_name, len(chunks), content_hash[:8])
+            return {
+                "status": "success",
+                "chunk_count": len(chunks),
+                "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                "error": None,
+            }
 
-                _MAX_RAW_TEXT = 100_000
-                clean_text_for_db = clean_text[:_MAX_RAW_TEXT] if len(clean_text) > _MAX_RAW_TEXT else clean_text
-                policy = await upsert_policy(session, company, metadata, content_hash, clean_text_for_db)
-                await create_chunks(session, policy.id, chunks, embeddings)
-                await session.commit()
-
-                logger.info("처리 완료: %s (%d청크, hash=%s)", source_name, len(chunks), content_hash[:8])
-                return {
-                    "status": "success",
-                    "chunk_count": len(chunks),
-                    "sale_status": metadata.get("sale_status", "UNKNOWN"),
-                    "error": None,
-                }
-
-        except Exception as e:
-            if _is_serialization_error(e) and attempt < max_retries - 1:
-                wait = base_backoff * (2**attempt) + random.uniform(0, 0.5)
-                logger.warning(
-                    "CockroachDB 직렬화 충돌 → %d/%d 재시도 (%.2fs 후): %s",
-                    attempt + 1, max_retries, wait, source_name,
-                )
-                await asyncio.sleep(wait)
-                continue
-            logger.error("처리 실패: %s (%s)", source_name, e, exc_info=True)
-            return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+    except Exception as e:
+        logger.error("처리 실패: %s (%s)", source_name, e, exc_info=True)
+        return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
 
 # ─────────────────────────────────────────────────────────────

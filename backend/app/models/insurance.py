@@ -263,8 +263,8 @@ class PolicyChunk(Base):
     # BAAI/bge-m3 기준 1024차원 임베딩 벡터 (이전: gemini-embedding-001 768차원)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
 
-    # tsvector 전문 검색 벡터 (PostgreSQL 전용, CockroachDB에서는 컬럼 미생성)
-    # deferred=True: 명시적 접근 시에만 로딩 → CockroachDB에서 SELECT 에러 방지
+    # tsvector 전문 검색 벡터 (PostgreSQL 네이티브)
+    # deferred=True: 명시적 접근 시에만 로딩 → 일반 쿼리 성능 최적화
     search_vector: Mapped[str | None] = mapped_column(
         sa.Text,
         nullable=True,

@@ -4,7 +4,7 @@
 # 처리 순서 (1개 보험사 단위):
 #   [1/4] 크롤링          — 판매중/판매중지 PDF 수집
 #   [2/4] 수집 결과 검증  — ON_SALE/DISCONTINUED 정확도 확인 (실패 시 중단)
-#   [3/4] 인제스트+임베딩 — CockroachDB 저장 + 벡터 생성
+#   [3/4] 인제스트+임베딩 — PostgreSQL 저장 + 벡터 생성
 #   [4/4] 현황문서 업데이트 — docs/insurance-pipeline-status.md 갱신 + git push
 #
 # 사용법:
@@ -200,7 +200,7 @@ if [[ "$SKIP_INGEST" == "true" ]]; then
   log_step "3/4" "인제스트+임베딩 스킵 (--skip-ingest)"
 else
   log_step "3/4" "인제스트 + 임베딩 시작: $(date)"
-  log "  판매중/판매중지 PDF → CockroachDB 저장 + 벡터 임베딩"
+  log "  판매중/판매중지 PDF → PostgreSQL 저장 + 벡터 임베딩"
 
   INGEST_CMD="$PYTHON scripts/ingest_local_pdfs.py --company $COMPANY --embed"
   log "실행: $INGEST_CMD"

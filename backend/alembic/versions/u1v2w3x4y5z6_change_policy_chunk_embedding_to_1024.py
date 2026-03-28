@@ -22,23 +22,39 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    """policy_chunks.embedding을 vector(768) → vector(1024)로 변경
+    """policy_chunks.embedding을 vector(768) → vector(1024)로 변경"""
+    # 기존 HNSW 인덱스 삭제
+    op.execute("DROP INDEX IF EXISTS idx_policy_chunks_embedding")
 
-    CockroachDB에서 ALTER COLUMN TYPE은 동시 쓰기가 있을 때 RETRY_SERIALIZABLE 오류 발생.
-    DROP + ADD COLUMN 방식이 CockroachDB 온라인 스키마 변경에 더 안전함.
-    기존 임베딩 데이터는 어차피 재생성 예정이므로 손실 없음.
-    """
-    # 기존 컬럼 삭제 (모든 임베딩 데이터 제거)
-    op.execute("ALTER TABLE policy_chunks DROP COLUMN IF EXISTS embedding")
+    # 임베딩 컬럼을 vector(1024)로 변경 (기존 데이터 NULL 초기화)
+    op.execute(
+        "ALTER TABLE policy_chunks "
+        "ALTER COLUMN embedding TYPE vector(1024) "
+        "USING NULL"
+    )
 
-    # 새 컬럼 추가 (1024차원)
-    op.execute("ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS embedding vector(1024)")
+    # 1024차원 HNSW 인덱스 재생성 (코사인 유사도 최적화)
+    op.execute(
+        "CREATE INDEX idx_policy_chunks_embedding "
+        "ON policy_chunks "
+        "USING hnsw (embedding vector_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
 
 
 def downgrade() -> None:
     """policy_chunks.embedding을 vector(1024) → vector(768)으로 롤백"""
-    # 기존 컬럼 삭제
-    op.execute("ALTER TABLE policy_chunks DROP COLUMN IF EXISTS embedding")
+    op.execute("DROP INDEX IF EXISTS idx_policy_chunks_embedding")
 
-    # 768차원 컬럼 복원
-    op.execute("ALTER TABLE policy_chunks ADD COLUMN IF NOT EXISTS embedding vector(768)")
+    op.execute(
+        "ALTER TABLE policy_chunks "
+        "ALTER COLUMN embedding TYPE vector(768) "
+        "USING NULL"
+    )
+
+    op.execute(
+        "CREATE INDEX idx_policy_chunks_embedding "
+        "ON policy_chunks "
+        "USING hnsw (embedding vector_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )

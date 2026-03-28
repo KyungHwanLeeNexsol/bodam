@@ -251,7 +251,8 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
     - 판매 / 판매중지 탭 (ul.ul_tab_basic.colum02)
       - 장기보험 / 일반보험 / 자동차보험 서브카테고리 탭 (ul.ul_tab_basic.colum03)
         - 각 카테고리별 페이지네이션
-    # @MX:NOTE: [AUTO] 탭 클릭 시 ul[class*="colum02/03"] 컨테이너 내부로 한정해야 함
+    # @MX:NOTE: [AUTO] 탭 클릭은 Playwright 네이티브 locator 사용 (JS el.click()은 SPA 이벤트 미동작)
+    # @MX:NOTE: [AUTO] ul[class*="colum02/03"] 컨테이너 내부로 한정해야 함
     # @MX:REASON: 사이드바에도 동일 텍스트(장기보험 등) 링크가 있어 전역 검색 시 이탈
     """
     from playwright.async_api import Page  # type: ignore[attr-defined]
@@ -261,19 +262,13 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
     await asyncio.sleep(3)
 
     if tab_idx == 1:
-        # 판매중지 탭 클릭 (colum02 컨테이너 내부로 한정)
-        clicked = await page.evaluate("""() => {
-            const container = document.querySelector('ul[class*="colum02"]');
-            if (!container) return false;
-            const els = container.querySelectorAll('a, li, span');
-            for (const el of els) {
-                const txt = el.textContent.trim().replace('선택됨', '').trim();
-                if (txt === '판매중지') { el.click(); return true; }
-            }
-            return false;
-        }""")
-        if not clicked:
-            logger.warning("[%s] 판매중지 탭 클릭 실패 (colum02 컨테이너 미발견)", COMPANY_NAME)
+        # 판매중지 탭 클릭 (Playwright 네이티브 클릭 - JS el.click()은 SPA 이벤트 미동작)
+        try:
+            container = page.locator('ul[class*="colum02"]')
+            await container.locator('a', has_text='판매중지').click()
+            logger.info("[%s] 판매중지 탭 클릭 성공 (Playwright locator)", COMPANY_NAME)
+        except Exception as e:
+            logger.warning("[%s] 판매중지 탭 클릭 실패: %s", COMPANY_NAME, e)
         await asyncio.sleep(1)
         try:
             await page.wait_for_load_state("networkidle", timeout=5000)
@@ -281,21 +276,18 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
             pass
         await asyncio.sleep(2)
 
-    # 서브카테고리 탭 목록 감지 (colum03 컨테이너 내부로 한정)
-    sub_categories: list[str] = await page.evaluate("""() => {
-        const container = document.querySelector('ul[class*="colum03"]');
-        if (!container) return [];
-        const keywords = ['장기보험', '일반보험', '자동차보험'];
-        const found = [];
-        for (const kw of keywords) {
-            const els = container.querySelectorAll('a, li, button, span');
-            for (const el of els) {
-                const txt = el.textContent.trim().replace('선택됨', '').trim();
-                if (txt === kw) { found.push(kw); break; }
-            }
-        }
-        return found;
-    }""")
+    # 서브카테고리 탭 목록 감지 (Playwright 네이티브 접근)
+    sub_categories: list[str] = []
+    try:
+        container03 = page.locator('ul[class*="colum03"]')
+        links = container03.locator('a')
+        count = await links.count()
+        for i in range(count):
+            txt = (await links.nth(i).text_content() or "").strip().replace("선택됨", "").strip()
+            if txt in ("장기보험", "일반보험", "자동차보험"):
+                sub_categories.append(txt)
+    except Exception as e:
+        logger.warning("[%s] 서브카테고리 감지 실패: %s", COMPANY_NAME, e)
 
     if not sub_categories:
         logger.warning("[%s] %s 탭: 서브카테고리 탭을 찾지 못함 (colum03 없음), 현재 페이지만 수집", COMPANY_NAME, tab_label)
@@ -306,19 +298,13 @@ async def collect_items_from_page(page: object, tab_label: str, tab_idx: int) ->
 
     for sub_cat in sub_categories:
         if sub_cat:
-            # 서브카테고리 탭 클릭 (colum03 컨테이너 내부로 한정)
-            clicked_sub = await page.evaluate(f"""() => {{
-                const container = document.querySelector('ul[class*="colum03"]');
-                if (!container) return false;
-                const els = container.querySelectorAll('a, li, button, span');
-                for (const el of els) {{
-                    const txt = el.textContent.trim().replace('선택됨', '').trim();
-                    if (txt === '{sub_cat}') {{ el.click(); return true; }}
-                }}
-                return false;
-            }}""")
-            if not clicked_sub:
-                logger.warning("[%s] %s 탭 > %s 서브탭 클릭 실패, 스킵", COMPANY_NAME, tab_label, sub_cat)
+            # 서브카테고리 탭 클릭 (Playwright 네이티브 클릭)
+            try:
+                container03 = page.locator('ul[class*="colum03"]')
+                await container03.locator('a', has_text=sub_cat).click()
+                logger.info("[%s] %s 탭 > %s 서브탭 클릭 성공", COMPANY_NAME, tab_label, sub_cat)
+            except Exception as e:
+                logger.warning("[%s] %s 탭 > %s 서브탭 클릭 실패: %s, 스킵", COMPANY_NAME, tab_label, sub_cat, e)
                 continue
             await asyncio.sleep(1)
             try:
@@ -608,10 +594,6 @@ async def run(
     total_stats: dict[str, int] = {"total": 0, "success": 0, "skipped": 0, "failed": 0, "dry_run": 0}
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        ctx = await browser.new_context()
-        page = await ctx.new_page()
-
         async with httpx.AsyncClient(
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -625,12 +607,28 @@ async def run(
             ]:
                 logger.info("--- [%s] %s 탭 처리 시작 ---", COMPANY_NAME, tab_label)
 
+                # 탭마다 새 브라우저 컨텍스트 생성 (메모리 관리 — 판매중지 탭 362+ 페이지 대응)
+                # @MX:NOTE: [AUTO] GitHub Actions CI 환경용 Chrome 최적화 args 포함
+                browser = await pw.chromium.launch(
+                    headless=True,
+                    args=["--disable-dev-shm-usage", "--disable-gpu", "--no-sandbox"],
+                )
+                ctx = await browser.new_context()
+                page_obj = await ctx.new_page()
+
                 # Step 1: Playwright로 목록 수집
                 try:
-                    items = await collect_items_from_page(page, tab_label, tab_idx)
+                    items = await collect_items_from_page(page_obj, tab_label, tab_idx)
                 except Exception as e:
                     logger.error("[%s] 탭 목록 수집 실패: %s", tab_label, e)
+                    await browser.close()
+                    gc.collect()
                     continue
+
+                # 목록 수집 완료 후 브라우저 종료 (다운로드는 httpx 사용)
+                await browser.close()
+                gc.collect()
+                logger.info("[%s] %s 탭 브라우저 종료, 메모리 해제", COMPANY_NAME, tab_label)
 
                 # Step 2: 다운로드 + 인제스트
                 tab_stats = await download_and_ingest_all(
@@ -653,8 +651,6 @@ async def run(
                     COMPANY_NAME, tab_label,
                     tab_stats["success"], tab_stats["skipped"], tab_stats["failed"],
                 )
-
-        await browser.close()
 
     # 최종 실패 상태 저장
     state.stop_reason = "completed"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SPEC-PIPELINE-002 REQ-03: 파이프라인 현황 문서 자동 업데이트 스크립트
 
-CockroachDB에서 보험사별 정책 수, 청크 수, 임베딩 유무를 조회하고
+PostgreSQL에서 보험사별 정책 수, 청크 수, 임베딩 유무를 조회하고
 docs/insurance-pipeline-status.md의 해당 행을 업데이트한다.
 
 Usage:
@@ -82,7 +82,7 @@ COMPANY_MAP: dict[str, tuple[str, str]] = {
 
 
 async def query_company_stats(company_code: str) -> dict:
-    """CockroachDB에서 보험사별 통계를 조회한다.
+    """PostgreSQL에서 보험사별 통계를 조회한다.
 
     Returns:
         {
@@ -95,7 +95,6 @@ async def query_company_stats(company_code: str) -> dict:
         }
     """
     import os
-    import ssl
 
     import asyncpg
 
@@ -103,18 +102,12 @@ async def query_company_stats(company_code: str) -> dict:
     if not db_url:
         raise RuntimeError("DATABASE_URL 환경변수가 설정되지 않았습니다.")
 
-    # asyncpg DSN 형식으로 변환
+    # asyncpg DSN 형식으로 변환 (postgresql+asyncpg:// → postgresql://)
     dsn = db_url
-    for prefix in ("cockroachdb+asyncpg://", "postgresql+asyncpg://"):
-        if dsn.startswith(prefix):
-            dsn = "postgresql://" + dsn[len(prefix):]
-            break
+    if dsn.startswith("postgresql+asyncpg://"):
+        dsn = "postgresql://" + dsn[len("postgresql+asyncpg://"):]
 
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
-
-    conn = await asyncpg.connect(dsn, ssl=ssl_ctx)
+    conn = await asyncpg.connect(dsn)
     try:
         row = await conn.fetchrow(
             """
