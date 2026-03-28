@@ -216,10 +216,6 @@ docker-compose.override.yml
 .moai/tmp/
 backend/failure_state_*.json
 backend/crawler_state_*.json
-
-# ===========================================
-# MoAI & Claude Full Directory Ignore
-# ===========================================
 .moai/
 !.moai/specs/
 !.moai/project/

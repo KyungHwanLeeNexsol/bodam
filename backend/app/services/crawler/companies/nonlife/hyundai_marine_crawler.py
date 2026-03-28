@@ -18,6 +18,7 @@ import logging
 import random
 import re
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -264,6 +265,7 @@ class HyundaiMarineCrawler(BaseCrawler):
     async def crawl(
         self,
         processed_urls: set[str] | None = None,
+        on_download: Callable[[bytes, dict], Awaitable[None]] | None = None,
     ) -> CrawlRunResult:
         """현대해상 약관 크롤링 메인 진입점.
 
@@ -436,9 +438,7 @@ class HyundaiMarineCrawler(BaseCrawler):
                             pdf_data = await self._download_pdf(dl_client, pdf_url)
 
                             if self._is_valid_pdf(pdf_data):
-                                self.storage.save(pdf_data, storage_path)
-                                new_count += 1
-                                results.append({
+                                result_info = {
                                     "product_code": uuid,
                                     "product_name": prod.prod_nm,
                                     "sale_status": (
@@ -447,14 +447,19 @@ class HyundaiMarineCrawler(BaseCrawler):
                                         else SaleStatus.DISCONTINUED
                                     ),
                                     "pdf_url": pdf_url,
-                                    "status": "downloaded",
                                     "filename": filename,
-                                })
-                                logger.debug(
-                                    "[현대해상] 저장: %s (%d bytes)",
-                                    filename[:60],
-                                    len(pdf_data),
-                                )
+                                }
+                                if on_download is not None:
+                                    await on_download(pdf_data, result_info)
+                                else:
+                                    self.storage.save(pdf_data, storage_path)
+                                    logger.debug(
+                                        "[현대해상] 저장: %s (%d bytes)",
+                                        filename[:60],
+                                        len(pdf_data),
+                                    )
+                                new_count += 1
+                                results.append({**result_info, "status": "downloaded"})
                             else:
                                 failed_count += 1
                                 logger.warning("[현대해상] PDF 무효: %s", pdf_url[-60:])

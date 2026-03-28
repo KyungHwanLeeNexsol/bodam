@@ -102,6 +102,28 @@ async def ingest_pdf_file(
     )
 
 
+async def ingest_pdf_bytes(
+    session_factory: object,
+    pdf_bytes: bytes,
+    metadata: dict,
+    dry_run: bool = False,
+) -> dict:
+    """PDF 바이트를 임시 파일 경유로 인제스트한다 (스트리밍 인제스트용)."""
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        tmp_path = Path(tmp.name)
+    try:
+        return await ingest_pdf_file(
+            session_factory=session_factory,
+            pdf_path=tmp_path,
+            metadata=metadata,
+            dry_run=dry_run,
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 # @MX:ANCHOR: [AUTO] 현대해상 크롤링+인제스트 메인 함수
 # @MX:REASON: __main__ 및 테스트에서 호출됨
 async def crawl_and_ingest(
@@ -151,200 +173,162 @@ async def crawl_and_ingest(
         processed_urls: set[str] = await load_processed_urls(_session, company_code="hyundai-marine")
     logger.info("이미 처리된 URL (현대해상): %d개 (재시작 시 스킵됨)", len(processed_urls))
 
-    # 임시 디렉터리에 크롤링
-    with tempfile.TemporaryDirectory(prefix="hyundai-marine-crawl-") as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        logger.info("임시 크롤링 디렉터리: %s", tmp_path)
+    ingest_stats: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
+    failure_records: list[FailureRecord] = []
+    ingest_count = 0
 
-        # 1단계: Playwright 크롤링
-        logger.info("=" * 60)
-        logger.info("현대해상화재보험 크롤링 시작%s", " (DRY RUN)" if dry_run else "")
+    # 다운로드 즉시 인제스트 콜백 (스트리밍 방식)
+    # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
+    # @MX:REASON: pdfplumber + PDFMiner 내부 캐시가 asyncio gather 환경에서 GC 타이밍이 지연됨
+    async def _on_pdf_downloaded(pdf_bytes: bytes, info: dict) -> None:
+        nonlocal ingest_count
+
+        product_code: str = info["product_code"]
+        product_name: str = info["product_name"]
+        sale_status = info["sale_status"]
+        pdf_url: str = info["pdf_url"]
+        filename: str = info.get("filename", f"{product_code}.pdf")
+
+        # resume 모드: 실패 product_code(uid_prefix)에 해당하는 것만 처리
         if failed_product_codes is not None:
-            logger.info("재처리 대상 product_code: %s", sorted(failed_product_codes))
-        logger.info("=" * 60)
+            uid_prefix = product_code.replace("-", "")[:8]
+            if uid_prefix not in failed_product_codes:
+                return
 
-        from app.services.crawler.companies.nonlife.hyundai_marine_crawler import HyundaiMarineCrawler
-        from app.services.crawler.storage import LocalFileStorage
+        if dry_run:
+            ingest_stats["skipped"] += 1
+            return
 
-        storage = LocalFileStorage(str(tmp_path))
+        metadata = {
+            "format_type": "B",
+            "company_code": "hyundai-marine",
+            "company_name": "현대해상",
+            "product_code": product_code,
+            "product_name": product_name,
+            "category": "NON_LIFE",
+            "source_url": pdf_url,
+            "sale_status": str(sale_status),
+        }
+
+        ingest_count += 1
+        if ingest_count % 50 == 1:
+            logger.info(
+                "인제스트 진행: %d건째 처리 중 (성공=%d, 스킵=%d, 실패=%d)",
+                ingest_count,
+                ingest_stats["success"],
+                ingest_stats["skipped"],
+                ingest_stats["failed"],
+            )
+
+        try:
+            result = await ingest_pdf_bytes(_db.session_factory, pdf_bytes, metadata)
+        except Exception as e:
+            logger.error("인제스트 예외 [%s]: %s", filename[:40], e)
+            result = {"status": "failed", "error": str(e)}
+
+        status = result.get("status", "failed")
+        if status in ("success", "new", "updated"):
+            ingest_stats["success"] += 1
+            processed_urls.add(pdf_url)
+            logger.debug("인제스트 완료: %s (%s)", filename[:60], product_code)
+        elif status == "skipped":
+            ingest_stats["skipped"] += 1
+        else:
+            ingest_stats["failed"] += 1
+            error_msg = result.get("error", "")
+            logger.warning("인제스트 실패: %s - %s", filename[:40], error_msg)
+            uid_prefix = product_code.replace("-", "")[:8]
+            failure_records.append(FailureRecord(
+                product_code=uid_prefix,
+                pdf_filename=filename,
+                error=error_msg,
+            ))
+
+        gc.collect()
+
+    # 크롤링 + 즉시 인제스트 실행
+    logger.info("=" * 60)
+    logger.info("현대해상화재보험 크롤링 + 즉시 인제스트 시작%s", " (DRY RUN)" if dry_run else "")
+    if failed_product_codes is not None:
+        logger.info("재처리 대상 product_code: %d개", len(failed_product_codes))
+    logger.info("=" * 60)
+
+    from app.services.crawler.companies.nonlife.hyundai_marine_crawler import HyundaiMarineCrawler
+    from app.services.crawler.storage import LocalFileStorage
+
+    # 스트리밍 모드에서 storage는 사용되지 않으나 생성자 요구사항으로 전달
+    noop_tmp = tempfile.mkdtemp(prefix="hyundai-marine-noop-")
+    try:
+        storage = LocalFileStorage(noop_tmp)
         crawler = HyundaiMarineCrawler(
             storage=storage,
-            rate_limit_seconds=2.0,
+            rate_limit_seconds=1.0,
             max_retries=3,
             fail_threshold=fail_threshold,
         )
 
-        crawl_result = await crawler.crawl(processed_urls=processed_urls)
-
-        logger.info(
-            "크롤링 완료: 발견=%d, 신규=%d, 스킵=%d, 실패=%d",
-            crawl_result.total_found,
-            crawl_result.new_count,
-            crawl_result.skipped_count,
-            crawl_result.failed_count,
+        crawl_result = await crawler.crawl(
+            processed_urls=processed_urls,
+            on_download=_on_pdf_downloaded,
         )
+    finally:
+        import shutil
+        shutil.rmtree(noop_tmp, ignore_errors=True)
 
-        # 크롤링 실패율 체크
-        if crawl_result.total_found > 0:
-            fail_rate = crawl_result.failed_count / max(crawl_result.total_found, 1)
-            if fail_rate > fail_threshold:
-                logger.error(
-                    "크롤링 실패율 %.1f%% > 임계값 %.1f%% → 인제스트 중단",
-                    fail_rate * 100,
-                    fail_threshold * 100,
-                )
-                state = HyundaiMarineIngestState(
+    logger.info(
+        "크롤링 완료: 발견=%d, 신규=%d, 스킵=%d, 실패=%d",
+        crawl_result.total_found,
+        crawl_result.new_count,
+        crawl_result.skipped_count,
+        crawl_result.failed_count,
+    )
+
+    # 크롤링 실패율 체크
+    if crawl_result.total_found > 0:
+        fail_rate = crawl_result.failed_count / max(crawl_result.total_found, 1)
+        if fail_rate > fail_threshold:
+            logger.error(
+                "크롤링 실패율 %.1f%% > 임계값 %.1f%%",
+                fail_rate * 100,
+                fail_threshold * 100,
+            )
+            if state_output and failure_records:
+                HyundaiMarineIngestState(
+                    failures=failure_records,
                     stop_reason=f"crawl_fail_rate={fail_rate:.2%}",
                     crawl_failed_count=crawl_result.failed_count,
-                )
-                if state_output:
-                    state.save(state_output)
-                return {
-                    "error": f"crawl_fail_rate={fail_rate:.2%}",
-                    "crawl": {
-                        "total_found": crawl_result.total_found,
-                        "new_count": crawl_result.new_count,
-                        "failed_count": crawl_result.failed_count,
-                    },
-                }
-
-        # 상품 메타데이터 조회 테이블 생성 (uid_prefix → {name, sale_status, pdf_url})
-        # 저장 경로: hyundai-marine/{on-sale|discontinued}/{uid_prefix}/{filename}
-        # uid_prefix = uuid.replace("-","")[:8]
-        product_meta: dict[str, dict] = {}
-        for r in (crawl_result.results or []):
-            uuid_val = r.get("product_code", "")  # 크롤러가 UUID를 product_code로 저장
-            if uuid_val:
-                uid_prefix = uuid_val.replace("-", "")[:8]
-                product_meta[uid_prefix] = {
-                    "product_name": r.get("product_name", uuid_val),
-                    "sale_status": r.get("sale_status", "ON_SALE"),
-                    "product_code": uuid_val,
-                    "pdf_url": r.get("pdf_url", ""),
-                }
-
-        if dry_run:
-            pdf_files = list(tmp_path.rglob("*.pdf")) + list(tmp_path.rglob("*.PDF"))
-            logger.info("[DRY RUN] 수집된 PDF: %d개 (인제스트 생략)", len(pdf_files))
+                ).save(state_output)
             return {
+                "error": f"crawl_fail_rate={fail_rate:.2%}",
                 "crawl": {
                     "total_found": crawl_result.total_found,
                     "new_count": crawl_result.new_count,
                     "failed_count": crawl_result.failed_count,
                 },
-                "ingest": {"skipped": len(pdf_files), "reason": "dry_run"},
+                "ingest": ingest_stats,
             }
 
-        # 2단계: 저장된 PDF 순차 인제스트
-        # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
-        # @MX:REASON: pdfplumber + PDFMiner 내부 캐시가 asyncio gather 환경에서 GC 타이밍이 지연됨
-        all_pdf_files = sorted(
-            list(tmp_path.rglob("*.pdf")) + list(tmp_path.rglob("*.PDF"))
-        )
+    # dry_run 결과 반환
+    if dry_run:
+        logger.info("[DRY RUN] 크롤링 발견 %d개 (인제스트 생략)", crawl_result.total_found)
+        return {
+            "crawl": {
+                "total_found": crawl_result.total_found,
+                "new_count": crawl_result.new_count,
+                "failed_count": crawl_result.failed_count,
+            },
+            "ingest": {"skipped": ingest_stats["skipped"], "reason": "dry_run"},
+        }
 
-        # resume 모드: 실패 product_code에 해당하는 파일만 처리
-        if failed_product_codes is not None:
-            pdf_files = [
-                p for p in all_pdf_files
-                if (
-                    p.relative_to(tmp_path).parts[2]
-                    if len(p.relative_to(tmp_path).parts) >= 3
-                    else p.stem
-                ) in failed_product_codes
-            ]
-            logger.info(
-                "인제스트 대상(재처리): %d개 PDF (전체 %d개 중 실패 product_code 필터)",
-                len(pdf_files),
-                len(all_pdf_files),
-            )
-        else:
-            pdf_files = all_pdf_files
-            logger.info("인제스트 대상: %d개 PDF", len(pdf_files))
-
-        ingest_stats = {"success": 0, "skipped": 0, "failed": 0}
-        failure_records: list[FailureRecord] = []
-
-        for idx, pdf_path in enumerate(pdf_files, start=1):
-            # 경로에서 메타데이터 추출: hyundai-marine/{on-sale|discontinued}/{uid_prefix}/{filename}
-            rel_parts = pdf_path.relative_to(tmp_path).parts
-            uid_prefix = rel_parts[2] if len(rel_parts) >= 3 else pdf_path.stem
-            meta = product_meta.get(uid_prefix, {})
-            product_code = meta.get("product_code", uid_prefix)  # 전체 UUID
-            product_name = meta.get("product_name", uid_prefix)
-            sale_status = meta.get("sale_status", "ON_SALE")
-
-            # source_url: product_meta에서 직접 복원
-            source_url = meta.get("pdf_url", "")
-            if not source_url:
-                source_url = f"https://www.hi.co.kr/data/{pdf_path.name}"
-
-            metadata = {
-                "format_type": "B",
-                "company_code": "hyundai-marine",
-                "company_name": "현대해상",
-                "product_code": product_code,
-                "product_name": product_name,
-                "category": "NON_LIFE",
-                "source_url": source_url,
-                "sale_status": sale_status,
-            }
-
-            if idx % 50 == 0 or idx == 1:
-                logger.info(
-                    "인제스트 진행: %d / %d (성공=%d, 스킵=%d, 실패=%d)",
-                    idx,
-                    len(pdf_files),
-                    ingest_stats["success"],
-                    ingest_stats["skipped"],
-                    ingest_stats["failed"],
-                )
-
-            # 이미 DB에 저장된 URL이면 인제스트 없이 스킵
-            if source_url in processed_urls:
-                ingest_stats["skipped"] += 1
-                logger.debug("[%d] URL 스킵 (이미 처리됨): %s", idx, pdf_path.name)
-                continue
-
-            try:
-                result = await ingest_pdf_file(
-                    _db.session_factory,
-                    pdf_path,
-                    metadata,
-                    dry_run=False,
-                )
-            except Exception as e:
-                logger.error("[%d] 인제스트 예외 %s: %s", idx, pdf_path.name, e)
-                result = {"status": "failed", "error": str(e)}
-
-            status = result.get("status", "failed")
-            if status == "success":
-                ingest_stats["success"] += 1
-                processed_urls.add(source_url)  # 런 중 중복 다운로드 방지
-                logger.debug("[%d] 완료: %s (%s)", idx, pdf_path.name, product_code)
-            elif status == "skipped":
-                ingest_stats["skipped"] += 1
-            else:
-                ingest_stats["failed"] += 1
-                error_msg = result.get("error", "")
-                logger.warning("[%d] 실패: %s - %s", idx, pdf_path.name, error_msg)
-                failure_records.append(FailureRecord(
-                    product_code=uid_prefix,  # 경로 매칭용 uid_prefix
-                    pdf_filename=pdf_path.name,
-                    error=error_msg,
-                ))
-
-            gc.collect()
-
-        # 실패 상태 저장
-        if state_output and failure_records:
-            state = HyundaiMarineIngestState(
-                failures=failure_records,
-                stop_reason="ingest_failures",
-                crawl_failed_count=crawl_result.failed_count,
-            )
-            state.save(state_output)
-        elif state_output:
-            logger.info("실패 건 없음 → 상태 파일 미생성")
+    # 실패 상태 저장
+    if state_output and failure_records:
+        HyundaiMarineIngestState(
+            failures=failure_records,
+            stop_reason="ingest_failures",
+            crawl_failed_count=crawl_result.failed_count,
+        ).save(state_output)
+    elif state_output:
+        logger.info("실패 건 없음 → 상태 파일 미생성")
 
     # 결과 출력
     sep = "=" * 60
