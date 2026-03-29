@@ -68,6 +68,7 @@ async def init_database(settings: Settings) -> None:
         pool_pre_ping=True,  # 유효하지 않은 연결 자동 재연결
         pool_size=10,  # 표준 PostgreSQL: 연결 풀 확대
         max_overflow=20,
+        connect_args={"ssl": "require"},  # Neon DB SSL 필수
     )
 
     session_factory = async_sessionmaker(
