@@ -4,13 +4,19 @@
 
 Before deploying, you need the following services and tools set up.
 
-### 1. CockroachDB
+### 1. Fly Postgres
 
-1. Sign up at https://cockroachlabs.com
-2. Create a new cluster (select region: `ap-northeast-1` for Tokyo proximity)
-3. CockroachDB has pgvector built-in (no extension needed)
-4. Copy the connection string from: Dashboard > Connection Details
-   - Use the **asyncpg** format: `postgresql+asyncpg://user:password@cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full`
+Bodam uses Fly.io Managed PostgreSQL with pgvector extension.
+
+```bash
+# Postgres 앱 생성 (이미 bodam-db로 존재)
+fly postgres create --name bodam-db --region nrt
+
+# pgvector 확장 활성화 (마이그레이션에서 자동 실행)
+# CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+내부 접속 주소: `postgresql+asyncpg://postgres:<password>@bodam-db.flycast:5432/bodam`
 
 ### 2. Upstash Redis
 
@@ -56,8 +62,8 @@ Run the following commands, replacing each `CHANGE_ME` with your actual values.
 **Required secrets:**
 
 ```bash
-# Database (CockroachDB asyncpg connection string)
-fly secrets set DATABASE_URL="postgresql+asyncpg://user:password@cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full" --app bodam
+# Database (Fly Postgres 내부 주소, SSL 불필요)
+fly secrets set DATABASE_URL="postgresql+asyncpg://postgres:<password>@bodam-db.flycast:5432/bodam" --app bodam
 
 # Redis (Upstash TLS URL)
 fly secrets set REDIS_URL="rediss://default:password@apn1-xxx.upstash.io:6379" --app bodam
@@ -116,12 +122,15 @@ fly secrets import < backend/.env.fly --app bodam
 
 ### Step 4: Run database migrations
 
-Run Alembic migrations against the CockroachDB database before first deploy:
+Run Alembic migrations against the Fly Postgres database:
 
 ```bash
-# From the backend directory
+# Fly proxy로 로컬에서 DB 접속
+fly proxy 5432 -a bodam-db &
+
+# 마이그레이션 실행
 cd backend
-DATABASE_URL="postgresql+asyncpg://..." alembic upgrade head
+DATABASE_URL="postgresql+asyncpg://postgres:<password>@localhost:5432/bodam" alembic upgrade head
 ```
 
 Or trigger migrations as part of the startup command by updating `backend/Dockerfile` CMD if not already done.
@@ -175,7 +184,7 @@ The following secrets must be set. See `backend/.env.fly.example` for format det
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `DATABASE_URL` | Yes | CockroachDB asyncpg connection string |
+| `DATABASE_URL` | Yes | Fly Postgres 내부 접속 URL |
 | `REDIS_URL` | Yes | Upstash Redis TLS URL (`rediss://`) |
 | `SECRET_KEY` | Yes | JWT signing key (32-byte hex) |
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
@@ -200,7 +209,7 @@ The following secrets must be set. See `backend/.env.fly.example` for format det
 | Resource | Plan | Estimated Cost |
 |----------|------|----------------|
 | Fly.io VM (`shared-cpu-1x`, 512MB) | Auto-stop enabled | ~$0-5/month |
-| CockroachDB | Basic (10GiB free) | $0/month |
+| Fly Postgres | 1GB RAM, 10GB disk | ~$0-7/month |
 | Upstash Redis | Free tier (10K commands/day) | $0/month |
 
 With `auto_stop_machines = 'stop'` and `min_machines_running = 0`, the VM stops when idle and only incurs cost when actively serving requests.
@@ -216,7 +225,7 @@ With `auto_stop_machines = 'stop'` and `min_machines_running = 0`, the VM stops 
 **App starts but health check fails**
 - Verify `DATABASE_URL` is set correctly with `fly secrets list --app bodam`
 - Check logs: `fly logs --app bodam`
-- CockroachDB has pgvector built-in (no extension needed)
+- Fly Postgres의 pgvector는 마이그레이션에서 `CREATE EXTENSION IF NOT EXISTS vector`로 활성화
 
 **Cold start delays**
 - Expected with `auto_stop_machines = 'stop'` — first request after idle wakes the VM
@@ -224,3 +233,8 @@ With `auto_stop_machines = 'stop'` and `min_machines_running = 0`, the VM stops 
 
 **Secrets not applied**
 - After setting secrets, redeploy: `fly deploy --app bodam`
+
+**DB 접속 안 될 때**
+- Fly Postgres 상태 확인: `fly status -a bodam-db`
+- Fly 내부 DNS 확인: `bodam-db.flycast` (같은 organization 내에서만 접근 가능)
+- Proxy로 로컬 테스트: `fly proxy 5432 -a bodam-db`

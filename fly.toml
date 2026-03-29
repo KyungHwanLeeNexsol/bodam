@@ -1,6 +1,6 @@
 # Fly.io configuration for Bodam Backend
 app = 'bodam'
-primary_region = 'sin'  # Singapore - same region as CockroachDB (gcp-asia-southeast1)
+primary_region = 'nrt'  # Tokyo - same region as Fly Postgres (bodam-db)
 
 [build]
   dockerfile = 'backend/Dockerfile'
