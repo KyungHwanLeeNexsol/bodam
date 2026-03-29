@@ -219,4 +219,5 @@ backend/crawler_state_*.json
 .moai/
 !.moai/specs/
 !.moai/project/
-.claude/
+# .claude/settings.json contains API keys - must not be tracked
+.claude/settings.json
