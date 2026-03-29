@@ -1,0 +1,7 @@
+# Exclude non-frontend files from Vercel build
+.claude/
+.moai/
+.github/
+backend/
+*.md
+!frontend/**
