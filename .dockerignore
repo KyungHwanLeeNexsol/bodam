@@ -1,6 +1,10 @@
 # 프론트엔드 (Vercel로 별도 배포)
 frontend/
 
+# 로컬 데이터 (PDF 약관 파일 — 수 GB 크기)
+backend/data/
+data/
+
 # 배포 스크립트 및 문서
 deploy/
 performance/
