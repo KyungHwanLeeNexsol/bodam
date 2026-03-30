@@ -1,7 +1,7 @@
 """임베딩 백필 스크립트
 
 DB에 이미 저장된 PolicyChunk 중 embedding=NULL인 항목에 대해
-BAAI/bge-m3 로컬 모델로 임베딩을 일괄 생성하여 UPDATE한다.
+OpenAI text-embedding-3-small(768차원)로 임베딩을 일괄 생성하여 UPDATE한다.
 
 Usage:
     # 인터랙티브 선택 메뉴 (--company 미지정 + 터미널 실행)
@@ -13,12 +13,12 @@ Usage:
     # Dry-run (DB 쓰기 없이 통계만)
     PYTHONPATH=. uv run python -m scripts.backfill_embeddings --dry-run
 
-    # 배치 크기 조정 (기본 128)
-    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 128
+    # 배치 크기 조정 (기본 500)
+    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 500
 
-# @MX:NOTE: PolicyChunk.embedding IS NULL → BAAI/bge-m3 로컬 모델(1024차원) → UPDATE
+# @MX:NOTE: PolicyChunk.embedding IS NULL → OpenAI text-embedding-3-small(768차원) → UPDATE
 # @MX:NOTE: 보험사 필터: --company 옵션으로 InsuranceCompany.code 기준 필터링
-# @MX:NOTE: 배치 크기: 로컬 CPU 추론 최적값 128개 단위 처리, API 키 불필요
+# @MX:NOTE: 배치 크기: OpenAI API 최적값 500개 단위 처리, OPENAI_API_KEY 필요
 """
 from __future__ import annotations
 
@@ -42,12 +42,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("backfill_embeddings")
 
-# 기본 배치 크기 (bge-m3 CPU 추론 최적값)
-DEFAULT_BATCH_SIZE = 128
+# 기본 배치 크기 (OpenAI API 최적값, 최대 2048)
+DEFAULT_BATCH_SIZE = 500
 # UPDATE 트랜잭션당 청크 수
 UPDATE_BATCH_SIZE = 1
 # DB 오류 재시도 횟수
 _MAX_RETRIES = 3
+# 임베딩 생성 최소 텍스트 길이 (50자 미만 스킵)
+_MIN_CHARS = 50
 
 
 async def fetch_companies_with_null_embeddings(
@@ -210,52 +212,10 @@ async def update_embeddings(
     return updated, failed
 
 
-async def _embed_local(
-    model: object,
-    texts: list[str],
-) -> list[list[float]]:
-    """BAAI/bge-m3 로컬 모델 임베딩 생성
-
-    동기 추론을 asyncio.to_thread로 비동기 루프에서 비블로킹 실행.
-    50자 미만 텍스트는 빈 리스트로 반환.
-
-    Args:
-        model: SentenceTransformer 인스턴스 (backfill() 시작 시 1회 로드)
-        texts: 임베딩할 텍스트 목록
-
-    Returns:
-        임베딩 벡터 목록 (50자 미만 위치에는 빈 리스트)
-    """
-    from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
-
-    MIN_CHARS = 50
-    valid_indices = [i for i, t in enumerate(texts) if len(t) >= MIN_CHARS]
-    valid_texts = [texts[i] for i in valid_indices]
-    results: list[list[float]] = [[] for _ in texts]
-
-    if not valid_texts:
-        return results
-
-    def _encode() -> list[list[float]]:
-        st_model: SentenceTransformer = model  # type: ignore[assignment]
-        embeddings = st_model.encode(
-            valid_texts,
-            batch_size=128,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
-        return [emb.tolist() for emb in embeddings]
-
-    embeddings = await asyncio.to_thread(_encode)
-    for orig_idx, emb in zip(valid_indices, embeddings):
-        results[orig_idx] = emb
-    return results
-
-
 async def init_db() -> object:
     """DB를 초기화하고 session_factory를 반환한다."""
-    from app.core.config import Settings
     import app.core.database as db_module
+    from app.core.config import Settings
 
     settings = Settings()  # type: ignore[call-arg]
     database_url = getattr(settings, "database_url", None) or os.environ.get("DATABASE_URL", "")
@@ -278,18 +238,17 @@ async def backfill(
     if session_factory is None:
         session_factory = await init_db()
 
-    # ── 로컬 임베딩 모델 초기화 (BAAI/bge-m3, 1회 로드) ─────────
-    # @MX:NOTE: BAAI/bge-m3 모델을 백필 시작 시 1회 로드 — API 키 불필요
-    # @MX:NOTE: ~600MB HuggingFace 캐시에서 로드, GitHub Actions에서 캐시 적중 시 빠름
-    _model_name = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
-
+    # ── OpenAI 임베딩 서비스 초기화 ─────────────────────────────
+    # @MX:NOTE: get_embedding_service()가 config의 embedding_provider=openai 기준으로 OpenAIEmbeddingService 반환
+    # @MX:NOTE: OPENAI_API_KEY 환경변수 또는 .env 파일 필요
     if not dry_run:
-        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
-        logger.info("BAAI/bge-m3 모델 로드 중 (model=%s)...", _model_name)
-        _st_model = SentenceTransformer(_model_name)
-        logger.info("임베딩 초기화 완료 (model=%s, dim=1024, 로컬 CPU 추론)", _model_name)
+        from app.services.rag.embeddings import get_embedding_service
+        embedding_service = get_embedding_service()
+        logger.info(
+            "OpenAI 임베딩 서비스 초기화 완료 (model=text-embedding-3-small, dim=768)"
+        )
     else:
-        _st_model = None
+        embedding_service = None
 
     # ── 대상 건수 확인 ─────────────────────────────────────────
     total = await count_null_embeddings(session_factory, company_code)
@@ -302,7 +261,6 @@ async def backfill(
 
     stats = {"total": total, "updated": 0, "skipped": 0, "failed": 0}
     offset = 0
-    batch_index = 0
     start_time = time.time()
 
     while offset < total:
@@ -322,24 +280,29 @@ async def backfill(
             offset += len(rows)
             continue
 
-        # bge-m3 로컬 임베딩 생성
-        try:
-            embeddings = await _embed_local(_st_model, chunk_texts)
-        except Exception as e:
-            logger.error("임베딩 생성 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
-            stats["failed"] += len(rows)
-            offset += len(rows)
-            batch_index += 1
-            continue
-        batch_index += 1
+        # 50자 미만 텍스트 필터링 (임베딩 의미 없음)
+        valid_indices = [i for i, t in enumerate(chunk_texts) if len(t) >= _MIN_CHARS]
+        valid_texts = [chunk_texts[i] for i in valid_indices]
 
-        # 유효한 임베딩만 UPDATE
+        short_count = len(chunk_texts) - len(valid_texts)
+        if short_count:
+            stats["skipped"] += short_count
+
         id_to_embedding: dict[object, list[float]] = {}
-        for chunk_id, embedding in zip(chunk_ids, embeddings):
-            if embedding:  # 빈 리스트(50자 미만 텍스트)는 스킵
-                id_to_embedding[chunk_id] = embedding
-            else:
-                stats["skipped"] += 1
+
+        if valid_texts:
+            try:
+                embeddings = await embedding_service.embed_batch(valid_texts)  # type: ignore[union-attr]
+                for orig_idx, emb in zip(valid_indices, embeddings):
+                    if emb:
+                        id_to_embedding[chunk_ids[orig_idx]] = emb
+                    else:
+                        stats["skipped"] += 1
+            except Exception as e:
+                logger.error("임베딩 생성 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
+                stats["failed"] += len(valid_texts)
+                offset += len(rows)
+                continue
 
         try:
             batch_updated, batch_failed = await update_embeddings(session_factory, id_to_embedding)
@@ -372,7 +335,7 @@ async def backfill(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI 인자를 파싱한다."""
     parser = argparse.ArgumentParser(
-        description="PolicyChunk embedding=NULL 백필 스크립트",
+        description="PolicyChunk embedding=NULL 백필 스크립트 (OpenAI text-embedding-3-small)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 사용 예시:
@@ -391,7 +354,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help=f"bge-m3 인코딩 배치 크기 (기본: {DEFAULT_BATCH_SIZE})",
+        help=f"OpenAI API 배치 크기 (기본: {DEFAULT_BATCH_SIZE}, 최대: 2048)",
     )
     parser.add_argument(
         "--dry-run",
@@ -406,9 +369,9 @@ async def main() -> None:
     """진입점."""
     args = parse_args()
 
-    if args.batch_size > 512:
-        logger.warning("batch-size 최대 512 (메모리 제한). 512로 조정합니다.")
-        args.batch_size = 512
+    if args.batch_size > 2048:
+        logger.warning("batch-size 최대 2048 (OpenAI API 제한). 2048로 조정합니다.")
+        args.batch_size = 2048
 
     # --company 미지정 + 인터랙티브 터미널: 보험사 선택 메뉴 표시
     session_factory = None
@@ -417,7 +380,7 @@ async def main() -> None:
         args.company = await prompt_company_select(session_factory)
 
     logger.info("=" * 60)
-    logger.info("임베딩 백필 시작")
+    logger.info("임베딩 백필 시작 (OpenAI text-embedding-3-small)")
     logger.info("  대상 보험사: %s", args.company or "전체")
     logger.info("  배치 크기:   %d", args.batch_size)
     logger.info("  Dry-run:     %s", args.dry_run)

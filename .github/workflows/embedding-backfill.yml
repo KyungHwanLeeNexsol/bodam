@@ -1,4 +1,4 @@
-name: 임베딩 백필 (BAAI/bge-m3)
+name: 임베딩 백필 (OpenAI text-embedding-3-small)
 
 on:
   workflow_dispatch:
@@ -15,9 +15,9 @@ on:
           - '삼성화재만'
           - '전체 (embedding=NULL인 모든 보험사)'
       batch_size:
-        description: '배치 크기 (기본: 64, 메모리 부족 시 줄이기)'
+        description: '배치 크기 (기본: 500, OpenAI API 최대: 2048)'
         required: false
-        default: '64'
+        default: '500'
       dry_run:
         description: 'Dry-run (실제 DB 업데이트 없이 대상 건수만 확인)'
         required: false
@@ -33,6 +33,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.FLY_DB_PASSWORD }}@localhost:5432/bodam
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      EMBEDDING_PROVIDER: openai
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -74,6 +76,7 @@ jobs:
         run: cd backend && uv sync --frozen
 
       # ── 현대해상 ──
+
       - name: 현대해상 임베딩
         if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '현대해상만' }}
         run: |
@@ -83,7 +86,7 @@ jobs:
           echo "=== 현대해상 임베딩 시작 ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
             --company hyundai-marine \
-            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+            --batch-size ${{ inputs.batch_size || '500' }} $DRY
           echo "=== 현대해상 임베딩 완료 ==="
 
       # ── DB손보 ──
@@ -96,7 +99,7 @@ jobs:
           echo "=== DB손보 임베딩 시작 ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
             --company db-insurance \
-            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+            --batch-size ${{ inputs.batch_size || '500' }} $DRY
           echo "=== DB손보 임베딩 완료 ==="
 
       # ── 삼성화재 ──
@@ -109,7 +112,7 @@ jobs:
           echo "=== 삼성화재 임베딩 시작 ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
             --company samsung-fire \
-            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+            --batch-size ${{ inputs.batch_size || '500' }} $DRY
           echo "=== 삼성화재 임베딩 완료 ==="
 
       # ── 전체 ──
@@ -121,7 +124,7 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
           echo "=== 전체 임베딩 시작 ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
-            --batch-size ${{ inputs.batch_size || '64' }} $DRY
+            --batch-size ${{ inputs.batch_size || '500' }} $DRY
           echo "=== 전체 임베딩 완료 ==="
 
       # ── 결과 검증 ──
@@ -165,5 +168,5 @@ jobs:
           echo "## 임베딩 백필 결과" >> $GITHUB_STEP_SUMMARY
           echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "- 대상: ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
-          echo "- 배치 크기: ${{ inputs.batch_size || '64' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 배치 크기: ${{ inputs.batch_size || '500' }}" >> $GITHUB_STEP_SUMMARY
           echo "- Dry-run: ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
