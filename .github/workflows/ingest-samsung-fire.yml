@@ -18,25 +18,39 @@ on:
         required: false
         default: false
         type: boolean
-      resume_from:
-        description: '이어서 시작할 파일 번호 (--resume-from, 단순 인덱스 재시작)'
-        required: false
-        default: '0'
       resume_state_artifact:
         description: '재처리할 실패 상태 artifact 이름 (failure-state-YYYY-MM-DD 형식, 비워두면 전체 실행)'
         required: false
         default: ''
 
 
-concurrency:
-  group: ingest-samsung-fire
-  cancel-in-progress: false  # 기존 실행 완료 후 진행 (동시 실행 차단)
+# 같은 워크플로우 동시 실행 허용 (matrix shard별 독립 실행)
+# concurrency 제거: 4개 shard가 병렬로 실행되어야 하므로 전역 잠금 없음
 
 jobs:
   crawl-and-ingest:
-    name: 삼성화재 크롤링 + 인제스트
+    name: "삼성화재 인제스트 (shard ${{ matrix.shard }})"
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6시간 (Actions 최대치)
+    timeout-minutes: 360  # 6시간 (shard당)
+
+    strategy:
+      fail-fast: false  # 한 shard 실패해도 나머지 계속 실행
+      max-parallel: 4
+      matrix:
+        include:
+          # 전체 ~8,147개 PDF를 4개 shard로 분할
+          - shard: 0
+            start_index: 0
+            count: 2050
+          - shard: 1
+            start_index: 2050
+            count: 2050
+          - shard: 2
+            start_index: 4100
+            count: 2050
+          - shard: 3
+            start_index: 6150
+            count: ""  # 끝까지 처리
 
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.FLY_DB_PASSWORD }}@localhost:5432/bodam
@@ -96,12 +110,12 @@ jobs:
           path: backend/
         continue-on-error: true  # artifact 없으면 전체 실행으로 폴백
 
-      - name: 삼성화재 크롤링 + 인제스트 실행
+      - name: 삼성화재 크롤링 + 인제스트 실행 (shard ${{ matrix.shard }})
         id: crawl
         run: |
           cd backend
 
-          # gun 파라미터 처리 (수동 실행 vs 스케줄)
+          # gun 파라미터 처리
           GUN_PARAM=""
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.gun }}" != "전체" ]; then
@@ -115,48 +129,52 @@ jobs:
             DRY_RUN_PARAM="--dry-run"
           fi
 
-          # resume 파라미터 (두 가지 모드)
+          # resume 파라미터 (실패 상태 재처리 모드)
           RESUME_PARAM=""
-          if [ -n "${{ inputs.resume_state_artifact }}" ] && [ -f "failure_state.json" ]; then
-            # 모드 1: 이전 실패 건만 재처리
-            RESUME_PARAM="--resume-state failure_state.json"
-            echo "재처리 모드: failure_state.json 기반 실패 건 재처리"
-          elif [ "${{ inputs.resume_from }}" != "0" ] && [ -n "${{ inputs.resume_from }}" ]; then
-            # 모드 2: 특정 인덱스부터 이어서
-            RESUME_PARAM="--resume-from ${{ inputs.resume_from }}"
+          if [ -n "${{ inputs.resume_state_artifact }}" ] && [ -f "failure_state_shard${{ matrix.shard }}.json" ]; then
+            RESUME_PARAM="--resume-state failure_state_shard${{ matrix.shard }}.json"
+            echo "재처리 모드: failure_state_shard${{ matrix.shard }}.json 기반 실패 건 재처리"
+          fi
+
+          # matrix shard 분할 파라미터
+          SHARD_PARAM="--resume-from ${{ matrix.start_index }}"
+          if [ -n "${{ matrix.count }}" ]; then
+            SHARD_PARAM="$SHARD_PARAM --count ${{ matrix.count }}"
           fi
 
           PYTHONPATH=. uv run python -m scripts.crawl_and_ingest_samsung \
             $GUN_PARAM \
             $DRY_RUN_PARAM \
             $RESUME_PARAM \
-            --state-output failure_state.json
+            $SHARD_PARAM \
+            --state-output failure_state_shard${{ matrix.shard }}.json
 
-      # 실패 건이 있으면 artifact로 저장 (다음 재처리 시 사용)
-      - name: 실패 상태 artifact 업로드
+      # 실패 건이 있으면 artifact로 저장 (shard별)
+      - name: 실패 상태 artifact 업로드 (shard ${{ matrix.shard }})
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: failure-state-${{ github.run_id }}
-          path: backend/failure_state.json
+          name: failure-state-shard${{ matrix.shard }}-${{ github.run_id }}
+          path: backend/failure_state_shard${{ matrix.shard }}.json
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: 실행 결과 요약
+      - name: 실행 결과 요약 (shard ${{ matrix.shard }})
         if: always()
         run: |
-          echo "## 삼성화재 인제스트 실행 결과" >> $GITHUB_STEP_SUMMARY
+          echo "## 삼성화재 인제스트 결과 (shard ${{ matrix.shard }}: ${{ matrix.start_index }}~)" >> $GITHUB_STEP_SUMMARY
           echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S KST')" >> $GITHUB_STEP_SUMMARY
           echo "- 종류 필터: ${{ inputs.gun || '전체' }}" >> $GITHUB_STEP_SUMMARY
           echo "- Dry-run: ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f "backend/failure_state.json" ]; then
-            FAIL_COUNT=$(python3 -c "import json; d=json.load(open('backend/failure_state.json')); print(len(d.get('failures', [])))" 2>/dev/null || echo "?")
-            STOP_REASON=$(python3 -c "import json; d=json.load(open('backend/failure_state.json')); print(d.get('stop_reason', 'unknown'))" 2>/dev/null || echo "unknown")
+          STATE_FILE="backend/failure_state_shard${{ matrix.shard }}.json"
+          if [ -f "$STATE_FILE" ]; then
+            FAIL_COUNT=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(len(d.get('failures', [])))" 2>/dev/null || echo "?")
+            STOP_REASON=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('stop_reason', 'unknown'))" 2>/dev/null || echo "unknown")
             echo "- 실패 건수: ${FAIL_COUNT}건" >> $GITHUB_STEP_SUMMARY
             echo "- 중단 사유: ${STOP_REASON}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 재처리 방법" >> $GITHUB_STEP_SUMMARY
             echo "1. Actions 탭 → 이 워크플로우 → Run workflow" >> $GITHUB_STEP_SUMMARY
-            echo "2. \`resume_state_artifact\` 에 \`failure-state-${{ github.run_id }}\` 입력" >> $GITHUB_STEP_SUMMARY
+            echo "2. \`resume_state_artifact\` 에 \`failure-state-shard${{ matrix.shard }}-${{ github.run_id }}\` 입력" >> $GITHUB_STEP_SUMMARY
           fi
