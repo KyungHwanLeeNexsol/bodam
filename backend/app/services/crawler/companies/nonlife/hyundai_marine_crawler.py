@@ -74,7 +74,7 @@ class HyundaiMarineCrawler(BaseCrawler):
         rate_limit_seconds: float = 1.0,
         max_retries: int = 3,
         fail_threshold: float = 0.05,
-        fail_min_samples: int = 5,
+        fail_min_samples: int = 20,
         url_resolve_concurrency: int = 10,
         download_concurrency: int = 3,
     ) -> None:
