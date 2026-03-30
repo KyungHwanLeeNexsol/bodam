@@ -22,18 +22,22 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
-    """policy_chunks.embedding을 vector(1024) → vector(768)로 변경"""
+    """policy_chunks.embedding을 vector(1024) → vector(768)로 변경
+
+    ALTER COLUMN TYPE은 전체 테이블 rewrite가 필요하여 수십만 행에서 타임아웃 발생.
+    DROP + ADD COLUMN 방식을 사용하면 PostgreSQL 카탈로그만 업데이트되어 즉시 처리됨.
+    기존 임베딩 데이터는 768차원으로 변환 불가하므로 재생성 필요 - 데이터 손실 없음.
+    """
     # 기존 HNSW 인덱스 삭제
     op.execute("DROP INDEX IF EXISTS idx_policy_chunks_embedding")
 
-    # 임베딩 컬럼을 vector(768)로 변경 (기존 데이터 NULL 초기화)
-    op.execute(
-        "ALTER TABLE policy_chunks "
-        "ALTER COLUMN embedding TYPE vector(768) "
-        "USING NULL"
-    )
+    # 기존 컬럼 삭제 (즉시 처리 - 카탈로그 업데이트만)
+    op.execute("ALTER TABLE policy_chunks DROP COLUMN IF EXISTS embedding")
 
-    # 768차원 HNSW 인덱스 재생성 (코사인 유사도 최적화)
+    # 768차원 컬럼 추가 (즉시 처리 - nullable 컬럼은 PG11+에서 테이블 rewrite 없음)
+    op.execute("ALTER TABLE policy_chunks ADD COLUMN embedding vector(768)")
+
+    # HNSW 인덱스 생성 (빈 컬럼이므로 즉시 처리)
     op.execute(
         "CREATE INDEX idx_policy_chunks_embedding "
         "ON policy_chunks "
@@ -46,11 +50,9 @@ def downgrade() -> None:
     """policy_chunks.embedding을 vector(768) → vector(1024)로 롤백"""
     op.execute("DROP INDEX IF EXISTS idx_policy_chunks_embedding")
 
-    op.execute(
-        "ALTER TABLE policy_chunks "
-        "ALTER COLUMN embedding TYPE vector(1024) "
-        "USING NULL"
-    )
+    op.execute("ALTER TABLE policy_chunks DROP COLUMN IF EXISTS embedding")
+
+    op.execute("ALTER TABLE policy_chunks ADD COLUMN embedding vector(1024)")
 
     op.execute(
         "CREATE INDEX idx_policy_chunks_embedding "
