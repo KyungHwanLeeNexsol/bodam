@@ -73,7 +73,7 @@ TARGET_GUN_GB: dict[str, set[str]] = {
 
 MIN_SALE_END_DT = "19000101"
 RATE_LIMIT = 0.2  # pymupdf 전환 후 감소 (병렬 처리 대응)
-SEMAPHORE_CONCURRENCY = 5  # asyncio.gather 동시 처리 수 (pymupdf 스레드 안전)
+SEMAPHORE_CONCURRENCY = 2  # asyncio.gather 동시 처리 수 (4 shard × 2 = 최대 8 DB연결, Fly.io proxy 부하 제한)
 DEFAULT_FAIL_THRESHOLD = 0.05
 FAIL_MIN_SAMPLES = 50
 
