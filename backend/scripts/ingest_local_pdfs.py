@@ -23,6 +23,7 @@ import logging
 import re
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -49,6 +50,11 @@ try:
     load_dotenv(_project_root / ".env")
 except ImportError:
     pass
+
+# PDF 파싱용 thread executor (fitz는 동기 C 라이브러리 — asyncio 이벤트 루프 blocking 방지)
+_PDF_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pdf-parse")
+# 단일 PDF 파싱 타임아웃 (비표준 PDF가 fitz 내부 루프에 빠지는 것 방지)
+_PDF_PARSE_TIMEOUT = 120  # seconds
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -744,7 +750,14 @@ async def process_single_file(
         cleaner = TextCleaner()
         chunker = TextChunker()
 
-        raw_text = parser.extract_text(str(pdf_path))
+        loop = asyncio.get_event_loop()
+        try:
+            raw_text = await asyncio.wait_for(
+                loop.run_in_executor(_PDF_EXECUTOR, parser.extract_text, str(pdf_path)),
+                timeout=_PDF_PARSE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 타임아웃 ({_PDF_PARSE_TIMEOUT}s): {pdf_path.name}"}
         clean_text = cleaner.clean(raw_text)
         chunks = chunker.chunk_text(clean_text)
 
@@ -763,7 +776,18 @@ async def process_single_file(
     chunker = TextChunker()
 
     try:
-        raw_text = parser.extract_text(str(pdf_path))
+        loop = asyncio.get_event_loop()
+        raw_text = await asyncio.wait_for(
+            loop.run_in_executor(_PDF_EXECUTOR, parser.extract_text, str(pdf_path)),
+            timeout=_PDF_PARSE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error(
+            "PDF 파싱 타임아웃 (%ds 초과): %s — 비표준 PDF 구조로 fitz 내부 루프 추정, 건너뜀",
+            _PDF_PARSE_TIMEOUT,
+            pdf_path.name,
+        )
+        return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 타임아웃 ({_PDF_PARSE_TIMEOUT}s): {pdf_path.name}"}
     except Exception as e:
         return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 실패: {e}"}
     clean_text = cleaner.clean(raw_text)
