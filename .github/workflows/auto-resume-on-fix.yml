@@ -50,7 +50,20 @@ jobs:
             WORKFLOW="${ENTRY%%:*}"
             LABEL="${ENTRY##*:}"
 
-            # 최근 실패한 런 조회 (최신 1건)
+            # 가장 최근 런 조회 (상태 무관, 최신 1건)
+            LATEST_STATUS=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/${WORKFLOW}/runs?per_page=1" \
+              --jq ".workflow_runs[0].conclusion" \
+              2>/dev/null || echo "")
+
+            # 가장 최근 런이 success/skipped이면 이미 해결됨 → 건너뜀
+            if [ "$LATEST_STATUS" = "success" ] || [ "$LATEST_STATUS" = "skipped" ]; then
+              echo "[$LABEL] 최근 런이 성공 상태 (${LATEST_STATUS}) → 재시작 불필요, 건너뜀"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            # 최근 실패한 런 조회 (최신 1건, 48h 이내)
             RUN_INFO=$(gh api \
               "repos/${{ github.repository }}/actions/workflows/${WORKFLOW}/runs?per_page=5&status=failure" \
               --jq ".workflow_runs[] | select(.created_at > \"$CUTOFF\") | {id: .id, created_at: .created_at, actor: .actor.login}" \
@@ -66,9 +79,13 @@ jobs:
             ACTOR=$(echo "$RUN_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('actor',''))" 2>/dev/null || echo "")
             CREATED=$(echo "$RUN_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('created_at',''))" 2>/dev/null || echo "")
 
-            # 무한루프 방지: 이전 런도 자동 재시작이었으면 건너뜀
-            if [ "$ACTOR" = "github-actions[bot]" ]; then
-              echo "[$LABEL] 최근 실패가 자동 재시작 런 (run_id=$RUN_ID) → 무한루프 방지, 건너뜀"
+            # 무한루프 방지: 실행 중이거나 대기 중인 런이 있으면 건너뜀
+            ACTIVE_COUNT=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/${WORKFLOW}/runs?per_page=5" \
+              --jq "[.workflow_runs[] | select(.status == \"in_progress\" or .status == \"queued\" or .status == \"waiting\")] | length" \
+              2>/dev/null || echo "0")
+            if [ "$ACTIVE_COUNT" != "0" ] && [ -n "$ACTIVE_COUNT" ]; then
+              echo "[$LABEL] 이미 실행 중/대기 중인 런 ${ACTIVE_COUNT}개 → 건너뜀"
               SKIPPED=$((SKIPPED + 1))
               continue
             fi
