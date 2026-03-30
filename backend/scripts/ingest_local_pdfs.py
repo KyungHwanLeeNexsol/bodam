@@ -186,19 +186,27 @@ async def check_duplicate(
         True: 중복 존재, False: 신규
     """
     from sqlalchemy import select
+    from sqlalchemy.orm import noload
 
     from app.models.insurance import Policy
 
     # sale_status가 주어지면 (content_hash, sale_status) 조합으로 체크
     # → 동일 PDF가 판매/판매중지 탭 양쪽에 노출되는 경우 각각 별도 레코드 허용
     if sale_status is not None:
-        stmt = select(Policy).where(
-            Policy.metadata_["content_hash"].astext == content_hash,
-            Policy.sale_status == sale_status,
+        stmt = (
+            select(Policy)
+            .where(
+                Policy.metadata_["content_hash"].astext == content_hash,
+                Policy.sale_status == sale_status,
+            )
+            # noload: chunks/coverages selectin 자동 로딩 차단 - 중복 여부만 확인하면 됨
+            .options(noload(Policy.chunks), noload(Policy.coverages))
         )
     else:
-        stmt = select(Policy).where(
-            Policy.metadata_["content_hash"].astext == content_hash
+        stmt = (
+            select(Policy)
+            .where(Policy.metadata_["content_hash"].astext == content_hash)
+            .options(noload(Policy.chunks), noload(Policy.coverages))
         )
     result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
@@ -542,10 +550,16 @@ async def ensure_company(
         InsuranceCompany 인스턴스
     """
     from sqlalchemy import select
+    from sqlalchemy.orm import noload
 
     from app.models.insurance import InsuranceCompany
 
-    stmt = select(InsuranceCompany).where(InsuranceCompany.code == company_code)
+    # noload: policies selectin 자동 로딩 차단 - ensure_company는 id/code만 필요
+    stmt = (
+        select(InsuranceCompany)
+        .where(InsuranceCompany.code == company_code)
+        .options(noload(InsuranceCompany.policies))
+    )
     result = await session.execute(stmt)
     company = result.scalar_one_or_none()
 
