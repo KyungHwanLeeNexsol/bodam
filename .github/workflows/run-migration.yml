@@ -1,0 +1,73 @@
+name: DB 마이그레이션 실행
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: '마이그레이션 대상 (head = 최신, 특정 revision ID 입력 가능)'
+        required: false
+        default: 'head'
+
+jobs:
+  migrate:
+    name: Alembic 마이그레이션
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.FLY_DB_PASSWORD }}@localhost:5432/bodam
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PYTHONIOENCODING: utf-8
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Fly.io DB 프록시 터널
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: fly proxy 시작
+        run: |
+          flyctl proxy 5432 -a bodam-db &
+          for i in $(seq 1 30); do
+            if nc -z localhost 5432 2>/dev/null; then
+              echo "Fly proxy ready (${i}s)"
+              break
+            fi
+            sleep 1
+          done
+          if ! nc -z localhost 5432 2>/dev/null; then
+            echo "ERROR: fly proxy failed to start within 30s"
+            exit 1
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Python 의존성 설치
+        run: |
+          cd backend
+          uv sync --frozen
+
+      - name: 현재 마이그레이션 상태 확인
+        run: |
+          cd backend
+          PYTHONPATH=. uv run alembic current 2>&1
+
+      - name: 마이그레이션 실행
+        run: |
+          cd backend
+          PYTHONPATH=. uv run alembic upgrade ${{ inputs.revision || 'head' }} 2>&1
+
+      - name: 마이그레이션 결과 요약
+        if: always()
+        run: |
+          echo "## 마이그레이션 실행 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- 대상 revision: ${{ inputs.revision || 'head' }}" >> $GITHUB_STEP_SUMMARY
