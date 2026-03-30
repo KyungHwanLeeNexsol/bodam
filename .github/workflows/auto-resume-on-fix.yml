@@ -1,0 +1,102 @@
+name: 인제스트 자동 재시작 (코드 수정 감지)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/scripts/ingest_local_pdfs.py'
+      - 'backend/scripts/crawl_and_ingest_*.py'
+      - 'backend/app/core/database.py'
+      - 'backend/app/models/insurance.py'
+
+jobs:
+  auto-resume:
+    name: 최근 실패 인제스트 워크플로우 재시작
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      - name: 최근 실패 워크플로우 확인 및 재시작
+        run: |
+          # 재시작 대상 워크플로우 목록 (파일명:표시명)
+          WORKFLOWS=(
+            "ingest-hyundai-marine.yml:현대해상"
+            "ingest-db-insurance.yml:DB손보"
+            "ingest-samsung-fire.yml:삼성화재"
+            "ingest-kb-insurance.yml:KB손보"
+            "ingest-meritz-insurance.yml:메리츠"
+            "ingest-hanwha-insurance.yml:한화손보"
+            "ingest-lotte-insurance.yml:롯데"
+            "ingest-nh-insurance.yml:NH농협"
+            "ingest-heungkuk-fire.yml:흥국화재"
+            "ingest-axa-insurance.yml:AXA"
+            "ingest-mg-insurance.yml:MG손보"
+            "ingest-samsung-life.yml:삼성생명"
+            "ingest-kyobo-life.yml:교보생명"
+            "ingest-hanwha-life.yml:한화생명"
+            "ingest-shinhan-life.yml:신한라이프"
+          )
+
+          TRIGGERED=0
+          SKIPPED=0
+          CUTOFF=$(date -u -d '48 hours ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+                   || date -u -v-48H '+%Y-%m-%dT%H:%M:%SZ')  # Linux/macOS 호환
+
+          echo "기준 시각 (48h 이전): $CUTOFF"
+          echo ""
+
+          for ENTRY in "${WORKFLOWS[@]}"; do
+            WORKFLOW="${ENTRY%%:*}"
+            LABEL="${ENTRY##*:}"
+
+            # 최근 실패한 런 조회 (최신 1건)
+            RUN_INFO=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/${WORKFLOW}/runs?per_page=5&status=failure" \
+              --jq ".workflow_runs[] | select(.created_at > \"$CUTOFF\") | {id: .id, created_at: .created_at, actor: .actor.login}" \
+              2>/dev/null | head -1)
+
+            if [ -z "$RUN_INFO" ]; then
+              echo "[$LABEL] 최근 48h 실패 없음 → 건너뜀"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            RUN_ID=$(echo "$RUN_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['id'])" 2>/dev/null || echo "")
+            ACTOR=$(echo "$RUN_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('actor',''))" 2>/dev/null || echo "")
+            CREATED=$(echo "$RUN_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('created_at',''))" 2>/dev/null || echo "")
+
+            # 무한루프 방지: 이전 런도 자동 재시작이었으면 건너뜀
+            if [ "$ACTOR" = "github-actions[bot]" ]; then
+              echo "[$LABEL] 최근 실패가 자동 재시작 런 (run_id=$RUN_ID) → 무한루프 방지, 건너뜀"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            echo "[$LABEL] 최근 실패 감지: run_id=$RUN_ID, 생성=$CREATED, actor=$ACTOR → 재시작"
+            gh workflow run "$WORKFLOW" \
+              --field dry_run=false 2>/dev/null \
+              || gh workflow run "$WORKFLOW" 2>/dev/null  # dry_run 파라미터 없는 워크플로우 폴백
+
+            TRIGGERED=$((TRIGGERED + 1))
+            sleep 3  # GitHub API rate limit 방지
+          done
+
+          echo ""
+          echo "완료: ${TRIGGERED}개 재시작, ${SKIPPED}개 건너뜀"
+
+          if [ "$TRIGGERED" -eq 0 ]; then
+            echo "재시작된 워크플로우 없음 (모든 보험사 정상 또는 해당 없음)"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 재시작 결과 요약
+        if: always()
+        run: |
+          echo "## 인제스트 자동 재시작 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- 트리거 커밋: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 커밋 메시지: ${{ github.event.head_commit.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 변경 파일: ${{ join(github.event.commits[0].modified, ', ') }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "위 로그에서 재시작된 워크플로우를 확인하세요." >> $GITHUB_STEP_SUMMARY

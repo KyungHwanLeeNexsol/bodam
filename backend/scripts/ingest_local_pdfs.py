@@ -778,57 +778,75 @@ async def process_single_file(
         except Exception as e:
             logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
 
-    # DB 트랜잭션: 전처리 결과를 저장
-    try:
-        async with session_factory() as session:
-            # 중복 확인 (REQ-04, REQ-06)
-            # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
-            is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
-            if is_dup:
-                logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
-                return {"status": "skipped", "chunk_count": 0, "error": None}
+    # DB 트랜잭션: 전처리 결과를 저장 (DBAPIError 시 최대 3회 재시도)
+    import sqlalchemy.exc
 
-            # 보험사 확보
-            company = await ensure_company(
-                session,
-                metadata["company_code"],
-                metadata["company_name"],
-                metadata.get("category", "LIFE"),
+    for db_attempt in range(1, 4):
+        try:
+            async with session_factory() as session:
+                # 중복 확인 (REQ-04, REQ-06)
+                # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
+                is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
+                if is_dup:
+                    logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
+                    return {"status": "skipped", "chunk_count": 0, "error": None}
+
+                # 보험사 확보
+                company = await ensure_company(
+                    session,
+                    metadata["company_code"],
+                    metadata["company_name"],
+                    metadata.get("category", "LIFE"),
+                )
+
+                # Policy upsert
+                # raw_text 크기 제한: DB 부하 최소화 (전체 텍스트는 PolicyChunks에 저장됨)
+                _MAX_RAW_TEXT = 100_000
+                if len(clean_text) > _MAX_RAW_TEXT:
+                    logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
+                    clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
+                else:
+                    clean_text_for_db = clean_text
+                policy = await upsert_policy(
+                    session, company, metadata, content_hash, clean_text_for_db
+                )
+
+                # PolicyChunk 생성
+                await create_chunks(session, policy.id, chunks, embeddings)
+
+                await session.commit()
+
+                logger.info(
+                    "처리 완료: %s (%d청크, hash=%s)",
+                    pdf_path.name,
+                    len(chunks),
+                    content_hash[:8],
+                )
+                return {
+                    "status": "success",
+                    "chunk_count": len(chunks),
+                    "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                    "error": None,
+                }
+
+        except sqlalchemy.exc.DBAPIError as e:
+            # DB 연결 오류 (ConnectionDoesNotExistError 등) → 새 세션으로 재시도
+            if db_attempt >= 3:
+                logger.error("처리 실패 (DB 재시도 3회 소진): %s (%s)", pdf_path.name, e, exc_info=True)
+                return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+            wait_sec = 2 ** db_attempt  # 2s, 4s
+            logger.warning(
+                "DB 연결 일시 실패 (시도 %d/3), %ds 후 새 세션으로 재시도: %s",
+                db_attempt, wait_sec, e,
             )
+            await asyncio.sleep(wait_sec)
 
-            # Policy upsert
-            # raw_text 크기 제한: DB 부하 최소화 (전체 텍스트는 PolicyChunks에 저장됨)
-            _MAX_RAW_TEXT = 100_000
-            if len(clean_text) > _MAX_RAW_TEXT:
-                logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
-                clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
-            else:
-                clean_text_for_db = clean_text
-            policy = await upsert_policy(
-                session, company, metadata, content_hash, clean_text_for_db
-            )
+        except Exception as e:
+            logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
+            return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
-            # PolicyChunk 생성
-            await create_chunks(session, policy.id, chunks, embeddings)
-
-            await session.commit()
-
-            logger.info(
-                "처리 완료: %s (%d청크, hash=%s)",
-                pdf_path.name,
-                len(chunks),
-                content_hash[:8],
-            )
-            return {
-                "status": "success",
-                "chunk_count": len(chunks),
-                "sale_status": metadata.get("sale_status", "UNKNOWN"),
-                "error": None,
-            }
-
-    except Exception as e:
-        logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
-        return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+    # 도달 불가 (루프 내에서 항상 return 또는 재시도)
+    return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": "DB 재시도 초과"}
 
 
 async def process_text_content(
