@@ -24,14 +24,17 @@ class Settings(BaseSettings):
     # 테스트 환경에서는 빈 문자열로 설정 가능
     openai_api_key: str = ""
 
-    # 임베딩 제공자: "local" (BAAI/bge-m3 로컬 모델) 또는 "gemini" (Google Gemini text-embedding-004)
-    embedding_provider: str = "gemini"
+    # 임베딩 제공자: "openai" (text-embedding-3-small), "gemini", "local" (BAAI/bge-m3)
+    embedding_provider: str = "openai"
 
-    # 임베딩 모델명 (로컬: BAAI/bge-m3 1024차원, Gemini: text-embedding-004 768차원)
-    embedding_model: str = "text-embedding-004"
+    # 임베딩 모델명
+    # openai: text-embedding-3-small (768차원 축소, 기본), text-embedding-3-large
+    # gemini: text-embedding-004 (768차원)
+    # local: BAAI/bge-m3 (1024차원)
+    embedding_model: str = "text-embedding-3-small"
 
     # 임베딩 벡터 차원 수 (pgvector Vector 타입과 일치해야 함)
-    # bge-m3: 1024차원, text-embedding-004: 768차원
+    # text-embedding-3-small: 768차원으로 축소 (dimensions 파라미터)
     embedding_dimensions: int = 768
 
     # RAG 청크 분할 설정

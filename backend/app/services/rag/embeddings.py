@@ -1,8 +1,7 @@
 """임베딩 서비스 모듈 (TAG-009)
 
-로컬 BAAI/bge-m3 sentence-transformers 모델을 사용하여 텍스트 임베딩 벡터를 생성.
-배치 처리, 싱글턴 패턴, 입력 유효성 검사 포함.
-레거시 Gemini 제공자는 하위 호환성 유지를 위해 폴백으로 보존.
+OpenAI text-embedding-3-small (기본), 로컬 BAAI/bge-m3, Google Gemini 임베딩 지원.
+배치 처리, 재시도 로직, 입력 유효성 검사 포함.
 """
 
 from __future__ import annotations
@@ -418,29 +417,174 @@ class AllKeysExhaustedError(Exception):
     """
 
 
-def get_embedding_service(provider: str | None = None) -> LocalEmbeddingService | EmbeddingService:
+class OpenAIEmbeddingService:
+    """OpenAI 텍스트 임베딩 생성 서비스
+
+    text-embedding-3-small/large를 사용하며 dimensions 파라미터로 768차원 출력.
+    배치 처리(최대 2048개/요청), 지수 백오프 재시도 포함.
+    """
+
+    # OpenAI API 배치 크기 제한 (최대 2048개)
+    MAX_BATCH_SIZE = 2048
+    # 최대 재시도 횟수
+    MAX_RETRIES = 3
+    # 지수 백오프 기본 대기 시간(초)
+    BASE_RETRY_DELAY = 1.0
+
+    def __init__(self, api_key: str, model: str = "text-embedding-3-small", dimensions: int = 768) -> None:
+        """임베딩 서비스 초기화
+
+        Args:
+            api_key: OpenAI API 키
+            model: 사용할 임베딩 모델명
+            dimensions: 출력 벡터 차원 수 (text-embedding-3-small 최대 1536)
+
+        Raises:
+            ValueError: API 키가 비어 있는 경우
+        """
+        if not api_key or not api_key.strip():
+            raise ValueError("OpenAI API 키가 설정되지 않았습니다. OPENAI_API_KEY 환경변수를 설정하세요.")
+
+        from openai import AsyncOpenAI  # type: ignore[import-untyped]
+
+        self._client = AsyncOpenAI(api_key=api_key)
+        self._model = model
+        self._dimensions = dimensions
+
+        # # @MX:ANCHOR: [AUTO] OpenAIEmbeddingService 핵심 클라이언트 초기화 지점
+        # # @MX:REASON: RAG 파이프라인의 OpenAI 임베딩 요청이 이 클라이언트를 사용함
+        logger.info("OpenAI 임베딩 서비스 초기화: 모델=%s, 차원=%d", model, dimensions)
+
+    async def embed_text(self, text: str) -> list[float]:
+        """단일 텍스트의 임베딩 벡터 생성"""
+        results = await self.embed_batch([text])
+        return results[0] if results and results[0] else []
+
+    async def embed_batch(
+        self,
+        texts: list[str],
+        skip_on_failure: bool = False,
+    ) -> list[list[float]] | tuple[list[list[float]], list[int]]:
+        """여러 텍스트를 배치로 임베딩 벡터 생성
+
+        50자 미만 텍스트는 필터링하고 빈 리스트로 대체.
+        최대 2048개씩 배치 처리.
+        """
+        import math
+
+        if not texts:
+            if skip_on_failure:
+                return [], []
+            return []
+
+        results: list[list[float]] = [[] for _ in texts]
+        failed_indices: list[int] = []
+
+        valid_indices = [i for i, t in enumerate(texts) if len(t) >= MIN_TEXT_CHARS]
+        valid_texts = [texts[i] for i in valid_indices]
+
+        if not valid_texts:
+            if skip_on_failure:
+                return results, failed_indices
+            return results
+
+        num_batches = math.ceil(len(valid_texts) / self.MAX_BATCH_SIZE)
+
+        for batch_idx in range(num_batches):
+            start = batch_idx * self.MAX_BATCH_SIZE
+            end = start + self.MAX_BATCH_SIZE
+            batch_texts = valid_texts[start:end]
+            batch_indices = valid_indices[start:end]
+
+            try:
+                embeddings = await self._call_with_retry(batch_texts)
+                for orig_idx, embedding in zip(batch_indices, embeddings):
+                    results[orig_idx] = embedding
+            except Exception:
+                if not skip_on_failure:
+                    raise
+                failed_indices.extend(batch_indices)
+                logger.warning(
+                    "배치 %d/%d 임베딩 실패 (skip_on_failure=True), 건너뜀",
+                    batch_idx + 1,
+                    num_batches,
+                )
+
+        if skip_on_failure:
+            return results, failed_indices
+        return results
+
+    async def _call_with_retry(self, texts: list[str]) -> list[list[float]]:
+        """지수 백오프 재시도가 포함된 OpenAI 임베딩 API 호출"""
+        from openai import RateLimitError  # type: ignore[import-untyped]
+
+        last_error: Exception | None = None
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = await self._client.embeddings.create(
+                    input=texts,
+                    model=self._model,
+                    dimensions=self._dimensions,
+                )
+                # 순서 보장: response.data는 input 순서대로 반환됨
+                return [item.embedding for item in sorted(response.data, key=lambda x: x.index)]
+
+            except RateLimitError as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    wait_time = self.BASE_RETRY_DELAY * (2 ** attempt)
+                    logger.warning(
+                        "OpenAI rate limit, %.0f초 후 재시도 (%d/%d)",
+                        wait_time,
+                        attempt + 1,
+                        self.MAX_RETRIES,
+                    )
+                    await asyncio.sleep(wait_time)
+            except Exception as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    wait_time = self.BASE_RETRY_DELAY * (2 ** attempt)
+                    logger.warning(
+                        "OpenAI API 오류, %.0f초 후 재시도 (%d/%d): %s",
+                        wait_time,
+                        attempt + 1,
+                        self.MAX_RETRIES,
+                        str(e)[:200],
+                    )
+                    await asyncio.sleep(wait_time)
+
+        raise last_error  # type: ignore[misc]
+
+
+def get_embedding_service(
+    provider: str | None = None,
+) -> "LocalEmbeddingService | OpenAIEmbeddingService | EmbeddingService":
     """설정에 따라 적절한 임베딩 서비스 인스턴스를 반환
 
     # @MX:ANCHOR: [AUTO] 임베딩 서비스 팩토리 — 검색/백필 전 경로에서 호출
-    # @MX:REASON: embedding_provider 설정으로 로컬/레거시 Gemini 분기 처리
+    # @MX:REASON: embedding_provider 설정으로 openai/local/gemini 분기 처리
 
     Args:
-        provider: "local" 또는 "gemini". None이면 settings.embedding_provider 사용.
-
-    Returns:
-        LocalEmbeddingService (provider="local") 또는
-        EmbeddingService (provider="gemini", deprecated)
+        provider: "openai", "local", "gemini". None이면 settings.embedding_provider 사용.
     """
     from app.core.config import get_settings
 
     settings = get_settings()
     resolved_provider = provider or settings.embedding_provider
 
-    if resolved_provider == "local":
+    if resolved_provider == "openai":
+        import os
+        api_key = settings.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+        return OpenAIEmbeddingService(
+            api_key=api_key,
+            model=settings.embedding_model,
+            dimensions=settings.embedding_dimensions,
+        )
+    elif resolved_provider == "local":
         return LocalEmbeddingService(model_name=settings.embedding_model)
     elif resolved_provider == "gemini":
         import os
-        # 등록된 키를 순서대로 수집 (비어 있는 키는 제외)
         api_keys = [
             settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", ""),
             settings.gemini_api_key_2 or os.environ.get("GEMINI_API_KEY_2", ""),
@@ -452,4 +596,7 @@ def get_embedding_service(provider: str | None = None) -> LocalEmbeddingService 
             dimensions=settings.embedding_dimensions,
         )
     else:
-        raise ValueError(f"지원하지 않는 embedding_provider: {resolved_provider!r}. 'local' 또는 'gemini'를 사용하세요.")
+        raise ValueError(
+            f"지원하지 않는 embedding_provider: {resolved_provider!r}. "
+            "'openai', 'local', 'gemini' 중 하나를 사용하세요."
+        )
