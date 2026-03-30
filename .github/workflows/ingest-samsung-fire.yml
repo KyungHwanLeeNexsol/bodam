@@ -35,13 +35,14 @@ jobs:
 
     strategy:
       fail-fast: false  # 한 shard 실패해도 나머지 계속 실행
-      max-parallel: 4
+      max-parallel: 3
       matrix:
         include:
           # 전체 ~8,147개 PDF를 4개 shard로 분할
-          - shard: 0
-            start_index: 0
-            count: 2050
+          # shard 0 완료 — 나머지 3개만 실행 (완료 후 원복 필요)
+          # - shard: 0
+          #   start_index: 0
+          #   count: 2050
           - shard: 1
             start_index: 2050
             count: 2050
