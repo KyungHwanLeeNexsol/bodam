@@ -24,15 +24,15 @@ class Settings(BaseSettings):
     # 테스트 환경에서는 빈 문자열로 설정 가능
     openai_api_key: str = ""
 
-    # 임베딩 제공자: "local" (BAAI/bge-m3 로컬 모델) 또는 "gemini" (Google Gemini, deprecated)
-    embedding_provider: str = "local"
+    # 임베딩 제공자: "local" (BAAI/bge-m3 로컬 모델) 또는 "gemini" (Google Gemini text-embedding-004)
+    embedding_provider: str = "gemini"
 
-    # 임베딩 모델명 (로컬: BAAI/bge-m3 1024차원, Gemini: gemini-embedding-001 768차원)
-    embedding_model: str = "BAAI/bge-m3"
+    # 임베딩 모델명 (로컬: BAAI/bge-m3 1024차원, Gemini: text-embedding-004 768차원)
+    embedding_model: str = "text-embedding-004"
 
     # 임베딩 벡터 차원 수 (pgvector Vector 타입과 일치해야 함)
-    # bge-m3: 1024차원, gemini-embedding-001: 768차원
-    embedding_dimensions: int = 1024
+    # bge-m3: 1024차원, text-embedding-004: 768차원
+    embedding_dimensions: int = 768
 
     # RAG 청크 분할 설정
     # 청크 최대 토큰 수 (tiktoken 기준)
@@ -43,6 +43,9 @@ class Settings(BaseSettings):
 
     # Gemini API 설정
     gemini_api_key: str = ""
+    # 무료 티어 일일 한도 소진 시 순차 전환할 예비 키
+    gemini_api_key_2: str = ""
+    gemini_api_key_3: str = ""
 
     # LLM 라우팅 설정
     llm_primary_model: str = "gemini-2.0-flash"

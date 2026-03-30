@@ -125,25 +125,27 @@ class LocalEmbeddingService:
 
 
 class EmbeddingService:
-    """Google Gemini 텍스트 임베딩 생성 서비스 (레거시 — deprecated)
+    """Google Gemini 텍스트 임베딩 생성 서비스
 
-    하위 호환성을 위해 보존. 새 코드에는 LocalEmbeddingService를 사용할 것.
+    복수의 API 키를 받아 일일 한도 소진 시 순차적으로 전환.
     텍스트를 벡터 임베딩으로 변환하는 서비스.
-    배치 처리 최적화 및 GoogleAPIError 재시도 로직 포함.
+    배치 처리 최적화, GoogleAPIError 재시도, 키 로테이션 로직 포함.
     """
 
     # Google Gemini API 배치 크기 제한 (최대 100개)
     MAX_BATCH_SIZE = 100
-    # 최대 재시도 횟수
+    # 최대 재시도 횟수 (단일 키, 일시적 오류용)
     MAX_RETRIES = 3
     # 지수 백오프 기본 대기 시간(초)
     BASE_RETRY_DELAY = 1.0
     # 연속 전체 실패 임계값
     DEFAULT_MAX_CONSECUTIVE_FAILURES = 5
+    # 이 시간(초) 이상의 retry-after는 일일 한도 소진으로 간주 → 키 전환
+    DAILY_QUOTA_THRESHOLD_SECS = 3600
 
     def __init__(
         self,
-        api_key: str,
+        api_keys: list[str],
         model: str = "text-embedding-004",
         dimensions: int = 768,
         _embed_fn: object = None,
@@ -151,26 +153,23 @@ class EmbeddingService:
         """임베딩 서비스 초기화
 
         Args:
-            api_key: Google API 키 (필수, 빈 문자열 불가)
+            api_keys: Google API 키 목록. 앞에서부터 순서대로 사용하며
+                      일일 한도 소진 시 다음 키로 자동 전환.
             model: 사용할 임베딩 모델명
             dimensions: 출력 벡터 차원 수
             _embed_fn: 테스트용 embed_content 함수 주입 (None이면 genai.embed_content 사용)
 
         Raises:
-            ValueError: API 키가 없거나 빈 문자열인 경우
+            ValueError: 유효한 API 키가 하나도 없는 경우
         """
-        warnings.warn(
-            "EmbeddingService(Gemini)는 deprecated입니다. LocalEmbeddingService를 사용하세요.",
-            FutureWarning,
-            stacklevel=2,
-        )
-
         import google.generativeai as genai  # type: ignore[import-untyped]
 
-        # API 키 유효성 검사
-        if not api_key:
-            raise ValueError("Google API 키가 설정되지 않았습니다. GOOGLE_API_KEY 환경변수를 설정하세요.")
+        valid_keys = [k for k in api_keys if k and k.strip()]
+        if not valid_keys:
+            raise ValueError("Google API 키가 설정되지 않았습니다. GEMINI_API_KEY 환경변수를 설정하세요.")
 
+        self._api_keys = valid_keys
+        self._current_key_index = 0
         self._model = f"models/{model}"
         self._dimensions = dimensions
 
@@ -179,15 +178,48 @@ class EmbeddingService:
         self._max_consecutive_failures = self.DEFAULT_MAX_CONSECUTIVE_FAILURES
 
         # Google Generative AI 클라이언트 설정
-        # @MX:ANCHOR: [AUTO] EmbeddingService 핵심 클라이언트 초기화 지점 (레거시)
-        # @MX:REASON: RAG 파이프라인의 레거시 Gemini 임베딩 요청이 이 클라이언트를 사용함
-        genai.configure(api_key=api_key)
+        # @MX:ANCHOR: [AUTO] EmbeddingService 핵심 클라이언트 초기화 지점
+        # @MX:REASON: RAG 파이프라인의 Gemini 임베딩 요청이 이 클라이언트를 사용함
+        self._genai = genai
+        self._configure_genai()
 
         # 테스트에서 mock 함수를 주입할 수 있도록 허용
         if _embed_fn is not None:
             self._embed_fn = _embed_fn
         else:
             self._embed_fn = genai.embed_content
+
+    def _configure_genai(self) -> None:
+        """현재 키 인덱스의 API 키로 genai 전역 설정을 재구성"""
+        self._genai.configure(api_key=self._api_keys[self._current_key_index])
+        logger.info(
+            "Gemini API 키 %d/%d 사용 중",
+            self._current_key_index + 1,
+            len(self._api_keys),
+        )
+
+    def _rotate_to_next_key(self) -> bool:
+        """다음 API 키로 전환하고 genai를 재구성.
+
+        Returns:
+            전환 성공 시 True, 더 이상 남은 키가 없으면 False.
+        """
+        if self._current_key_index + 1 >= len(self._api_keys):
+            logger.error(
+                "모든 Gemini API 키(%d개) 일일 한도 소진. 임베딩 불가.",
+                len(self._api_keys),
+            )
+            return False
+        prev = self._current_key_index + 1
+        self._current_key_index += 1
+        self._configure_genai()
+        logger.warning(
+            "Gemini API 키 %d 일일 한도 소진 → 키 %d/%d로 전환",
+            prev,
+            self._current_key_index + 1,
+            len(self._api_keys),
+        )
+        return True
 
     async def embed_text(self, text: str) -> list[float]:
         """단일 텍스트의 임베딩 벡터 생성"""
@@ -242,7 +274,7 @@ class EmbeddingService:
             batch_indices = valid_indices[start:end]
 
             try:
-                embeddings = await self._call_with_retry(batch_texts)
+                embeddings = await self._call_with_key_rotation(batch_texts)
                 for orig_idx, embedding in zip(batch_indices, embeddings):
                     results[orig_idx] = embedding
                 self._consecutive_failures = 0
@@ -266,8 +298,30 @@ class EmbeddingService:
             return results, failed_indices
         return results
 
+    async def _call_with_key_rotation(self, texts: list[str]) -> list[list[float]]:
+        """키 로테이션을 포함한 임베딩 호출.
+
+        일일 한도 소진(QuotaExhaustedError) 감지 시 다음 키로 전환 후 재시도.
+        모든 키가 소진되면 AllKeysExhaustedError를 발생시킴.
+        """
+        while True:
+            try:
+                return await self._call_with_retry(texts)
+            except QuotaExhaustedError:
+                if not self._rotate_to_next_key():
+                    raise AllKeysExhaustedError(
+                        f"모든 Gemini API 키({len(self._api_keys)}개)의 일일 한도가 소진되었습니다. "
+                        "내일 다시 시도하거나 유료 플랜으로 업그레이드하세요."
+                    )
+
     async def _call_with_retry(self, texts: list[str]) -> list[list[float]]:
-        """재시도 로직이 포함된 Google Gemini 임베딩 API 호출"""
+        """재시도 로직이 포함된 Google Gemini 임베딩 API 호출.
+
+        일시적 오류(짧은 rate limit)는 대기 후 재시도.
+        일일 한도 소진으로 판단되는 경우 QuotaExhaustedError를 발생시켜 키 전환을 유도.
+        """
+        import re as _re
+
         from google.api_core import exceptions as google_exceptions  # type: ignore[import-untyped]
 
         last_error: Exception | None = None
@@ -296,20 +350,45 @@ class EmbeddingService:
 
             except google_exceptions.GoogleAPIError as e:
                 last_error = e
-                if attempt < self.MAX_RETRIES - 1:
-                    error_str = str(e)
-                    if "429" in error_str or "quota" in error_str.lower():
-                        import re as _re
-                        retry_match = _re.search(r"retry in (\d+(?:\.\d+)?)", error_str, _re.IGNORECASE)
-                        wait_time = float(retry_match.group(1)) + 5.0 if retry_match else 35.0
+                error_str = str(e)
+                is_quota_error = "429" in error_str or "quota" in error_str.lower()
+
+                if is_quota_error:
+                    retry_match = _re.search(r"retry in (\d+(?:\.\d+)?)", error_str, _re.IGNORECASE)
+                    if retry_match:
+                        wait_secs = float(retry_match.group(1)) + 5.0
                     else:
-                        wait_time = self.BASE_RETRY_DELAY * (2**attempt)
+                        wait_secs = None
+
+                    # retry-after가 없거나 1시간 초과면 일일 한도 소진으로 판단 → 키 전환
+                    if wait_secs is None or wait_secs >= self.DAILY_QUOTA_THRESHOLD_SECS:
+                        logger.warning(
+                            "Gemini API 키 %d 일일 한도 소진 감지 (attempt %d/%d): %s",
+                            self._current_key_index + 1,
+                            attempt + 1,
+                            self.MAX_RETRIES,
+                            error_str[:200],
+                        )
+                        raise QuotaExhaustedError(error_str) from e
+
+                    # 짧은 rate limit → 대기 후 재시도
+                    if attempt < self.MAX_RETRIES - 1:
+                        logger.warning(
+                            "Gemini rate limit, %.0f초 후 재시도 (%d/%d): %s",
+                            wait_secs,
+                            attempt + 1,
+                            self.MAX_RETRIES,
+                            error_str[:200],
+                        )
+                        await asyncio.sleep(wait_secs)
+                elif attempt < self.MAX_RETRIES - 1:
+                    wait_time = self.BASE_RETRY_DELAY * (2**attempt)
                     logger.warning(
-                        "Google Gemini API 오류 발생, %.0f초 후 재시도 (%d/%d): %s",
+                        "Google Gemini API 오류, %.0f초 후 재시도 (%d/%d): %s",
                         wait_time,
                         attempt + 1,
                         self.MAX_RETRIES,
-                        str(e)[:200],
+                        error_str[:200],
                     )
                     await asyncio.sleep(wait_time)
 
@@ -320,6 +399,22 @@ class APIUnavailableError(Exception):
     """Google Gemini API 연속 실패로 서비스 불가 상태임을 나타내는 예외
 
     N회 연속으로 전체 배치 실패가 발생하면 이 예외가 발생.
+    """
+
+
+class QuotaExhaustedError(Exception):
+    """현재 API 키의 일일 한도가 소진되었음을 나타내는 예외.
+
+    EmbeddingService 내부에서 키 로테이션 트리거로 사용됨.
+    외부로 전파되지 않고 _call_with_key_rotation이 처리함.
+    """
+
+
+class AllKeysExhaustedError(Exception):
+    """등록된 모든 API 키의 일일 한도가 소진되었음을 나타내는 예외.
+
+    등록된 키를 모두 소진하고도 임베딩에 실패하면 이 예외가 발생.
+    내일 다시 시도하거나 유료 플랜으로 업그레이드 필요.
     """
 
 
@@ -345,9 +440,14 @@ def get_embedding_service(provider: str | None = None) -> LocalEmbeddingService 
         return LocalEmbeddingService(model_name=settings.embedding_model)
     elif resolved_provider == "gemini":
         import os
-        api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+        # 등록된 키를 순서대로 수집 (비어 있는 키는 제외)
+        api_keys = [
+            settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", ""),
+            settings.gemini_api_key_2 or os.environ.get("GEMINI_API_KEY_2", ""),
+            settings.gemini_api_key_3 or os.environ.get("GEMINI_API_KEY_3", ""),
+        ]
         return EmbeddingService(
-            api_key=api_key,
+            api_keys=api_keys,
             model=settings.embedding_model,
             dimensions=settings.embedding_dimensions,
         )

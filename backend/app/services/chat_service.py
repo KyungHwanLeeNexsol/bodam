@@ -20,7 +20,7 @@ from sqlalchemy import select
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.services.llm.models import QueryIntent
 from app.services.llm.router import FallbackChain
-from app.services.rag.embeddings import EmbeddingService
+from app.services.rag.embeddings import get_embedding_service
 from app.services.rag.vector_store import VectorSearchService
 
 if TYPE_CHECKING:
@@ -74,12 +74,8 @@ class ChatService:
         self._guidance_service = guidance_service
         self._llm_chain = FallbackChain(settings)
         # API 키가 없는 경우 임베딩 서비스 초기화 스킵 (테스트 환경 등)
-        if settings.openai_api_key:
-            self._embedding_service = EmbeddingService(
-                api_key=settings.openai_api_key,
-                model=settings.embedding_model,
-                dimensions=settings.embedding_dimensions,
-            )
+        if settings.gemini_api_key:
+            self._embedding_service = get_embedding_service()
             self._vector_search = VectorSearchService(db, self._embedding_service)
         else:
             self._embedding_service = None
