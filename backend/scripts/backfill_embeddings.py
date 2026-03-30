@@ -13,12 +13,12 @@ Usage:
     # Dry-run (DB 쓰기 없이 통계만)
     PYTHONPATH=. uv run python -m scripts.backfill_embeddings --dry-run
 
-    # 배치 크기 조정 (기본 500)
-    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 500
+    # 배치 크기 조정 (기본 2048)
+    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 2048
 
 # @MX:NOTE: PolicyChunk.embedding IS NULL → OpenAI text-embedding-3-small(768차원) → UPDATE
 # @MX:NOTE: 보험사 필터: --company 옵션으로 InsuranceCompany.code 기준 필터링
-# @MX:NOTE: 배치 크기: OpenAI API 최적값 500개 단위 처리, OPENAI_API_KEY 필요
+# @MX:NOTE: 배치 크기: OpenAI API 최대 2048개 단위 처리, 벌크 UPDATE로 DB 왕복 최소화
 """
 from __future__ import annotations
 
@@ -42,10 +42,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("backfill_embeddings")
 
-# 기본 배치 크기 (OpenAI API 최적값, 최대 2048)
-DEFAULT_BATCH_SIZE = 500
-# UPDATE 트랜잭션당 청크 수
-UPDATE_BATCH_SIZE = 1
+# 기본 배치 크기 (OpenAI API 최대 2048, 기본값 2048로 변경)
+DEFAULT_BATCH_SIZE = 2048
 # DB 오류 재시도 횟수
 _MAX_RETRIES = 3
 # 임베딩 생성 최소 텍스트 길이 (50자 미만 스킵)
@@ -179,7 +177,10 @@ async def update_embeddings(
     session_factory: object,
     id_to_embedding: dict[object, list[float]],
 ) -> tuple[int, int]:
-    """PolicyChunk.embedding을 단건 트랜잭션으로 UPDATE한다.
+    """PolicyChunk.embedding을 벌크 트랜잭션으로 UPDATE한다.
+
+    단일 트랜잭션에서 전체 배치를 처리하여 네트워크 왕복을 최소화.
+    실패 시 단건 폴백으로 부분 저장 보장.
 
     Returns:
         (updated, failed) 튜플
@@ -191,9 +192,24 @@ async def update_embeddings(
     if not id_to_embedding:
         return 0, 0
 
+    # 벌크 UPDATE 시도 (단일 트랜잭션)
+    try:
+        async with session_factory() as session:  # type: ignore[union-attr]
+            for chunk_id, embedding in id_to_embedding.items():
+                stmt = (
+                    update(PolicyChunk)
+                    .where(PolicyChunk.id == chunk_id)
+                    .values(embedding=embedding)
+                )
+                await session.execute(stmt)
+            await session.commit()
+            return len(id_to_embedding), 0
+    except Exception as exc:
+        logger.warning("벌크 UPDATE 실패, 단건 폴백 전환: %s", str(exc)[:200])
+
+    # 단건 폴백 (벌크 실패 시에만 실행)
     updated = 0
     failed = 0
-
     for chunk_id, embedding in id_to_embedding.items():
         try:
             async with session_factory() as session:  # type: ignore[union-attr]
@@ -205,8 +221,7 @@ async def update_embeddings(
                 await session.execute(stmt)
                 await session.commit()
                 updated += 1
-        except Exception as exc:
-            logger.error("단건 UPDATE 실패 (id=%s): %s", chunk_id, exc)
+        except Exception:
             failed += 1
 
     return updated, failed
