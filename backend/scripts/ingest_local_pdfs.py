@@ -215,7 +215,7 @@ async def check_duplicate(
             .options(noload(Policy.chunks), noload(Policy.coverages))
         )
     result = await session.execute(stmt)
-    existing = result.scalar_one_or_none()
+    existing = result.scalars().first()
     return existing is not None
 
 
