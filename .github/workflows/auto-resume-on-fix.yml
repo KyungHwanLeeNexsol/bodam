@@ -74,9 +74,17 @@ jobs:
             fi
 
             echo "[$LABEL] 최근 실패 감지: run_id=$RUN_ID, 생성=$CREATED, actor=$ACTOR → 재시작"
-            gh workflow run "$WORKFLOW" \
-              --field dry_run=false 2>/dev/null \
-              || gh workflow run "$WORKFLOW" 2>/dev/null  # dry_run 파라미터 없는 워크플로우 폴백
+            # --ref main 필수 (없으면 gh workflow run이 브랜치를 못 찾아 실패)
+            # -f dry_run=false: boolean 입력 파라미터 전달
+            # || 체인 끝에 || true: 트리거 실패해도 스크립트 계속 실행
+            if gh workflow run "$WORKFLOW" --ref main -f dry_run=false 2>/dev/null; then
+              echo "[$LABEL] 재시작 성공 (dry_run=false)"
+            elif gh workflow run "$WORKFLOW" --ref main 2>/dev/null; then
+              echo "[$LABEL] 재시작 성공 (no params)"
+            else
+              echo "[$LABEL] 워크플로우 트리거 실패 — 수동 재시작 필요"
+              TRIGGERED=$((TRIGGERED - 1))  # 실패했으므로 카운트 취소
+            fi
 
             TRIGGERED=$((TRIGGERED + 1))
             sleep 3  # GitHub API rate limit 방지
