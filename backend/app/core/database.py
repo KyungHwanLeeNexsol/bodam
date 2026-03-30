@@ -73,6 +73,7 @@ async def init_database(settings: Settings) -> None:
         pool_pre_ping=True,  # 유효하지 않은 연결 자동 재연결
         pool_size=10,
         max_overflow=20,
+        pool_recycle=50,  # Fly.io proxy idle timeout(~60s) 전에 연결 교체
         connect_args=connect_args,
     )
 
