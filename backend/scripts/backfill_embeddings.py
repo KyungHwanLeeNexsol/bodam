@@ -286,7 +286,10 @@ async def update_embeddings_bulk(
         try:
             await _with_db_retry(_single_update)
             updated += 1
-        except Exception:
+        except Exception as e:
+            # read-only는 나머지 청크를 처리해도 전부 실패 → 즉시 중단하여 상위 Circuit Breaker에 위임
+            if "read-only transaction" in str(e).lower():
+                raise
             failed += 1
 
     return updated, failed
