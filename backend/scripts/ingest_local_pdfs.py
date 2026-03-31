@@ -802,10 +802,11 @@ async def process_single_file(
         except Exception as e:
             logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
 
-    # DB 트랜잭션: 전처리 결과를 저장 (DBAPIError 시 최대 3회 재시도)
+    # DB 트랜잭션: 전처리 결과를 저장 (DBAPIError 시 최대 5회 재시도)
+    # Fly.io 프록시 재시작에 최대 2분 소요 → 10s→20s→40s→80s→160s 지수 백오프
     import sqlalchemy.exc
 
-    for db_attempt in range(1, 4):
+    for db_attempt in range(1, 6):
         try:
             async with session_factory() as session:
                 # 중복 확인 (REQ-04, REQ-06)
@@ -855,12 +856,12 @@ async def process_single_file(
 
         except sqlalchemy.exc.DBAPIError as e:
             # DB 연결 오류 (ConnectionDoesNotExistError 등) → 새 세션으로 재시도
-            if db_attempt >= 3:
-                logger.error("처리 실패 (DB 재시도 3회 소진): %s (%s)", pdf_path.name, e, exc_info=True)
+            if db_attempt >= 5:
+                logger.error("처리 실패 (DB 재시도 5회 소진): %s (%s)", pdf_path.name, e, exc_info=True)
                 return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
-            wait_sec = 2 ** db_attempt  # 2s, 4s
+            wait_sec = 10 * (2 ** (db_attempt - 1))  # 10s, 20s, 40s, 80s
             logger.warning(
-                "DB 연결 일시 실패 (시도 %d/3), %ds 후 새 세션으로 재시도: %s",
+                "DB 연결 일시 실패 (시도 %d/5), %ds 후 새 세션으로 재시도: %s",
                 db_attempt, wait_sec, e,
             )
             await asyncio.sleep(wait_sec)
@@ -870,7 +871,7 @@ async def process_single_file(
             return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
     # 도달 불가 (루프 내에서 항상 return 또는 재시도)
-    return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": "DB 재시도 초과"}
+    return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": "DB 재시도 5회 초과"}
 
 
 async def process_text_content(
