@@ -360,7 +360,7 @@ async def crawl_and_ingest(
     except Exception as _e:
         if "read-only transaction" in str(_e).lower():
             logger.error("DB read-only 상태 감지 → 크롤링 없이 즉시 종료 (Fly.io 프록시 replica 라우팅)")
-            return {"error": "db_readonly", **stats}
+            return {"error": "db_readonly"}
         # 다른 에러는 무시하고 진행 (테이블 없음 등)
 
     # 크롤러 재시작 시 이미 처리된 URL 스킵 (다운로드 전 체크)
