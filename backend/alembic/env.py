@@ -73,9 +73,9 @@ async def run_async_migrations() -> None:
         url,
         poolclass=pool.NullPool,
         connect_args={
-            # DDL 작업(CREATE INDEX 등)이 장시간 소요될 수 있으므로 타임아웃 해제
-            "command_timeout": None,
-            # PostgreSQL 세션 레벨 statement_timeout도 해제 (Neon 기본 60s 오버라이드)
+            # 마이그레이션 DDL은 일반 쿼리보다 오래 걸릴 수 있음 (기본 60초 → 600초)
+            "command_timeout": 600,
+            # PostgreSQL 세션 레벨 statement_timeout 해제 (DDL 타임아웃 방지)
             "server_settings": {"statement_timeout": "0"},
         },
     )
