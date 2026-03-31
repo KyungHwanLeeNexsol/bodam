@@ -72,8 +72,12 @@ async def run_async_migrations() -> None:
     connectable = create_async_engine(
         url,
         poolclass=pool.NullPool,
-        # DDL 작업(CREATE INDEX 등)이 Fly.io proxy 타임아웃 전에 완료되도록 300초 설정
-        connect_args={"command_timeout": 300},
+        connect_args={
+            # DDL 작업(CREATE INDEX 등)이 장시간 소요될 수 있으므로 타임아웃 해제
+            "command_timeout": None,
+            # PostgreSQL 세션 레벨 statement_timeout도 해제 (Neon 기본 60s 오버라이드)
+            "server_settings": {"statement_timeout": "0"},
+        },
     )
 
     async with connectable.connect() as connection:
