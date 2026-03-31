@@ -57,12 +57,14 @@ jobs:
 
       - name: 장시간 DDL 사전 실행 (fly proxy 타임아웃 우회)
         run: |
-          # fly proxy는 장시간 DDL(CREATE INDEX 등) 중 TCP 연결을 끊음.
-          # flyctl postgres connect는 직접 연결하므로 타임아웃 없음.
+          # fly proxy / flyctl postgres connect 모두 WireGuard 터널을 경유하여
+          # 장시간 DDL 중 연결이 끊김.
+          # fly ssh console --command 은 DB 머신 내부에서 psql을 직접 실행하므로
+          # 터널 타임아웃 영향을 받지 않음.
           # IF NOT EXISTS이므로 이미 존재하면 no-op.
           echo "=== 장시간 DDL 사전 실행 ==="
-          flyctl postgres connect -a bodam-db -d bodam -c \
-            "CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding_null ON policy_chunks (id) WHERE embedding IS NULL;" \
+          flyctl ssh console -a bodam-db --command \
+            "psql -U postgres bodam -c 'CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding_null ON policy_chunks (id) WHERE embedding IS NULL;'" \
             2>&1 || echo "WARNING: 사전 DDL 실패 (Alembic에서 재시도)"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
