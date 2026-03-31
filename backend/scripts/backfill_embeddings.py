@@ -73,6 +73,9 @@ async def _with_db_retry(coro_fn: object, max_retries: int = _MAX_RETRIES, base_
                 or "connection does not exist" in exc_str.lower()
                 or "connection refused" in exc_str.lower()
                 or "ssl connection has been closed" in exc_str.lower()
+                # Fly.io 프록시가 읽기 전용 레플리카로 라우팅될 때 새 연결로 재시도
+                or "ReadOnlyTransaction" in exc_type
+                or "read-only transaction" in exc_str.lower()
             )
             if not is_conn_err or attempt >= max_retries:
                 raise
