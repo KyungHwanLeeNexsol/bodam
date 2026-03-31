@@ -1,0 +1,62 @@
+name: HNSW 벡터 인덱스 재생성
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rebuild-index:
+    name: "policy_chunks 임베딩 인덱스 재생성"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2시간 (데이터 규모에 따라 10~60분 소요)
+
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    steps:
+      - name: Fly.io DB 프록시 터널 설정
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: fly proxy 시작
+        run: |
+          flyctl proxy 5432 -a bodam-db &
+          for i in $(seq 1 30); do
+            if nc -z localhost 5432 2>/dev/null; then
+              echo "Fly proxy ready (${i}s)"
+              break
+            fi
+            sleep 1
+          done
+          if ! nc -z localhost 5432 2>/dev/null; then
+            echo "ERROR: fly proxy failed to start within 30s"
+            exit 1
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: 기존 인덱스 확인
+        run: |
+          PGPASSWORD="${{ secrets.FLY_DB_PASSWORD }}" psql \
+            -h localhost -p 5432 -U postgres -d bodam \
+            -c "SELECT indexname, pg_size_pretty(pg_relation_size(indexrelid::regclass)) as size FROM pg_indexes JOIN pg_class ON pg_indexes.indexname = pg_class.relname WHERE tablename = 'policy_chunks';"
+
+      - name: HNSW 인덱스 재생성
+        run: |
+          echo "HNSW 인덱스 생성 시작..."
+          PGPASSWORD="${{ secrets.FLY_DB_PASSWORD }}" psql \
+            -h localhost -p 5432 -U postgres -d bodam \
+            -c "CREATE INDEX CONCURRENTLY idx_policy_chunks_embedding ON policy_chunks USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64);"
+          echo "HNSW 인덱스 생성 완료"
+
+      - name: 인덱스 생성 검증
+        run: |
+          PGPASSWORD="${{ secrets.FLY_DB_PASSWORD }}" psql \
+            -h localhost -p 5432 -U postgres -d bodam \
+            -c "SELECT indexname, pg_size_pretty(pg_relation_size(indexrelid::regclass)) as size FROM pg_indexes JOIN pg_class ON pg_indexes.indexname = pg_class.relname WHERE tablename = 'policy_chunks';"
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          echo "## HNSW 인덱스 재생성 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- 인덱스명: idx_policy_chunks_embedding" >> $GITHUB_STEP_SUMMARY
+          echo "- 설정: hnsw (embedding vector_cosine_ops) m=16, ef_construction=64" >> $GITHUB_STEP_SUMMARY
