@@ -80,6 +80,12 @@ async def _with_db_retry(coro_fn: object, max_retries: int = _MAX_RETRIES, base_
             if not is_conn_err or attempt >= max_retries:
                 raise
             delay = base_delay * (2 ** attempt)
+            # ReadOnlySQLTransactionError: pool_pre_ping은 살아있는 read-only 연결을 감지 못함
+            # → 엔진 풀 전체 폐기하여 다음 시도에서 primary 재연결 강제
+            if "read-only transaction" in exc_str.lower():
+                import app.core.database as _db
+                if _db.engine is not None:
+                    await _db.engine.dispose()
             logger.warning(
                 "DB 연결 오류 (시도 %d/%d), %.0f초 후 재시도: %s",
                 attempt + 1, max_retries, delay, exc_str[:120],
@@ -340,6 +346,10 @@ async def backfill(
     processed = 0
     start_time = time.time()
     sem = asyncio.Semaphore(concurrency)
+    # Circuit Breaker: DB 쓰기가 연속으로 실패하면 read-only 상태 지속으로 판단하고 중단
+    # (재시도해도 OpenAI API 비용만 낭비되고 저장 불가)
+    _consecutive_write_failures = 0
+    _MAX_CONSECUTIVE_WRITE_FAILURES = 3
 
     async def _embed_sub_batch(texts: list[str]) -> list[list[float]]:
         """세마포어로 동시성 제어하면서 임베딩 API 호출."""
@@ -420,9 +430,29 @@ async def backfill(
             )
             stats["updated"] += batch_updated
             stats["failed"] += batch_failed
+            # Circuit Breaker: id_to_embedding이 있는데 전부 실패 → DB 쓰기 불가 상태
+            if id_to_embedding and batch_updated == 0:
+                _consecutive_write_failures += 1
+                if _consecutive_write_failures >= _MAX_CONSECUTIVE_WRITE_FAILURES:
+                    logger.error(
+                        "DB 쓰기 %d배치 연속 실패 (read-only 상태 지속으로 판단) → 백필 중단",
+                        _consecutive_write_failures,
+                    )
+                    processed += len(rows)
+                    break
+            else:
+                _consecutive_write_failures = 0
         except Exception as e:
             logger.error("DB UPDATE 실패 (배치 %d~%d): %s", processed + 1, processed + len(rows), e)
             stats["failed"] += len(rows)
+            _consecutive_write_failures += 1
+            if _consecutive_write_failures >= _MAX_CONSECUTIVE_WRITE_FAILURES:
+                logger.error(
+                    "DB 쓰기 %d배치 연속 실패 → 백필 중단",
+                    _consecutive_write_failures,
+                )
+                processed += len(rows)
+                break
 
         processed += len(rows)
 
