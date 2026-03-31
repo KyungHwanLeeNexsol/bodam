@@ -338,17 +338,8 @@ async def backfill(
     else:
         embedding_service = None
 
-    # ── 대상 건수 확인 ─────────────────────────────────────────
-    total = await count_null_embeddings(session_factory, company_code)
-    label = f"보험사={company_code}" if company_code else "전체"
-    logger.info("임베딩 백필 대상: %d개 청크 (%s, embedding=NULL)", total, label)
-
-    if total == 0:
-        logger.info("백필할 청크가 없습니다.")
-        return {"total": 0, "updated": 0, "skipped": 0, "failed": 0}
-
-    # ── DB write 사전 테스트 (OpenAI API 호출 전) ─────────────────
-    # read-only 상태에서 임베딩을 계산해봤자 저장 불가 → API 비용만 낭비
+    # ── DB write 사전 테스트 (count 쿼리 전) ─────────────────────
+    # read-only 상태에서 count(2분+) 낭비 방지 → write 가능 여부를 먼저 확인
     # 존재하지 않는 UUID로 noop UPDATE를 수행하여 write 가능 여부만 확인
     async def _check_db_writable() -> bool:
         from sqlalchemy import text
@@ -364,7 +355,16 @@ async def backfill(
 
     if not await _check_db_writable():
         logger.error("DB read-only 상태 감지 → OpenAI API 호출 없이 즉시 종료")
-        return {"total": total, "updated": 0, "skipped": 0, "failed": 0, "db_readonly": True}
+        return {"total": 0, "updated": 0, "skipped": 0, "failed": 0, "db_readonly": True}
+
+    # ── 대상 건수 확인 ─────────────────────────────────────────
+    total = await count_null_embeddings(session_factory, company_code)
+    label = f"보험사={company_code}" if company_code else "전체"
+    logger.info("임베딩 백필 대상: %d개 청크 (%s, embedding=NULL)", total, label)
+
+    if total == 0:
+        logger.info("백필할 청크가 없습니다.")
+        return {"total": 0, "updated": 0, "skipped": 0, "failed": 0}
 
     stats = {"total": total, "updated": 0, "skipped": 0, "failed": 0}
     last_id = None
