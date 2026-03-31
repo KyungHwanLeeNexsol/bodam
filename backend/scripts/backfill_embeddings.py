@@ -49,8 +49,40 @@ DEFAULT_BATCH_SIZE = 2048
 API_CONCURRENCY = 4
 # DB 오류 재시도 횟수
 _MAX_RETRIES = 3
+# 재시도 기본 대기 시간 (초) — 지수 백오프: 5s → 10s → 20s
+_RETRY_BASE_DELAY = 5.0
 # 임베딩 생성 최소 텍스트 길이 (50자 미만 스킵)
 _MIN_CHARS = 50
+
+
+async def _with_db_retry(coro_fn: object, max_retries: int = _MAX_RETRIES, base_delay: float = _RETRY_BASE_DELAY) -> object:
+    """DB 작업에 지수 백오프 재시도 적용 (연결 끊김 오류 대응).
+
+    Neon/클라우드 DB가 장시간 유휴 후 연결을 끊을 때 자동 재연결한다.
+    연결 오류가 아닌 예외는 즉시 전파한다.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro_fn()  # type: ignore[operator]
+        except Exception as exc:
+            exc_str = str(exc)
+            exc_type = type(exc).__name__
+            is_conn_err = (
+                "ConnectionDoesNotExist" in exc_type
+                or "connection was closed" in exc_str.lower()
+                or "connection does not exist" in exc_str.lower()
+                or "connection refused" in exc_str.lower()
+                or "ssl connection has been closed" in exc_str.lower()
+            )
+            if not is_conn_err or attempt >= max_retries:
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "DB 연결 오류 (시도 %d/%d), %.0f초 후 재시도: %s",
+                attempt + 1, max_retries, delay, exc_str[:120],
+            )
+            await asyncio.sleep(delay)
+    return None  # unreachable
 
 
 async def fetch_companies_with_null_embeddings(
@@ -201,23 +233,27 @@ async def update_embeddings_bulk(
     if not id_to_embedding:
         return 0, 0
 
-    # 벌크 UPDATE: executemany 방식 (단일 네트워크 왕복)
-    try:
+    # 벌크 UPDATE: executemany 방식 (단일 네트워크 왕복) + 재시도
+    params = [
+        {"id": str(chunk_id), "embedding": str(embedding)}
+        for chunk_id, embedding in id_to_embedding.items()
+    ]
+
+    async def _bulk_update() -> tuple[int, int]:
         async with session_factory() as session:  # type: ignore[union-attr]
             stmt = text(
                 "UPDATE policy_chunks SET embedding = :embedding WHERE id = :id"
             )
-            params = [
-                {"id": str(chunk_id), "embedding": str(embedding)}
-                for chunk_id, embedding in id_to_embedding.items()
-            ]
             await session.execute(stmt, params)
             await session.commit()
             return len(id_to_embedding), 0
+
+    try:
+        return await _with_db_retry(_bulk_update)  # type: ignore[return-value]
     except Exception as exc:
         logger.warning("벌크 UPDATE 실패, 단건 폴백 전환: %s", str(exc)[:200])
 
-    # 단건 폴백 (벌크 실패 시에만 실행)
+    # 단건 폴백 (벌크 실패 시에만 실행) + 재시도
     from sqlalchemy import update
 
     from app.models.insurance import PolicyChunk
@@ -225,16 +261,19 @@ async def update_embeddings_bulk(
     updated = 0
     failed = 0
     for chunk_id, embedding in id_to_embedding.items():
-        try:
+        async def _single_update(cid: object = chunk_id, emb: list[float] = embedding) -> None:
             async with session_factory() as session:  # type: ignore[union-attr]
                 stmt = (
                     update(PolicyChunk)
-                    .where(PolicyChunk.id == chunk_id)
-                    .values(embedding=embedding)
+                    .where(PolicyChunk.id == cid)
+                    .values(embedding=emb)
                 )
                 await session.execute(stmt)
                 await session.commit()
-                updated += 1
+
+        try:
+            await _with_db_retry(_single_update)
+            updated += 1
         except Exception:
             failed += 1
 
@@ -305,9 +344,11 @@ async def backfill(
             return await embedding_service.embed_batch(texts)  # type: ignore[union-attr]
 
     while processed < total:
-        # 커서 페이지네이션: WHERE id > last_id (OFFSET 없음)
-        rows = await fetch_null_embedding_chunks_cursor(
-            session_factory, company_code, batch_size, last_id
+        # 커서 페이지네이션: WHERE id > last_id (OFFSET 없음) + 재시도
+        rows = await _with_db_retry(
+            lambda: fetch_null_embedding_chunks_cursor(
+                session_factory, company_code, batch_size, last_id
+            )
         )
         if not rows:
             break

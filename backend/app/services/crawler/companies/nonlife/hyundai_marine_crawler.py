@@ -74,7 +74,7 @@ class HyundaiMarineCrawler(BaseCrawler):
         rate_limit_seconds: float = 1.0,
         max_retries: int = 3,
         fail_threshold: float = 0.05,
-        fail_min_samples: int = 20,
+        fail_min_samples: int = 50,
         url_resolve_concurrency: int = 10,
         download_concurrency: int = 3,
     ) -> None:
@@ -105,9 +105,9 @@ class HyundaiMarineCrawler(BaseCrawler):
     # ──────────────────────────────────────────────────────────────────
 
     def _is_valid_pdf(self, data: bytes) -> bool:
-        # %PDF 시그니처가 첫 1KB 이내에 있으면 유효한 PDF로 간주
-        # (일부 PDF는 UTF-8 BOM \xef\xbb\xbf 또는 바이너리 헤더를 앞에 붙임)
-        return b"%PDF" in data[:1024] and len(data) > 1000
+        # %PDF 시그니처가 첫 4KB 이내에 있으면 유효한 PDF로 간주
+        # (일부 PDF는 UTF-8 BOM, 바이너리 래퍼, 또는 서버 헤더를 앞에 붙임)
+        return b"%PDF" in data[:4096] and len(data) > 1000
 
     def _get_storage_path(self, uuid: str, sale_status: str, filename: str) -> str:
         """UUID와 판매상태로 저장 경로 결정.
