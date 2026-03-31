@@ -47,10 +47,10 @@ logger = logging.getLogger("backfill_embeddings")
 DEFAULT_BATCH_SIZE = 2048
 # API 동시 호출 수 (rate limit 대응, 4개면 ~4배 처리량)
 API_CONCURRENCY = 4
-# DB 오류 재시도 횟수
-_MAX_RETRIES = 3
-# 재시도 기본 대기 시간 (초) — 지수 백오프: 5s → 10s → 20s
-_RETRY_BASE_DELAY = 5.0
+# DB 오류 재시도 횟수 — Fly.io read-only 라우팅은 10분+ 지속될 수 있음
+_MAX_RETRIES = 5
+# 재시도 기본 대기 시간 (초) — 지수 백오프: 10s → 20s → 40s → 80s → 160s (총 310s ≈ 5분)
+_RETRY_BASE_DELAY = 10.0
 # 임베딩 생성 최소 텍스트 길이 (50자 미만 스킵)
 _MIN_CHARS = 50
 
