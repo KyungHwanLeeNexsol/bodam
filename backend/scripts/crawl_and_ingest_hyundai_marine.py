@@ -200,6 +200,9 @@ async def crawl_and_ingest(
     _consecutive_readonly_failures = 0
     _MAX_CONSECUTIVE_READONLY = 3
 
+    class _ReadOnlyCircuitBreaker(Exception):
+        """DB read-only 연속 실패 → 크롤링 즉시 중단 신호."""
+
     async def _on_pdf_download_failed(pdf_url: str, reason: str) -> None:
         """다운로드/검증 실패 URL 기록 (상태 파일에 저장 → resume 시 영구 스킵)."""
         download_failed_urls.append(pdf_url)
@@ -273,7 +276,7 @@ async def crawl_and_ingest(
                 pdf_filename=filename,
                 error=error_msg,
             ))
-            # Circuit Breaker: DB read-only 연속 실패 감지 → 전체 중단
+            # Circuit Breaker: DB read-only 연속 실패 감지 → 크롤러 전체 중단
             if "read-only transaction" in error_msg.lower():
                 _consecutive_readonly_failures += 1
                 if _consecutive_readonly_failures >= _MAX_CONSECUTIVE_READONLY:
@@ -281,7 +284,7 @@ async def crawl_and_ingest(
                         "DB read-only 상태 %d건 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
                         _consecutive_readonly_failures,
                     )
-                    break
+                    raise _ReadOnlyCircuitBreaker("DB read-only 연속 실패")
             else:
                 _consecutive_readonly_failures = 0
 
@@ -308,11 +311,18 @@ async def crawl_and_ingest(
             fail_threshold=fail_threshold,
         )
 
-        crawl_result = await crawler.crawl(
-            processed_urls=processed_urls,
-            on_download=_on_pdf_downloaded,
-            on_fail=_on_pdf_download_failed,
-        )
+        try:
+            crawl_result = await crawler.crawl(
+                processed_urls=processed_urls,
+                on_download=_on_pdf_downloaded,
+                on_fail=_on_pdf_download_failed,
+            )
+        except _ReadOnlyCircuitBreaker:
+            logger.error("DB read-only Circuit Breaker 발동 → 크롤링 조기 종료")
+            return {
+                "error": "db_readonly_circuit_breaker",
+                "ingest": ingest_stats,
+            }
     finally:
         import shutil
         shutil.rmtree(noop_tmp, ignore_errors=True)
