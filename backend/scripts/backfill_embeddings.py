@@ -79,13 +79,16 @@ async def _with_db_retry(coro_fn: object, max_retries: int = _MAX_RETRIES, base_
             )
             if not is_conn_err or attempt >= max_retries:
                 raise
-            delay = base_delay * (2 ** attempt)
-            # ReadOnlySQLTransactionError: pool_pre_ping은 살아있는 read-only 연결을 감지 못함
-            # → 엔진 풀 전체 폐기하여 다음 시도에서 primary 재연결 강제
+            # ReadOnlySQLTransactionError: 재시도해도 Fly.io 프록시가 계속 replica를 가리킴
+            # → dispose() 후 즉시 raise하여 상위 Circuit Breaker에 위임
+            #    (일반 연결 오류와 달리 sleep 재시도가 의미 없음)
             if "read-only transaction" in exc_str.lower():
                 import app.core.database as _db
                 if _db.engine is not None:
                     await _db.engine.dispose()
+                logger.warning("DB read-only 감지 → 풀 폐기 후 Circuit Breaker에 위임")
+                raise
+            delay = base_delay * (2 ** attempt)
             logger.warning(
                 "DB 연결 오류 (시도 %d/%d), %.0f초 후 재시도: %s",
                 attempt + 1, max_retries, delay, exc_str[:120],
