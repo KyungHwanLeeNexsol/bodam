@@ -15,9 +15,9 @@ on:
           - '삼성화재만'
           - '전체 (embedding=NULL인 모든 보험사)'
       batch_size:
-        description: '배치 크기 (기본: 500, OpenAI API 최대: 2048)'
+        description: '배치 크기 (기본: 2048, OpenAI API 최대: 2048)'
         required: false
-        default: '500'
+        default: '2048'
       dry_run:
         description: 'Dry-run (실제 DB 업데이트 없이 대상 건수만 확인)'
         required: false
