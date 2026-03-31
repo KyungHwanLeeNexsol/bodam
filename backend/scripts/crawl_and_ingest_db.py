@@ -157,6 +157,8 @@ async def crawl_category_and_ingest(
 ) -> dict[str, int]:
     """특정 카테고리 크롤링 + 즉시 인제스트."""
     stats = {"products": 0, "success": 0, "skipped": 0, "failed": 0, "dry_run": 0}
+    _consecutive_readonly_failures = 0
+    _MAX_CONSECUTIVE_READONLY = 3
     label = cat["label"]
 
     # Step 2: 상품 목록 조회 (판매중 + 판매중지)
@@ -405,14 +407,17 @@ async def crawl_category_and_ingest(
         if status == "success":
             stats["success"] += 1
             processed_urls.add(pdf_url)  # 런 중 중복 다운로드 방지
+            _consecutive_readonly_failures = 0
             logger.info("[OK] %s (%s)", pdc_nm[:50], label)
         elif status == "skipped":
             stats["skipped"] += 1
+            _consecutive_readonly_failures = 0
         elif status == "dry_run":
             stats["dry_run"] += 1
+            _consecutive_readonly_failures = 0
         else:
             stats["failed"] += 1
-            error_msg = result.get("error", "")
+            error_msg = result.get("error", "") or ""
             state.failures.append(FailureRecord(
                 product_name=pdc_nm,
                 category=label,
@@ -422,6 +427,17 @@ async def crawl_category_and_ingest(
                 error_msg=error_msg,
             ))
             logger.warning("[실패] 인제스트 실패 [%s]: %s", pdc_nm[:50], error_msg[:100])
+            # Circuit Breaker: DB read-only 연속 실패 감지 → 전체 중단
+            if "read-only transaction" in error_msg.lower():
+                _consecutive_readonly_failures += 1
+                if _consecutive_readonly_failures >= _MAX_CONSECUTIVE_READONLY:
+                    logger.error(
+                        "DB read-only 상태 %d건 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
+                        _consecutive_readonly_failures,
+                    )
+                    break
+            else:
+                _consecutive_readonly_failures = 0
 
         del pdf_bytes
         gc.collect()

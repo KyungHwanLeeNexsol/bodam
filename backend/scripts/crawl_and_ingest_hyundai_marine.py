@@ -197,6 +197,8 @@ async def crawl_and_ingest(
     failure_records: list[FailureRecord] = []
     download_failed_urls: list[str] = []
     ingest_count = 0
+    _consecutive_readonly_failures = 0
+    _MAX_CONSECUTIVE_READONLY = 3
 
     async def _on_pdf_download_failed(pdf_url: str, reason: str) -> None:
         """다운로드/검증 실패 URL 기록 (상태 파일에 저장 → resume 시 영구 스킵)."""
@@ -256,12 +258,14 @@ async def crawl_and_ingest(
         if status in ("success", "new", "updated"):
             ingest_stats["success"] += 1
             processed_urls.add(pdf_url)
+            _consecutive_readonly_failures = 0
             logger.debug("인제스트 완료: %s (%s)", filename[:60], product_code)
         elif status == "skipped":
             ingest_stats["skipped"] += 1
+            _consecutive_readonly_failures = 0
         else:
             ingest_stats["failed"] += 1
-            error_msg = result.get("error", "")
+            error_msg = result.get("error", "") or ""
             logger.warning("인제스트 실패: %s - %s", filename[:40], error_msg)
             uid_prefix = product_code.replace("-", "")[:8]
             failure_records.append(FailureRecord(
@@ -269,6 +273,17 @@ async def crawl_and_ingest(
                 pdf_filename=filename,
                 error=error_msg,
             ))
+            # Circuit Breaker: DB read-only 연속 실패 감지 → 전체 중단
+            if "read-only transaction" in error_msg.lower():
+                _consecutive_readonly_failures += 1
+                if _consecutive_readonly_failures >= _MAX_CONSECUTIVE_READONLY:
+                    logger.error(
+                        "DB read-only 상태 %d건 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
+                        _consecutive_readonly_failures,
+                    )
+                    break
+            else:
+                _consecutive_readonly_failures = 0
 
         gc.collect()
 
