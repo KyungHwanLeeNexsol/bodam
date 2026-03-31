@@ -349,6 +349,20 @@ async def crawl_and_ingest(
         logger.error("DB 세션 팩토리 초기화 실패")
         return {"error": "session_factory is None"}
 
+    # DB write 사전 테스트 (크롤링 시작 전 → 다운로드/파싱 낭비 방지)
+    try:
+        from sqlalchemy import text
+        async with _db.session_factory() as _session:
+            await _session.execute(
+                text("UPDATE policy_chunks SET embedding = NULL WHERE id = '00000000-0000-0000-0000-000000000000'::uuid")
+            )
+            await _session.commit()
+    except Exception as _e:
+        if "read-only transaction" in str(_e).lower():
+            logger.error("DB read-only 상태 감지 → 크롤링 없이 즉시 종료 (Fly.io 프록시 replica 라우팅)")
+            return {"error": "db_readonly", **stats}
+        # 다른 에러는 무시하고 진행 (테이블 없음 등)
+
     # 크롤러 재시작 시 이미 처리된 URL 스킵 (다운로드 전 체크)
     from scripts.ingest_local_pdfs import load_processed_urls
     async with _db.session_factory() as _session:
@@ -687,7 +701,11 @@ if __name__ == "__main__":
         resume_state_path=args.resume_state,
         state_output_path=args.state_output,
     ))
-    # DB 초기화 실패 등 오류 시 exit code 1 (GitHub Actions false positive 방지)
+    # DB 초기화 실패 등 오류 시 exit code 처리
     if isinstance(result, dict) and "error" in result:
+        if result["error"] == "db_readonly":
+            # exit 75 (EX_TEMPFAIL): DB read-only — GitHub Actions에서 재시도 없이 종료 가능
+            logger.error("DB read-only → exit 75 (EX_TEMPFAIL)")
+            sys.exit(75)
         logger.error("종료 오류: %s", result["error"])
         sys.exit(1)
