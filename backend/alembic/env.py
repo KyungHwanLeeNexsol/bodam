@@ -72,6 +72,8 @@ async def run_async_migrations() -> None:
     connectable = create_async_engine(
         url,
         poolclass=pool.NullPool,
+        # DDL 작업(CREATE INDEX 등)이 Fly.io proxy 타임아웃 전에 완료되도록 300초 설정
+        connect_args={"command_timeout": 300},
     )
 
     async with connectable.connect() as connection:

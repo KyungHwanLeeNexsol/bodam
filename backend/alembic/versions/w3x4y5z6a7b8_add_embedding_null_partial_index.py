@@ -25,14 +25,19 @@ def upgrade() -> None:
 
     백필 스크립트의 COUNT 및 커서 페이지네이션 쿼리 성능을 개선.
     Fly.io PostgreSQL 환경에서 실행.
+
+    CONCURRENTLY: 테이블 잠금 없이 인덱스 생성 (305K+ 행 대응).
+    autocommit_block: CONCURRENTLY는 트랜잭션 밖에서만 실행 가능.
     """
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_policy_chunks_embedding_null "
-        "ON policy_chunks (id) "
-        "WHERE embedding IS NULL"
-    )
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_policy_chunks_embedding_null "
+            "ON policy_chunks (id) "
+            "WHERE embedding IS NULL"
+        )
 
 
 def downgrade() -> None:
     """partial index 제거."""
-    op.execute("DROP INDEX IF EXISTS idx_policy_chunks_embedding_null")
+    with op.get_context().autocommit_block():
+        op.execute("DROP INDEX CONCURRENTLY IF EXISTS idx_policy_chunks_embedding_null")
