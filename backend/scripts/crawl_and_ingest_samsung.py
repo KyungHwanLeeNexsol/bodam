@@ -548,7 +548,7 @@ async def crawl_and_ingest(
                     stats["dry_run"] += 1
                 else:
                     stats["failed"] += 1
-                    error_msg = result.get("error", "")
+                    error_msg = result.get("error", "") or ""
                     failure = FailureRecord(
                         idx=local_idx,
                         fpath=fpath,
@@ -567,6 +567,18 @@ async def crawl_and_ingest(
                         "[%d] 인제스트 실패: %s | 오류: %s",
                         local_idx, Path(fpath).name, error_msg[:200],
                     )
+                    # Circuit Breaker: DB read-only 감지 → 병렬 워커 전체 즉시 취소
+                    # process_single_file이 즉시 실패 반환하므로 여기서 cancel_event로 전파
+                    if "read-only transaction" in error_msg.lower():
+                        if not cancel_event.is_set():
+                            cancel_event.set()
+                            current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                            current_state.stop_reason = "db_readonly"
+                            save_state(current_state, state_output_path)
+                            logger.error(
+                                "[%d] DB read-only → 병렬 워커 전체 중단 신호",
+                                local_idx,
+                            )
 
                 del pdf_bytes
                 gc.collect()

@@ -859,17 +859,15 @@ async def process_single_file(
             if db_attempt >= 5:
                 logger.error("처리 실패 (DB 재시도 5회 소진): %s (%s)", pdf_path.name, e, exc_info=True)
                 return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
-            wait_sec = 10 * (2 ** (db_attempt - 1))  # 10s, 20s, 40s, 80s
-            # ReadOnlySQLTransactionError: Fly.io 프록시가 레플리카로 라우팅 중
-            # pool_pre_ping은 살아있는 read-only 연결을 감지하지 못함 → 엔진 풀 전체 폐기하여
-            # 다음 재시도에서 새 primary 연결 강제
+            # ReadOnlySQLTransactionError: 재연결해도 Fly.io 프록시가 replica를 가리키는 동안 무의미
+            # → dispose() 후 즉시 실패 반환하여 상위 Circuit Breaker(main 루프 또는 크롤러)에 위임
             if "read-only transaction" in str(e).lower():
                 import app.core.database as _db
                 if _db.engine is not None:
                     await _db.engine.dispose()
-                    logger.warning(
-                        "DB 풀 초기화 (read-only 연결 폐기) → %ds 후 primary 재연결 시도", wait_sec
-                    )
+                logger.warning("DB read-only 감지 → 풀 폐기 후 즉시 실패 반환 (%s)", pdf_path.name)
+                return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+            wait_sec = 10 * (2 ** (db_attempt - 1))  # 10s, 20s, 40s, 80s
             logger.warning(
                 "DB 연결 일시 실패 (시도 %d/5), %ds 후 새 세션으로 재시도: %s",
                 db_attempt, wait_sec, e,
