@@ -347,6 +347,25 @@ async def backfill(
         logger.info("백필할 청크가 없습니다.")
         return {"total": 0, "updated": 0, "skipped": 0, "failed": 0}
 
+    # ── DB write 사전 테스트 (OpenAI API 호출 전) ─────────────────
+    # read-only 상태에서 임베딩을 계산해봤자 저장 불가 → API 비용만 낭비
+    # 존재하지 않는 UUID로 noop UPDATE를 수행하여 write 가능 여부만 확인
+    async def _check_db_writable() -> bool:
+        from sqlalchemy import text
+        try:
+            async with session_factory() as session:  # type: ignore[union-attr]
+                await session.execute(
+                    text("UPDATE policy_chunks SET embedding = NULL WHERE id = '00000000-0000-0000-0000-000000000000'::uuid")
+                )
+                await session.commit()
+                return True
+        except Exception as e:
+            return "read-only transaction" not in str(e).lower()
+
+    if not await _check_db_writable():
+        logger.error("DB read-only 상태 감지 → OpenAI API 호출 없이 즉시 종료")
+        return {"total": total, "updated": 0, "skipped": 0, "failed": 0, "db_readonly": True}
+
     stats = {"total": total, "updated": 0, "skipped": 0, "failed": 0}
     last_id = None
     processed = 0
@@ -558,6 +577,12 @@ async def main() -> None:
     print(f"  스킵:     {stats['skipped']:>8,}개")
     print(f"  실패:     {stats['failed']:>8,}개")
     print("=" * 40)
+
+    if stats.get("db_readonly"):
+        # exit 75 (EX_TEMPFAIL): 일시적 실패 — DB 복구 후 재시도 필요
+        # GitHub Actions 워크플로우에서 이 코드를 감지하여 재시도 없이 종료 가능
+        logger.error("DB read-only 상태 → exit 75 (EX_TEMPFAIL)")
+        sys.exit(75)
 
     if stats["failed"] > 0:
         sys.exit(1)
