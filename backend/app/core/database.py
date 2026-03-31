@@ -62,12 +62,19 @@ async def init_database(settings: Settings) -> None:
     global engine, session_factory
 
     clean_url = _normalize_url(settings.database_url)
+
+    # Fly 내부 네트워크(.flycast, .internal)는 SSL 불필요, 명시적으로 비활성화
+    is_internal = any(domain in clean_url for domain in [".flycast", ".internal", "localhost", "127.0.0.1"])
+    connect_args: dict[str, object] = {"ssl": False} if is_internal else {"ssl": "require"}
+
     engine = create_async_engine(
         clean_url,
         echo=settings.debug,
         pool_pre_ping=True,  # 유효하지 않은 연결 자동 재연결
-        pool_size=10,  # 표준 PostgreSQL: 연결 풀 확대
+        pool_size=10,
         max_overflow=20,
+        pool_recycle=50,  # Fly.io proxy idle timeout(~60s) 전에 연결 교체
+        connect_args=connect_args,
     )
 
     session_factory = async_sessionmaker(

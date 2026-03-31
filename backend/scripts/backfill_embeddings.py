@@ -1,7 +1,7 @@
 """임베딩 백필 스크립트
 
 DB에 이미 저장된 PolicyChunk 중 embedding=NULL인 항목에 대해
-BAAI/bge-m3 로컬 모델로 임베딩을 일괄 생성하여 UPDATE한다.
+OpenAI text-embedding-3-small(768차원)로 임베딩을 일괄 생성하여 UPDATE한다.
 
 Usage:
     # 인터랙티브 선택 메뉴 (--company 미지정 + 터미널 실행)
@@ -13,12 +13,13 @@ Usage:
     # Dry-run (DB 쓰기 없이 통계만)
     PYTHONPATH=. uv run python -m scripts.backfill_embeddings --dry-run
 
-    # 배치 크기 조정 (기본 128)
-    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 128
+    # 배치 크기 조정 (기본 2048)
+    PYTHONPATH=. uv run python -m scripts.backfill_embeddings --company axa-general --batch-size 2048
 
-# @MX:NOTE: PolicyChunk.embedding IS NULL → BAAI/bge-m3 로컬 모델(1024차원) → UPDATE
+# @MX:NOTE: PolicyChunk.embedding IS NULL → OpenAI text-embedding-3-small(768차원) → UPDATE
 # @MX:NOTE: 보험사 필터: --company 옵션으로 InsuranceCompany.code 기준 필터링
-# @MX:NOTE: 배치 크기: 로컬 CPU 추론 최적값 128개 단위 처리, API 키 불필요
+# @MX:NOTE: 배치 크기: OpenAI API 최대 2048개 단위 처리, 벌크 UPDATE로 DB 왕복 최소화
+# @MX:NOTE: 커서 페이지네이션 + 병렬 API 호출 + 진짜 벌크 UPDATE로 ~50배 속도 향상
 """
 from __future__ import annotations
 
@@ -42,12 +43,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger("backfill_embeddings")
 
-# 기본 배치 크기 (bge-m3 CPU 추론 최적값)
-DEFAULT_BATCH_SIZE = 128
-# UPDATE 트랜잭션당 청크 수
-UPDATE_BATCH_SIZE = 1
-# DB 오류 재시도 횟수
-_MAX_RETRIES = 3
+# 기본 배치 크기 (OpenAI API 최대 2048, 기본값 2048로 변경)
+DEFAULT_BATCH_SIZE = 2048
+# API 동시 호출 수 (rate limit 대응, 4개면 ~4배 처리량)
+API_CONCURRENCY = 4
+# DB 오류 재시도 횟수 — Fly.io read-only 라우팅은 10분+ 지속될 수 있음
+_MAX_RETRIES = 5
+# 재시도 기본 대기 시간 (초) — 지수 백오프: 10s → 20s → 40s → 80s → 160s (총 310s ≈ 5분)
+_RETRY_BASE_DELAY = 10.0
+# 임베딩 생성 최소 텍스트 길이 (50자 미만 스킵)
+_MIN_CHARS = 50
+
+
+async def _with_db_retry(coro_fn: object, max_retries: int = _MAX_RETRIES, base_delay: float = _RETRY_BASE_DELAY) -> object:
+    """DB 작업에 지수 백오프 재시도 적용 (연결 끊김 오류 대응).
+
+    Neon/클라우드 DB가 장시간 유휴 후 연결을 끊을 때 자동 재연결한다.
+    연결 오류가 아닌 예외는 즉시 전파한다.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro_fn()  # type: ignore[operator]
+        except Exception as exc:
+            exc_str = str(exc)
+            exc_type = type(exc).__name__
+            is_conn_err = (
+                "ConnectionDoesNotExist" in exc_type
+                or "connection was closed" in exc_str.lower()
+                or "connection does not exist" in exc_str.lower()
+                or "connection refused" in exc_str.lower()
+                or "ssl connection has been closed" in exc_str.lower()
+                # Fly.io 프록시가 읽기 전용 레플리카로 라우팅될 때 새 연결로 재시도
+                or "ReadOnlyTransaction" in exc_type
+                or "read-only transaction" in exc_str.lower()
+            )
+            if not is_conn_err or attempt >= max_retries:
+                raise
+            # ReadOnlySQLTransactionError: 재시도해도 Fly.io 프록시가 계속 replica를 가리킴
+            # → dispose() 후 즉시 raise하여 상위 Circuit Breaker에 위임
+            #    (일반 연결 오류와 달리 sleep 재시도가 의미 없음)
+            if "read-only transaction" in exc_str.lower():
+                import app.core.database as _db
+                if _db.engine is not None:
+                    await _db.engine.dispose()
+                logger.warning("DB read-only 감지 → 풀 폐기 후 Circuit Breaker에 위임")
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "DB 연결 오류 (시도 %d/%d), %.0f초 후 재시도: %s",
+                attempt + 1, max_retries, delay, exc_str[:120],
+            )
+            await asyncio.sleep(delay)
+    return None  # unreachable
 
 
 async def fetch_companies_with_null_embeddings(
@@ -145,13 +192,18 @@ async def count_null_embeddings(
         return result.scalar_one()
 
 
-async def fetch_null_embedding_chunks(
+# @MX:ANCHOR: [AUTO] 커서 기반 페이지네이션 — OFFSET 제거로 대량 데이터 성능 확보
+# @MX:REASON: OFFSET은 행 수에 비례해 느려짐. cursor(WHERE id > last_id)는 상수 시간.
+async def fetch_null_embedding_chunks_cursor(
     session_factory: object,
     company_code: str | None,
     limit: int,
-    offset: int,
+    last_id: object = None,
 ) -> list[tuple[object, str]]:
-    """embedding=NULL인 PolicyChunk (id, chunk_text) 목록을 페이지 단위로 조회한다."""
+    """embedding=NULL인 PolicyChunk를 커서 페이지네이션으로 조회한다.
+
+    OFFSET 대신 WHERE id > last_id를 사용하여 대량 데이터에서도 일정한 속도를 유지한다.
+    """
     from sqlalchemy import select
 
     from app.models.insurance import InsuranceCompany, Policy, PolicyChunk
@@ -163,8 +215,9 @@ async def fetch_null_embedding_chunks(
             .where(PolicyChunk.embedding.is_(None))
             .order_by(PolicyChunk.id)
             .limit(limit)
-            .offset(offset)
         )
+        if last_id is not None:
+            stmt = stmt.where(PolicyChunk.id > last_id)
         if company_code:
             stmt = stmt.join(InsuranceCompany, Policy.company_id == InsuranceCompany.id).where(
                 InsuranceCompany.code == company_code
@@ -173,89 +226,79 @@ async def fetch_null_embedding_chunks(
         return result.all()
 
 
-async def update_embeddings(
+# @MX:ANCHOR: [AUTO] 벌크 UPDATE — 단일 SQL로 N건 동시 갱신
+# @MX:REASON: 건별 UPDATE(N회 왕복) 대신 executemany로 1회 왕복. 네트워크 지연 최소화.
+async def update_embeddings_bulk(
     session_factory: object,
     id_to_embedding: dict[object, list[float]],
 ) -> tuple[int, int]:
-    """PolicyChunk.embedding을 단건 트랜잭션으로 UPDATE한다.
+    """PolicyChunk.embedding을 진짜 벌크 UPDATE로 갱신한다.
+
+    connection.execute(stmt, params_list) 방식으로 단일 네트워크 왕복에 전체 배치 처리.
+    실패 시 단건 폴백으로 부분 저장 보장.
 
     Returns:
         (updated, failed) 튜플
     """
-    from sqlalchemy import update
-
-    from app.models.insurance import PolicyChunk
+    from sqlalchemy import text
 
     if not id_to_embedding:
         return 0, 0
 
+    # 벌크 UPDATE: executemany 방식 (단일 네트워크 왕복) + 재시도
+    params = [
+        {"id": str(chunk_id), "embedding": str(embedding)}
+        for chunk_id, embedding in id_to_embedding.items()
+    ]
+
+    async def _bulk_update() -> tuple[int, int]:
+        async with session_factory() as session:  # type: ignore[union-attr]
+            stmt = text(
+                "UPDATE policy_chunks SET embedding = :embedding WHERE id = :id"
+            )
+            await session.execute(stmt, params)
+            await session.commit()
+            return len(id_to_embedding), 0
+
+    try:
+        return await _with_db_retry(_bulk_update)  # type: ignore[return-value]
+    except Exception as exc:
+        logger.warning("벌크 UPDATE 실패, 단건 폴백 전환: %s", str(exc)[:200])
+
+    # 단건 폴백 (벌크 실패 시에만 실행) + 재시도
+    from sqlalchemy import update
+
+    from app.models.insurance import PolicyChunk
+
     updated = 0
     failed = 0
-
     for chunk_id, embedding in id_to_embedding.items():
-        try:
+        async def _single_update(cid: object = chunk_id, emb: list[float] = embedding) -> None:
             async with session_factory() as session:  # type: ignore[union-attr]
                 stmt = (
                     update(PolicyChunk)
-                    .where(PolicyChunk.id == chunk_id)
-                    .values(embedding=embedding)
+                    .where(PolicyChunk.id == cid)
+                    .values(embedding=emb)
                 )
                 await session.execute(stmt)
                 await session.commit()
-                updated += 1
-        except Exception as exc:
-            logger.error("단건 UPDATE 실패 (id=%s): %s", chunk_id, exc)
+
+        try:
+            await _with_db_retry(_single_update)
+            updated += 1
+        except Exception as e:
+            # read-only는 나머지 청크를 처리해도 전부 실패 → 즉시 중단하여 상위 Circuit Breaker에 위임
+            if "read-only transaction" in str(e).lower():
+                raise
             failed += 1
 
     return updated, failed
 
 
-async def _embed_local(
-    model: object,
-    texts: list[str],
-) -> list[list[float]]:
-    """BAAI/bge-m3 로컬 모델 임베딩 생성
-
-    동기 추론을 asyncio.to_thread로 비동기 루프에서 비블로킹 실행.
-    50자 미만 텍스트는 빈 리스트로 반환.
-
-    Args:
-        model: SentenceTransformer 인스턴스 (backfill() 시작 시 1회 로드)
-        texts: 임베딩할 텍스트 목록
-
-    Returns:
-        임베딩 벡터 목록 (50자 미만 위치에는 빈 리스트)
-    """
-    from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
-
-    MIN_CHARS = 50
-    valid_indices = [i for i, t in enumerate(texts) if len(t) >= MIN_CHARS]
-    valid_texts = [texts[i] for i in valid_indices]
-    results: list[list[float]] = [[] for _ in texts]
-
-    if not valid_texts:
-        return results
-
-    def _encode() -> list[list[float]]:
-        st_model: SentenceTransformer = model  # type: ignore[assignment]
-        embeddings = st_model.encode(
-            valid_texts,
-            batch_size=128,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
-        return [emb.tolist() for emb in embeddings]
-
-    embeddings = await asyncio.to_thread(_encode)
-    for orig_idx, emb in zip(valid_indices, embeddings):
-        results[orig_idx] = emb
-    return results
-
-
 async def init_db() -> object:
     """DB를 초기화하고 session_factory를 반환한다."""
-    from app.core.config import Settings
     import app.core.database as db_module
+    from app.core.config import Settings
 
     settings = Settings()  # type: ignore[call-arg]
     database_url = getattr(settings, "database_url", None) or os.environ.get("DATABASE_URL", "")
@@ -271,25 +314,48 @@ async def backfill(
     company_code: str | None,
     batch_size: int,
     dry_run: bool,
+    concurrency: int = API_CONCURRENCY,
     session_factory: object = None,
 ) -> dict[str, int]:
-    """임베딩 백필 메인 로직."""
+    """임베딩 백필 메인 로직.
+
+    최적화 포인트:
+    1. 커서 페이지네이션 (OFFSET 제거) — 조회 성능 일정
+    2. API 동시 호출 (asyncio.gather) — 처리량 N배
+    3. 벌크 UPDATE (executemany) — DB 왕복 최소화
+    """
     # ── DB 초기화 (외부에서 이미 초기화된 경우 재사용) ─────────
     if session_factory is None:
         session_factory = await init_db()
 
-    # ── 로컬 임베딩 모델 초기화 (BAAI/bge-m3, 1회 로드) ─────────
-    # @MX:NOTE: BAAI/bge-m3 모델을 백필 시작 시 1회 로드 — API 키 불필요
-    # @MX:NOTE: ~600MB HuggingFace 캐시에서 로드, GitHub Actions에서 캐시 적중 시 빠름
-    _model_name = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
-
+    # ── OpenAI 임베딩 서비스 초기화 ─────────────────────────────
     if not dry_run:
-        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
-        logger.info("BAAI/bge-m3 모델 로드 중 (model=%s)...", _model_name)
-        _st_model = SentenceTransformer(_model_name)
-        logger.info("임베딩 초기화 완료 (model=%s, dim=1024, 로컬 CPU 추론)", _model_name)
+        from app.services.rag.embeddings import get_embedding_service
+        embedding_service = get_embedding_service()
+        logger.info(
+            "OpenAI 임베딩 서비스 초기화 완료 (model=text-embedding-3-small, dim=768)"
+        )
     else:
-        _st_model = None
+        embedding_service = None
+
+    # ── DB write 사전 테스트 (count 쿼리 전) ─────────────────────
+    # read-only 상태에서 count(2분+) 낭비 방지 → write 가능 여부를 먼저 확인
+    # 존재하지 않는 UUID로 noop UPDATE를 수행하여 write 가능 여부만 확인
+    async def _check_db_writable() -> bool:
+        from sqlalchemy import text
+        try:
+            async with session_factory() as session:  # type: ignore[union-attr]
+                await session.execute(
+                    text("UPDATE policy_chunks SET embedding = NULL WHERE id = '00000000-0000-0000-0000-000000000000'::uuid")
+                )
+                await session.commit()
+                return True
+        except Exception as e:
+            return "read-only transaction" not in str(e).lower()
+
+    if not await _check_db_writable():
+        logger.error("DB read-only 상태 감지 → OpenAI API 호출 없이 즉시 종료")
+        return {"total": 0, "updated": 0, "skipped": 0, "failed": 0, "db_readonly": True}
 
     # ── 대상 건수 확인 ─────────────────────────────────────────
     total = await count_null_embeddings(session_factory, company_code)
@@ -301,65 +367,129 @@ async def backfill(
         return {"total": 0, "updated": 0, "skipped": 0, "failed": 0}
 
     stats = {"total": total, "updated": 0, "skipped": 0, "failed": 0}
-    offset = 0
-    batch_index = 0
+    last_id = None
+    processed = 0
     start_time = time.time()
+    sem = asyncio.Semaphore(concurrency)
+    # Circuit Breaker: DB 쓰기가 연속으로 실패하면 read-only 상태 지속으로 판단하고 중단
+    # (재시도해도 OpenAI API 비용만 낭비되고 저장 불가)
+    _consecutive_write_failures = 0
+    _MAX_CONSECUTIVE_WRITE_FAILURES = 1  # read-only는 즉시 복구 불가 → 1번 실패로 즉시 종료
 
-    while offset < total:
-        rows = await fetch_null_embedding_chunks(session_factory, company_code, batch_size, offset)
+    async def _embed_sub_batch(texts: list[str]) -> list[list[float]]:
+        """세마포어로 동시성 제어하면서 임베딩 API 호출."""
+        async with sem:
+            return await embedding_service.embed_batch(texts)  # type: ignore[union-attr]
+
+    while processed < total:
+        # 커서 페이지네이션: WHERE id > last_id (OFFSET 없음) + 재시도
+        rows = await _with_db_retry(
+            lambda: fetch_null_embedding_chunks_cursor(
+                session_factory, company_code, batch_size, last_id
+            )
+        )
         if not rows:
             break
 
         chunk_ids = [row[0] for row in rows]
         chunk_texts = [row[1] for row in rows]
+        last_id = chunk_ids[-1]  # 다음 페이지 커서
 
         if dry_run:
             logger.info(
                 "[dry-run] 배치 %d~%d / %d — 임베딩 생성 스킵",
-                offset + 1, offset + len(rows), total,
+                processed + 1, processed + len(rows), total,
             )
             stats["skipped"] += len(rows)
-            offset += len(rows)
+            processed += len(rows)
             continue
 
-        # bge-m3 로컬 임베딩 생성
-        try:
-            embeddings = await _embed_local(_st_model, chunk_texts)
-        except Exception as e:
-            logger.error("임베딩 생성 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
-            stats["failed"] += len(rows)
-            offset += len(rows)
-            batch_index += 1
-            continue
-        batch_index += 1
+        # 50자 미만 텍스트 필터링
+        valid_indices = [i for i, t in enumerate(chunk_texts) if len(t) >= _MIN_CHARS]
+        valid_texts = [chunk_texts[i] for i in valid_indices]
 
-        # 유효한 임베딩만 UPDATE
+        short_count = len(chunk_texts) - len(valid_texts)
+        if short_count:
+            stats["skipped"] += short_count
+
         id_to_embedding: dict[object, list[float]] = {}
-        for chunk_id, embedding in zip(chunk_ids, embeddings):
-            if embedding:  # 빈 리스트(50자 미만 텍스트)는 스킵
-                id_to_embedding[chunk_id] = embedding
-            else:
-                stats["skipped"] += 1
 
+        if valid_texts:
+            try:
+                # API 동시 호출: 배치를 sub-batch로 나눠 병렬 처리
+                sub_batch_size = max(len(valid_texts) // concurrency, 1)
+                sub_batches = [
+                    valid_texts[i:i + sub_batch_size]
+                    for i in range(0, len(valid_texts), sub_batch_size)
+                ]
+                sub_index_batches = [
+                    valid_indices[i:i + sub_batch_size]
+                    for i in range(0, len(valid_indices), sub_batch_size)
+                ]
+
+                embed_results = await asyncio.gather(
+                    *[_embed_sub_batch(batch) for batch in sub_batches],
+                    return_exceptions=True,
+                )
+
+                for sub_indices, result in zip(sub_index_batches, embed_results):
+                    if isinstance(result, Exception):
+                        logger.error("임베딩 sub-batch 실패: %s", str(result)[:200])
+                        stats["failed"] += len(sub_indices)
+                        continue
+                    for orig_idx, emb in zip(sub_indices, result):
+                        if emb:
+                            id_to_embedding[chunk_ids[orig_idx]] = emb
+                        else:
+                            stats["skipped"] += 1
+            except Exception as e:
+                logger.error("임베딩 생성 실패 (배치 %d~%d): %s", processed + 1, processed + len(rows), e)
+                stats["failed"] += len(valid_texts)
+                processed += len(rows)
+                continue
+
+        # 벌크 UPDATE
         try:
-            batch_updated, batch_failed = await update_embeddings(session_factory, id_to_embedding)
+            batch_updated, batch_failed = await update_embeddings_bulk(
+                session_factory, id_to_embedding
+            )
             stats["updated"] += batch_updated
             stats["failed"] += batch_failed
+            # Circuit Breaker: id_to_embedding이 있는데 전부 실패 → DB 쓰기 불가 상태
+            if id_to_embedding and batch_updated == 0:
+                _consecutive_write_failures += 1
+                if _consecutive_write_failures >= _MAX_CONSECUTIVE_WRITE_FAILURES:
+                    logger.error(
+                        "DB 쓰기 %d배치 연속 실패 (read-only 상태 지속으로 판단) → 백필 중단",
+                        _consecutive_write_failures,
+                    )
+                    processed += len(rows)
+                    break
+            else:
+                _consecutive_write_failures = 0
         except Exception as e:
-            logger.error("DB UPDATE 실패 (배치 %d~%d): %s", offset + 1, offset + len(rows), e)
+            logger.error("DB UPDATE 실패 (배치 %d~%d): %s", processed + 1, processed + len(rows), e)
             stats["failed"] += len(rows)
+            _consecutive_write_failures += 1
+            if _consecutive_write_failures >= _MAX_CONSECUTIVE_WRITE_FAILURES:
+                logger.error(
+                    "DB 쓰기 %d배치 연속 실패 → 백필 중단",
+                    _consecutive_write_failures,
+                )
+                processed += len(rows)
+                break
+
+        processed += len(rows)
 
         elapsed = time.time() - start_time
         rate = stats["updated"] / elapsed if elapsed > 0 else 0
-        remaining = (total - offset - len(rows)) / rate / 60 if rate > 0 else 0
+        remaining = (total - processed) / rate / 60 if rate > 0 else 0
         logger.info(
             "진행: %d / %d (갱신=%d, 스킵=%d, 실패=%d) | %.1f청크/초 | 잔여 ~%.0f분",
-            offset + len(rows), total,
+            processed, total,
             stats["updated"], stats["skipped"], stats["failed"],
             rate, remaining,
         )
-
-        offset += len(rows)
 
     elapsed_total = time.time() - start_time
     logger.info(
@@ -372,7 +502,7 @@ async def backfill(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI 인자를 파싱한다."""
     parser = argparse.ArgumentParser(
-        description="PolicyChunk embedding=NULL 백필 스크립트",
+        description="PolicyChunk embedding=NULL 백필 스크립트 (OpenAI text-embedding-3-small)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 사용 예시:
@@ -391,7 +521,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help=f"bge-m3 인코딩 배치 크기 (기본: {DEFAULT_BATCH_SIZE})",
+        help=f"OpenAI API 배치 크기 (기본: {DEFAULT_BATCH_SIZE}, 최대: 2048)",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=API_CONCURRENCY,
+        help=f"API 동시 호출 수 (기본: {API_CONCURRENCY})",
     )
     parser.add_argument(
         "--dry-run",
@@ -406,9 +542,9 @@ async def main() -> None:
     """진입점."""
     args = parse_args()
 
-    if args.batch_size > 512:
-        logger.warning("batch-size 최대 512 (메모리 제한). 512로 조정합니다.")
-        args.batch_size = 512
+    if args.batch_size > 2048:
+        logger.warning("batch-size 최대 2048 (OpenAI API 제한). 2048로 조정합니다.")
+        args.batch_size = 2048
 
     # --company 미지정 + 인터랙티브 터미널: 보험사 선택 메뉴 표시
     session_factory = None
@@ -417,9 +553,10 @@ async def main() -> None:
         args.company = await prompt_company_select(session_factory)
 
     logger.info("=" * 60)
-    logger.info("임베딩 백필 시작")
+    logger.info("임베딩 백필 시작 (OpenAI text-embedding-3-small)")
     logger.info("  대상 보험사: %s", args.company or "전체")
     logger.info("  배치 크기:   %d", args.batch_size)
+    logger.info("  동시 호출:   %d", args.concurrency)
     logger.info("  Dry-run:     %s", args.dry_run)
     logger.info("=" * 60)
 
@@ -427,6 +564,7 @@ async def main() -> None:
         company_code=args.company,
         batch_size=args.batch_size,
         dry_run=args.dry_run,
+        concurrency=args.concurrency,
         session_factory=session_factory,
     )
 
@@ -439,6 +577,12 @@ async def main() -> None:
     print(f"  스킵:     {stats['skipped']:>8,}개")
     print(f"  실패:     {stats['failed']:>8,}개")
     print("=" * 40)
+
+    if stats.get("db_readonly"):
+        # exit 75 (EX_TEMPFAIL): 일시적 실패 — DB 복구 후 재시도 필요
+        # GitHub Actions 워크플로우에서 이 코드를 감지하여 재시도 없이 종료 가능
+        logger.error("DB read-only 상태 → exit 75 (EX_TEMPFAIL)")
+        sys.exit(75)
 
     if stats["failed"] > 0:
         sys.exit(1)

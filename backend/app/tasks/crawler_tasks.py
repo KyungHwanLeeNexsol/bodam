@@ -103,7 +103,7 @@ async def _ingest_policy_async(crawl_result_id: str, pdf_path: str) -> dict:
     from app.services.parser.pdf_parser import PDFParser
     from app.services.parser.text_chunker import TextChunker
     from app.services.parser.text_cleaner import TextCleaner
-    from app.services.rag.embeddings import EmbeddingService
+    from app.services.rag.embeddings import get_embedding_service
 
     settings = get_settings()
 
@@ -119,11 +119,7 @@ async def _ingest_policy_async(crawl_result_id: str, pdf_path: str) -> dict:
                 return {"status": "error", "error": "CrawlResult를 찾을 수 없음"}
 
             # DocumentProcessor 생성
-            embedding_service = EmbeddingService(
-                api_key=settings.openai_api_key,
-                model=settings.embedding_model,
-                dimensions=settings.embedding_dimensions,
-            )
+            embedding_service = get_embedding_service()
             processor = DocumentProcessor(
                 embedding_service=embedding_service,
                 text_chunker=TextChunker(

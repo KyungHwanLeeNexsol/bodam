@@ -260,8 +260,8 @@ class PolicyChunk(Base):
     # 청크 순서 인덱스 (0부터 시작)
     chunk_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
 
-    # BAAI/bge-m3 기준 1024차원 임베딩 벡터 (이전: gemini-embedding-001 768차원)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+    # Gemini text-embedding-004 기준 768차원 임베딩 벡터 (이전: BAAI/bge-m3 1024차원)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
 
     # tsvector 전문 검색 벡터 (PostgreSQL 네이티브)
     # deferred=True: 명시적 접근 시에만 로딩 → 일반 쿼리 성능 최적화

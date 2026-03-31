@@ -59,12 +59,15 @@ class FailureRecord:
     pdf_filename: str
     error: str
     http_status: int | None = None
+    pdf_url: str | None = None
 
 
 @dataclass
 class HyundaiMarineIngestState:
     """현대해상 인제스트 실패 상태 (재처리용 JSON 직렬화 가능)."""
     failures: list[FailureRecord] = field(default_factory=list)
+    # 다운로드/검증 실패 URL 목록 (resume 시 processed_urls에 추가하여 영구 스킵)
+    download_failed_urls: list[str] = field(default_factory=list)
     stop_reason: str = ""
     crawl_failed_count: int = 0
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -72,7 +75,10 @@ class HyundaiMarineIngestState:
     def save(self, path: Path) -> None:
         data = asdict(self)
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("실패 상태 저장: %s (%d건)", path, len(self.failures))
+        logger.info(
+            "실패 상태 저장: %s (인제스트 실패=%d건, 다운로드 실패=%d건)",
+            path, len(self.failures), len(self.download_failed_urls),
+        )
 
     @classmethod
     def load(cls, path: Path) -> "HyundaiMarineIngestState":
@@ -80,6 +86,7 @@ class HyundaiMarineIngestState:
         failures = [FailureRecord(**f) for f in data.get("failures", [])]
         return cls(
             failures=failures,
+            download_failed_urls=data.get("download_failed_urls", []),
             stop_reason=data.get("stop_reason", ""),
             crawl_failed_count=data.get("crawl_failed_count", 0),
             created_at=data.get("created_at", ""),
@@ -142,12 +149,15 @@ async def crawl_and_ingest(
     """
     # 이전 실패 상태 로드 (resume 모드)
     failed_product_codes: set[str] | None = None
+    prev_download_failed_urls: set[str] = set()
     if resume_state and resume_state.exists():
         prev_state = HyundaiMarineIngestState.load(resume_state)
         failed_product_codes = {f.product_code for f in prev_state.failures}
+        prev_download_failed_urls = set(prev_state.download_failed_urls)
         logger.info(
-            "재처리 모드: 이전 실패 product_code %d개만 처리",
+            "재처리 모드: 이전 실패 product_code %d개만 처리 (다운로드 영구 실패 %d개 스킵)",
             len(failed_product_codes),
+            len(prev_download_failed_urls),
         )
     elif resume_state:
         logger.warning("resume_state 파일 없음 (%s) → 전체 실행", resume_state)
@@ -171,11 +181,32 @@ async def crawl_and_ingest(
     from scripts.ingest_local_pdfs import load_processed_urls
     async with _db.session_factory() as _session:
         processed_urls: set[str] = await load_processed_urls(_session, company_code="hyundai-marine")
-    logger.info("이미 처리된 URL (현대해상): %d개 (재시작 시 스킵됨)", len(processed_urls))
+    # 이전 런에서 다운로드 영구 실패한 URL도 스킵 (매 런마다 재시도 방지)
+    if prev_download_failed_urls:
+        processed_urls.update(prev_download_failed_urls)
+        logger.info(
+            "이미 처리된 URL (현대해상): %d개 (DB 성공=%d + 다운로드 영구 실패=%d)",
+            len(processed_urls),
+            len(processed_urls) - len(prev_download_failed_urls),
+            len(prev_download_failed_urls),
+        )
+    else:
+        logger.info("이미 처리된 URL (현대해상): %d개 (재시작 시 스킵됨)", len(processed_urls))
 
     ingest_stats: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
     failure_records: list[FailureRecord] = []
+    download_failed_urls: list[str] = []
     ingest_count = 0
+    _consecutive_readonly_failures = 0
+    _MAX_CONSECUTIVE_READONLY = 3
+
+    class _ReadOnlyCircuitBreaker(Exception):
+        """DB read-only 연속 실패 → 크롤링 즉시 중단 신호."""
+
+    async def _on_pdf_download_failed(pdf_url: str, reason: str) -> None:
+        """다운로드/검증 실패 URL 기록 (상태 파일에 저장 → resume 시 영구 스킵)."""
+        download_failed_urls.append(pdf_url)
+        logger.debug("[현대해상] 다운로드 실패 URL 기록: %s (사유: %s)", pdf_url[-60:], reason)
 
     # 다운로드 즉시 인제스트 콜백 (스트리밍 방식)
     # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
@@ -230,12 +261,14 @@ async def crawl_and_ingest(
         if status in ("success", "new", "updated"):
             ingest_stats["success"] += 1
             processed_urls.add(pdf_url)
+            _consecutive_readonly_failures = 0
             logger.debug("인제스트 완료: %s (%s)", filename[:60], product_code)
         elif status == "skipped":
             ingest_stats["skipped"] += 1
+            _consecutive_readonly_failures = 0
         else:
             ingest_stats["failed"] += 1
-            error_msg = result.get("error", "")
+            error_msg = result.get("error", "") or ""
             logger.warning("인제스트 실패: %s - %s", filename[:40], error_msg)
             uid_prefix = product_code.replace("-", "")[:8]
             failure_records.append(FailureRecord(
@@ -243,6 +276,17 @@ async def crawl_and_ingest(
                 pdf_filename=filename,
                 error=error_msg,
             ))
+            # Circuit Breaker: DB read-only 연속 실패 감지 → 크롤러 전체 중단
+            if "read-only transaction" in error_msg.lower():
+                _consecutive_readonly_failures += 1
+                if _consecutive_readonly_failures >= _MAX_CONSECUTIVE_READONLY:
+                    logger.error(
+                        "DB read-only 상태 %d건 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
+                        _consecutive_readonly_failures,
+                    )
+                    raise _ReadOnlyCircuitBreaker("DB read-only 연속 실패")
+            else:
+                _consecutive_readonly_failures = 0
 
         gc.collect()
 
@@ -267,10 +311,18 @@ async def crawl_and_ingest(
             fail_threshold=fail_threshold,
         )
 
-        crawl_result = await crawler.crawl(
-            processed_urls=processed_urls,
-            on_download=_on_pdf_downloaded,
-        )
+        try:
+            crawl_result = await crawler.crawl(
+                processed_urls=processed_urls,
+                on_download=_on_pdf_downloaded,
+                on_fail=_on_pdf_download_failed,
+            )
+        except _ReadOnlyCircuitBreaker:
+            logger.error("DB read-only Circuit Breaker 발동 → 크롤링 조기 종료")
+            return {
+                "error": "db_readonly_circuit_breaker",
+                "ingest": ingest_stats,
+            }
     finally:
         import shutil
         shutil.rmtree(noop_tmp, ignore_errors=True)
@@ -292,9 +344,10 @@ async def crawl_and_ingest(
                 fail_rate * 100,
                 fail_threshold * 100,
             )
-            if state_output and failure_records:
+            if state_output and (failure_records or download_failed_urls):
                 HyundaiMarineIngestState(
                     failures=failure_records,
+                    download_failed_urls=download_failed_urls,
                     stop_reason=f"crawl_fail_rate={fail_rate:.2%}",
                     crawl_failed_count=crawl_result.failed_count,
                 ).save(state_output)
@@ -320,11 +373,12 @@ async def crawl_and_ingest(
             "ingest": {"skipped": ingest_stats["skipped"], "reason": "dry_run"},
         }
 
-    # 실패 상태 저장
-    if state_output and failure_records:
+    # 실패 상태 저장 (인제스트 실패 OR 다운로드 영구 실패가 있으면 저장)
+    if state_output and (failure_records or download_failed_urls):
         HyundaiMarineIngestState(
             failures=failure_records,
-            stop_reason="ingest_failures",
+            download_failed_urls=download_failed_urls,
+            stop_reason="ingest_failures" if failure_records else "download_failures",
             crawl_failed_count=crawl_result.failed_count,
         ).save(state_output)
     elif state_output:

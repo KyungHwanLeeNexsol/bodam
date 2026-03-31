@@ -23,6 +23,7 @@ import logging
 import re
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -49,6 +50,11 @@ try:
     load_dotenv(_project_root / ".env")
 except ImportError:
     pass
+
+# PDF 파싱용 thread executor (fitz는 동기 C 라이브러리 — asyncio 이벤트 루프 blocking 방지)
+_PDF_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pdf-parse")
+# 단일 PDF 파싱 타임아웃 (비표준 PDF가 fitz 내부 루프에 빠지는 것 방지)
+_PDF_PARSE_TIMEOUT = 120  # seconds
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -186,22 +192,30 @@ async def check_duplicate(
         True: 중복 존재, False: 신규
     """
     from sqlalchemy import select
+    from sqlalchemy.orm import noload
 
     from app.models.insurance import Policy
 
     # sale_status가 주어지면 (content_hash, sale_status) 조합으로 체크
     # → 동일 PDF가 판매/판매중지 탭 양쪽에 노출되는 경우 각각 별도 레코드 허용
     if sale_status is not None:
-        stmt = select(Policy).where(
-            Policy.metadata_["content_hash"].astext == content_hash,
-            Policy.sale_status == sale_status,
+        stmt = (
+            select(Policy)
+            .where(
+                Policy.metadata_["content_hash"].astext == content_hash,
+                Policy.sale_status == sale_status,
+            )
+            # noload: chunks/coverages selectin 자동 로딩 차단 - 중복 여부만 확인하면 됨
+            .options(noload(Policy.chunks), noload(Policy.coverages))
         )
     else:
-        stmt = select(Policy).where(
-            Policy.metadata_["content_hash"].astext == content_hash
+        stmt = (
+            select(Policy)
+            .where(Policy.metadata_["content_hash"].astext == content_hash)
+            .options(noload(Policy.chunks), noload(Policy.coverages))
         )
     result = await session.execute(stmt)
-    existing = result.scalar_one_or_none()
+    existing = result.scalars().first()
     return existing is not None
 
 
@@ -542,10 +556,16 @@ async def ensure_company(
         InsuranceCompany 인스턴스
     """
     from sqlalchemy import select
+    from sqlalchemy.orm import noload
 
     from app.models.insurance import InsuranceCompany
 
-    stmt = select(InsuranceCompany).where(InsuranceCompany.code == company_code)
+    # noload: policies selectin 자동 로딩 차단 - ensure_company는 id/code만 필요
+    stmt = (
+        select(InsuranceCompany)
+        .where(InsuranceCompany.code == company_code)
+        .options(noload(InsuranceCompany.policies))
+    )
     result = await session.execute(stmt)
     company = result.scalar_one_or_none()
 
@@ -730,7 +750,14 @@ async def process_single_file(
         cleaner = TextCleaner()
         chunker = TextChunker()
 
-        raw_text = parser.extract_text(str(pdf_path))
+        loop = asyncio.get_event_loop()
+        try:
+            raw_text = await asyncio.wait_for(
+                loop.run_in_executor(_PDF_EXECUTOR, parser.extract_text, str(pdf_path)),
+                timeout=_PDF_PARSE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 타임아웃 ({_PDF_PARSE_TIMEOUT}s): {pdf_path.name}"}
         clean_text = cleaner.clean(raw_text)
         chunks = chunker.chunk_text(clean_text)
 
@@ -749,7 +776,18 @@ async def process_single_file(
     chunker = TextChunker()
 
     try:
-        raw_text = parser.extract_text(str(pdf_path))
+        loop = asyncio.get_event_loop()
+        raw_text = await asyncio.wait_for(
+            loop.run_in_executor(_PDF_EXECUTOR, parser.extract_text, str(pdf_path)),
+            timeout=_PDF_PARSE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error(
+            "PDF 파싱 타임아웃 (%ds 초과): %s — 비표준 PDF 구조로 fitz 내부 루프 추정, 건너뜀",
+            _PDF_PARSE_TIMEOUT,
+            pdf_path.name,
+        )
+        return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 타임아웃 ({_PDF_PARSE_TIMEOUT}s): {pdf_path.name}"}
     except Exception as e:
         return {"status": "failed", "chunk_count": 0, "error": f"PDF 파싱 실패: {e}"}
     clean_text = cleaner.clean(raw_text)
@@ -764,57 +802,84 @@ async def process_single_file(
         except Exception as e:
             logger.warning("임베딩 생성 실패 (건너뜀): %s", e)
 
-    # DB 트랜잭션: 전처리 결과를 저장
-    try:
-        async with session_factory() as session:
-            # 중복 확인 (REQ-04, REQ-06)
-            # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
-            is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
-            if is_dup:
-                logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
-                return {"status": "skipped", "chunk_count": 0, "error": None}
+    # DB 트랜잭션: 전처리 결과를 저장 (DBAPIError 시 최대 5회 재시도)
+    # Fly.io 프록시 재시작에 최대 2분 소요 → 10s→20s→40s→80s→160s 지수 백오프
+    import sqlalchemy.exc
 
-            # 보험사 확보
-            company = await ensure_company(
-                session,
-                metadata["company_code"],
-                metadata["company_name"],
-                metadata.get("category", "LIFE"),
+    for db_attempt in range(1, 6):
+        try:
+            async with session_factory() as session:
+                # 중복 확인 (REQ-04, REQ-06)
+                # sale_status 전달: 동일 PDF라도 ON_SALE/DISCONTINUED는 별개 레코드
+                is_dup = await check_duplicate(session, content_hash, metadata.get("sale_status"))
+                if is_dup:
+                    logger.debug("중복 스킵: %s (hash=%s)", pdf_path.name, content_hash[:8])
+                    return {"status": "skipped", "chunk_count": 0, "error": None}
+
+                # 보험사 확보
+                company = await ensure_company(
+                    session,
+                    metadata["company_code"],
+                    metadata["company_name"],
+                    metadata.get("category", "LIFE"),
+                )
+
+                # Policy upsert
+                # raw_text 크기 제한: DB 부하 최소화 (전체 텍스트는 PolicyChunks에 저장됨)
+                _MAX_RAW_TEXT = 100_000
+                if len(clean_text) > _MAX_RAW_TEXT:
+                    logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
+                    clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
+                else:
+                    clean_text_for_db = clean_text
+                policy = await upsert_policy(
+                    session, company, metadata, content_hash, clean_text_for_db
+                )
+
+                # PolicyChunk 생성
+                await create_chunks(session, policy.id, chunks, embeddings)
+
+                await session.commit()
+
+                logger.info(
+                    "처리 완료: %s (%d청크, hash=%s)",
+                    pdf_path.name,
+                    len(chunks),
+                    content_hash[:8],
+                )
+                return {
+                    "status": "success",
+                    "chunk_count": len(chunks),
+                    "sale_status": metadata.get("sale_status", "UNKNOWN"),
+                    "error": None,
+                }
+
+        except sqlalchemy.exc.DBAPIError as e:
+            # DB 연결 오류 (ConnectionDoesNotExistError 등) → 새 세션으로 재시도
+            if db_attempt >= 5:
+                logger.error("처리 실패 (DB 재시도 5회 소진): %s (%s)", pdf_path.name, e, exc_info=True)
+                return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+            # ReadOnlySQLTransactionError: 재연결해도 Fly.io 프록시가 replica를 가리키는 동안 무의미
+            # → dispose() 후 즉시 실패 반환하여 상위 Circuit Breaker(main 루프 또는 크롤러)에 위임
+            if "read-only transaction" in str(e).lower():
+                import app.core.database as _db
+                if _db.engine is not None:
+                    await _db.engine.dispose()
+                logger.warning("DB read-only 감지 → 풀 폐기 후 즉시 실패 반환 (%s)", pdf_path.name)
+                return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+            wait_sec = 10 * (2 ** (db_attempt - 1))  # 10s, 20s, 40s, 80s
+            logger.warning(
+                "DB 연결 일시 실패 (시도 %d/5), %ds 후 새 세션으로 재시도: %s",
+                db_attempt, wait_sec, e,
             )
+            await asyncio.sleep(wait_sec)
 
-            # Policy upsert
-            # raw_text 크기 제한: DB 부하 최소화 (전체 텍스트는 PolicyChunks에 저장됨)
-            _MAX_RAW_TEXT = 100_000
-            if len(clean_text) > _MAX_RAW_TEXT:
-                logger.debug("raw_text 절단: %d → %d 문자 (%s)", len(clean_text), _MAX_RAW_TEXT, pdf_path.name)
-                clean_text_for_db = clean_text[:_MAX_RAW_TEXT]
-            else:
-                clean_text_for_db = clean_text
-            policy = await upsert_policy(
-                session, company, metadata, content_hash, clean_text_for_db
-            )
+        except Exception as e:
+            logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
+            return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
 
-            # PolicyChunk 생성
-            await create_chunks(session, policy.id, chunks, embeddings)
-
-            await session.commit()
-
-            logger.info(
-                "처리 완료: %s (%d청크, hash=%s)",
-                pdf_path.name,
-                len(chunks),
-                content_hash[:8],
-            )
-            return {
-                "status": "success",
-                "chunk_count": len(chunks),
-                "sale_status": metadata.get("sale_status", "UNKNOWN"),
-                "error": None,
-            }
-
-    except Exception as e:
-        logger.error("처리 실패: %s (%s)", pdf_path.name, e, exc_info=True)
-        return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": str(e)}
+    # 도달 불가 (루프 내에서 항상 return 또는 재시도)
+    return {"status": "failed", "chunk_count": 0, "sale_status": "UNKNOWN", "error": "DB 재시도 5회 초과"}
 
 
 async def process_text_content(
@@ -995,6 +1060,12 @@ async def main(argv: list[str] | None = None) -> None:
     # 순차 처리: 파일 1개씩 처리 후 즉시 GC → 메모리 일정 수준 유지
     all_pairs = list(pdf_list)
 
+    # Circuit Breaker: DB read-only 상태가 지속되면 빠르게 중단
+    # engine.dispose()로 재연결해도 Fly.io 프록시가 replica로 라우팅하는 동안은 모든 파일 실패
+    # → N개 파일 연속 read-only 실패 시 프로세스 종료하여 빠른 재시작 유도
+    _consecutive_readonly_failures = 0
+    _MAX_CONSECUTIVE_READONLY = 3
+
     for idx, (pdf_path, _fmt) in enumerate(all_pairs, 1):
         if idx % 100 == 0 or idx == 1:
             logger.info("처리 중: %d / %d", idx, len(all_pairs))
@@ -1032,6 +1103,19 @@ async def main(argv: list[str] | None = None) -> None:
                 "file": str(pdf_path),
                 "error": result.get("error", "알 수 없는 오류"),
             })
+
+        # Circuit Breaker: read-only 실패 연속 감지
+        err_str = result.get("error") or ""
+        if status == "failed" and "read-only transaction" in err_str.lower():
+            _consecutive_readonly_failures += 1
+            if _consecutive_readonly_failures >= _MAX_CONSECUTIVE_READONLY:
+                logger.error(
+                    "DB read-only 상태 %d파일 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
+                    _consecutive_readonly_failures,
+                )
+                break
+        else:
+            _consecutive_readonly_failures = 0
 
         # 파일마다 GC 강제 실행 (pdfplumber/PDFMiner 캐시 해제)
         gc.collect()

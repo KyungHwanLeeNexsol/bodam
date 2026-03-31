@@ -74,7 +74,7 @@ class HyundaiMarineCrawler(BaseCrawler):
         rate_limit_seconds: float = 1.0,
         max_retries: int = 3,
         fail_threshold: float = 0.05,
-        fail_min_samples: int = 5,
+        fail_min_samples: int = 50,
         url_resolve_concurrency: int = 10,
         download_concurrency: int = 3,
     ) -> None:
@@ -105,9 +105,9 @@ class HyundaiMarineCrawler(BaseCrawler):
     # ──────────────────────────────────────────────────────────────────
 
     def _is_valid_pdf(self, data: bytes) -> bool:
-        # %PDF 시그니처가 첫 1KB 이내에 있으면 유효한 PDF로 간주
-        # (일부 PDF는 UTF-8 BOM \xef\xbb\xbf 또는 바이너리 헤더를 앞에 붙임)
-        return b"%PDF" in data[:1024] and len(data) > 1000
+        # %PDF 시그니처가 첫 4KB 이내에 있으면 유효한 PDF로 간주
+        # (일부 PDF는 UTF-8 BOM, 바이너리 래퍼, 또는 서버 헤더를 앞에 붙임)
+        return b"%PDF" in data[:4096] and len(data) > 1000
 
     def _get_storage_path(self, uuid: str, sale_status: str, filename: str) -> str:
         """UUID와 판매상태로 저장 경로 결정.
@@ -266,6 +266,7 @@ class HyundaiMarineCrawler(BaseCrawler):
         self,
         processed_urls: set[str] | None = None,
         on_download: Callable[[bytes, dict], Awaitable[None]] | None = None,
+        on_fail: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> CrawlRunResult:
         """현대해상 약관 크롤링 메인 진입점.
 
@@ -277,6 +278,8 @@ class HyundaiMarineCrawler(BaseCrawler):
 
         Args:
             processed_urls: 이미 처리된 source_url 집합 (DB에서 로드). 해당 URL 다운로드 스킵.
+            on_download: PDF 다운로드 성공 시 호출되는 콜백.
+            on_fail: PDF 다운로드/검증 실패 시 호출되는 콜백 (pdf_url, reason).
 
         Returns:
             크롤링 실행 결과 요약
@@ -463,10 +466,14 @@ class HyundaiMarineCrawler(BaseCrawler):
                             else:
                                 failed_count += 1
                                 logger.warning("[현대해상] PDF 무효: %s", pdf_url[-60:])
+                                if on_fail is not None:
+                                    await on_fail(pdf_url, "invalid_pdf")
 
                         except Exception as e:
                             failed_count += 1
                             logger.error("[현대해상] 다운로드 오류 [%s]: %s", filename[:40], e)
+                            if on_fail is not None:
+                                await on_fail(pdf_url, str(e))
 
                         products_attempted += 1
 

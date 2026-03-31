@@ -72,7 +72,8 @@ TARGET_GUN_GB: dict[str, set[str]] = {
 }
 
 MIN_SALE_END_DT = "19000101"
-RATE_LIMIT = 1.0
+RATE_LIMIT = 0.1  # pymupdf 전환 후 감소 (병렬 처리 대응)
+SEMAPHORE_CONCURRENCY = 5  # asyncio.gather 동시 처리 수 (3 shard × 5 = 최대 15 DB연결)
 DEFAULT_FAIL_THRESHOLD = 0.05
 FAIL_MIN_SAMPLES = 50
 
@@ -318,6 +319,7 @@ async def crawl_and_ingest(
     dry_run: bool = False,
     fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
     resume_from: int = 0,
+    count: int | None = None,
     resume_state_path: Path | None = None,
     state_output_path: Path = DEFAULT_STATE_PATH,
 ) -> dict:
@@ -327,7 +329,8 @@ async def crawl_and_ingest(
         gun_filter: 수집할 종류 필터 (예: '장기', '일반보험'). None이면 전체.
         dry_run: True이면 DB에 실제로 쓰지 않음
         fail_threshold: 실패율 임계값 (초과 시 중단)
-        resume_from: 이어서 시작할 인덱스
+        resume_from: 이어서 시작할 인덱스 (GitHub Actions matrix 분할 또는 재시작에 사용)
+        count: 처리할 최대 파일 수 (GitHub Actions matrix 분할에 사용). None이면 끝까지.
         resume_state_path: 이전 실패 상태 JSON 경로 (지정 시 해당 실패 건부터 재처리)
         state_output_path: 크롤링 상태 저장 경로
     """
@@ -345,6 +348,20 @@ async def crawl_and_ingest(
     if _db.session_factory is None:
         logger.error("DB 세션 팩토리 초기화 실패")
         return {"error": "session_factory is None"}
+
+    # DB write 사전 테스트 (크롤링 시작 전 → 다운로드/파싱 낭비 방지)
+    try:
+        from sqlalchemy import text
+        async with _db.session_factory() as _session:
+            await _session.execute(
+                text("UPDATE policy_chunks SET embedding = NULL WHERE id = '00000000-0000-0000-0000-000000000000'::uuid")
+            )
+            await _session.commit()
+    except Exception as _e:
+        if "read-only transaction" in str(_e).lower():
+            logger.error("DB read-only 상태 감지 → 크롤링 없이 즉시 종료 (Fly.io 프록시 replica 라우팅)")
+            return {"error": "db_readonly"}
+        # 다른 에러는 무시하고 진행 (테이블 없음 등)
 
     # 크롤러 재시작 시 이미 처리된 URL 스킵 (다운로드 전 체크)
     from scripts.ingest_local_pdfs import load_processed_urls
@@ -414,149 +431,179 @@ async def crawl_and_ingest(
             logger.info("인덱스 %d부터 이어서 시작", resume_from)
             pdf_tasks = pdf_tasks[resume_from:]
 
+        # matrix 분할: --count로 처리 범위 제한
+        if count is not None:
+            pdf_tasks = pdf_tasks[:count]
+            logger.info("분할 처리: 최대 %d개 (--count)", count)
+
         logger.info("총 처리 대상 파일: %d개", len(pdf_tasks))
 
-        # @MX:WARN: [AUTO] 순차 처리 필수 - asyncio.gather 사용 금지
-        # @MX:REASON: pdfplumber + PDFMiner 내부 캐시가 asyncio gather 환경에서 GC 타이밍이 지연됨
-        processed = 0
-        for idx, (item, fpath, ext) in enumerate(pdf_tasks, start=1 + (0 if retry_fpaths else resume_from)):
-            prd_name = item.get("prdName", "")
-            prd_gun = item.get("prdGun", "")
-            prd_gb = item.get("prdGb", "")
-            sale_status = item.get("_sale_status", "UNKNOWN")
-            url = f"{PDF_BASE}{fpath}"
+        # @MX:NOTE: [AUTO] asyncio.Semaphore(5) 병렬 처리 - pymupdf 전환으로 GC 문제 해결됨
+        sem = asyncio.Semaphore(SEMAPHORE_CONCURRENCY)
+        cancel_event = asyncio.Event()  # 다운로드 실패 시 나머지 작업 취소
 
-            if idx % 50 == 0 or idx == 1:
-                logger.info(
-                    "진행: %d / %d (성공=%d, 스킵=%d, 실패=%d)",
-                    idx, stats["total"] + (0 if retry_fpaths else resume_from),
-                    stats["success"], stats["skipped"], stats["failed"],
-                )
+        async def process_one(
+            local_idx: int,
+            item: dict,
+            fpath: str,
+            ext: str,
+        ) -> None:
+            """단일 PDF 다운로드 + 인제스트 처리 (Semaphore 제어)."""
+            if cancel_event.is_set():
+                return
 
-            # Rate limit
-            await asyncio.sleep(RATE_LIMIT)
+            async with sem:
+                if cancel_event.is_set():
+                    return
 
-            # 이미 DB에 저장된 URL이면 다운로드 없이 스킵
-            if url in processed_urls:
-                stats["skipped"] += 1
-                logger.debug("[%d] URL 스킵 (이미 처리됨): %s", idx, Path(fpath).name)
-                continue
+                await asyncio.sleep(RATE_LIMIT)
 
-            # 다운로드 (상세 오류 정보 포함)
-            pdf_bytes, http_status, content_type = await download_pdf(client, fpath)
-            processed += 1
-            current_state.last_processed_idx = idx
+                prd_name = item.get("prdName", "")
+                prd_gun = item.get("prdGun", "")
+                prd_gb = item.get("prdGb", "")
+                sale_status = item.get("_sale_status", "UNKNOWN")
+                url = f"{PDF_BASE}{fpath}"
 
-            if not pdf_bytes:
-                stats["failed"] += 1
-                failure = FailureRecord(
-                    idx=idx,
-                    fpath=fpath,
-                    url=url,
-                    prd_name=prd_name,
-                    prd_gun=prd_gun,
-                    prd_gb=prd_gb,
-                    error_type="download_failed",
-                    http_status=http_status,
-                    http_content_type=content_type,
-                    error_msg=f"HTTP {http_status}, Content-Type: {content_type}",
-                    file_size=0,
-                )
-                current_state.failures.append(failure)
-                logger.warning(
-                    "[%d] 다운로드 실패: %s | HTTP=%s | Content-Type=%s",
-                    idx, Path(fpath).name, http_status, content_type,
-                )
+                if local_idx % 50 == 0 or local_idx == 1:
+                    logger.info(
+                        "진행: %d / %d (성공=%d, 스킵=%d, 실패=%d)",
+                        local_idx, stats["total"] + (0 if retry_fpaths else resume_from),
+                        stats["success"], stats["skipped"], stats["failed"],
+                    )
 
-                # fail-stop 로직: 재시도 후에도 실패 → 즉시 중단
-                current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
-                current_state.stop_reason = "fail_immediate"
-                save_state(current_state, state_output_path)
-                logger.error(
-                    "다운로드 실패 → 즉시 중단 (인덱스: %d)\n재시작: --resume-state %s",
-                    idx, state_output_path,
-                )
-                break
-            elif pdf_bytes[:2] == b"PK" and Path(fpath).suffix.lower() not in {".docx", ".hwp"}:
-                # ZIP 파일 (DOCX는 이미 정상 처리됨): 임베딩 보류, 실패 아님
-                logger.info(
-                    "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
-                    idx, Path(fpath).name, len(pdf_bytes),
-                )
-                continue
+                # 이미 DB에 저장된 URL이면 다운로드 없이 스킵
+                if url in processed_urls:
+                    stats["skipped"] += 1
+                    logger.debug("[%d] URL 스킵 (이미 처리됨): %s", local_idx, Path(fpath).name)
+                    return
 
-            # 메타데이터 구성
-            fname_stem = Path(fpath).stem
-            metadata = {
-                "format_type": "B",
-                "company_code": "samsung-fire",
-                "company_name": "삼성화재",
-                "product_code": fname_stem,
-                "product_name": prd_name,
-                "category": "NON_LIFE",
-                "source_url": url,
-                "sale_status": sale_status,
-            }
+                # 다운로드
+                pdf_bytes, http_status, content_type = await download_pdf(client, fpath)
+                current_state.last_processed_idx = local_idx
 
-            # 인제스트 (임시 파일 → 처리 → 삭제)
-            try:
-                result = await ingest_pdf_bytes(
-                    _db.session_factory,
-                    pdf_bytes,
-                    metadata,
-                    ext=ext,
-                    dry_run=dry_run,
-                )
-            except Exception as e:
-                error_msg = f"{type(e).__name__}: {e}"
-                logger.error("[%d] 인제스트 예외 %s: %s", idx, fname_stem, error_msg)
-                result = {"status": "failed", "error": error_msg}
+                if not pdf_bytes:
+                    stats["failed"] += 1
+                    failure = FailureRecord(
+                        idx=local_idx,
+                        fpath=fpath,
+                        url=url,
+                        prd_name=prd_name,
+                        prd_gun=prd_gun,
+                        prd_gb=prd_gb,
+                        error_type="download_failed",
+                        http_status=http_status,
+                        http_content_type=content_type,
+                        error_msg=f"HTTP {http_status}, Content-Type: {content_type}",
+                        file_size=0,
+                    )
+                    current_state.failures.append(failure)
+                    logger.warning(
+                        "[%d] 다운로드 실패: %s | HTTP=%s | Content-Type=%s",
+                        local_idx, Path(fpath).name, http_status, content_type,
+                    )
+                    # fail-stop: 다운로드 실패 시 cancel_event 설정 → 나머지 취소
+                    cancel_event.set()
+                    current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                    current_state.stop_reason = "fail_immediate"
+                    save_state(current_state, state_output_path)
+                    logger.error(
+                        "다운로드 실패 → 중단 신호 (인덱스: %d)\n재시작: --resume-state %s",
+                        local_idx, state_output_path,
+                    )
+                    return
+                elif pdf_bytes[:2] == b"PK" and Path(fpath).suffix.lower() not in {".docx", ".hwp"}:
+                    logger.info(
+                        "[%d] ZIP 파일 인제스트 보류 (임베딩 미지원): %s (%d bytes)",
+                        local_idx, Path(fpath).name, len(pdf_bytes),
+                    )
+                    return
 
-            status = result.get("status", "failed")
-            if status == "success":
-                stats["success"] += 1
-                processed_urls.add(url)  # 런 중 중복 다운로드 방지
-                ss = result.get("sale_status", sale_status)
-                if ss == "ON_SALE":
-                    stats["on_sale"] += 1
-                elif ss == "DISCONTINUED":
-                    stats["discontinued"] += 1
+                fname_stem = Path(fpath).stem
+                metadata = {
+                    "format_type": "B",
+                    "company_code": "samsung-fire",
+                    "company_name": "삼성화재",
+                    "product_code": fname_stem,
+                    "product_name": prd_name,
+                    "category": "NON_LIFE",
+                    "source_url": url,
+                    "sale_status": sale_status,
+                }
+
+                try:
+                    result = await ingest_pdf_bytes(
+                        _db.session_factory,
+                        pdf_bytes,
+                        metadata,
+                        ext=ext,
+                        dry_run=dry_run,
+                    )
+                except Exception as e:
+                    error_msg = f"{type(e).__name__}: {e}"
+                    logger.error("[%d] 인제스트 예외 %s: %s", local_idx, fname_stem, error_msg)
+                    result = {"status": "failed", "error": error_msg}
+
+                status = result.get("status", "failed")
+                if status == "success":
+                    stats["success"] += 1
+                    processed_urls.add(url)
+                    ss = result.get("sale_status", sale_status)
+                    if ss == "ON_SALE":
+                        stats["on_sale"] += 1
+                    elif ss == "DISCONTINUED":
+                        stats["discontinued"] += 1
+                    else:
+                        stats["unknown"] += 1
+                    logger.info("[%d] 완료: %s (%s/%s)", local_idx, Path(fpath).name, prd_gun, prd_gb)
+                elif status == "skipped":
+                    stats["skipped"] += 1
+                    logger.debug("[%d] 스킵(중복): %s", local_idx, Path(fpath).name)
+                elif status == "dry_run":
+                    stats["dry_run"] += 1
                 else:
-                    stats["unknown"] += 1
-                logger.info("[%d] 완료: %s (%s/%s)", idx, Path(fpath).name, prd_gun, prd_gb)
+                    stats["failed"] += 1
+                    error_msg = result.get("error", "") or ""
+                    failure = FailureRecord(
+                        idx=local_idx,
+                        fpath=fpath,
+                        url=url,
+                        prd_name=prd_name,
+                        prd_gun=prd_gun,
+                        prd_gb=prd_gb,
+                        error_type="ingest_failed",
+                        http_status=http_status,
+                        http_content_type=content_type,
+                        error_msg=error_msg,
+                        file_size=len(pdf_bytes),
+                    )
+                    current_state.failures.append(failure)
+                    logger.warning(
+                        "[%d] 인제스트 실패: %s | 오류: %s",
+                        local_idx, Path(fpath).name, error_msg[:200],
+                    )
+                    # Circuit Breaker: DB read-only 감지 → 병렬 워커 전체 즉시 취소
+                    # process_single_file이 즉시 실패 반환하므로 여기서 cancel_event로 전파
+                    if "read-only transaction" in error_msg.lower():
+                        if not cancel_event.is_set():
+                            cancel_event.set()
+                            current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                            current_state.stop_reason = "db_readonly"
+                            save_state(current_state, state_output_path)
+                            logger.error(
+                                "[%d] DB read-only → 병렬 워커 전체 중단 신호",
+                                local_idx,
+                            )
 
-            elif status == "skipped":
-                stats["skipped"] += 1
-                logger.debug("[%d] 스킵(중복): %s", idx, Path(fpath).name)
+                del pdf_bytes
+                gc.collect()
 
-            elif status == "dry_run":
-                stats["dry_run"] += 1
-
-            else:
-                stats["failed"] += 1
-                error_msg = result.get("error", "")
-                failure = FailureRecord(
-                    idx=idx,
-                    fpath=fpath,
-                    url=url,
-                    prd_name=prd_name,
-                    prd_gun=prd_gun,
-                    prd_gb=prd_gb,
-                    error_type="ingest_failed",
-                    http_status=http_status,
-                    http_content_type=content_type,
-                    error_msg=error_msg,
-                    file_size=len(pdf_bytes),
-                )
-                current_state.failures.append(failure)
-                logger.warning(
-                    "[%d] 인제스트 실패: %s | 오류: %s",
-                    idx, Path(fpath).name, error_msg[:200],
-                )
-
-            # 파일마다 GC 강제 실행
-            del pdf_bytes
-            gc.collect()
+        # 전체 태스크를 asyncio.gather로 병렬 실행
+        start_offset = 1 + (0 if retry_fpaths else resume_from)
+        tasks = [
+            process_one(idx, item, fpath, ext)
+            for idx, (item, fpath, ext) in enumerate(pdf_tasks, start=start_offset)
+        ]
+        await asyncio.gather(*tasks)
 
     # 완료 상태 저장
     current_state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
@@ -617,7 +664,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=0,
         dest="resume_from",
-        help="이어서 시작할 파일 인덱스 (이전 실행 중단 시 사용)",
+        help="이어서 시작할 파일 인덱스 (이전 실행 중단 또는 matrix 분할에 사용)",
+    )
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        dest="count",
+        help="처리할 최대 파일 수 (GitHub Actions matrix 분할에 사용, 미지정 시 끝까지)",
     )
     parser.add_argument(
         "--resume-state",
@@ -643,10 +697,15 @@ if __name__ == "__main__":
         dry_run=args.dry_run,
         fail_threshold=args.fail_threshold,
         resume_from=args.resume_from,
+        count=args.count,
         resume_state_path=args.resume_state,
         state_output_path=args.state_output,
     ))
-    # DB 초기화 실패 등 오류 시 exit code 1 (GitHub Actions false positive 방지)
+    # DB 초기화 실패 등 오류 시 exit code 처리
     if isinstance(result, dict) and "error" in result:
+        if result["error"] == "db_readonly":
+            # exit 75 (EX_TEMPFAIL): DB read-only — GitHub Actions에서 재시도 없이 종료 가능
+            logger.error("DB read-only → exit 75 (EX_TEMPFAIL)")
+            sys.exit(75)
         logger.error("종료 오류: %s", result["error"])
         sys.exit(1)

@@ -25,6 +25,8 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.FLY_DB_PASSWORD }}@localhost:5432/bodam
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"

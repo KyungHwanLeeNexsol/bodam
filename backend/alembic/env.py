@@ -72,6 +72,12 @@ async def run_async_migrations() -> None:
     connectable = create_async_engine(
         url,
         poolclass=pool.NullPool,
+        connect_args={
+            # 마이그레이션 DDL은 일반 쿼리보다 오래 걸릴 수 있음 (기본 60초 → 600초)
+            "command_timeout": 600,
+            # PostgreSQL 세션 레벨 statement_timeout 해제 (DDL 타임아웃 방지)
+            "server_settings": {"statement_timeout": "0"},
+        },
     )
 
     async with connectable.connect() as connection:
