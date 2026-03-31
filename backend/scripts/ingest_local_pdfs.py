@@ -1062,6 +1062,12 @@ async def main(argv: list[str] | None = None) -> None:
     # 순차 처리: 파일 1개씩 처리 후 즉시 GC → 메모리 일정 수준 유지
     all_pairs = list(pdf_list)
 
+    # Circuit Breaker: DB read-only 상태가 지속되면 빠르게 중단
+    # engine.dispose()로 재연결해도 Fly.io 프록시가 replica로 라우팅하는 동안은 모든 파일 실패
+    # → N개 파일 연속 read-only 실패 시 프로세스 종료하여 빠른 재시작 유도
+    _consecutive_readonly_failures = 0
+    _MAX_CONSECUTIVE_READONLY = 3
+
     for idx, (pdf_path, _fmt) in enumerate(all_pairs, 1):
         if idx % 100 == 0 or idx == 1:
             logger.info("처리 중: %d / %d", idx, len(all_pairs))
@@ -1099,6 +1105,19 @@ async def main(argv: list[str] | None = None) -> None:
                 "file": str(pdf_path),
                 "error": result.get("error", "알 수 없는 오류"),
             })
+
+        # Circuit Breaker: read-only 실패 연속 감지
+        err_str = result.get("error") or ""
+        if status == "failed" and "read-only transaction" in err_str.lower():
+            _consecutive_readonly_failures += 1
+            if _consecutive_readonly_failures >= _MAX_CONSECUTIVE_READONLY:
+                logger.error(
+                    "DB read-only 상태 %d파일 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
+                    _consecutive_readonly_failures,
+                )
+                break
+        else:
+            _consecutive_readonly_failures = 0
 
         # 파일마다 GC 강제 실행 (pdfplumber/PDFMiner 캐시 해제)
         gc.collect()
