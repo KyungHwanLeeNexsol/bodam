@@ -156,7 +156,7 @@ async def crawl_category_and_ingest(
     processed_urls: set[str] | None = None,
 ) -> dict[str, int]:
     """특정 카테고리 크롤링 + 즉시 인제스트."""
-    stats = {"products": 0, "success": 0, "skipped": 0, "failed": 0, "dry_run": 0}
+    stats = {"products": 0, "success": 0, "skipped": 0, "failed": 0, "dry_run": 0, "db_readonly_circuit_breaker": False}
     _consecutive_readonly_failures = 0
     _MAX_CONSECUTIVE_READONLY = 3
     label = cat["label"]
@@ -435,6 +435,7 @@ async def crawl_category_and_ingest(
                         "DB read-only 상태 %d건 연속 실패 (Fly.io 프록시가 replica 라우팅 지속) → 전체 중단",
                         _consecutive_readonly_failures,
                     )
+                    stats["db_readonly_circuit_breaker"] = True
                     break
             else:
                 _consecutive_readonly_failures = 0
@@ -526,6 +527,13 @@ async def crawl_and_ingest(
                 "[DB손해보험] %s: %d상품, 성공=%d, 스킵=%d, 실패=%d",
                 label, cat_stats["products"], cat_stats["success"], cat_stats["skipped"], cat_stats["failed"],
             )
+
+            # Circuit Breaker: DB read-only 연속 실패 → 모든 카테고리 중단
+            if cat_stats.get("db_readonly_circuit_breaker"):
+                state.stopped_at = datetime.now(tz=timezone.utc).isoformat()
+                state.stop_reason = "db_readonly"
+                save_state(state, state_output_path)
+                break
 
             # fail-stop
             if not dry_run and total_attempted >= FAIL_MIN_SAMPLES:
