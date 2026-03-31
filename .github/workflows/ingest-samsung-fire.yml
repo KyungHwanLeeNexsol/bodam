@@ -39,7 +39,7 @@ jobs:
       matrix:
         include:
           # 전체 ~8,147개 PDF를 4개 shard로 분할
-          # shard 0 완료 — 나머지 3개만 실행 (완료 후 원복 필요)
+          # shard 0 완료 — 비활성화
           # - shard: 0
           #   start_index: 0
           #   count: 2050
@@ -49,9 +49,10 @@ jobs:
           - shard: 2
             start_index: 4100
             count: 2050
-          - shard: 3
-            start_index: 6150
-            count: ""  # 끝까지 처리
+          # shard 3 완료 — 비활성화
+          # - shard: 3
+          #   start_index: 6150
+          #   count: ""  # 끝까지 처리
 
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.FLY_DB_PASSWORD }}@localhost:5432/bodam
