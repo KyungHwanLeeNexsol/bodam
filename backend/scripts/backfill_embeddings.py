@@ -355,7 +355,7 @@ async def backfill(
     # Circuit Breaker: DB 쓰기가 연속으로 실패하면 read-only 상태 지속으로 판단하고 중단
     # (재시도해도 OpenAI API 비용만 낭비되고 저장 불가)
     _consecutive_write_failures = 0
-    _MAX_CONSECUTIVE_WRITE_FAILURES = 3
+    _MAX_CONSECUTIVE_WRITE_FAILURES = 1  # read-only는 즉시 복구 불가 → 1번 실패로 즉시 종료
 
     async def _embed_sub_batch(texts: list[str]) -> list[list[float]]:
         """세마포어로 동시성 제어하면서 임베딩 API 호출."""
