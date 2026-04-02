@@ -18,11 +18,20 @@ on:
         description: '배치 크기 (기본: 2048, OpenAI API 최대: 2048)'
         required: false
         default: '2048'
+      concurrency:
+        description: 'API 동시 호출 수 (기본: 16, 높을수록 빠름)'
+        required: false
+        default: '16'
       dry_run:
         description: 'Dry-run (실제 DB 업데이트 없이 대상 건수만 확인)'
         required: false
         default: false
         type: boolean
+  repository_dispatch:
+    types: [embedding-backfill-continue]
+
+permissions:
+  contents: write
 
 jobs:
   embedding:
@@ -78,53 +87,65 @@ jobs:
       # ── 현대해상 ──
 
       - name: 현대해상 임베딩
-        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '현대해상만' }}
+        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '현대해상만' || github.event.client_payload.target == '현대해상만' }}
         run: |
           cd backend
           DRY=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
-          echo "=== 현대해상 임베딩 시작 ==="
+          CONCURRENCY="${{ inputs.concurrency || github.event.client_payload.concurrency || '16' }}"
+          BATCH_SIZE="${{ inputs.batch_size || github.event.client_payload.batch_size || '2048' }}"
+          echo "=== 현대해상 임베딩 시작 (동시 호출: $CONCURRENCY) ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
             --company hyundai-marine \
-            --batch-size ${{ inputs.batch_size || '500' }} $DRY
+            --batch-size $BATCH_SIZE \
+            --concurrency $CONCURRENCY $DRY
           echo "=== 현대해상 임베딩 완료 ==="
 
       # ── DB손보 ──
       - name: DB손보 임베딩
-        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == 'DB손보만' }}
+        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == 'DB손보만' || github.event.client_payload.target == 'DB손보만' }}
         run: |
           cd backend
           DRY=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
-          echo "=== DB손보 임베딩 시작 ==="
+          CONCURRENCY="${{ inputs.concurrency || github.event.client_payload.concurrency || '16' }}"
+          BATCH_SIZE="${{ inputs.batch_size || github.event.client_payload.batch_size || '2048' }}"
+          echo "=== DB손보 임베딩 시작 (동시 호출: $CONCURRENCY) ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
             --company db-insurance \
-            --batch-size ${{ inputs.batch_size || '500' }} $DRY
+            --batch-size $BATCH_SIZE \
+            --concurrency $CONCURRENCY $DRY
           echo "=== DB손보 임베딩 완료 ==="
 
       # ── 삼성화재 ──
       - name: 삼성화재 임베딩
-        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '삼성화재만' }}
+        if: ${{ inputs.target == '3개사 (현대해상, DB손보, 삼성화재)' || inputs.target == '삼성화재만' || github.event.client_payload.target == '삼성화재만' }}
         run: |
           cd backend
           DRY=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
-          echo "=== 삼성화재 임베딩 시작 ==="
+          CONCURRENCY="${{ inputs.concurrency || github.event.client_payload.concurrency || '16' }}"
+          BATCH_SIZE="${{ inputs.batch_size || github.event.client_payload.batch_size || '2048' }}"
+          echo "=== 삼성화재 임베딩 시작 (동시 호출: $CONCURRENCY) ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
             --company samsung-fire \
-            --batch-size ${{ inputs.batch_size || '500' }} $DRY
+            --batch-size $BATCH_SIZE \
+            --concurrency $CONCURRENCY $DRY
           echo "=== 삼성화재 임베딩 완료 ==="
 
       # ── 전체 ──
       - name: 전체 임베딩 (모든 보험사)
-        if: ${{ inputs.target == '전체 (embedding=NULL인 모든 보험사)' }}
+        if: ${{ inputs.target == '전체 (embedding=NULL인 모든 보험사)' || github.event.client_payload.target == '전체' }}
         run: |
           cd backend
           DRY=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="--dry-run"; fi
-          echo "=== 전체 임베딩 시작 ==="
+          CONCURRENCY="${{ inputs.concurrency || github.event.client_payload.concurrency || '16' }}"
+          BATCH_SIZE="${{ inputs.batch_size || github.event.client_payload.batch_size || '2048' }}"
+          echo "=== 전체 임베딩 시작 (동시 호출: $CONCURRENCY) ==="
           PYTHONPATH=. uv run python -m scripts.backfill_embeddings \
-            --batch-size ${{ inputs.batch_size || '500' }} $DRY
+            --batch-size $BATCH_SIZE \
+            --concurrency $CONCURRENCY $DRY
           echo "=== 전체 임베딩 완료 ==="
 
       # ── 결과 검증 ──
@@ -162,11 +183,59 @@ jobs:
           asyncio.run(verify())
           "
 
+      # ── 잔여 있으면 자동 재실행 ──
+      - name: 잔여 있으면 자동 재실행
+        if: ${{ inputs.dry_run != 'true' && github.event.inputs.dry_run != 'true' }}
+        run: |
+          TARGET="${{ inputs.target || github.event.client_payload.target }}"
+          BATCH_SIZE="${{ inputs.batch_size || github.event.client_payload.batch_size || '2048' }}"
+          CONCURRENCY="${{ inputs.concurrency || github.event.client_payload.concurrency || '16' }}"
+
+          # 잔여 NULL 임베딩 수 확인
+          REMAINING=$(cd backend && PYTHONPATH=. uv run python -c "
+          import asyncio, os, sys
+          sys.path.insert(0, '.')
+          from app.core.config import Settings
+          import app.core.database as db_module
+          from scripts.backfill_embeddings import count_null_embeddings
+
+          async def check():
+              settings = Settings()
+              await db_module.init_database(settings)
+              company = None
+              if 'hyundai-marine' in '$TARGET' or '$TARGET' == '현대해상만':
+                  company = 'hyundai-marine'
+              elif 'db-insurance' in '$TARGET' or '$TARGET' == 'DB손보만':
+                  company = 'db-insurance'
+              elif 'samsung-fire' in '$TARGET' or '$TARGET' == '삼성화재만':
+                  company = 'samsung-fire'
+              count = await count_null_embeddings(db_module.session_factory, company)
+              print(count)
+
+          asyncio.run(check())
+          " 2>/dev/null || echo "0")
+
+          echo "잔여 임베딩: $REMAINING개"
+
+          if [ "$REMAINING" -gt "0" ]; then
+            echo "잔여 $REMAINING개 감지 → 자동 재실행 트리거"
+            curl -s -X POST \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+              -d "{\"event_type\":\"embedding-backfill-continue\",\"client_payload\":{\"target\":\"$TARGET\",\"batch_size\":\"$BATCH_SIZE\",\"concurrency\":\"$CONCURRENCY\"}}"
+            echo "재실행 트리거 완료"
+          else
+            echo "임베딩 완료! 더 이상 잔여 없음."
+          fi
+
       - name: 결과 요약
         if: always()
         run: |
           echo "## 임베딩 백필 결과" >> $GITHUB_STEP_SUMMARY
           echo "- 실행 시각: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "- 대상: ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
-          echo "- 배치 크기: ${{ inputs.batch_size || '500' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 대상: ${{ inputs.target || github.event.client_payload.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 배치 크기: ${{ inputs.batch_size || github.event.client_payload.batch_size || '2048' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 동시 호출: ${{ inputs.concurrency || github.event.client_payload.concurrency || '16' }}" >> $GITHUB_STEP_SUMMARY
           echo "- Dry-run: ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
