@@ -4,8 +4,10 @@
 // @MX:REASON: M3 핵심 컴포넌트. ChatApiClient, ChatLayout, SessionList, MessageBubble 등 모든 채팅 컴포넌트를 통합
 
 import { useReducer, useEffect, useRef, useMemo, useCallback, useState } from "react"
+import { useRouter } from "next/navigation"
 import { X, BookOpen } from "lucide-react"
 import { ChatApiClient } from "@/lib/api/chat-client"
+import { useAuth } from "@/contexts/AuthContext"
 import { JITApiClient } from "@/lib/api/jit-client"
 import ChatLayout from "@/components/chat/ChatLayout"
 import SessionList from "@/components/chat/SessionList"
@@ -182,6 +184,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 // @MX:ANCHOR: ChatPage - /chat 라우트의 메인 페이지
 // @MX:REASON: 모든 채팅 기능의 진입점. M3 통합 테스트의 렌더링 대상
 export default function ChatPage() {
+  const router = useRouter()
+  const { isAuthenticated, token } = useAuth()
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const chatClient = useMemo(() => new ChatApiClient(), [])
   const jitClient = useRef(new JITApiClient())
@@ -195,6 +199,13 @@ export default function ChatPage() {
     (sessionId: string) => `bodam_jit_doc_${sessionId}`,
     []
   )
+
+  // 인증 확인 - 토큰 없으면 로그인 페이지로 이동
+  useEffect(() => {
+    if (!isAuthenticated && token === null) {
+      void router.push("/login")
+    }
+  }, [isAuthenticated, token, router])
 
   // 세션 목록 로딩 완료 여부 (스켈레톤 표시 제어)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
@@ -250,7 +261,9 @@ export default function ChatPage() {
   }, [state.currentSessionId, getDocStorageKey])
 
   // 마운트 시 세션 목록 로드 (SPEC-CHAT-PERF-001: 페이지네이션 적용)
+  // 인증 완료 후에만 세션 목록을 요청
   useEffect(() => {
+    if (!isAuthenticated) return
     const load = async () => {
       dispatch({ type: "SET_LOADING", isLoading: true })
       try {
@@ -267,7 +280,7 @@ export default function ChatPage() {
       }
     }
     void load()
-  }, [chatClient])
+  }, [chatClient, isAuthenticated])
 
   // @MX:ANCHOR: 세션 목록 더 보기 로드 함수 (페이지네이션)
   // @MX:REASON: SPEC-CHAT-PERF-001 - 다음 페이지 세션을 기존 목록에 append
