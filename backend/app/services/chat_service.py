@@ -23,7 +23,7 @@ from app.services.jit_rag.section_finder import SectionFinder
 from app.services.jit_rag.session_store import JITSessionStore
 from app.services.llm.models import QueryIntent
 from app.services.llm.router import FallbackChain
-from app.services.rag.embeddings import get_embedding_service
+from app.services.rag.embeddings import EmbeddingService, get_embedding_service
 from app.services.rag.vector_store import VectorSearchService
 
 if TYPE_CHECKING:

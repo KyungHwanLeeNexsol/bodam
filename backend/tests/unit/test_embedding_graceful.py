@@ -16,7 +16,7 @@ def _make_service(mock_embed_fn):
     """mock embed_fn을 주입한 EmbeddingService 생성 헬퍼"""
     from app.services.rag.embeddings import EmbeddingService
 
-    return EmbeddingService(api_key="test-google-key", _embed_fn=mock_embed_fn)
+    return EmbeddingService(api_keys=["test-google-key"], _embed_fn=mock_embed_fn)
 
 
 def _make_single_response(vector: list[float]) -> dict:

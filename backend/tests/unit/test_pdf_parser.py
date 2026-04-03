@@ -2,12 +2,27 @@
 
 PDFParser의 텍스트 추출, 페이지별 추출,
 한국어 텍스트 보존을 테스트.
-pdfplumber를 mock으로 사용.
+fitz(pymupdf)를 mock으로 사용.
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
+
+def _make_mock_pdf(page_texts: list[str | None]) -> MagicMock:
+    """fitz PDF mock 객체 생성 헬퍼"""
+    mock_pages = []
+    for text in page_texts:
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = text if text is not None else ""
+        mock_pages.append(mock_page)
+
+    mock_pdf = MagicMock()
+    mock_pdf.__iter__ = MagicMock(return_value=iter(mock_pages))
+    mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
+    mock_pdf.__exit__ = MagicMock(return_value=False)
+    return mock_pdf
 
 
 class TestPDFParserExtractText:
@@ -17,17 +32,9 @@ class TestPDFParserExtractText:
         """PDF에서 텍스트 추출 결과가 문자열이어야 한다"""
         from app.services.parser.pdf_parser import PDFParser
 
-        mock_page1 = MagicMock()
-        mock_page1.extract_text.return_value = "첫 번째 페이지 내용입니다."
-        mock_page2 = MagicMock()
-        mock_page2.extract_text.return_value = "두 번째 페이지 내용입니다."
+        mock_pdf = _make_mock_pdf(["첫 번째 페이지 내용입니다.", "두 번째 페이지 내용입니다."])
 
-        mock_pdf = MagicMock()
-        mock_pdf.pages = [mock_page1, mock_page2]
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_text("test.pdf")
 
@@ -39,18 +46,9 @@ class TestPDFParserExtractText:
         from app.services.parser.pdf_parser import PDFParser
 
         page_texts = ["첫 번째 페이지.", "두 번째 페이지.", "세 번째 페이지."]
-        mock_pages = []
-        for text in page_texts:
-            mock_page = MagicMock()
-            mock_page.extract_text.return_value = text
-            mock_pages.append(mock_page)
+        mock_pdf = _make_mock_pdf(page_texts)
 
-        mock_pdf = MagicMock()
-        mock_pdf.pages = mock_pages
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_text("test.pdf")
 
@@ -62,16 +60,9 @@ class TestPDFParserExtractText:
         from app.services.parser.pdf_parser import PDFParser
 
         korean_content = "보험 약관 제1조 (목적) 이 약관은 피보험자의 상해를 보장합니다."
+        mock_pdf = _make_mock_pdf([korean_content])
 
-        mock_page = MagicMock()
-        mock_page.extract_text.return_value = korean_content
-
-        mock_pdf = MagicMock()
-        mock_pdf.pages = [mock_page]
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_text("test.pdf")
 
@@ -80,25 +71,17 @@ class TestPDFParserExtractText:
         assert "약관" in result
         assert "피보험자" in result
 
-    def test_extract_text_handles_none_page_text(self):
-        """페이지 텍스트가 None인 경우를 처리해야 한다"""
+    def test_extract_text_handles_empty_page_text(self):
+        """페이지 텍스트가 빈 문자열인 경우를 처리해야 한다"""
         from app.services.parser.pdf_parser import PDFParser
 
-        mock_page1 = MagicMock()
-        mock_page1.extract_text.return_value = "정상 페이지 내용."
-        mock_page2 = MagicMock()
-        mock_page2.extract_text.return_value = None  # 빈 페이지
+        mock_pdf = _make_mock_pdf(["정상 페이지 내용.", ""])
 
-        mock_pdf = MagicMock()
-        mock_pdf.pages = [mock_page1, mock_page2]
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_text("test.pdf")
 
-        # None 페이지가 있어도 정상 처리해야 함
+        # 빈 페이지가 있어도 정상 처리해야 함
         assert isinstance(result, str)
         assert "정상 페이지 내용." in result
 
@@ -110,15 +93,9 @@ class TestPDFParserExtractPages:
         """페이지별 추출 결과가 리스트여야 한다"""
         from app.services.parser.pdf_parser import PDFParser
 
-        mock_page = MagicMock()
-        mock_page.extract_text.return_value = "페이지 내용"
+        mock_pdf = _make_mock_pdf(["페이지 내용"])
 
-        mock_pdf = MagicMock()
-        mock_pdf.pages = [mock_page]
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_pages("test.pdf")
 
@@ -129,18 +106,9 @@ class TestPDFParserExtractPages:
         from app.services.parser.pdf_parser import PDFParser
 
         page_count = 5
-        mock_pages = []
-        for i in range(page_count):
-            mock_page = MagicMock()
-            mock_page.extract_text.return_value = f"페이지 {i + 1} 내용"
-            mock_pages.append(mock_page)
+        mock_pdf = _make_mock_pdf([f"페이지 {i + 1} 내용" for i in range(page_count)])
 
-        mock_pdf = MagicMock()
-        mock_pdf.pages = mock_pages
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_pages("test.pdf")
 
@@ -150,18 +118,9 @@ class TestPDFParserExtractPages:
         """각 페이지 텍스트가 문자열이어야 한다"""
         from app.services.parser.pdf_parser import PDFParser
 
-        mock_pages = []
-        for i in range(3):
-            mock_page = MagicMock()
-            mock_page.extract_text.return_value = f"페이지 {i + 1}"
-            mock_pages.append(mock_page)
+        mock_pdf = _make_mock_pdf([f"페이지 {i + 1}" for i in range(3)])
 
-        mock_pdf = MagicMock()
-        mock_pdf.pages = mock_pages
-        mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
-        mock_pdf.__exit__ = MagicMock(return_value=False)
-
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        with patch("fitz.open", return_value=mock_pdf):
             parser = PDFParser()
             result = parser.extract_pages("test.pdf")
 

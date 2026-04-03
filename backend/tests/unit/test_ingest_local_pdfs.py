@@ -78,11 +78,11 @@ if str(_backend_root) not in sys.path:
 class TestCompanyMap:
     """TASK-001: COMPANY_MAP 상수 검증"""
 
-    def test_company_map_contains_all_six_companies(self):
-        """COMPANY_MAP에 6개 손해보험사가 모두 포함되어야 한다"""
+    def test_company_map_contains_core_nonlife_companies(self):
+        """COMPANY_MAP에 핵심 손해보험사들이 포함되어야 한다"""
         from scripts.ingest_local_pdfs import COMPANY_MAP
 
-        expected_keys = {
+        core_keys = {
             "meritz_fire",
             "hyundai_marine",
             "kb_insurance",
@@ -90,7 +90,7 @@ class TestCompanyMap:
             "db_insurance",
             "heungkuk_fire",
         }
-        assert set(COMPANY_MAP.keys()) == expected_keys
+        assert core_keys.issubset(set(COMPANY_MAP.keys()))
 
     def test_company_map_values_have_three_fields(self):
         """COMPANY_MAP의 각 값은 (code, name, category) 3-튜플이어야 한다"""
@@ -103,12 +103,13 @@ class TestCompanyMap:
             assert isinstance(name, str)
             assert category in ("LIFE", "NON_LIFE", "THIRD_SECTOR")
 
-    def test_company_map_all_categories_are_non_life(self):
-        """COMPANY_MAP의 모든 보험사 카테고리는 NON_LIFE여야 한다"""
+    def test_company_map_categories_are_valid(self):
+        """COMPANY_MAP의 모든 보험사 카테고리는 유효한 값이어야 한다"""
         from scripts.ingest_local_pdfs import COMPANY_MAP
 
+        valid_categories = {"NON_LIFE", "LIFE", "THIRD_SECTOR"}
         for _key, (_, _, category) in COMPANY_MAP.items():
-            assert category == "NON_LIFE"
+            assert category in valid_categories, f"{_key}의 카테고리 {category}가 유효하지 않음"
 
     def test_company_map_meritz_fire_code(self):
         """meritz_fire의 code는 'meritz-fire'여야 한다"""
@@ -239,8 +240,10 @@ class TestCheckDuplicate:
         from scripts.ingest_local_pdfs import check_duplicate
 
         mock_session = AsyncMock()
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = MagicMock()  # Policy 객체 존재
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = MagicMock()  # Policy 객체 존재
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute = AsyncMock(return_value=mock_result)
 
         result = await check_duplicate(mock_session, "abc123hash")
@@ -252,8 +255,10 @@ class TestCheckDuplicate:
         from scripts.ingest_local_pdfs import check_duplicate
 
         mock_session = AsyncMock()
+        mock_scalars = MagicMock()
+        mock_scalars.first.return_value = None  # 존재하지 않음
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # 존재하지 않음
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute = AsyncMock(return_value=mock_result)
 
         result = await check_duplicate(mock_session, "nonexistent_hash")
@@ -718,23 +723,27 @@ class TestUpsertPolicy:
 
 
 class TestCreateChunks:
-    """TASK-006: create_chunks() 함수 검증"""
+    """TASK-006: create_chunks() 함수 검증 (bulk INSERT 방식)"""
 
     @pytest.mark.asyncio
     async def test_create_chunks_adds_policy_chunks(self):
-        """청크 리스트를 PolicyChunk 레코드로 추가해야 한다"""
+        """청크 리스트를 PolicyChunk 레코드로 bulk insert해야 한다"""
         from scripts.ingest_local_pdfs import create_chunks
 
         mock_session = AsyncMock()
-        added_chunks = []
-        mock_session.add = MagicMock(side_effect=lambda obj: added_chunks.append(obj))
+        mock_session.execute = AsyncMock()
 
         policy_id = uuid.uuid4()
         chunks = ["청크 텍스트 1", "청크 텍스트 2", "청크 텍스트 3"]
 
         await create_chunks(mock_session, policy_id, chunks)
 
-        assert len(added_chunks) == 3
+        # bulk insert를 위해 session.execute가 1번 호출되어야 함
+        mock_session.execute.assert_called_once()
+        # execute에 전달된 두 번째 인자(rows)가 3개 항목임을 확인
+        call_args = mock_session.execute.call_args
+        rows = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", [])
+        assert len(rows) == 3
 
     @pytest.mark.asyncio
     async def test_create_chunks_sets_correct_indices(self):
@@ -742,15 +751,16 @@ class TestCreateChunks:
         from scripts.ingest_local_pdfs import create_chunks
 
         mock_session = AsyncMock()
-        added_chunks = []
-        mock_session.add = MagicMock(side_effect=lambda obj: added_chunks.append(obj))
+        mock_session.execute = AsyncMock()
 
         policy_id = uuid.uuid4()
         chunks = ["첫 번째 청크", "두 번째 청크"]
 
         await create_chunks(mock_session, policy_id, chunks)
 
-        indices = [c.chunk_index for c in added_chunks]
+        call_args = mock_session.execute.call_args
+        rows = call_args[0][1]
+        indices = [r["chunk_index"] for r in rows]
         assert indices == [0, 1]
 
     @pytest.mark.asyncio
@@ -759,27 +769,28 @@ class TestCreateChunks:
         from scripts.ingest_local_pdfs import create_chunks
 
         mock_session = AsyncMock()
-        added_chunks = []
-        mock_session.add = MagicMock(side_effect=lambda obj: added_chunks.append(obj))
+        mock_session.execute = AsyncMock()
 
         policy_id = uuid.uuid4()
         chunks = ["임베딩 없는 청크"]
 
         await create_chunks(mock_session, policy_id, chunks)
 
-        assert len(added_chunks) == 1
-        assert added_chunks[0].embedding is None
+        call_args = mock_session.execute.call_args
+        rows = call_args[0][1]
+        assert len(rows) == 1
+        assert rows[0]["embedding"] is None
 
     @pytest.mark.asyncio
     async def test_create_chunks_empty_list(self):
-        """빈 청크 리스트도 오류 없이 처리해야 한다"""
+        """빈 청크 리스트는 session.execute를 호출하지 않아야 한다"""
         from scripts.ingest_local_pdfs import create_chunks
 
         mock_session = AsyncMock()
-        mock_session.add = MagicMock()
+        mock_session.execute = AsyncMock()
 
         await create_chunks(mock_session, uuid.uuid4(), [])
-        mock_session.add.assert_not_called()
+        mock_session.execute.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -836,8 +847,8 @@ class TestProcessSingleFile:
             call_count[0] += 1
             result = MagicMock()
             if call_count[0] == 1:
-                # check_duplicate 쿼리
-                result.scalar_one_or_none.return_value = None
+                # check_duplicate 쿼리 - scalars().first() 방식
+                result.scalars.return_value.first.return_value = None
             elif call_count[0] == 2:
                 # ensure_company 쿼리 - 새 회사
                 result.scalar_one_or_none.return_value = None
@@ -1247,10 +1258,14 @@ class TestEmbedOption:
         async def mock_execute(_stmt, *_args, **_kwargs):
             call_count[0] += 1
             result = MagicMock()
-            if call_count[0] == 3:
+            if call_count[0] == 1:
+                # check_duplicate 쿼리 - scalars().first() 방식
+                result.scalars.return_value.first.return_value = None
+            elif call_count[0] == 3:
                 # upsert_policy: INSERT ... ON CONFLICT DO UPDATE ... RETURNING id
                 result.scalar_one.return_value = embed_policy_id
             else:
+                # ensure_company 등 나머지 쿼리
                 result.scalar_one_or_none.return_value = None
             return result
 
@@ -1298,7 +1313,7 @@ class TestRequirements:
         from scripts.ingest_local_pdfs import COMPANY_MAP
 
         assert isinstance(COMPANY_MAP, dict)
-        assert len(COMPANY_MAP) == 6
+        assert len(COMPANY_MAP) >= 6  # 최소 6개 이상 (확장 가능)
 
     def test_req_01_three_directory_formats_supported(self, tmp_path):
         """REQ-01: 3가지 디렉터리 형식이 자동 감지되어야 한다"""

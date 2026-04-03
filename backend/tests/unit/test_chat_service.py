@@ -19,6 +19,7 @@ def mock_settings():
     """테스트용 Settings 목 픽스처"""
     settings = MagicMock()
     settings.openai_api_key = "test-api-key"
+    settings.gemini_api_key = ""
     settings.embedding_model = "text-embedding-3-small"
     settings.embedding_dimensions = 1536
     settings.chat_model = "gpt-4o-mini"

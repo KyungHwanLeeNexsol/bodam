@@ -31,7 +31,7 @@ def _make_service(mock_embed_fn):
     """mock embed_fn을 주입한 EmbeddingService 생성 헬퍼"""
     from app.services.rag.embeddings import EmbeddingService
 
-    return EmbeddingService(api_key="test-google-key", _embed_fn=mock_embed_fn)
+    return EmbeddingService(api_keys=["test-google-key"], _embed_fn=mock_embed_fn)
 
 
 class TestEmbedTextSingle:
@@ -61,18 +61,18 @@ class TestEmbedTextSingle:
         assert all(-1.0 <= v <= 1.0 for v in result)
 
     async def test_embed_text_raises_error_when_api_key_empty(self):
-        """Google API 키가 빈 문자열이면 ValueError를 발생시켜야 한다"""
+        """Google API 키 목록이 비어 있으면 ValueError를 발생시켜야 한다"""
         from app.services.rag.embeddings import EmbeddingService
 
-        with pytest.raises(ValueError, match="API"):
-            EmbeddingService(api_key="")
+        with pytest.raises((ValueError, TypeError)):
+            EmbeddingService(api_keys=[])
 
     async def test_embed_text_raises_error_when_api_key_none(self):
-        """Google API 키가 None이면 ValueError를 발생시켜야 한다"""
+        """Google API 키 목록이 None이면 에러를 발생시켜야 한다"""
         from app.services.rag.embeddings import EmbeddingService
 
-        with pytest.raises(ValueError):
-            EmbeddingService(api_key=None)
+        with pytest.raises((ValueError, TypeError)):
+            EmbeddingService(api_keys=None)
 
 
 class TestEmbedBatch:

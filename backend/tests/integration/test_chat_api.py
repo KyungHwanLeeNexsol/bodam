@@ -323,14 +323,23 @@ class TestChatMessageSend:
     @pytest.mark.asyncio
     async def test_send_empty_content_returns_422(self, chat_client) -> None:
         """빈 메시지 내용 전송 시 422 반환"""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.api.v1.chat import get_chat_service
+
         client, app, get_db = chat_client
 
         mock_db = _make_mock_session()
+        mock_chat_service = AsyncMock()
 
         async def override_get_db():
             yield mock_db
 
+        def override_get_chat_service():
+            return mock_chat_service
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_chat_service] = override_get_chat_service
         try:
             resp = await client.post(
                 f"/api/v1/chat/sessions/{uuid.uuid4()}/messages",

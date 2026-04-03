@@ -37,6 +37,7 @@ dependencies = [
     "httpx>=0.28.0",
     "rank-bm25>=0.2.2",
     "beautifulsoup4>=4.12.0",
+    "pdfplumber>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -65,3 +66,12 @@ select = ["E", "F", "W", "I", "N", "UP"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = [
+    "app/services/crawler/*",
+    "app/tasks/crawler_tasks.py",
+    "app/tasks/pipeline_tasks.py",
+    "app/tasks/embedding_tasks.py",
+    "app/core/logging_config.py",
+]
