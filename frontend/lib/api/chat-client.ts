@@ -70,7 +70,14 @@ export class ChatApiClient {
    */
   private async request(url: string, options: RequestInit): Promise<Response> {
     try {
-      const response = await fetch(url, options)
+      const headers = new Headers(options.headers)
+      if (typeof window !== "undefined") {
+        const token = localStorage.getItem("auth_token")
+        if (token) {
+          headers.set("Authorization", `Bearer ${token}`)
+        }
+      }
+      const response = await fetch(url, { ...options, headers })
       return response
     } catch {
       throw new Error(NETWORK_ERROR_MESSAGE)
