@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.jit import get_session_store
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.schemas.chat import (
@@ -27,7 +28,6 @@ from app.schemas.chat import (
     PaginatedSessionListResponse,
     SessionUpdateRequest,
 )
-from app.api.v1.jit import get_session_store
 from app.services.chat_service import ChatService
 from app.services.jit_rag.session_store import JITSessionStore
 
