@@ -93,6 +93,10 @@ async def _with_db_retry(coro_fn: object, max_retries: int = _MAX_RETRIES, base_
                 "DB 연결 오류 (시도 %d/%d), %.0f초 후 재시도: %s",
                 attempt + 1, max_retries, delay, exc_str[:120],
             )
+            # 풀의 죽은 연결을 모두 폐기 → 재시도 시 새 연결 생성
+            import app.core.database as _db
+            if _db.engine is not None:
+                await _db.engine.dispose()
             await asyncio.sleep(delay)
     return None  # unreachable
 
