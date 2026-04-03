@@ -60,20 +60,12 @@ export default function SessionList({
     }
   }
 
-  const { token, logout } = useAuth()
+  const { logout, userProfile } = useAuth()
 
-  const userEmail = (() => {
-    if (!token) return null
-    try {
-      const parts = token.split('.')
-      if (parts.length < 2) return null
-      const payload = JSON.parse(atob(parts[1] as string))
-      return payload.email || payload.sub || null
-    } catch (_) { return null }
-  })()
-
-  const userName = userEmail ? userEmail.split('@')[0] : '사용자'
-  const userInitial = userName.charAt(0).toUpperCase()
+  // 사용자 이름 결정: full_name > email prefix > 기본값
+  const userName = userProfile?.fullName
+    || (userProfile?.email ? userProfile.email.split('@')[0] : '사용자')
+  const userInitial = (userName ?? '사').charAt(0).toUpperCase()
 
   // 세션을 날짜 그룹으로 분류
   const groupedSessions = sessions.reduce<Record<string, ChatSessionListItem[]>>((acc, session) => {
@@ -195,7 +187,7 @@ export default function SessionList({
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className="truncate text-sm font-medium text-[#0F172A]">{userName}</p>
-          <p className="truncate text-xs text-[#94A3B8]">{userEmail ?? ''}</p>
+          <p className="truncate text-xs text-[#94A3B8]">{userProfile?.email ?? ''}</p>
         </div>
         <button
           onClick={logout}

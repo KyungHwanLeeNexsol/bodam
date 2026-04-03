@@ -25,6 +25,7 @@ from app.schemas.chat import (
     ChatSessionResponse,
     MessageSendResponse,
     PaginatedSessionListResponse,
+    SessionUpdateRequest,
 )
 from app.services.chat_service import ChatService
 
@@ -155,6 +156,32 @@ async def get_session(
         created_at=session.created_at,
         updated_at=session.updated_at,
         messages=messages,
+    )
+
+
+@router.patch(
+    "/sessions/{session_id}",
+    response_model=ChatSessionResponse,
+    status_code=200,
+    summary="채팅 세션 업데이트",
+)
+async def update_session(
+    session_id: uuid.UUID,
+    body: SessionUpdateRequest,
+    chat_service: ChatService = Depends(get_chat_service),
+) -> ChatSessionResponse:
+    """채팅 세션 정보를 업데이트합니다."""
+    session = await chat_service.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="채팅 세션을 찾을 수 없습니다.")
+    if body.title is not None:
+        session = await chat_service.update_session_title(session_id, body.title)
+    return ChatSessionResponse(
+        id=session.id,
+        title=session.title,
+        user_id=session.user_id,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
     )
 
 

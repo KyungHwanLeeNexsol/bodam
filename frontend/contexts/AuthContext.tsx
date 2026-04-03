@@ -4,6 +4,7 @@
  * 인증 Context (SPEC-AUTH-001 Module 5)
  *
  * JWT 토큰을 localStorage에 저장하고 전역 인증 상태를 관리.
+ * SPEC-CHAT-UX-001: userProfile 상태 추가 (email, fullName)
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
@@ -11,11 +12,19 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 // localStorage 키 상수
 const AUTH_TOKEN_KEY = 'auth_token'
 
+// @MX:NOTE: [AUTO] UserProfile - /api/v1/auth/me 응답에서 추출한 사용자 정보
+interface UserProfile {
+  email: string
+  fullName: string | null
+}
+
 interface AuthContextValue {
   /** 현재 인증 여부 */
   isAuthenticated: boolean
   /** 저장된 JWT 토큰 */
   token: string | null
+  /** 사용자 프로필 (email, fullName) - 로그인 후 /api/v1/auth/me 조회 결과 */
+  userProfile: UserProfile | null
   /** 로그인 처리: 토큰 저장 및 인증 상태 업데이트 */
   login: (token: string) => void
   /** 로그아웃 처리: 토큰 제거 및 인증 상태 초기화 */
@@ -32,6 +41,23 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+
+  // @MX:NOTE: [AUTO] fetchUserProfile - 토큰으로 /api/v1/auth/me 호출, 실패 시 인증 유지
+  const fetchUserProfile = useCallback(async (authToken: string) => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || ''
+      const res = await fetch(`${apiBase}/api/v1/auth/me`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (res.ok) {
+        const data = await res.json() as { email: string; full_name: string | null }
+        setUserProfile({ email: data.email, fullName: data.full_name ?? null })
+      }
+    } catch {
+      // 프로필 조회 실패 시 무시 (인증은 유지)
+    }
+  }, [])
 
   // 마운트 시 localStorage에서 토큰 복원
   useEffect(() => {
@@ -39,25 +65,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedToken) {
       setToken(storedToken)
       setIsAuthenticated(true)
+      void fetchUserProfile(storedToken)
     }
-  }, [])
+  }, [fetchUserProfile])
 
   const login = useCallback((newToken: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, newToken)
     document.cookie = `${AUTH_TOKEN_KEY}=${newToken}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`
     setToken(newToken)
     setIsAuthenticated(true)
-  }, [])
+    void fetchUserProfile(newToken)
+  }, [fetchUserProfile])
 
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_TOKEN_KEY)
     document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`
     setToken(null)
     setIsAuthenticated(false)
+    setUserProfile(null)
   }, [])
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, token, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, token, userProfile, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

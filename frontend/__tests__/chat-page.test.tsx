@@ -30,13 +30,14 @@ const mockDeleteSession = vi.fn()
 const mockSendMessage = vi.fn()
 const mockStreamMessage = vi.fn()
 
-// useAuth 모킹 - SessionList가 useAuth를 사용하므로 필수
+// useAuth 모킹 - SessionList가 useAuth를 사용하므로 필수, userProfile 포함
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     token: "test-token",
     isAuthenticated: true,
     login: vi.fn(),
     logout: vi.fn(),
+    userProfile: null,
   }),
 }))
 
@@ -579,6 +580,70 @@ describe("ChatPage", () => {
         expect(screen.getByText("테스트 대화 2")).toBeInTheDocument()
         expect(screen.getByText("테스트 대화 3")).toBeInTheDocument()
         expect(screen.getByText("테스트 대화 4")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("title_update SSE 이벤트", () => {
+    it("title_update 이벤트를 받으면 세션 제목이 업데이트된다", async () => {
+      // 기존 메시지 전송 테스트 패턴과 동일하게 makeSessionDetail 사용
+      const sessionDetail = makeSessionDetail("session-1")
+      // 세션 제목을 고유값으로 설정
+      sessionDetail.title = "첫 번째 대화"
+      const sessions: ChatSessionListItem[] = [
+        {
+          id: "session-1",
+          title: "첫 번째 대화",
+          user_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          message_count: 2,
+        },
+      ]
+      mockListSessions.mockResolvedValue({
+        sessions,
+        total_count: 1,
+        has_more: false,
+      })
+      mockGetSession.mockResolvedValue(sessionDetail)
+
+      // title_update 이벤트를 포함하는 streamMessage 모킹
+      mockStreamMessage.mockImplementation(
+        async (_sessionId: string, _content: string, onEvent: (event: SSEEvent) => void) => {
+          onEvent({ type: "token", content: "응답입니다" })
+          onEvent({ type: "title_update", title: "실손보험 문의" })
+          onEvent({ type: "done", message_id: "msg-new" })
+        }
+      )
+
+      const user = userEvent.setup()
+      render(<ChatPage />)
+
+      // 세션 목록 로드 대기
+      await waitFor(() => {
+        expect(screen.getByText("첫 번째 대화")).toBeInTheDocument()
+      })
+
+      // 세션 선택
+      await user.click(screen.getByText("첫 번째 대화"))
+
+      // 메시지 로드 대기 (getSession 응답 대기)
+      await waitFor(() => {
+        expect(screen.getByText("안녕하세요")).toBeInTheDocument()
+      })
+
+      // 메시지 전송
+      const inputEl = screen.getByPlaceholderText("보험에 대해 궁금한 점을 물어보세요...")
+      await user.type(inputEl, "실손보험이 궁금해요")
+      await user.keyboard("{Enter}")
+
+      // title_update 이벤트로 세션 제목이 변경되어야 함 (데이터-testid로 세션 아이템 내부에서 확인)
+      await waitFor(() => {
+        const sessionItems = screen.getAllByTestId("session-item")
+        const updatedSession = sessionItems.find((el) =>
+          el.textContent?.includes("실손보험 문의")
+        )
+        expect(updatedSession).toBeTruthy()
       })
     })
   })

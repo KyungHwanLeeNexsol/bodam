@@ -160,12 +160,14 @@ export interface MessageSendResponse {
 }
 
 // SSE 이벤트 타입 (판별 유니온)
+// SPEC-CHAT-UX-001: title_update 이벤트 추가 - 스트리밍 중 세션 제목 자동 업데이트
 export type SSEEvent =
   | { type: "token"; content: string }
   | { type: "sources"; content: Source[] }
   | { type: "guidance"; content: GuidanceData }
   | { type: "done"; message_id: string }
   | { type: "error"; content: string }
+  | { type: "title_update"; title: string }
 
 // API 오류 응답
 export interface ApiError {

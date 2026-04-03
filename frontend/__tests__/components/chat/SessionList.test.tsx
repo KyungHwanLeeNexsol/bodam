@@ -3,12 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import SessionList from '@/components/chat/SessionList'
 import type { ChatSessionListItem } from '@/lib/types/chat'
 
-// useAuth 모킹
+// useAuth 모킹 - userProfile 포함
+const mockUseAuth = vi.fn(() => ({
+  token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ email: 'test@example.com' })) + '.sig',
+  logout: vi.fn(),
+  userProfile: null as { email: string; fullName: string | null } | null,
+}))
+
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({
-    token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ email: 'test@example.com' })) + '.sig',
-    logout: vi.fn(),
-  }),
+  useAuth: () => mockUseAuth(),
 }))
 
 // 테스트용 세션 목록 (오늘 날짜 기준으로 생성)
@@ -44,6 +47,89 @@ const mockSessions: ChatSessionListItem[] = [
 ]
 
 describe('SessionList', () => {
+  beforeEach(() => {
+    // 기본값으로 userProfile 초기화
+    mockUseAuth.mockReturnValue({
+      token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ email: 'test@example.com' })) + '.sig',
+      logout: vi.fn(),
+      userProfile: null,
+    })
+  })
+
+  describe('사용자 프로필 표시', () => {
+    it('userProfile.fullName이 있으면 full_name을 표시한다', () => {
+      mockUseAuth.mockReturnValue({
+        token: 'test-token',
+        logout: vi.fn(),
+        userProfile: { email: 'user@example.com', fullName: '홍길동' },
+      })
+      render(
+        <SessionList
+          sessions={[]}
+          currentSessionId={null}
+          onSelectSession={vi.fn()}
+          onDeleteSession={vi.fn()}
+          onNewSession={vi.fn()}
+        />
+      )
+      expect(screen.getByText('홍길동')).toBeInTheDocument()
+    })
+
+    it('userProfile.fullName이 null이면 email prefix를 표시한다', () => {
+      mockUseAuth.mockReturnValue({
+        token: 'test-token',
+        logout: vi.fn(),
+        userProfile: { email: 'user@example.com', fullName: null },
+      })
+      render(
+        <SessionList
+          sessions={[]}
+          currentSessionId={null}
+          onSelectSession={vi.fn()}
+          onDeleteSession={vi.fn()}
+          onNewSession={vi.fn()}
+        />
+      )
+      expect(screen.getByText('user')).toBeInTheDocument()
+    })
+
+    it('userProfile이 null이면 "사용자"를 표시한다', () => {
+      mockUseAuth.mockReturnValue({
+        token: 'test-token',
+        logout: vi.fn(),
+        userProfile: null,
+      })
+      render(
+        <SessionList
+          sessions={[]}
+          currentSessionId={null}
+          onSelectSession={vi.fn()}
+          onDeleteSession={vi.fn()}
+          onNewSession={vi.fn()}
+        />
+      )
+      expect(screen.getByText('사용자')).toBeInTheDocument()
+    })
+
+    it('userProfile.email을 하단 이메일 영역에 표시한다', () => {
+      mockUseAuth.mockReturnValue({
+        token: 'test-token',
+        logout: vi.fn(),
+        userProfile: { email: 'user@example.com', fullName: '홍길동' },
+      })
+      render(
+        <SessionList
+          sessions={[]}
+          currentSessionId={null}
+          onSelectSession={vi.fn()}
+          onDeleteSession={vi.fn()}
+          onNewSession={vi.fn()}
+        />
+      )
+      expect(screen.getByText('user@example.com')).toBeInTheDocument()
+    })
+  })
+
   describe('기본 렌더링', () => {
     it('세션 목록을 렌더링한다', () => {
       render(

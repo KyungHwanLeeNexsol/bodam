@@ -180,6 +180,25 @@ class ChatService:
         result = await self._db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def update_session_title(self, session_id: uuid.UUID, title: str) -> ChatSession | None:
+        """세션 제목 업데이트
+
+        Args:
+            session_id: 업데이트할 세션 UUID
+            title: 새 세션 제목
+
+        Returns:
+            업데이트된 ChatSession 또는 None (존재하지 않는 경우)
+        """
+        stmt = select(ChatSession).where(ChatSession.id == session_id)
+        result = await self._db.execute(stmt)
+        session = result.scalar_one_or_none()
+        if session is None:
+            return None
+        session.title = title
+        await self._db.flush()
+        return session
+
     async def delete_session(self, session_id: uuid.UUID) -> bool:
         """채팅 세션 삭제
 
@@ -345,6 +364,11 @@ class ChatService:
         # 세션 조회
         session = await self.get_session(session_id)
 
+        # 첫 메시지 여부 확인 (lazy="noload"로 session.messages 접근 불가 → SQL COUNT 사용)
+        count_stmt = select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session_id)
+        count_result = await self._db.execute(count_stmt)
+        existing_message_count = count_result.scalar() or 0
+
         # 사용자 메시지 저장
         user_msg = ChatMessage(
             session_id=session_id,
@@ -459,6 +483,44 @@ class ChatService:
 
         # 완료 이벤트 전송
         yield {"type": "done", "message_id": str(assistant_msg.id)}
+
+        # 첫 메시지인 경우 세션 제목 자동 생성
+        if existing_message_count == 0:
+            generated_title = await self._generate_session_title(content)
+            if generated_title:
+                await self.update_session_title(session_id, generated_title)
+                yield {"type": "title_update", "title": generated_title}
+
+    async def _generate_session_title(self, user_message: str) -> str | None:
+        """첫 메시지 기반 세션 제목 자동 생성 (15자 이내)
+
+        Args:
+            user_message: 사용자의 첫 번째 메시지
+
+        Returns:
+            생성된 제목 문자열 (최대 15자) 또는 None (생성 실패 시)
+        """
+        try:
+            prompt_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "당신은 채팅 제목 생성기입니다. "
+                        "사용자의 질문을 10자 이내의 한국어로 간결하게 요약하세요. "
+                        "제목만 출력하세요."
+                    ),
+                },
+                {"role": "user", "content": user_message},
+            ]
+            response = await self._llm_chain.generate(prompt_messages)
+            title = (response.content or "").strip().rstrip(".")
+            # 15자 초과 시 잘라내기
+            if len(title) > 15:
+                title = title[:15]
+            return title if title else None
+        except Exception as e:
+            logger.warning("세션 제목 자동 생성 실패: %s", str(e))
+            return None
 
     async def _classify_intent(self, content: str) -> tuple[str | None, float]:
         """쿼리 의도 분류 (classifier 미주입 시 None 반환)

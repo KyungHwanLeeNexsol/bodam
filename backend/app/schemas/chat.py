@@ -54,6 +54,12 @@ class ChatSessionListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SessionUpdateRequest(BaseModel):
+    """채팅 세션 업데이트 요청 스키마"""
+
+    title: str | None = Field(None, max_length=50)
+
+
 class PaginatedSessionListResponse(BaseModel):
     """페이지네이션된 채팅 세션 목록 응답 스키마 (SPEC-CHAT-PERF-001)
 

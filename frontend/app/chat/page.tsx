@@ -73,6 +73,8 @@ type ChatAction =
   | { type: "SET_DOCUMENT"; document: DocumentMeta }
   | { type: "CLEAR_DOCUMENT" }
   | { type: "TOGGLE_DOCUMENT_PANEL" }
+  // SPEC-CHAT-UX-001: SSE title_update 이벤트로 세션 제목 업데이트
+  | { type: "UPDATE_SESSION_TITLE"; sessionId: string; title: string }
 
 // ──────────────────────────────────────────────
 // 초기 상태 및 리듀서
@@ -141,6 +143,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, documentSource: null }
     case "TOGGLE_DOCUMENT_PANEL":
       return { ...state, documentPanelExpanded: !state.documentPanelExpanded }
+    // SPEC-CHAT-UX-001: SSE title_update 이벤트 처리 - 세션 제목 실시간 업데이트
+    case "UPDATE_SESSION_TITLE":
+      return {
+        ...state,
+        sessions: state.sessions.map((s) =>
+          s.id === action.sessionId ? { ...s, title: action.title } : s
+        ),
+      }
     default:
       return state
   }
@@ -304,6 +314,10 @@ export default function ChatPage() {
           }
           case "error":
             dispatch({ type: "SET_ERROR", error: event.content })
+            break
+          // SPEC-CHAT-UX-001: 스트리밍 중 세션 제목 자동 업데이트
+          case "title_update":
+            dispatch({ type: "UPDATE_SESSION_TITLE", sessionId, title: event.title })
             break
         }
       },

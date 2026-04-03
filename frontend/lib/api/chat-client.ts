@@ -171,6 +171,27 @@ export class ChatApiClient {
   }
 
   /**
+   * 채팅 세션 정보를 업데이트합니다.
+   * @param sessionId - 세션 ID
+   * @param data - 업데이트할 필드 (title 등)
+   * @returns 업데이트된 ChatSession
+   */
+  async updateSession(sessionId: string, data: { title?: string }): Promise<ChatSession> {
+    const response = await this.request(
+      `${this.baseUrl}/api/v1/chat/sessions/${sessionId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }
+    )
+    if (!response.ok) {
+      await this.handleErrorResponse(response)
+    }
+    return response.json() as Promise<ChatSession>
+  }
+
+  /**
    * 메시지를 전송하고 응답을 받습니다 (비스트리밍).
    * @param sessionId - 세션 ID
    * @param content - 전송할 메시지 내용

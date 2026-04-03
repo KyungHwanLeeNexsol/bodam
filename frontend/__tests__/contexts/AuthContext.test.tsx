@@ -5,7 +5,7 @@
  */
 
 import { render, screen, act, waitFor } from '@testing-library/react'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import React from 'react'
 
 // localStorage mock
@@ -182,6 +182,192 @@ describe('AuthContext', () => {
 
     await waitFor(() => {
       expect(screen.getByText('authenticated')).toBeDefined()
+    })
+  })
+
+  describe('userProfile', () => {
+    beforeEach(() => {
+      // fetch 전역 모킹
+      vi.stubGlobal('fetch', vi.fn())
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('초기 상태에서 userProfile은 null이어야 한다', async () => {
+      const { AuthProvider, useAuth } = await import('@/contexts/AuthContext')
+
+      function TestComponent() {
+        const { userProfile } = useAuth()
+        return <div>{userProfile ? 'has-profile' : 'no-profile'}</div>
+      }
+
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      )
+
+      expect(screen.getByText('no-profile')).toBeDefined()
+    })
+
+    it('login 후 userProfile이 설정되어야 한다', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          id: 'uuid-1',
+          email: 'test@example.com',
+          full_name: '홍길동',
+          is_active: true,
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const { AuthProvider, useAuth } = await import('@/contexts/AuthContext')
+
+      function TestComponent() {
+        const { userProfile, login } = useAuth()
+        return (
+          <div>
+            <span data-testid="profile-email">{userProfile?.email ?? 'none'}</span>
+            <span data-testid="profile-name">{userProfile?.fullName ?? 'none'}</span>
+            <button onClick={() => login('test.jwt.token')}>로그인</button>
+          </div>
+        )
+      }
+
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      )
+
+      await act(async () => {
+        screen.getByText('로그인').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('profile-email').textContent).toBe('test@example.com')
+        expect(screen.getByTestId('profile-name').textContent).toBe('홍길동')
+      })
+    })
+
+    it('full_name이 null이면 userProfile.fullName이 null이어야 한다', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          id: 'uuid-1',
+          email: 'noname@example.com',
+          full_name: null,
+          is_active: true,
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const { AuthProvider, useAuth } = await import('@/contexts/AuthContext')
+
+      function TestComponent() {
+        const { userProfile, login } = useAuth()
+        return (
+          <div>
+            <span data-testid="profile-name">{userProfile?.fullName ?? 'null-name'}</span>
+            <button onClick={() => login('test.jwt.token')}>로그인</button>
+          </div>
+        )
+      }
+
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      )
+
+      await act(async () => {
+        screen.getByText('로그인').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('profile-name').textContent).toBe('null-name')
+      })
+    })
+
+    it('logout 후 userProfile이 null로 초기화되어야 한다', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          id: 'uuid-1',
+          email: 'test@example.com',
+          full_name: '홍길동',
+          is_active: true,
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const { AuthProvider, useAuth } = await import('@/contexts/AuthContext')
+
+      function TestComponent() {
+        const { userProfile, login, logout } = useAuth()
+        return (
+          <div>
+            <span data-testid="profile-email">{userProfile?.email ?? 'none'}</span>
+            <button onClick={() => login('test.jwt.token')}>로그인</button>
+            <button onClick={logout}>로그아웃</button>
+          </div>
+        )
+      }
+
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      )
+
+      await act(async () => {
+        screen.getByText('로그인').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('profile-email').textContent).toBe('test@example.com')
+      })
+
+      await act(async () => {
+        screen.getByText('로그아웃').click()
+      })
+
+      expect(screen.getByTestId('profile-email').textContent).toBe('none')
+    })
+
+    it('localStorage에 토큰이 있으면 마운트 시 userProfile을 조회해야 한다', async () => {
+      localStorageMock.getItem.mockReturnValueOnce('existing.jwt.token')
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          id: 'uuid-1',
+          email: 'restored@example.com',
+          full_name: '복원사용자',
+          is_active: true,
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const { AuthProvider, useAuth } = await import('@/contexts/AuthContext')
+
+      function TestComponent() {
+        const { userProfile } = useAuth()
+        return <span data-testid="profile-email">{userProfile?.email ?? 'none'}</span>
+      }
+
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('profile-email').textContent).toBe('restored@example.com')
+      })
     })
   })
 })
