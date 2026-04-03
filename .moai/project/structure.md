@@ -62,6 +62,14 @@ services/
 │   └── companies/
 │       ├── nonlife/            # DB, Hyundai Marine, KB, generic
 │       └── life/               # Samsung Life, Hanwha, Kyobo, Shinhan, etc.
+├── jit_rag/                    # Just-In-Time RAG (on-demand document processing)
+│   ├── __init__.py             # Package initialization
+│   ├── document_finder.py      # Product name → URL search (FSS, insurer sites, web search)
+│   ├── document_fetcher.py     # URL → document download (PDF/HTML, async, retry)
+│   ├── text_extractor.py       # PDF/HTML → structured text (pymupdf, section detection)
+│   ├── session_store.py        # Redis session document cache (TTL 1 hour)
+│   ├── section_finder.py       # Question → relevant section extraction (full-text or BM25)
+│   └── config.py               # JIT RAG configuration constants
 ├── rag/                        # Retrieval-Augmented Generation
 │   ├── vector_store.py         # pgvector similarity search
 │   ├── hybrid_search.py        # Vector + full-text hybrid
@@ -75,7 +83,7 @@ services/
 │   ├── quality.py              # Response quality scoring
 │   ├── models.py               # LLM model definitions
 │   └── metrics.py              # Cost and usage tracking
-├── chat_service.py             # Chat session management
+├── chat_service.py             # Chat session management (uses JIT RAG)
 ├── auth_service.py             # Authentication logic
 ├── oauth_service.py            # OAuth2 flow handling
 ├── privacy_service.py          # PII encryption/decryption

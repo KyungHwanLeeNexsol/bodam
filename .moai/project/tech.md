@@ -12,8 +12,10 @@
 | DB driver | asyncpg | 0.30+ |
 | Migrations | Alembic | 1.14+ |
 | Task queue | Celery + Redis | 5.4+ |
-| PDF parsing | pdfplumber | 0.11+ |
+| PDF parsing | pdfplumber, pymupdf | 0.11+, 1.25+ |
 | Web crawling | Playwright | 1.49+ (SPA), httpx (static) |
+| Text search (BM25) | rank-bm25 | 0.2.2+ |
+| Async HTTP | httpx | 0.27+ |
 | Embeddings | sentence-transformers (BAAI/bge-m3) | 3.0+ |
 | Vector index | pgvector | 0.3.6+ |
 | Token counting | tiktoken | 0.8+ |
