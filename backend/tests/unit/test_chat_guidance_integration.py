@@ -154,7 +154,7 @@ def _make_chat_service(mock_db, mock_settings, intent_classifier=None, guidance_
 
     with (
         patch("app.services.chat_service.FallbackChain") as mock_chain_cls,
-        patch("app.services.chat_service.EmbeddingService"),
+        patch("app.services.chat_service.get_embedding_service"),
         patch("app.services.chat_service.VectorSearchService"),
     ):
         mock_chain_cls.return_value = AsyncMock()

@@ -19,6 +19,7 @@ import type {
   ChatSessionDetail,
   ChatSession,
   SSEEvent,
+  PaginatedSessionListResponse,
 } from "@/lib/types/chat"
 
 // ChatApiClient 메서드 목 저장소
@@ -28,6 +29,16 @@ const mockGetSession = vi.fn()
 const mockDeleteSession = vi.fn()
 const mockSendMessage = vi.fn()
 const mockStreamMessage = vi.fn()
+
+// useAuth 모킹 - SessionList가 useAuth를 사용하므로 필수
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    token: "test-token",
+    isAuthenticated: true,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+}))
 
 // ChatApiClient 클래스 목 - 반드시 생성자처럼 동작해야 함
 vi.mock("@/lib/api/chat-client", () => {
@@ -57,6 +68,17 @@ const makeSessions = (count: number): ChatSessionListItem[] =>
     updated_at: new Date().toISOString(),
     message_count: 2,
   }))
+
+// 페이지네이션 응답 팩토리 (SPEC-CHAT-PERF-001)
+const makePaginatedResponse = (
+  count: number,
+  hasMore = false,
+  totalCount?: number
+): PaginatedSessionListResponse => ({
+  sessions: makeSessions(count),
+  total_count: totalCount ?? count,
+  has_more: hasMore,
+})
 
 const makeSessionDetail = (sessionId: string): ChatSessionDetail => ({
   id: sessionId,
@@ -95,8 +117,8 @@ const makeNewSession = (id = "new-session-1"): ChatSession => ({
 describe("ChatPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // 기본 mock 설정
-    mockListSessions.mockResolvedValue([])
+    // 기본 mock 설정 - listSessions는 페이지네이션 응답을 반환
+    mockListSessions.mockResolvedValue(makePaginatedResponse(0))
     mockCreateSession.mockResolvedValue(makeNewSession())
     mockGetSession.mockResolvedValue(makeSessionDetail("session-1"))
     mockDeleteSession.mockResolvedValue(undefined)
@@ -114,8 +136,7 @@ describe("ChatPage", () => {
     })
 
     it("마운트 시 세션 목록을 로드한다", async () => {
-      const sessions = makeSessions(2)
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(2))
 
       render(<ChatPage />)
 
@@ -127,7 +148,7 @@ describe("ChatPage", () => {
     })
 
     it("세션이 없을 때 EmptyState가 표시된다", async () => {
-      mockListSessions.mockResolvedValue([])
+      mockListSessions.mockResolvedValue(makePaginatedResponse(0))
 
       render(<ChatPage />)
 
@@ -201,9 +222,8 @@ describe("ChatPage", () => {
   describe("세션 선택", () => {
     it("세션 클릭 시 메시지 목록을 로드한다", async () => {
       const user = userEvent.setup()
-      const sessions = makeSessions(1)
       const sessionDetail = makeSessionDetail("session-1")
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(1))
       mockGetSession.mockResolvedValue(sessionDetail)
 
       render(<ChatPage />)
@@ -231,9 +251,8 @@ describe("ChatPage", () => {
   describe("메시지 전송 및 스트리밍", () => {
     it("메시지 전송 시 사용자 메시지가 즉시 표시된다", async () => {
       const user = userEvent.setup()
-      const sessions = makeSessions(1)
       const sessionDetail = makeSessionDetail("session-1")
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(1))
       mockGetSession.mockResolvedValue(sessionDetail)
 
       // streamMessage는 즉시 done 이벤트를 발생시킴
@@ -276,9 +295,8 @@ describe("ChatPage", () => {
 
     it("스트리밍 중 StreamingMessage가 표시된다", async () => {
       const user = userEvent.setup()
-      const sessions = makeSessions(1)
       const sessionDetail = makeSessionDetail("session-1")
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(1))
       mockGetSession.mockResolvedValue(sessionDetail)
 
       // streamMessage가 token 이벤트를 발생시키고 완료되지 않는 상황
@@ -339,9 +357,8 @@ describe("ChatPage", () => {
 
     it("스트리밍 오류 발생 시 에러 배너가 표시된다", async () => {
       const user = userEvent.setup()
-      const sessions = makeSessions(1)
       const sessionDetail = makeSessionDetail("session-1")
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(1))
       mockGetSession.mockResolvedValue(sessionDetail)
 
       mockStreamMessage.mockImplementation(
@@ -377,9 +394,8 @@ describe("ChatPage", () => {
 
     it("에러 배너의 닫기 버튼으로 오류를 해제한다", async () => {
       const user = userEvent.setup()
-      const sessions = makeSessions(1)
       const sessionDetail = makeSessionDetail("session-1")
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(1))
       mockGetSession.mockResolvedValue(sessionDetail)
 
       mockStreamMessage.mockImplementation(
@@ -425,9 +441,8 @@ describe("ChatPage", () => {
   describe("세션 삭제", () => {
     it("현재 세션 삭제 시 deleteSession이 호출된다", async () => {
       const user = userEvent.setup()
-      const sessions = makeSessions(1)
       const sessionDetail = makeSessionDetail("session-1")
-      mockListSessions.mockResolvedValue(sessions)
+      mockListSessions.mockResolvedValue(makePaginatedResponse(1))
       mockGetSession.mockResolvedValue(sessionDetail)
 
       // window.confirm을 true로 목 처리
@@ -453,6 +468,117 @@ describe("ChatPage", () => {
       // deleteSession이 호출되어야 함
       await waitFor(() => {
         expect(mockDeleteSession).toHaveBeenCalledWith("session-1")
+      })
+    })
+  })
+
+  describe("페이지네이션 (SPEC-CHAT-PERF-001)", () => {
+    it("초기 마운트 시 limit=20, offset=0 으로 호출한다", async () => {
+      mockListSessions.mockResolvedValue(makePaginatedResponse(3))
+
+      render(<ChatPage />)
+
+      await waitFor(() => {
+        expect(mockListSessions).toHaveBeenCalledWith(20, 0)
+      })
+    })
+
+    it("has_more가 true일 때 더 보기 버튼이 표시된다", async () => {
+      mockListSessions.mockResolvedValue(makePaginatedResponse(3, true, 45))
+
+      render(<ChatPage />)
+
+      await waitFor(() => {
+        expect(screen.getByText("테스트 대화 1")).toBeInTheDocument()
+      })
+
+      // 더 보기 버튼이 표시되어야 함
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /더 보기|더 불러오기|load more/i })).toBeInTheDocument()
+      })
+    })
+
+    it("has_more가 false일 때 더 보기 버튼이 없다", async () => {
+      mockListSessions.mockResolvedValue(makePaginatedResponse(3, false, 3))
+
+      render(<ChatPage />)
+
+      await waitFor(() => {
+        expect(screen.getByText("테스트 대화 1")).toBeInTheDocument()
+      })
+
+      // 더 보기 버튼이 없어야 함
+      expect(screen.queryByRole("button", { name: /더 보기|더 불러오기|load more/i })).not.toBeInTheDocument()
+    })
+
+    it("더 보기 클릭 시 offset=20 으로 추가 호출한다", async () => {
+      // 첫 번째 호출: 20개 + has_more=true
+      mockListSessions.mockResolvedValueOnce(makePaginatedResponse(3, true, 45))
+      // 두 번째 호출: 다음 페이지
+      mockListSessions.mockResolvedValueOnce(makePaginatedResponse(3, false, 45))
+
+      const user = userEvent.setup()
+
+      render(<ChatPage />)
+
+      await waitFor(() => {
+        expect(screen.getByText("테스트 대화 1")).toBeInTheDocument()
+      })
+
+      const loadMoreButton = screen.getByRole("button", { name: /더 보기|더 불러오기|load more/i })
+      await user.click(loadMoreButton)
+
+      await waitFor(() => {
+        expect(mockListSessions).toHaveBeenNthCalledWith(2, 20, 20)
+      })
+    })
+
+    it("더 보기로 추가 로드된 세션이 기존 목록에 추가된다", async () => {
+      const firstPage = makePaginatedResponse(2, true, 4)
+      const secondPage: PaginatedSessionListResponse = {
+        sessions: [
+          {
+            id: "session-3",
+            title: "테스트 대화 3",
+            user_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            message_count: 0,
+          },
+          {
+            id: "session-4",
+            title: "테스트 대화 4",
+            user_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            message_count: 0,
+          },
+        ],
+        total_count: 4,
+        has_more: false,
+      }
+
+      mockListSessions.mockResolvedValueOnce(firstPage)
+      mockListSessions.mockResolvedValueOnce(secondPage)
+
+      const user = userEvent.setup()
+
+      render(<ChatPage />)
+
+      await waitFor(() => {
+        expect(screen.getByText("테스트 대화 1")).toBeInTheDocument()
+        expect(screen.getByText("테스트 대화 2")).toBeInTheDocument()
+      })
+
+      const loadMoreButton = screen.getByRole("button", { name: /더 보기|더 불러오기|load more/i })
+      await user.click(loadMoreButton)
+
+      // 기존 세션 + 새 세션 모두 표시되어야 함
+      await waitFor(() => {
+        expect(screen.getByText("테스트 대화 1")).toBeInTheDocument()
+        expect(screen.getByText("테스트 대화 2")).toBeInTheDocument()
+        expect(screen.getByText("테스트 대화 3")).toBeInTheDocument()
+        expect(screen.getByText("테스트 대화 4")).toBeInTheDocument()
       })
     })
   })

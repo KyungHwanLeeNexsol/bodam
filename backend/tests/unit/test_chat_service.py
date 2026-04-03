@@ -47,11 +47,11 @@ def chat_service(mock_db, mock_settings):
 
     with (
         patch("app.services.chat_service.FallbackChain") as mock_chain_cls,
-        patch("app.services.chat_service.EmbeddingService") as mock_embedding_cls,
+        patch("app.services.chat_service.get_embedding_service") as mock_embedding_fn,
         patch("app.services.chat_service.VectorSearchService") as mock_vector_cls,
     ):
         mock_chain_cls.return_value = AsyncMock()
-        mock_embedding_cls.return_value = AsyncMock()
+        mock_embedding_fn.return_value = AsyncMock()
         mock_vector_cls.return_value = AsyncMock()
 
         service = ChatService(db=mock_db, settings=mock_settings)
@@ -90,34 +90,163 @@ class TestChatServiceCreateSession:
 
 
 class TestChatServiceListSessions:
-    """ChatService.list_sessions 테스트"""
+    """ChatService.list_sessions 테스트 (새 시그니처 - 페이지네이션)"""
 
     @pytest.mark.asyncio
     async def test_list_returns_sessions(self, chat_service, mock_db) -> None:
-        """세션 목록 반환"""
+        """세션 목록 반환 - (sessions_with_counts, total_count) 튜플 반환"""
         mock_session = MagicMock(spec=ChatSession)
         mock_session.id = uuid.uuid4()
         mock_session.title = "테스트 세션"
 
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_session]
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        # 새 시그니처: 첫 execute는 (session, count) 목록, 두 번째는 total count
+        sessions_result = MagicMock()
+        sessions_result.all.return_value = [(mock_session, 2)]
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 1
+        mock_db.execute = AsyncMock(side_effect=[sessions_result, count_result])
 
-        sessions = await chat_service.list_sessions()
+        sessions_data, total = await chat_service.list_sessions()
 
-        assert len(sessions) == 1
-        mock_db.execute.assert_called_once()
+        assert len(sessions_data) == 1
+        assert total == 1
+        assert mock_db.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_list_returns_empty_when_no_sessions(self, chat_service, mock_db) -> None:
-        """세션 없을 때 빈 리스트 반환"""
+        """세션 없을 때 빈 리스트와 total_count=0 반환"""
+        sessions_result = MagicMock()
+        sessions_result.all.return_value = []
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+        mock_db.execute = AsyncMock(side_effect=[sessions_result, count_result])
+
+        sessions_data, total = await chat_service.list_sessions()
+
+        assert sessions_data == []
+        assert total == 0
+
+
+class TestChatServiceListSessionsPaginated:
+    """ChatService.list_sessions 페이지네이션 테스트 (SPEC-CHAT-PERF-001)
+
+    RED: 아직 구현되지 않은 새 시그니처 검증.
+    list_sessions(limit, offset, user_id)는 (sessions, total_count) 튜플을 반환해야 함.
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_returns_tuple_with_total_count(self, chat_service, mock_db) -> None:
+        """list_sessions가 (sessions, total_count) 튜플을 반환해야 함"""
+        mock_session = MagicMock(spec=ChatSession)
+        mock_session.id = uuid.uuid4()
+        mock_session.title = "테스트 세션"
+        mock_session.message_count = 3
+
+        # 첫 번째 execute: 세션 목록 조회
+        sessions_result = MagicMock()
+        sessions_result.all.return_value = [(mock_session, 3)]
+
+        # 두 번째 execute: 총 개수 조회
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 1
+
+        mock_db.execute = AsyncMock(side_effect=[sessions_result, count_result])
+
+        result = await chat_service.list_sessions(limit=20, offset=0)
+
+        # (sessions_with_counts, total_count) 튜플이어야 함
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        sessions_data, total_count = result
+        assert total_count == 1
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_default_limit_is_20(self, chat_service, mock_db) -> None:
+        """기본 limit은 20이어야 함"""
+        sessions_result = MagicMock()
+        sessions_result.all.return_value = []
+
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 0
+
+        mock_db.execute = AsyncMock(side_effect=[sessions_result, count_result])
+
+        result = await chat_service.list_sessions()
+
+        assert isinstance(result, tuple)
+        _, total_count = result
+        assert total_count == 0
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_with_user_id_filter(self, chat_service, mock_db) -> None:
+        """user_id 필터링 적용 시 해당 사용자 세션만 반환"""
+        user_id = uuid.uuid4()
+        mock_session = MagicMock(spec=ChatSession)
+        mock_session.id = uuid.uuid4()
+        mock_session.user_id = user_id
+        mock_session.message_count = 0
+
+        sessions_result = MagicMock()
+        sessions_result.all.return_value = [(mock_session, 0)]
+
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 1
+
+        mock_db.execute = AsyncMock(side_effect=[sessions_result, count_result])
+
+        result = await chat_service.list_sessions(limit=20, offset=0, user_id=user_id)
+
+        assert isinstance(result, tuple)
+        sessions_data, total_count = result
+        assert total_count == 1
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_message_count_from_sql_not_python(self, chat_service, mock_db) -> None:
+        """message_count는 Python len() 아닌 SQL COUNT 서브쿼리에서 와야 함"""
+        mock_session = MagicMock(spec=ChatSession)
+        mock_session.id = uuid.uuid4()
+
+        # SQL COUNT 서브쿼리 결과: 정수 5
+        sessions_result = MagicMock()
+        sessions_result.all.return_value = [(mock_session, 5)]
+
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 1
+
+        mock_db.execute = AsyncMock(side_effect=[sessions_result, count_result])
+
+        result = await chat_service.list_sessions(limit=20, offset=0)
+        sessions_data, _ = result
+
+        # 튜플 목록이어야 함 (session, count)
+        assert len(sessions_data) == 1
+        session_obj, msg_count = sessions_data[0]
+        assert msg_count == 5  # SQL에서 온 숫자
+
+    @pytest.mark.asyncio
+    async def test_get_session_with_messages_eager_loaded(self, chat_service, mock_db) -> None:
+        """get_session은 messages를 eager load해야 함 (noload 변경 후 회귀 테스트)"""
+        session_id = uuid.uuid4()
+        mock_session = MagicMock(spec=ChatSession)
+        mock_session.id = session_id
+
+        # messages가 로드되어 있어야 함 (noload 기본값으로는 접근 불가)
+        from app.models.chat import ChatMessage, MessageRole
+        mock_msg = MagicMock(spec=ChatMessage)
+        mock_msg.role = MessageRole.USER
+        mock_msg.content = "테스트 메시지"
+        mock_session.messages = [mock_msg]
+
         mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar_one_or_none.return_value = mock_session
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        sessions = await chat_service.list_sessions()
+        result = await chat_service.get_session(session_id)
 
-        assert sessions == []
+        assert result is not None
+        # messages에 접근 가능해야 함 (eager load 확인)
+        assert result.messages is not None
+        assert len(result.messages) == 1
 
 
 class TestChatServiceGetSession:

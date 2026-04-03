@@ -15,7 +15,8 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.services.jit_rag.models import DocumentData
@@ -23,7 +24,7 @@ from app.services.jit_rag.section_finder import SectionFinder
 from app.services.jit_rag.session_store import JITSessionStore
 from app.services.llm.models import QueryIntent
 from app.services.llm.router import FallbackChain
-from app.services.rag.embeddings import EmbeddingService, get_embedding_service
+from app.services.rag.embeddings import get_embedding_service
 from app.services.rag.vector_store import VectorSearchService
 
 if TYPE_CHECKING:
@@ -103,26 +104,79 @@ class ChatService:
         await self._db.flush()
         return session
 
-    async def list_sessions(self) -> list[ChatSession]:
-        """모든 채팅 세션 목록 반환 (최신순)
+    # @MX:ANCHOR: [AUTO] list_sessions - 채팅 세션 목록 API의 핵심 조회 메서드
+    # @MX:REASON: chat.py 라우터, 테스트 등 다수 호출자가 사용하는 공개 API
+    async def list_sessions(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        user_id: uuid.UUID | None = None,
+    ) -> tuple[list[tuple[ChatSession, int]], int]:
+        """채팅 세션 목록 반환 (페이지네이션 + SQL COUNT 최적화)
+
+        messages 관계를 로드하지 않고 SQL COUNT 서브쿼리로
+        메시지 수를 산출하여 N+1 쿼리 및 메모리 과부하를 방지.
+
+        Args:
+            limit: 최대 반환 개수 (기본값: 20)
+            offset: 건너뛸 개수 (기본값: 0)
+            user_id: 사용자 ID 필터 (None이면 전체 반환)
 
         Returns:
-            ChatSession 목록 (updated_at 내림차순)
+            (sessions_with_counts, total_count) 튜플
+            - sessions_with_counts: [(ChatSession, message_count), ...] 목록
+            - total_count: 전체 세션 수 (필터 적용 후)
         """
-        stmt = select(ChatSession).order_by(ChatSession.updated_at.desc())
+        # SQL COUNT 서브쿼리로 메시지 수 산출
+        message_count_subquery = (
+            select(func.count(ChatMessage.id))
+            .where(ChatMessage.session_id == ChatSession.id)
+            .correlate(ChatSession)
+            .scalar_subquery()
+        )
+
+        # 세션 목록 쿼리 (message_count 컬럼 포함)
+        stmt = (
+            select(ChatSession, message_count_subquery.label("message_count"))
+            .order_by(ChatSession.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        # user_id 필터 적용
+        if user_id is not None:
+            stmt = stmt.where(ChatSession.user_id == user_id)
+
         result = await self._db.execute(stmt)
-        return result.scalars().all()
+        sessions_with_counts = result.all()
+
+        # 전체 개수 쿼리
+        count_stmt = select(func.count(ChatSession.id))
+        if user_id is not None:
+            count_stmt = count_stmt.where(ChatSession.user_id == user_id)
+
+        count_result = await self._db.execute(count_stmt)
+        total_count = count_result.scalar_one()
+
+        return list(sessions_with_counts), total_count
 
     async def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
-        """세션 ID로 채팅 세션 조회
+        """세션 ID로 채팅 세션 조회 (messages eager load 포함)
+
+        lazy="noload" 기본값으로 인해 명시적으로 selectinload를 지정.
+        세션 상세 조회 및 채팅 히스토리 구성에 사용됨.
 
         Args:
             session_id: 조회할 세션 UUID
 
         Returns:
-            ChatSession 또는 None (존재하지 않는 경우)
+            ChatSession (messages 포함) 또는 None (존재하지 않는 경우)
         """
-        stmt = select(ChatSession).where(ChatSession.id == session_id)
+        stmt = (
+            select(ChatSession)
+            .where(ChatSession.id == session_id)
+            .options(selectinload(ChatSession.messages))
+        )
         result = await self._db.execute(stmt)
         return result.scalar_one_or_none()
 

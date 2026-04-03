@@ -11,6 +11,10 @@ interface SessionListProps {
   onSelectSession: (id: string) => void
   onDeleteSession: (id: string) => void
   onNewSession: () => void
+  // SPEC-CHAT-PERF-001: 페이지네이션 props
+  hasMore?: boolean
+  isLoadingMore?: boolean
+  onLoadMore?: () => void
 }
 
 // 날짜 그룹 라벨 생성
@@ -45,6 +49,9 @@ export default function SessionList({
   onSelectSession,
   onDeleteSession,
   onNewSession,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: SessionListProps) {
   const handleDelete = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation()
@@ -110,59 +117,74 @@ export default function SessionList({
         {sessions.length === 0 ? (
           <p className="py-4 text-center text-xs text-[#94A3B8]">대화 내역이 없습니다</p>
         ) : (
-          groupOrder.map((group) => {
-            const items = groupedSessions[group]
-            if (!items || items.length === 0) return null
-            return (
-              <div key={group}>
-                {/* 날짜 그룹 라벨 */}
-                <div className="px-5 pb-1 pt-4">
-                  <span className="text-[11px] font-semibold tracking-wider text-[#94A3B8]">{group.toUpperCase()}</span>
-                </div>
-                {/* 세션 아이템 */}
-                {items.map((session) => (
-                  <button
-                    key={session.id}
-                    onClick={() => onSelectSession(session.id)}
-                    data-testid="session-item"
-                    className={cn(
-                      "group flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors",
-                      currentSessionId === session.id
-                        ? "bg-white"
-                        : "hover:bg-white/60"
-                    )}
-                  >
-                    <MessageSquare
+          <>
+            {groupOrder.map((group) => {
+              const items = groupedSessions[group]
+              if (!items || items.length === 0) return null
+              return (
+                <div key={group}>
+                  {/* 날짜 그룹 라벨 */}
+                  <div className="px-5 pb-1 pt-4">
+                    <span className="text-[11px] font-semibold tracking-wider text-[#94A3B8]">{group.toUpperCase()}</span>
+                  </div>
+                  {/* 세션 아이템 */}
+                  {items.map((session) => (
+                    <button
+                      key={session.id}
+                      onClick={() => onSelectSession(session.id)}
+                      data-testid="session-item"
                       className={cn(
-                        "h-[18px] w-[18px] shrink-0",
-                        currentSessionId === session.id ? "text-[#2563EB]" : "text-[#94A3B8]"
+                        "group flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors",
+                        currentSessionId === session.id
+                          ? "bg-white"
+                          : "hover:bg-white/60"
                       )}
-                    />
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span
-                        className={cn(
-                          "truncate text-sm",
-                          currentSessionId === session.id ? "font-medium text-[#0F172A]" : "text-[#475569]"
-                        )}
-                      >
-                        {session.title}
-                      </span>
-                      <span className="text-[11px] text-[#94A3B8]">{formatTime(session.updated_at)}</span>
-                    </div>
-                    {/* 삭제 버튼 */}
-                    <span
-                      role="button"
-                      aria-label="삭제"
-                      onClick={(e) => handleDelete(e, session.id)}
-                      className="ml-1 shrink-0 cursor-pointer rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 text-[#94A3B8] hover:bg-red-100 hover:text-red-500"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </span>
-                  </button>
-                ))}
+                      <MessageSquare
+                        className={cn(
+                          "h-[18px] w-[18px] shrink-0",
+                          currentSessionId === session.id ? "text-[#2563EB]" : "text-[#94A3B8]"
+                        )}
+                      />
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span
+                          className={cn(
+                            "truncate text-sm",
+                            currentSessionId === session.id ? "font-medium text-[#0F172A]" : "text-[#475569]"
+                          )}
+                        >
+                          {session.title}
+                        </span>
+                        <span className="text-[11px] text-[#94A3B8]">{formatTime(session.updated_at)}</span>
+                      </div>
+                      {/* 삭제 버튼 */}
+                      <span
+                        role="button"
+                        aria-label="삭제"
+                        onClick={(e) => handleDelete(e, session.id)}
+                        className="ml-1 shrink-0 cursor-pointer rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 text-[#94A3B8] hover:bg-red-100 hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+            {/* 더 보기 버튼 (SPEC-CHAT-PERF-001: has_more가 true일 때만 표시) */}
+            {hasMore && onLoadMore && (
+              <div className="px-5 py-3">
+                <button
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore}
+                  aria-label="더 보기"
+                  className="w-full rounded-lg border border-[#E2E8F0] py-2 text-[13px] text-[#94A3B8] transition-colors hover:border-[#CBD5E1] hover:text-[#475569] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoadingMore ? "불러오는 중..." : "더 보기"}
+                </button>
               </div>
-            )
-          })
+            )}
+          </>
         )}
       </div>
 

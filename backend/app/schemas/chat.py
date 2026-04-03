@@ -48,10 +48,25 @@ class ChatSessionListResponse(BaseModel):
     user_id: str | None
     created_at: datetime
     updated_at: datetime
-    # 세션 내 메시지 수
+    # 세션 내 메시지 수 (SQL COUNT 서브쿼리에서 산출)
     message_count: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PaginatedSessionListResponse(BaseModel):
+    """페이지네이션된 채팅 세션 목록 응답 스키마 (SPEC-CHAT-PERF-001)
+
+    SQL COUNT 서브쿼리 기반으로 성능 최적화된 세션 목록 응답.
+    limit/offset 페이지네이션 메타데이터 포함.
+    """
+
+    # 현재 페이지 세션 목록
+    sessions: list[ChatSessionListResponse]
+    # 전체 세션 수 (필터 적용 후)
+    total_count: int
+    # 다음 페이지 존재 여부
+    has_more: bool
 
 
 # ─────────────────────────────────────────────

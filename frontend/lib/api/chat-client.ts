@@ -4,6 +4,7 @@ import type {
   ChatSessionListItem,
   ChatSessionDetail,
   MessageSendResponse,
+  PaginatedSessionListResponse,
   SSEEvent,
 } from "@/lib/types/chat"
 
@@ -105,14 +106,14 @@ export class ChatApiClient {
 
   /**
    * 채팅 세션 목록을 조회합니다.
-   * @param limit - 조회할 최대 개수 (선택)
-   * @param offset - 건너뛸 개수 (선택)
-   * @returns ChatSessionListItem 배열
+   * @param limit - 조회할 최대 개수 (선택, 기본 20)
+   * @param offset - 건너뛸 개수 (선택, 기본 0)
+   * @returns PaginatedSessionListResponse (sessions 배열, total_count, has_more 포함)
    */
   async listSessions(
     limit?: number,
     offset?: number
-  ): Promise<ChatSessionListItem[]> {
+  ): Promise<PaginatedSessionListResponse> {
     let url = `${this.baseUrl}/api/v1/chat/sessions`
 
     // 쿼리 파라미터 구성
@@ -133,7 +134,7 @@ export class ChatApiClient {
       await this.handleErrorResponse(response)
     }
 
-    return response.json() as Promise<ChatSessionListItem[]>
+    return response.json() as Promise<PaginatedSessionListResponse>
   }
 
   /**

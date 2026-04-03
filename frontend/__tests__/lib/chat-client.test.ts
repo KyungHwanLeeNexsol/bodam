@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   MessageSendResponse,
   Source,
+  PaginatedSessionListResponse,
 } from "@/lib/types/chat"
 
 // fetch 모킹
@@ -142,8 +143,15 @@ describe("ChatApiClient", () => {
       { ...dummySession, message_count: 5 },
     ]
 
+    // 페이지네이션 응답 형식 (SPEC-CHAT-PERF-001)
+    const dummyPaginatedResponse: PaginatedSessionListResponse = {
+      sessions: dummyList,
+      total_count: 45,
+      has_more: true,
+    }
+
     it("GET /api/v1/chat/sessions를 호출한다", async () => {
-      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyList))
+      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyPaginatedResponse))
 
       await client.listSessions()
 
@@ -154,7 +162,7 @@ describe("ChatApiClient", () => {
     })
 
     it("limit와 offset 쿼리 파라미터를 전달한다", async () => {
-      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyList))
+      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyPaginatedResponse))
 
       await client.listSessions(10, 20)
 
@@ -165,7 +173,7 @@ describe("ChatApiClient", () => {
     })
 
     it("파라미터 없이 호출하면 쿼리스트링이 없다", async () => {
-      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyList))
+      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyPaginatedResponse))
 
       await client.listSessions()
 
@@ -175,12 +183,29 @@ describe("ChatApiClient", () => {
       )
     })
 
-    it("ChatSessionListItem 배열을 반환한다", async () => {
-      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyList))
+    it("PaginatedSessionListResponse를 반환한다", async () => {
+      mockFetch.mockResolvedValueOnce(createSuccessResponse(dummyPaginatedResponse))
 
       const result = await client.listSessions()
 
-      expect(result).toEqual(dummyList)
+      // sessions 배열, total_count, has_more 필드가 모두 존재해야 함
+      expect(result).toHaveProperty("sessions")
+      expect(result).toHaveProperty("total_count", 45)
+      expect(result).toHaveProperty("has_more", true)
+      expect(result.sessions).toEqual(dummyList)
+    })
+
+    it("has_more가 false일 때 마지막 페이지임을 나타낸다", async () => {
+      const lastPageResponse: PaginatedSessionListResponse = {
+        sessions: dummyList,
+        total_count: 1,
+        has_more: false,
+      }
+      mockFetch.mockResolvedValueOnce(createSuccessResponse(lastPageResponse))
+
+      const result = await client.listSessions(20, 0)
+
+      expect(result.has_more).toBe(false)
     })
   })
 

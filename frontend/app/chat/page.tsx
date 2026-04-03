@@ -26,6 +26,8 @@ import type {
   MessageMetadata,
   Source,
   SSEEvent,
+  // @MX:NOTE: [AUTO] PaginatedSessionListResponse - SPEC-CHAT-PERF-001 페이지네이션 응답 타입
+  PaginatedSessionListResponse,
 } from "@/lib/types/chat"
 import type { DocumentMeta } from "@/lib/api/jit-client"
 
@@ -35,6 +37,8 @@ import type { DocumentMeta } from "@/lib/api/jit-client"
 
 interface ChatState {
   sessions: ChatSessionListItem[]
+  // @MX:NOTE: [AUTO] hasMore - SPEC-CHAT-PERF-001 페이지네이션 여부 플래그
+  hasMore: boolean
   currentSessionId: string | null
   messages: ChatMessage[]
   isLoading: boolean
@@ -51,6 +55,9 @@ interface ChatState {
 
 type ChatAction =
   | { type: "SET_SESSIONS"; sessions: ChatSessionListItem[] }
+  // SPEC-CHAT-PERF-001: 기존 목록에 세션을 추가 (더 보기용)
+  | { type: "APPEND_SESSIONS"; sessions: ChatSessionListItem[] }
+  | { type: "SET_HAS_MORE"; hasMore: boolean }
   | { type: "SET_CURRENT_SESSION"; sessionId: string | null }
   | { type: "SET_MESSAGES"; messages: ChatMessage[] }
   | { type: "ADD_MESSAGE"; message: ChatMessage }
@@ -73,6 +80,7 @@ type ChatAction =
 
 const initialState: ChatState = {
   sessions: [],
+  hasMore: false,
   currentSessionId: null,
   messages: [],
   isLoading: false,
@@ -91,6 +99,11 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "SET_SESSIONS":
       return { ...state, sessions: action.sessions }
+    // SPEC-CHAT-PERF-001: 기존 세션 목록 끝에 추가 (페이지네이션 더 보기)
+    case "APPEND_SESSIONS":
+      return { ...state, sessions: [...state.sessions, ...action.sessions] }
+    case "SET_HAS_MORE":
+      return { ...state, hasMore: action.hasMore }
     case "SET_CURRENT_SESSION":
       return { ...state, currentSessionId: action.sessionId }
     case "SET_MESSAGES":
@@ -144,6 +157,9 @@ export default function ChatPage() {
   const chatClient = useMemo(() => new ChatApiClient(), [])
   const jitClient = useRef(new JITApiClient())
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // @MX:NOTE: [AUTO] sessionOffset - SPEC-CHAT-PERF-001 페이지네이션 오프셋 추적
+  const [sessionOffset, setSessionOffset] = useState(0)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   // localStorage 키 생성 헬퍼
   const getDocStorageKey = useCallback(
@@ -204,13 +220,15 @@ export default function ChatPage() {
     void verifyAndRestore()
   }, [state.currentSessionId, getDocStorageKey])
 
-  // 마운트 시 세션 목록 로드
+  // 마운트 시 세션 목록 로드 (SPEC-CHAT-PERF-001: 페이지네이션 적용)
   useEffect(() => {
     const load = async () => {
       dispatch({ type: "SET_LOADING", isLoading: true })
       try {
-        const sessions = await chatClient.listSessions()
-        dispatch({ type: "SET_SESSIONS", sessions })
+        const result = await chatClient.listSessions(20, 0)
+        dispatch({ type: "SET_SESSIONS", sessions: result.sessions })
+        dispatch({ type: "SET_HAS_MORE", hasMore: result.has_more })
+        setSessionOffset(20)
       } catch (err) {
         const message = err instanceof Error ? err.message : "세션 목록을 불러오지 못했습니다"
         dispatch({ type: "SET_ERROR", error: message })
@@ -221,6 +239,24 @@ export default function ChatPage() {
     }
     void load()
   }, [chatClient])
+
+  // @MX:ANCHOR: 세션 목록 더 보기 로드 함수 (페이지네이션)
+  // @MX:REASON: SPEC-CHAT-PERF-001 - 다음 페이지 세션을 기존 목록에 append
+  const handleLoadMore = useCallback(async () => {
+    if (!state.hasMore || isLoadingMore) return
+    setIsLoadingMore(true)
+    try {
+      const result: PaginatedSessionListResponse = await chatClient.listSessions(20, sessionOffset)
+      dispatch({ type: "APPEND_SESSIONS", sessions: result.sessions })
+      dispatch({ type: "SET_HAS_MORE", hasMore: result.has_more })
+      setSessionOffset((prev) => prev + 20)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "세션 목록을 불러오지 못했습니다"
+      dispatch({ type: "SET_ERROR", error: message })
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [chatClient, state.hasMore, sessionOffset, isLoadingMore])
 
   // ──────────────────────────────────────────────
   // SSE 스트리밍 핵심 로직 (중복 제거 목적으로 추출)
@@ -413,6 +449,9 @@ export default function ChatPage() {
           onSelectSession={(id) => void handleSelectSession(id)}
           onDeleteSession={(id) => void handleDeleteSession(id)}
           onNewSession={() => void handleNewSession()}
+          hasMore={state.hasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={() => void handleLoadMore()}
         />
       )}
     </>

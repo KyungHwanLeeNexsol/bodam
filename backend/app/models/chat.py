@@ -78,12 +78,15 @@ class ChatSession(TimestampMixin, Base):
         """
         super().__init__(title=title, user_id=user_id, **kwargs)
 
-    # 관계: 세션 -> 메시지 목록 (cascade 삭제, selectin 로딩)
+    # @MX:NOTE: [AUTO] lazy="noload"로 변경 (SPEC-CHAT-PERF-001)
+    # 목록 조회 시 불필요한 메시지 로딩을 방지.
+    # 메시지가 필요한 경우 get_session()에서 selectinload()로 명시적 로드 필요.
+    # 관계: 세션 -> 메시지 목록 (cascade 삭제, noload - 명시적 eager load 필요)
     messages: Mapped[list[ChatMessage]] = relationship(
         "ChatMessage",
         back_populates="session",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
         order_by="ChatMessage.created_at",
     )
 

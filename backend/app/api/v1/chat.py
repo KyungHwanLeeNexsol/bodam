@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,7 @@ from app.schemas.chat import (
     ChatSessionListResponse,
     ChatSessionResponse,
     MessageSendResponse,
+    PaginatedSessionListResponse,
 )
 from app.services.chat_service import ChatService
 
@@ -83,26 +84,41 @@ async def create_session(
 
 @router.get(
     "/sessions",
-    response_model=list[ChatSessionListResponse],
+    response_model=PaginatedSessionListResponse,
     status_code=200,
-    summary="채팅 세션 목록 조회",
+    summary="채팅 세션 목록 조회 (페이지네이션)",
 )
 async def list_sessions(
+    limit: int = Query(default=20, le=100, ge=1, description="최대 반환 개수 (1-100)"),
+    offset: int = Query(default=0, ge=0, description="건너뛸 개수"),
     chat_service: ChatService = Depends(get_chat_service),
-) -> list[ChatSessionListResponse]:
-    """모든 채팅 세션 목록을 최신순으로 반환합니다."""
-    sessions = await chat_service.list_sessions()
-    return [
+) -> PaginatedSessionListResponse:
+    """채팅 세션 목록을 최신순으로 반환합니다 (페이지네이션).
+
+    SQL COUNT 서브쿼리로 메시지 수를 산출하여 성능 최적화.
+    """
+    sessions_with_counts, total_count = await chat_service.list_sessions(
+        limit=limit,
+        offset=offset,
+    )
+
+    session_responses = [
         ChatSessionListResponse(
-            id=s.id,
-            title=s.title,
-            user_id=s.user_id,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            message_count=len(s.messages) if s.messages else 0,
+            id=session.id,
+            title=session.title,
+            user_id=session.user_id,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            message_count=msg_count,
         )
-        for s in sessions
+        for session, msg_count in sessions_with_counts
     ]
+
+    return PaginatedSessionListResponse(
+        sessions=session_responses,
+        total_count=total_count,
+        has_more=(offset + limit) < total_count,
+    )
 
 
 @router.get(

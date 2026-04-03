@@ -17,6 +17,13 @@ export interface ChatSessionListItem {
   message_count: number
 }
 
+// 페이지네이션 세션 목록 응답 (SPEC-CHAT-PERF-001)
+export interface PaginatedSessionListResponse {
+  sessions: ChatSessionListItem[]
+  total_count: number
+  has_more: boolean
+}
+
 // 채팅 메시지
 export interface ChatMessage {
   id: string
