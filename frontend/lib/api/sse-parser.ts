@@ -157,6 +157,25 @@ function parseSSEEvent(data: unknown): SSEEvent | null {
       return { type: "title_update", title: obj["title"] }
     }
 
+    case "searching_document": {
+      if (typeof obj["product_name"] !== "string") {
+        return null
+      }
+      return { type: "searching_document", product_name: obj["product_name"] }
+    }
+
+    case "document_ready": {
+      if (typeof obj["product_name"] !== "string" || typeof obj["page_count"] !== "number") {
+        return null
+      }
+      return {
+        type: "document_ready",
+        product_name: obj["product_name"],
+        page_count: obj["page_count"],
+        source_url: typeof obj["source_url"] === "string" ? obj["source_url"] : "",
+      }
+    }
+
     default:
       return null
   }

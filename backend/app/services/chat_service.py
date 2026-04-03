@@ -19,9 +19,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
+from app.services.jit_rag.document_fetcher import DocumentFetcher
+from app.services.jit_rag.document_finder import DocumentFinder
 from app.services.jit_rag.models import DocumentData
+from app.services.jit_rag.product_extractor import ProductNameExtractor
 from app.services.jit_rag.section_finder import SectionFinder
 from app.services.jit_rag.session_store import JITSessionStore
+from app.services.jit_rag.text_extractor import TextExtractor
 from app.services.llm.models import QueryIntent
 from app.services.llm.router import FallbackChain
 from app.services.rag.embeddings import get_embedding_service
@@ -80,6 +84,8 @@ class ChatService:
         self._guidance_service = guidance_service
         self._jit_store = jit_session_store
         self._jit_section_finder = SectionFinder()
+        # 자동 JIT 트리거를 위한 보험 상품명 추출기
+        self._product_extractor = ProductNameExtractor()
         self._llm_chain = FallbackChain(settings)
         # API 키가 없는 경우 임베딩 서비스 초기화 스킵 (테스트 환경 등)
         if settings.gemini_api_key:
@@ -388,6 +394,52 @@ class ChatService:
                 jit_document_stream = await self._jit_store.get(str(session_id))
             except Exception as e:
                 logger.warning("JIT 문서 조회 실패 (stream), 벡터 검색으로 폴백: %s", str(e))
+
+        # 자동 JIT 트리거: 캐시 없고 JIT 스토어 있고 상품명 감지 시 파이프라인 실행
+        if jit_document_stream is None and self._jit_store is not None:
+            product_info = self._product_extractor.extract(content)
+            if product_info is not None:
+                try:
+                    from datetime import UTC, datetime
+
+                    yield {"type": "searching_document", "product_name": product_info.product_name}
+                    url = await DocumentFinder().find_url(product_info.full_query)
+                    fetch_result = await DocumentFetcher().fetch(url)
+                    extractor = TextExtractor()
+                    # Content-Type에 따라 PDF 또는 HTML 파싱
+                    if "pdf" in fetch_result.content_type:
+                        sections = extractor.extract_from_pdf(fetch_result.data)
+                        source_type = "pdf"
+                        try:
+                            import pymupdf
+                            doc = pymupdf.open(stream=fetch_result.data, filetype="pdf")
+                            page_count = len(doc)
+                            doc.close()
+                        except Exception:
+                            page_count = len(sections) if sections else 1
+                    else:
+                        html_content = fetch_result.data.decode("utf-8", errors="replace")
+                        sections = extractor.extract_from_html(html_content)
+                        source_type = "html"
+                        page_count = 1
+                    extracted = DocumentData(
+                        product_name=product_info.product_name,
+                        source_url=fetch_result.url,
+                        source_type=source_type,
+                        sections=sections,
+                        extracted_at=datetime.now(UTC).isoformat(),
+                        page_count=page_count,
+                    )
+                    await self._jit_store.save(str(session_id), extracted)
+                    jit_document_stream = extracted
+                    yield {
+                        "type": "document_ready",
+                        "product_name": product_info.product_name,
+                        "page_count": extracted.page_count,
+                        "source_url": fetch_result.url,
+                    }
+                except Exception as e:
+                    logger.warning("자동 JIT 파이프라인 실패, 벡터 검색으로 폴백: %s", str(e))
 
         if jit_document_stream is not None:
             # JIT 소스: 세션에 업로드된 약관 문서 사용

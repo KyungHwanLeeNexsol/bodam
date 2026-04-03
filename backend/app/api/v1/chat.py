@@ -27,7 +27,9 @@ from app.schemas.chat import (
     PaginatedSessionListResponse,
     SessionUpdateRequest,
 )
+from app.api.v1.jit import get_session_store
 from app.services.chat_service import ChatService
+from app.services.jit_rag.session_store import JITSessionStore
 
 # 채팅 라우터 (prefix: /chat)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -36,17 +38,21 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 def get_chat_service(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    jit_session_store: JITSessionStore | None = Depends(get_session_store),
 ) -> ChatService:
     """ChatService 의존성 주입 팩토리
 
     Args:
         db: 비동기 DB 세션
         settings: 애플리케이션 설정
+        jit_session_store: JIT 문서 세션 스토어 (Redis 불가 시 None 폴백)
 
     Returns:
         ChatService 인스턴스
     """
-    return ChatService(db=db, settings=settings)
+    # @MX:NOTE: [AUTO] Redis 불가 시 jit_session_store는 None으로 폴백됨
+    # ChatService는 _jit_store=None이어도 벡터 검색으로 정상 작동
+    return ChatService(db=db, settings=settings, jit_session_store=jit_session_store)
 
 
 # ─────────────────────────────────────────────

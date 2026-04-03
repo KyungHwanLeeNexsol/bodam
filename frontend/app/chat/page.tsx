@@ -51,6 +51,9 @@ interface ChatState {
   // @MX:NOTE: JIT 문서 소스 상태 - DocumentSourcePanel과 동기화
   documentSource: DocumentMeta | null
   documentPanelExpanded: boolean
+  // @MX:NOTE: [AUTO] SPEC-JIT-002 자동 JIT 트리거 상태 - 문서 검색 중 여부
+  isSearchingDocument: boolean
+  searchingProductName: string | null
 }
 
 type ChatAction =
@@ -75,6 +78,9 @@ type ChatAction =
   | { type: "TOGGLE_DOCUMENT_PANEL" }
   // SPEC-CHAT-UX-001: SSE title_update 이벤트로 세션 제목 업데이트
   | { type: "UPDATE_SESSION_TITLE"; sessionId: string; title: string }
+  // SPEC-JIT-002: 자동 JIT 트리거 상태 액션
+  | { type: "SET_SEARCHING_DOCUMENT"; productName: string }
+  | { type: "SET_DOCUMENT_READY"; document: DocumentMeta }
 
 // ──────────────────────────────────────────────
 // 초기 상태 및 리듀서
@@ -94,6 +100,8 @@ const initialState: ChatState = {
   sidebarOpen: false,
   documentSource: null,
   documentPanelExpanded: false,
+  isSearchingDocument: false,
+  searchingProductName: null,
 }
 
 // @MX:NOTE: 채팅 상태 리듀서 - 모든 채팅 관련 상태 변경을 처리
@@ -150,6 +158,17 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         sessions: state.sessions.map((s) =>
           s.id === action.sessionId ? { ...s, title: action.title } : s
         ),
+      }
+    // SPEC-JIT-002: 자동 JIT 트리거 - 문서 검색 중 상태 진입
+    case "SET_SEARCHING_DOCUMENT":
+      return { ...state, isSearchingDocument: true, searchingProductName: action.productName }
+    // SPEC-JIT-002: 자동 JIT 트리거 - 문서 준비 완료, 검색 중 상태 해제
+    case "SET_DOCUMENT_READY":
+      return {
+        ...state,
+        isSearchingDocument: false,
+        searchingProductName: null,
+        documentSource: action.document,
       }
     default:
       return state
@@ -318,6 +337,21 @@ export default function ChatPage() {
           // SPEC-CHAT-UX-001: 스트리밍 중 세션 제목 자동 업데이트
           case "title_update":
             dispatch({ type: "UPDATE_SESSION_TITLE", sessionId, title: event.title })
+            break
+          // SPEC-JIT-002: 자동 JIT 트리거 - 문서 검색 중 상태 알림
+          case "searching_document":
+            dispatch({ type: "SET_SEARCHING_DOCUMENT", productName: event.product_name })
+            break
+          // SPEC-JIT-002: 자동 JIT 트리거 - 문서 준비 완료 처리
+          case "document_ready":
+            dispatch({
+              type: "SET_DOCUMENT_READY",
+              document: {
+                product_name: event.product_name,
+                page_count: event.page_count,
+                source_url: event.source_url,
+              } as DocumentMeta,
+            })
             break
         }
       },
