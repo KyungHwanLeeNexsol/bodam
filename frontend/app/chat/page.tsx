@@ -6,6 +6,7 @@
 import { useReducer, useEffect, useRef, useMemo, useCallback, useState } from "react"
 import { X, BookOpen } from "lucide-react"
 import { ChatApiClient } from "@/lib/api/chat-client"
+import { JITApiClient } from "@/lib/api/jit-client"
 import ChatLayout from "@/components/chat/ChatLayout"
 import SessionList from "@/components/chat/SessionList"
 import MessageList from "@/components/chat/MessageList"
@@ -141,7 +142,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 export default function ChatPage() {
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const chatClient = useMemo(() => new ChatApiClient(), [])
+  const jitClient = useRef(new JITApiClient())
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // localStorage 키 생성 헬퍼
+  const getDocStorageKey = useCallback(
+    (sessionId: string) => `bodam_jit_doc_${sessionId}`,
+    []
+  )
 
   // 세션 목록 로딩 완료 여부 (스켈레톤 표시 제어)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
@@ -155,6 +163,46 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [state.messages, state.streamingContent])
+
+  // @MX:NOTE: [AUTO] documentSource → localStorage 저장 (세션별 키로 저장)
+  // 새로고침 후 복원을 위해 documentSource가 설정될 때마다 저장
+  useEffect(() => {
+    const sessionId = state.currentSessionId
+    if (!sessionId || !state.documentSource) return
+    try {
+      localStorage.setItem(getDocStorageKey(sessionId), JSON.stringify(state.documentSource))
+    } catch {
+      // localStorage 접근 불가 시 무시 (프라이빗 브라우징 등)
+    }
+  }, [state.documentSource, state.currentSessionId, getDocStorageKey])
+
+  // @MX:NOTE: [AUTO] 세션 변경 시 localStorage에서 문서 복원 (Redis 검증 포함)
+  // Redis TTL이 살아있으면 UI 상태를 복원하여 새로고침 후에도 약관 컨텍스트 유지
+  useEffect(() => {
+    const sessionId = state.currentSessionId
+    if (!sessionId) return
+
+    const stored = localStorage.getItem(getDocStorageKey(sessionId))
+    if (!stored) return
+
+    const verifyAndRestore = async () => {
+      try {
+        const meta = await jitClient.current.getDocumentMeta(sessionId)
+        if (meta !== null) {
+          // Redis에 문서가 살아있음 → UI 상태 복원
+          const savedMeta = JSON.parse(stored) as import("@/lib/api/jit-client").DocumentMeta
+          dispatch({ type: "SET_DOCUMENT", document: savedMeta })
+        } else {
+          // Redis TTL 만료 → localStorage 정리
+          localStorage.removeItem(getDocStorageKey(sessionId))
+        }
+      } catch {
+        // 네트워크 오류 시 복원 건너뜀 (localStorage는 유지)
+      }
+    }
+
+    void verifyAndRestore()
+  }, [state.currentSessionId, getDocStorageKey])
 
   // 마운트 시 세션 목록 로드
   useEffect(() => {
@@ -443,6 +491,12 @@ export default function ChatPage() {
                     dispatch({ type: "SET_DOCUMENT", document: meta })
                   }
                   onDocumentRemoved={() => {
+                    // localStorage에서도 삭제 (명시적 제거)
+                    if (state.currentSessionId) {
+                      try {
+                        localStorage.removeItem(getDocStorageKey(state.currentSessionId))
+                      } catch { /* 무시 */ }
+                    }
                     dispatch({ type: "CLEAR_DOCUMENT" })
                     dispatch({ type: "TOGGLE_DOCUMENT_PANEL" })
                   }}
