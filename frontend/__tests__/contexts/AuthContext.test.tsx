@@ -369,5 +369,40 @@ describe('AuthContext', () => {
         expect(screen.getByTestId('profile-email').textContent).toBe('restored@example.com')
       })
     })
+
+    it('/auth/me가 401 반환 시 자동 로그아웃되어야 한다', async () => {
+      localStorageMock.getItem.mockReturnValueOnce('expired.jwt.token')
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const { AuthProvider, useAuth } = await import('@/contexts/AuthContext')
+
+      function TestComponent() {
+        const { isAuthenticated, userProfile } = useAuth()
+        return (
+          <>
+            <span data-testid="auth-status">{isAuthenticated ? 'authenticated' : 'logged-out'}</span>
+            <span data-testid="profile">{userProfile ? 'has-profile' : 'no-profile'}</span>
+          </>
+        )
+      }
+
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      )
+
+      // 401 응답 후 자동 로그아웃
+      await waitFor(() => {
+        expect(screen.getByTestId('auth-status').textContent).toBe('logged-out')
+      })
+      expect(screen.getByTestId('profile').textContent).toBe('no-profile')
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth_token')
+    })
   })
 })

@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
 
-  // @MX:NOTE: [AUTO] fetchUserProfile - 토큰으로 /api/v1/auth/me 호출, 실패 시 인증 유지
+  // @MX:NOTE: [AUTO] fetchUserProfile - 토큰으로 /api/v1/auth/me 호출, 401 시 자동 로그아웃
   const fetchUserProfile = useCallback(async (authToken: string) => {
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || ''
@@ -53,9 +53,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json() as { email: string; full_name: string | null }
         setUserProfile({ email: data.email, fullName: data.full_name ?? null })
+      } else if (res.status === 401) {
+        // 토큰 만료/무효 → 즉시 로그아웃
+        localStorage.removeItem(AUTH_TOKEN_KEY)
+        document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`
+        setToken(null)
+        setIsAuthenticated(false)
+        setUserProfile(null)
       }
     } catch {
-      // 프로필 조회 실패 시 무시 (인증은 유지)
+      // 네트워크 오류 시 인증 상태 유지 (오프라인 등)
     }
   }, [])
 
