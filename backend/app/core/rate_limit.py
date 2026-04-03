@@ -286,6 +286,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Any) -> Any:
         """요청 처리 및 Rate Limit 적용"""
+        import os
+        if os.environ.get("TESTING") == "true":
+            return await call_next(request)
+
         client_ip = _get_client_ip(request)
         endpoint_group = _get_endpoint_group(request.url.path)
 

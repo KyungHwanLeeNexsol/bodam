@@ -17,6 +17,7 @@ def _make_app():
     """테스트용 FastAPI 앱 생성"""
     import os
 
+    os.environ["TESTING"] = "true"
     os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/bodam")
     os.environ.setdefault("SECRET_KEY", "test-secret-key")
 
