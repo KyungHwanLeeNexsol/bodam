@@ -15,6 +15,7 @@ from app.api.v1.pipeline import router as pipeline_router
 from app.api.v1.guidance import router as guidance_router
 from app.api.v1.health import router as health_router
 from app.api.v1.oauth import router as oauth_router
+from app.api.v1.jit import router as jit_router
 from app.api.v1.pdf import router as pdf_router
 from app.api.v1.search import router as search_router
 from app.api.v1.users import router as users_router
@@ -151,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api/v1/admin")
     app.include_router(chat_router, prefix="/api/v1")
     app.include_router(pdf_router, prefix="/api/v1")
+    app.include_router(jit_router, prefix="/api/v1")
     app.include_router(guidance_router, prefix="/api/v1")
     app.include_router(crawler_router, prefix="/api/v1")
     app.include_router(pipeline_router, prefix="/api/v1")

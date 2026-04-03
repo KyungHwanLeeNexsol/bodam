@@ -4,7 +4,7 @@
 // @MX:REASON: M3 핵심 컴포넌트. ChatApiClient, ChatLayout, SessionList, MessageBubble 등 모든 채팅 컴포넌트를 통합
 
 import { useReducer, useEffect, useRef, useMemo, useCallback, useState } from "react"
-import { X } from "lucide-react"
+import { X, BookOpen } from "lucide-react"
 import { ChatApiClient } from "@/lib/api/chat-client"
 import ChatLayout from "@/components/chat/ChatLayout"
 import SessionList from "@/components/chat/SessionList"
@@ -13,6 +13,7 @@ import MessageBubble from "@/components/chat/MessageBubble"
 import StreamingMessage from "@/components/chat/StreamingMessage"
 import ChatInput from "@/components/chat/ChatInput"
 import EmptyState from "@/components/chat/EmptyState"
+import DocumentSourcePanel from "@/components/chat/DocumentSourcePanel"
 import {
   SessionListSkeleton,
   MessageListSkeleton,
@@ -25,6 +26,7 @@ import type {
   Source,
   SSEEvent,
 } from "@/lib/types/chat"
+import type { DocumentMeta } from "@/lib/api/jit-client"
 
 // ──────────────────────────────────────────────
 // 상태 타입 정의
@@ -41,6 +43,9 @@ interface ChatState {
   streamingGuidance: GuidanceData | null
   error: string | null
   sidebarOpen: boolean
+  // @MX:NOTE: JIT 문서 소스 상태 - DocumentSourcePanel과 동기화
+  documentSource: DocumentMeta | null
+  documentPanelExpanded: boolean
 }
 
 type ChatAction =
@@ -57,6 +62,9 @@ type ChatAction =
   | { type: "CLEAR_ERROR" }
   | { type: "SET_LOADING"; isLoading: boolean }
   | { type: "TOGGLE_SIDEBAR" }
+  | { type: "SET_DOCUMENT"; document: DocumentMeta }
+  | { type: "CLEAR_DOCUMENT" }
+  | { type: "TOGGLE_DOCUMENT_PANEL" }
 
 // ──────────────────────────────────────────────
 // 초기 상태 및 리듀서
@@ -73,6 +81,8 @@ const initialState: ChatState = {
   streamingGuidance: null,
   error: null,
   sidebarOpen: false,
+  documentSource: null,
+  documentPanelExpanded: false,
 }
 
 // @MX:NOTE: 채팅 상태 리듀서 - 모든 채팅 관련 상태 변경을 처리
@@ -111,6 +121,12 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, isLoading: action.isLoading }
     case "TOGGLE_SIDEBAR":
       return { ...state, sidebarOpen: !state.sidebarOpen }
+    case "SET_DOCUMENT":
+      return { ...state, documentSource: action.document, documentPanelExpanded: false }
+    case "CLEAR_DOCUMENT":
+      return { ...state, documentSource: null }
+    case "TOGGLE_DOCUMENT_PANEL":
+      return { ...state, documentPanelExpanded: !state.documentPanelExpanded }
     default:
       return state
   }
@@ -251,6 +267,8 @@ export default function ChatPage() {
       dispatch({ type: "SET_SESSIONS", sessions: [item, ...state.sessions] })
       dispatch({ type: "SET_CURRENT_SESSION", sessionId: session.id })
       dispatch({ type: "SET_MESSAGES", messages: [] })
+      // 새 세션에서는 문서 패널 초기화
+      dispatch({ type: "CLEAR_DOCUMENT" })
     } catch (err) {
       const message = err instanceof Error ? err.message : "새 대화를 만들지 못했습니다"
       dispatch({ type: "SET_ERROR", error: message })
@@ -263,6 +281,8 @@ export default function ChatPage() {
         dispatch({ type: "TOGGLE_SIDEBAR" })
       }
       dispatch({ type: "SET_CURRENT_SESSION", sessionId })
+      // 세션 전환 시 문서 소스 초기화
+      dispatch({ type: "CLEAR_DOCUMENT" })
       dispatch({ type: "SET_LOADING", isLoading: true })
       try {
         const detail = await chatClient.getSession(sessionId)
@@ -395,6 +415,41 @@ export default function ChatPage() {
             )}
             <div ref={messagesEndRef} />
           </MessageList>
+        )}
+
+        {/* JIT 약관 문서 소스 패널 */}
+        {state.currentSessionId !== null && (
+          <div className="border-t border-[#E2E8F0] bg-white px-4 pt-3">
+            {/* 문서 연결 상태 표시 / 패널 토글 */}
+            {!state.documentSource && !state.documentPanelExpanded ? (
+              <button
+                type="button"
+                onClick={() => dispatch({ type: "TOGGLE_DOCUMENT_PANEL" })}
+                className="mb-2 flex items-center gap-1.5 text-xs text-[#94A3B8] transition-colors hover:text-[#475569]"
+                aria-label="약관 문서 연결 패널 열기"
+              >
+                <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>약관 연결하기</span>
+              </button>
+            ) : null}
+
+            {/* 문서가 연결되었을 때 인디케이터 또는 패널 */}
+            {state.documentSource || state.documentPanelExpanded ? (
+              <div className="mb-2">
+                <DocumentSourcePanel
+                  sessionId={state.currentSessionId}
+                  currentDocument={state.documentSource}
+                  onDocumentReady={(meta) =>
+                    dispatch({ type: "SET_DOCUMENT", document: meta })
+                  }
+                  onDocumentRemoved={() => {
+                    dispatch({ type: "CLEAR_DOCUMENT" })
+                    dispatch({ type: "TOGGLE_DOCUMENT_PANEL" })
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         )}
 
         {/* 채팅 입력창 (항상 표시) */}

@@ -57,6 +57,18 @@ class ChatSession(TimestampMixin, Base):
         nullable=True,
     )
 
+    # JIT 문서 소스 타입 (SPEC-JIT-001): "pdf", "html", None
+    document_source_type: Mapped[str | None] = mapped_column(
+        sa.String(20),
+        nullable=True,
+    )
+
+    # JIT 문서 소스 메타데이터 (SPEC-JIT-001): {product_name, source_url, page_count 등}
+    document_source_meta: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
     def __init__(self, title: str = "새 대화", user_id: str | uuid.UUID | None = None, **kwargs):
         """ChatSession 초기화 (Python 레벨 기본값 설정)
 
