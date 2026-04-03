@@ -150,6 +150,13 @@ function parseSSEEvent(data: unknown): SSEEvent | null {
       return { type: "error", content: obj["content"] }
     }
 
+    case "title_update": {
+      if (typeof obj["title"] !== "string") {
+        return null
+      }
+      return { type: "title_update", title: obj["title"] }
+    }
+
     default:
       return null
   }
