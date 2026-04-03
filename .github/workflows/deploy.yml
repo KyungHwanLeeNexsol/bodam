@@ -119,15 +119,18 @@ jobs:
 
       - name: 배포 헬스체크
         run: |
-          echo "헬스체크 대기 (30초)..."
-          sleep 30
-          STATUS=$(curl -sf https://bodam.fly.dev/api/v1/health -o /dev/null -w "%{http_code}" || echo "000")
-          echo "헬스체크 응답: HTTP $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "헬스체크 실패 (HTTP $STATUS)"
-            exit 1
-          fi
-          echo "헬스체크 통과"
+          echo "헬스체크 시작 (최대 90초 대기)..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://bodam.fly.dev/api/v1/health 2>/dev/null || echo "000")
+            echo "시도 ${i}/18: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "헬스체크 통과"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "헬스체크 실패: 90초 내에 200 응답 없음"
+          exit 1
 
       - name: 배포 결과 요약
         if: always()
