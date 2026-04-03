@@ -18,6 +18,9 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
+from app.services.jit_rag.models import DocumentData
+from app.services.jit_rag.section_finder import SectionFinder
+from app.services.jit_rag.session_store import JITSessionStore
 from app.services.llm.models import QueryIntent
 from app.services.llm.router import FallbackChain
 from app.services.rag.embeddings import get_embedding_service
@@ -59,6 +62,7 @@ class ChatService:
         settings: Settings,
         intent_classifier: IntentClassifier | None = None,
         guidance_service: GuidanceService | None = None,
+        jit_session_store: JITSessionStore | None = None,
     ) -> None:
         """ChatService 초기화
 
@@ -67,11 +71,14 @@ class ChatService:
             settings: 애플리케이션 설정
             intent_classifier: 의도 분류기 (선택, None이면 분류 미수행)
             guidance_service: 분쟁 가이던스 서비스 (선택, None이면 가이던스 미수행)
+            jit_session_store: JIT 문서 세션 스토어 (선택, None이면 JIT 미사용)
         """
         self._db = db
         self._settings = settings
         self._intent_classifier = intent_classifier
         self._guidance_service = guidance_service
+        self._jit_store = jit_session_store
+        self._jit_section_finder = SectionFinder()
         self._llm_chain = FallbackChain(settings)
         # API 키가 없는 경우 임베딩 서비스 초기화 스킵 (테스트 환경 등)
         if settings.gemini_api_key:
@@ -171,18 +178,51 @@ class ChatService:
         # 이전 대화 히스토리 구성
         history = self._get_chat_history(session, self._settings.chat_history_limit)
 
-        # RAG: 관련 약관 검색 (벡터 검색 서비스 미설정 시 빈 결과)
-        if self._vector_search is not None:
-            search_results = await self._vector_search.search(
-                query=content,
-                top_k=self._settings.chat_context_top_k,
-                threshold=self._settings.chat_context_threshold,
-            )
-        else:
-            search_results = []
+        # JIT 소스 우선 조회: Redis에서 세션 문서 확인
+        jit_document: DocumentData | None = None
+        if self._jit_store is not None:
+            try:
+                jit_document = await self._jit_store.get(str(session_id))
+            except Exception as e:
+                logger.warning("JIT 문서 조회 실패, 벡터 검색으로 폴백: %s", str(e))
 
-        # 컨텍스트 프롬프트 구성
-        context_prompt = self._build_context_prompt(search_results)
+        if jit_document is not None:
+            # JIT 소스: 세션에 업로드된 약관 문서 사용
+            relevant_sections = self._jit_section_finder.find_relevant(
+                content, jit_document.sections
+            )
+            context_prompt = self._build_jit_context_prompt(jit_document, relevant_sections)
+            search_results = []
+            sources = [
+                {
+                    "policy_name": jit_document.product_name,
+                    "company_name": "",
+                    "chunk_text": s.content[:200],
+                    "similarity": 1.0,
+                    "section_title": s.title,
+                }
+                for s in relevant_sections
+            ]
+        else:
+            # 벡터 검색 폴백 (기존 RAG 파이프라인)
+            if self._vector_search is not None:
+                search_results = await self._vector_search.search(
+                    query=content,
+                    top_k=self._settings.chat_context_top_k,
+                    threshold=self._settings.chat_context_threshold,
+                )
+            else:
+                search_results = []
+            context_prompt = self._build_context_prompt(search_results)
+            sources = [
+                {
+                    "policy_name": r.get("policy_name"),
+                    "company_name": r.get("company_name"),
+                    "chunk_text": r.get("chunk_text", "")[:200],
+                    "similarity": r.get("similarity", 0.0),
+                }
+                for r in search_results
+            ]
 
         # OpenAI 메시지 배열 구성
         messages = [{"role": "system", "content": self._build_system_prompt()}]
@@ -202,17 +242,6 @@ class ChatService:
         except Exception as e:
             logger.error("LLM 호출 실패: %s", str(e))
             ai_content = "AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요."
-
-        # 출처 메타데이터 구성
-        sources = [
-            {
-                "policy_name": r.get("policy_name"),
-                "company_name": r.get("company_name"),
-                "chunk_text": r.get("chunk_text", "")[:200],  # 200자 제한
-                "similarity": r.get("similarity", 0.0),
-            }
-            for r in search_results
-        ]
 
         # 의도 분류 및 분쟁 가이던스 분석
         intent_str, confidence = await self._classify_intent(content)
@@ -274,18 +303,53 @@ class ChatService:
         # 이전 대화 히스토리 구성
         history = self._get_chat_history(session, self._settings.chat_history_limit)
 
-        # RAG: 관련 약관 검색 (벡터 검색 서비스 미설정 시 빈 결과)
-        if self._vector_search is not None:
-            search_results = await self._vector_search.search(
-                query=content,
-                top_k=self._settings.chat_context_top_k,
-                threshold=self._settings.chat_context_threshold,
-            )
-        else:
-            search_results = []
+        # JIT 소스 우선 조회: Redis에서 세션 문서 확인
+        jit_document_stream: DocumentData | None = None
+        if self._jit_store is not None:
+            try:
+                jit_document_stream = await self._jit_store.get(str(session_id))
+            except Exception as e:
+                logger.warning("JIT 문서 조회 실패 (stream), 벡터 검색으로 폴백: %s", str(e))
 
-        # 컨텍스트 프롬프트 구성
-        context_prompt = self._build_context_prompt(search_results)
+        if jit_document_stream is not None:
+            # JIT 소스: 세션에 업로드된 약관 문서 사용
+            relevant_sections_stream = self._jit_section_finder.find_relevant(
+                content, jit_document_stream.sections
+            )
+            context_prompt = self._build_jit_context_prompt(
+                jit_document_stream, relevant_sections_stream
+            )
+            search_results = []
+            sources = [
+                {
+                    "policy_name": jit_document_stream.product_name,
+                    "company_name": "",
+                    "chunk_text": s.content[:200],
+                    "similarity": 1.0,
+                    "section_title": s.title,
+                }
+                for s in relevant_sections_stream
+            ]
+        else:
+            # 벡터 검색 폴백 (기존 RAG 파이프라인)
+            if self._vector_search is not None:
+                search_results = await self._vector_search.search(
+                    query=content,
+                    top_k=self._settings.chat_context_top_k,
+                    threshold=self._settings.chat_context_threshold,
+                )
+            else:
+                search_results = []
+            context_prompt = self._build_context_prompt(search_results)
+            sources = [
+                {
+                    "policy_name": r.get("policy_name"),
+                    "company_name": r.get("company_name"),
+                    "chunk_text": r.get("chunk_text", "")[:200],
+                    "similarity": r.get("similarity", 0.0),
+                }
+                for r in search_results
+            ]
 
         # OpenAI 메시지 배열 구성
         messages = [{"role": "system", "content": self._build_system_prompt()}]
@@ -295,17 +359,6 @@ class ChatService:
         if context_prompt:
             user_content = f"{context_prompt}\n\n사용자 질문: {content}"
         messages.append({"role": "user", "content": user_content})
-
-        # 출처 메타데이터 구성
-        sources = [
-            {
-                "policy_name": r.get("policy_name"),
-                "company_name": r.get("company_name"),
-                "chunk_text": r.get("chunk_text", "")[:200],
-                "similarity": r.get("similarity", 0.0),
-            }
-            for r in search_results
-        ]
 
         # LLM FallbackChain으로 응답 생성 (Gemini → OpenAI 폴백)
         full_content = ""
@@ -432,6 +485,34 @@ class ChatService:
             한국 보험 전문가 페르소나 시스템 프롬프트
         """
         return _SYSTEM_PROMPT
+
+    def _build_jit_context_prompt(
+        self,
+        document: DocumentData,
+        sections: list,
+    ) -> str:
+        """JIT 문서 섹션을 컨텍스트 프롬프트로 변환
+
+        JIT 모드에서 약관 섹션을 LLM 컨텍스트로 구성.
+        "다음 약관 조항을 기반으로 답변하세요" 형식 사용.
+
+        Args:
+            document: JIT 문서 데이터
+            sections: 관련 섹션 목록
+
+        Returns:
+            약관 섹션 컨텍스트 프롬프트
+        """
+        if not sections:
+            return f"참고: {document.product_name} 약관이 로드되었으나 관련 조항을 찾지 못했습니다."
+
+        context_parts = [f"다음 {document.product_name} 약관 조항을 기반으로 답변하세요:\n"]
+
+        for section in sections:
+            title_line = f"[{section.title}]" if section.title else f"[{section.page_number}페이지]"
+            context_parts.append(f"{title_line}\n{section.content}\n")
+
+        return "\n".join(context_parts)
 
     def _build_context_prompt(self, search_results: list[dict]) -> str:
         """검색 결과를 컨텍스트 프롬프트로 변환
