@@ -24,10 +24,12 @@ const NETWORK_ERROR_MESSAGE = "서버에 연결할 수 없습니다. 네트워�
  */
 export class ChatApiClient {
   readonly baseUrl: string
+  private readonly getToken?: () => string | null
 
-  constructor() {
+  constructor(getToken?: () => string | null) {
     this.baseUrl =
       process.env["NEXT_PUBLIC_API_URL"] || "http://localhost:8000"
+    this.getToken = getToken
   }
 
   /**
@@ -71,11 +73,9 @@ export class ChatApiClient {
   private async request(url: string, options: RequestInit): Promise<Response> {
     try {
       const headers = new Headers(options.headers)
-      if (typeof window !== "undefined") {
-        const token = localStorage.getItem("auth_token")
-        if (token) {
-          headers.set("Authorization", `Bearer ${token}`)
-        }
+      const token = this.getToken?.() ?? localStorage.getItem("auth_token")
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`)
       }
       const response = await fetch(url, { ...options, headers })
       return response

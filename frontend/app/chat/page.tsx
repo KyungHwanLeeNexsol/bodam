@@ -187,7 +187,10 @@ export default function ChatPage() {
   const router = useRouter()
   const { isAuthenticated, token } = useAuth()
   const [state, dispatch] = useReducer(chatReducer, initialState)
-  const chatClient = useMemo(() => new ChatApiClient(), [])
+  // @MX:NOTE: [AUTO] tokenRef - 프로덕션 빌드에서 localStorage 직접 읽기 이슈 회피
+  const tokenRef = useRef(token)
+  tokenRef.current = token
+  const chatClient = useMemo(() => new ChatApiClient(() => tokenRef.current), [])
   const jitClient = useRef(new JITApiClient())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   // @MX:NOTE: [AUTO] sessionOffset - SPEC-CHAT-PERF-001 페이지네이션 오프셋 추적
