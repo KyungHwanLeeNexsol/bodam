@@ -122,20 +122,36 @@ class TestChatSessionCreate:
         assert resp.status_code == 201
 
 
+def _make_mock_user(user_id=None):
+    """테스트용 User 목 객체 생성"""
+    from app.models.user import User
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = user_id or uuid.uuid4()
+    mock_user.is_active = True
+    return mock_user
+
+
 class TestChatSessionList:
     """GET /api/v1/chat/sessions 테스트 (기존 - 하위호환)"""
 
     @pytest.mark.asyncio
     async def test_list_sessions_returns_200(self, chat_client) -> None:
         """세션 목록 조회 성공 시 200과 PaginatedSessionListResponse 반환"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
 
         sessions = [_make_chat_session("세션1"), _make_chat_session("세션2")]
         mock_db = _make_mock_session()
         sessions_with_counts = [(s, 0) for s in sessions]
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -143,6 +159,7 @@ class TestChatSessionList:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions")
             finally:
@@ -156,12 +173,18 @@ class TestChatSessionList:
     @pytest.mark.asyncio
     async def test_list_sessions_returns_empty(self, chat_client) -> None:
         """세션 없을 때 빈 sessions와 200 반환"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
 
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -169,6 +192,7 @@ class TestChatSessionList:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions")
             finally:
@@ -190,14 +214,20 @@ class TestChatSessionListPaginated:
     @pytest.mark.asyncio
     async def test_list_sessions_returns_paginated_response(self, chat_client) -> None:
         """세션 목록이 PaginatedSessionListResponse 형태로 반환되어야 함"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
 
         sessions = [_make_chat_session("세션1"), _make_chat_session("세션2")]
         sessions_with_counts = [(s, i + 1) for i, s in enumerate(sessions)]
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -205,6 +235,7 @@ class TestChatSessionListPaginated:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions")
             finally:
@@ -223,15 +254,21 @@ class TestChatSessionListPaginated:
     @pytest.mark.asyncio
     async def test_list_sessions_has_more_true_when_more_available(self, chat_client) -> None:
         """총 개수가 현재 페이지보다 많으면 has_more=True"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
 
         # limit=2이고 total=5이면 has_more=True
         sessions = [_make_chat_session(f"세션{i}") for i in range(2)]
         sessions_with_counts = [(s, 0) for s in sessions]
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -239,6 +276,7 @@ class TestChatSessionListPaginated:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions?limit=2&offset=0")
             finally:
@@ -252,15 +290,21 @@ class TestChatSessionListPaginated:
     @pytest.mark.asyncio
     async def test_list_sessions_message_count_in_response(self, chat_client) -> None:
         """응답의 message_count가 SQL COUNT에서 온 값이어야 함"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
 
         session = _make_chat_session("테스트")
         # SQL COUNT 결과: 7
         sessions_with_counts = [(session, 7)]
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -268,6 +312,7 @@ class TestChatSessionListPaginated:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions")
             finally:
@@ -280,11 +325,17 @@ class TestChatSessionListPaginated:
     @pytest.mark.asyncio
     async def test_list_sessions_limit_param(self, chat_client) -> None:
         """limit 쿼리 파라미터가 동작해야 함"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -292,6 +343,7 @@ class TestChatSessionListPaginated:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions?limit=5&offset=10")
             finally:
@@ -305,11 +357,17 @@ class TestChatSessionListPaginated:
     @pytest.mark.asyncio
     async def test_list_sessions_limit_exceeds_max_returns_422(self, chat_client) -> None:
         """limit > 100이면 422 반환 (쿼리 파라미터 유효성 검사)"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -317,6 +375,7 @@ class TestChatSessionListPaginated:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions?limit=101")
             finally:
@@ -327,11 +386,17 @@ class TestChatSessionListPaginated:
     @pytest.mark.asyncio
     async def test_list_sessions_negative_limit_returns_422(self, chat_client) -> None:
         """limit < 1이면 422 반환"""
+        from app.api.deps import get_current_user
+
         client, app, get_db = chat_client
         mock_db = _make_mock_session()
+        mock_user = _make_mock_user()
 
         async def override_get_db():
             yield mock_db
+
+        async def override_get_current_user():
+            return mock_user
 
         with patch("app.api.v1.chat.ChatService") as mock_chat_service_cls:
             mock_svc = AsyncMock()
@@ -339,6 +404,7 @@ class TestChatSessionListPaginated:
             mock_chat_service_cls.return_value = mock_svc
 
             app.dependency_overrides[get_db] = override_get_db
+            app.dependency_overrides[get_current_user] = override_get_current_user
             try:
                 resp = await client.get("/api/v1/chat/sessions?limit=0")
             finally:
@@ -493,7 +559,7 @@ class TestChatMessageSend:
     @pytest.mark.asyncio
     async def test_send_empty_content_returns_422(self, chat_client) -> None:
         """빈 메시지 내용 전송 시 422 반환"""
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
 
         from app.api.v1.chat import get_chat_service
 

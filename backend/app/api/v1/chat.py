@@ -14,9 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user
 from app.api.v1.jit import get_session_store
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas.chat import (
     ChatMessageCreate,
     ChatMessageResponse,
@@ -99,14 +101,17 @@ async def list_sessions(
     limit: int = Query(default=20, le=100, ge=1, description="최대 반환 개수 (1-100)"),
     offset: int = Query(default=0, ge=0, description="건너뛸 개수"),
     chat_service: ChatService = Depends(get_chat_service),
+    current_user: User = Depends(get_current_user),
 ) -> PaginatedSessionListResponse:
     """채팅 세션 목록을 최신순으로 반환합니다 (페이지네이션).
 
     SQL COUNT 서브쿼리로 메시지 수를 산출하여 성능 최적화.
+    인증된 사용자의 세션만 반환합니다.
     """
     sessions_with_counts, total_count = await chat_service.list_sessions(
         limit=limit,
         offset=offset,
+        user_id=current_user.id,
     )
 
     session_responses = [
