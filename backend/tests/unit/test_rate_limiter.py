@@ -184,6 +184,11 @@ class TestRateLimiterCore:
 class TestRateLimitMiddlewareIntegration:
     """Rate Limit Middleware 통합 테스트"""
 
+    @pytest.fixture(autouse=True)
+    def clear_testing_env(self, monkeypatch):
+        """TESTING 환경변수 제거 - 다른 테스트에서 설정된 값이 rate limit bypass를 유발하지 않도록"""
+        monkeypatch.delenv("TESTING", raising=False)
+
     @pytest.mark.asyncio
     async def test_middleware_adds_rate_limit_headers(self):
         """미들웨어가 응답에 Rate Limit 헤더를 추가해야 한다"""
