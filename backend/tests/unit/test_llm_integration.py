@@ -24,6 +24,8 @@ def mock_settings():
     """통합 테스트용 Settings"""
     settings = MagicMock()
     settings.gemini_api_key = "test-gemini-key"
+    settings.gemini_api_key_2 = ""
+    settings.gemini_api_key_3 = ""
     settings.openai_api_key = "test-openai-key"
     settings.llm_primary_model = "gemini-2.0-flash"
     settings.llm_fallback_model = "gpt-4o"

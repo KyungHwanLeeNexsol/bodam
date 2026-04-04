@@ -38,6 +38,8 @@ def mock_settings():
     settings = MagicMock()
     settings.openai_api_key = "test-api-key"
     settings.gemini_api_key = ""
+    settings.gemini_api_key_2 = ""
+    settings.gemini_api_key_3 = ""
     settings.embedding_model = "text-embedding-3-small"
     settings.embedding_dimensions = 1536
     settings.chat_model = "gpt-4o-mini"

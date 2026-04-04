@@ -49,6 +49,8 @@ def mock_chat_service_with_jit():
     mock_db = AsyncMock()
     mock_settings = MagicMock()
     mock_settings.gemini_api_key = None
+    mock_settings.gemini_api_key_2 = ""
+    mock_settings.gemini_api_key_3 = ""
     mock_settings.chat_model = "gpt-4o-mini"
     mock_settings.chat_history_limit = 10
     mock_settings.chat_context_top_k = 5
@@ -228,6 +230,8 @@ async def test_auto_trigger_skips_when_jit_store_is_none() -> None:
     mock_db = AsyncMock()
     mock_settings = MagicMock()
     mock_settings.gemini_api_key = None
+    mock_settings.gemini_api_key_2 = ""
+    mock_settings.gemini_api_key_3 = ""
     mock_settings.chat_model = "gpt-4o-mini"
     mock_settings.chat_history_limit = 10
     mock_settings.chat_context_top_k = 5
