@@ -11,6 +11,10 @@ server:
   public_instance: false
   image_proxy: false
 
+outgoing:
+  # 외부 검색 엔진 요청 타임아웃 (기본 3초 → 8초)
+  request_timeout: 8.0
+
 search:
   # JSON 응답 형식 허용 (API 클라이언트용)
   formats:

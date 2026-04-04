@@ -34,12 +34,12 @@ class SearXNGClient:
     # @MX:NOTE: [AUTO] SearXNG API 형식: GET /search?q=...&format=json&engines=...
     # @MX:SPEC: SPEC-JIT-003
 
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
+    def __init__(self, base_url: str, timeout: float = 15.0) -> None:
         """SearXNG 클라이언트 초기화
 
         Args:
             base_url: SearXNG 인스턴스 기본 URL (예: http://bodam-search.internal:8080)
-            timeout: 요청 타임아웃 (초, 기본값: 10.0)
+            timeout: 요청 타임아웃 (초, 기본값: 15.0 - SearXNG 엔진 대기 8초 + 여유)
         """
         # 끝의 슬래시 제거 (일관된 URL 구성을 위해)
         self._base_url = base_url.rstrip("/")
