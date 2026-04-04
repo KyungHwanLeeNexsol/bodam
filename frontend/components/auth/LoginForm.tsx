@@ -36,9 +36,7 @@ export function LoginForm() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  // isAuthenticated 상태가 true로 커밋된 후 /chat으로 이동
-  // login() 호출 직후 router.push를 사용하면 React 상태 업데이트 전에
-  // 이동이 시작되어 ChatPage auth guard가 /login으로 되돌리는 race condition 방지
+  // 이미 로그인된 상태로 /login 페이지 접근 시 /chat으로 리다이렉트
   useEffect(() => {
     if (isAuthenticated) {
       void router.push('/chat')
@@ -62,10 +60,18 @@ export function LoginForm() {
         email: data.email,
         password: data.password,
       })
+      // login()은 localStorage를 동기적으로 설정
+      // ChatPage auth guard가 localStorage 토큰을 확인하므로 바로 push 가능
       login(tokenResponse.access_token)
-      // 이동은 useEffect(isAuthenticated 변경 감지)에서 처리
+      router.push('/chat')
     } catch (error) {
-      setServerError(error instanceof Error ? error.message : '이메일 또는 비밀번호가 올바르지 않습니다')
+      const message = error instanceof Error ? error.message : '이메일 또는 비밀번호가 올바르지 않습니다'
+      // 네트워크 오류를 한국어로 변환
+      if (error instanceof TypeError && (message.includes('fetch') || message.includes('network'))) {
+        setServerError('서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.')
+      } else {
+        setServerError(message)
+      }
     } finally {
       setIsLoading(false)
     }

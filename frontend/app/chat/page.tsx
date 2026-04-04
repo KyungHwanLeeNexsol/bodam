@@ -204,9 +204,11 @@ export default function ChatPage() {
   )
 
   // 인증 확인 - 초기화 완료 후 토큰 없으면 로그인 페이지로 이동
+  // localStorage 토큰도 함께 확인하여 login() 직후 React 상태 커밋 전 리다이렉트 방지
   useEffect(() => {
     if (!isInitialized) return
-    if (!isAuthenticated) {
+    const hasStoredToken = Boolean(localStorage.getItem('auth_token'))
+    if (!isAuthenticated && !hasStoredToken) {
       void router.push("/login")
     }
   }, [isAuthenticated, isInitialized, router])

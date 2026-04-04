@@ -7,7 +7,7 @@
  * SPEC-CHAT-UX-001: userProfile 상태 추가 (email, fullName)
  */
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 
 // localStorage 키 상수
 const AUTH_TOKEN_KEY = 'auth_token'
@@ -45,6 +45,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  // 로그인 시각 추적 - login() 직후 fetchUserProfile 401 경쟁 조건 방지용
+  const loginTimestampRef = useRef<number>(0)
 
   // @MX:NOTE: [AUTO] fetchUserProfile - 토큰으로 /api/v1/auth/me 호출, 401 시 자동 로그아웃
   // @MX:WARN: [AUTO] 경쟁 조건 방지 - 401 시 현재 저장된 토큰과 요청 토큰이 같을 때만 삭제
@@ -59,10 +61,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json() as { email: string; full_name: string | null }
         setUserProfile({ email: data.email, fullName: data.full_name ?? null })
       } else if (res.status === 401) {
-        // 경쟁 조건 방지: 요청한 토큰이 현재 저장된 토큰과 같을 때만 로그아웃
-        // OAuth 로그인 중 이전 만료 토큰의 401이 새 토큰을 삭제하는 것을 방지
+        // 경쟁 조건 방지 1: 요청한 토큰이 현재 저장된 토큰과 같을 때만 로그아웃
+        // 경쟁 조건 방지 2: login() 직후 3초 이내 401은 일시적 오류로 간주하여 무시
         const currentToken = localStorage.getItem(AUTH_TOKEN_KEY)
-        if (currentToken === authToken) {
+        const isRecentLogin = Date.now() - loginTimestampRef.current < 3000
+        if (currentToken === authToken && !isRecentLogin) {
           localStorage.removeItem(AUTH_TOKEN_KEY)
           document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`
           setToken(null)
@@ -87,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUserProfile])
 
   const login = useCallback((newToken: string) => {
+    loginTimestampRef.current = Date.now()
     localStorage.setItem(AUTH_TOKEN_KEY, newToken)
     document.cookie = `${AUTH_TOKEN_KEY}=${newToken}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`
     setToken(newToken)
