@@ -1,10 +1,15 @@
-"""JIT RAG 문서 파인더 (SPEC-JIT-001)
+"""JIT RAG 문서 파인더 (SPEC-JIT-003 업데이트)
 
 보험 상품명 → 약관 문서 URL 발견 서비스.
-3단계 전략:
-  1. 보험사 사이트 내 약관 페이지 검색 (DuckDuckGo site: 필터)
-  2. 보험협회/금감원 공시 도메인 타겟 검색 (KLIA/KNIA/FSS)
-  3. DuckDuckGo 일반 검색 폴백
+
+SearXNG 클라이언트가 제공되면 4단계 SearXNG 전략을 사용:
+  1. site:{보험사 도메인} {상품명} 약관 filetype:pdf (SearXNG)
+  2. site:kpub.knia.or.kr OR site:pub.insure.or.kr {상품명} 약관 (SearXNG)
+  3. {상품명} 약관 filetype:pdf (SearXNG 일반)
+  4. {상품명} 약관 (SearXNG, PDF 미한정)
+  폴백: 기존 DuckDuckGo 3단계 전략
+
+SearXNG 클라이언트가 없으면 기존 DuckDuckGo 3단계 전략만 사용.
 """
 
 from __future__ import annotations
@@ -14,6 +19,8 @@ import re
 from urllib.parse import quote as url_quote
 
 import httpx
+
+from app.services.jit_rag.searxng_client import SearXNGClient
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +93,27 @@ _SEARCH_HEADERS = {
 class DocumentFinder:
     """보험 상품명 → 약관 문서 URL 발견기
 
-    3단계 전략으로 순차 시도, 모두 실패 시 DocumentNotFoundError 발생.
+    SearXNG 클라이언트가 제공되면 4단계 SearXNG 전략을 사용.
+    제공되지 않거나 모두 실패하면 기존 DuckDuckGo 3단계 폴백 사용.
+    모두 실패 시 DocumentNotFoundError 발생.
     """
+
+    # @MX:ANCHOR: [AUTO] DocumentFinder.find_url - JIT RAG 파이프라인의 핵심 진입점
+    # @MX:REASON: chat_service, JIT API 등 다수 호출자가 사용하는 공개 API
+
+    def __init__(self, searxng_client: SearXNGClient | None = None) -> None:
+        """DocumentFinder 초기화
+
+        Args:
+            searxng_client: SearXNG API 클라이언트 (None이면 DuckDuckGo만 사용)
+        """
+        self._searxng_client = searxng_client
 
     async def find_url(self, product_name: str) -> str:
         """보험 상품명으로 약관 문서 URL 발견
+
+        SearXNG 클라이언트가 있으면 4단계 SearXNG 전략을 순차 시도.
+        없거나 모두 실패하면 기존 DuckDuckGo 3단계 전략으로 폴백.
 
         Args:
             product_name: 검색할 보험 상품명 (예: "DB손해보험 아이사랑보험 2104")
@@ -101,7 +124,145 @@ class DocumentFinder:
         Raises:
             DocumentNotFoundError: 모든 전략 실패 시
         """
-        # 전략 1: 보험사 사이트 내 약관 검색 (가장 정확)
+        # SearXNG 클라이언트가 있으면 4단계 SearXNG 전략 먼저 시도
+        if self._searxng_client is not None:
+            searxng_url = await self._try_searxng_strategies(product_name)
+            if searxng_url:
+                return searxng_url
+
+        # DuckDuckGo 폴백 (기존 3단계 전략)
+        url = await self._try_duckduckgo_fallback(product_name)
+        if url:
+            return url
+
+        raise DocumentNotFoundError(f"보험 문서를 찾을 수 없습니다: {product_name}")
+
+    async def _try_searxng_strategies(self, product_name: str) -> str | None:
+        """SearXNG 4단계 검색 전략 순차 시도
+
+        Args:
+            product_name: 검색할 상품명
+
+        Returns:
+            발견된 URL 또는 None
+        """
+        # 전략 1: 보험사 사이트 내 약관 PDF 검색
+        try:
+            url = await self._try_searxng_insurer_site(product_name)
+            if url:
+                logger.info("SearXNG 전략1(보험사 사이트 PDF) 성공: product=%s, url=%s", product_name, url)
+                return url
+        except Exception as e:
+            logger.warning("SearXNG 전략1 실패: %s", str(e))
+
+        # 전략 2: 보험협회/공시 도메인 검색
+        try:
+            url = await self._try_searxng_public_disclosure(product_name)
+            if url:
+                logger.info("SearXNG 전략2(공시 도메인) 성공: product=%s, url=%s", product_name, url)
+                return url
+        except Exception as e:
+            logger.warning("SearXNG 전략2 실패: %s", str(e))
+
+        # 전략 3: 도메인 없이 PDF 일반 검색
+        try:
+            url = await self._try_searxng_pdf_general(product_name)
+            if url:
+                logger.info("SearXNG 전략3(일반 PDF) 성공: product=%s, url=%s", product_name, url)
+                return url
+        except Exception as e:
+            logger.warning("SearXNG 전략3 실패: %s", str(e))
+
+        # 전략 4: PDF 미한정 일반 검색
+        try:
+            url = await self._try_searxng_general(product_name)
+            if url:
+                logger.info("SearXNG 전략4(일반) 성공: product=%s, url=%s", product_name, url)
+                return url
+        except Exception as e:
+            logger.warning("SearXNG 전략4 실패: %s", str(e))
+
+        return None
+
+    async def _try_searxng_insurer_site(self, product_name: str) -> str | None:
+        """SearXNG 전략1: site:{보험사 도메인} {상품명} 약관 filetype:pdf
+
+        Args:
+            product_name: 검색할 상품명
+
+        Returns:
+            발견된 URL 또는 None
+        """
+        domain = self._find_insurer_domain(product_name)
+        if not domain or self._searxng_client is None:
+            return None
+
+        query = f"site:{domain} {product_name} 약관 filetype:pdf"
+        results = await self._searxng_client.search(query)
+        return results[0].url if results else None
+
+    async def _try_searxng_public_disclosure(self, product_name: str) -> str | None:
+        """SearXNG 전략2: 보험협회/공시 도메인 약관 검색
+
+        kpub.knia.or.kr (손보협회 공시) OR pub.insure.or.kr (생보협회 공시)
+
+        Args:
+            product_name: 검색할 상품명
+
+        Returns:
+            발견된 URL 또는 None
+        """
+        if self._searxng_client is None:
+            return None
+
+        query = f"site:kpub.knia.or.kr OR site:pub.insure.or.kr {product_name} 약관"
+        results = await self._searxng_client.search(query)
+        return results[0].url if results else None
+
+    async def _try_searxng_pdf_general(self, product_name: str) -> str | None:
+        """SearXNG 전략3: 도메인 없이 filetype:pdf 일반 검색
+
+        Args:
+            product_name: 검색할 상품명
+
+        Returns:
+            발견된 URL 또는 None
+        """
+        if self._searxng_client is None:
+            return None
+
+        query = f"{product_name} 약관 filetype:pdf"
+        results = await self._searxng_client.search(query)
+        return results[0].url if results else None
+
+    async def _try_searxng_general(self, product_name: str) -> str | None:
+        """SearXNG 전략4: PDF 미한정 일반 약관 검색
+
+        Args:
+            product_name: 검색할 상품명
+
+        Returns:
+            발견된 URL 또는 None
+        """
+        if self._searxng_client is None:
+            return None
+
+        query = f"{product_name} 약관"
+        results = await self._searxng_client.search(query)
+        return results[0].url if results else None
+
+    async def _try_duckduckgo_fallback(self, product_name: str) -> str | None:
+        """DuckDuckGo 폴백: 기존 3단계 전략
+
+        SearXNG 전략이 모두 실패하거나 클라이언트가 없을 때 사용.
+
+        Args:
+            product_name: 검색할 상품명
+
+        Returns:
+            발견된 URL 또는 None
+        """
+        # 전략 1: 보험사 사이트 내 약관 검색
         try:
             url = await self._try_insurer_site_search(product_name)
             if url:
@@ -128,7 +289,7 @@ class DocumentFinder:
         except Exception as e:
             logger.warning("전략3(DuckDuckGo) 실패: %s", str(e))
 
-        raise DocumentNotFoundError(f"보험 문서를 찾을 수 없습니다: {product_name}")
+        return None
 
     def _find_insurer_domain(self, product_name: str) -> str | None:
         """상품명에서 보험사 도메인 추출

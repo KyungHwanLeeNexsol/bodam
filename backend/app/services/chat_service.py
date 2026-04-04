@@ -20,9 +20,10 @@ from sqlalchemy.orm import selectinload
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
 from app.services.jit_rag.document_fetcher import DocumentFetcher
-from app.services.jit_rag.document_finder import DocumentFinder
+from app.services.jit_rag.document_finder import DocumentFinder, DocumentNotFoundError
 from app.services.jit_rag.models import DocumentData
 from app.services.jit_rag.product_extractor import ProductNameExtractor
+from app.services.jit_rag.searxng_client import SearXNGClient
 from app.services.jit_rag.section_finder import SectionFinder
 from app.services.jit_rag.session_store import JITSessionStore
 from app.services.jit_rag.text_extractor import TextExtractor
@@ -424,7 +425,11 @@ class ChatService:
                     from datetime import UTC, datetime
 
                     yield {"type": "searching_document", "product_name": product_info.product_name}
-                    url = await DocumentFinder().find_url(product_info.full_query)
+                    # SearXNG 클라이언트 주입 (설정된 URL 사용, 폴백은 DuckDuckGo)
+                    from app.core.config import get_settings
+                    _settings = get_settings()
+                    _searxng = SearXNGClient(base_url=_settings.searxng_url)
+                    url = await DocumentFinder(searxng_client=_searxng).find_url(product_info.full_query)
                     fetch_result = await DocumentFetcher().fetch(url)
                     extractor = TextExtractor()
                     # Content-Type에 따라 PDF 또는 HTML 파싱
@@ -459,6 +464,10 @@ class ChatService:
                         "page_count": extracted.page_count,
                         "source_url": fetch_result.url,
                     }
+                except DocumentNotFoundError:
+                    # 약관 문서를 찾을 수 없는 경우: 프론트엔드에 알림 후 벡터 검색으로 폴백
+                    logger.warning("JIT 문서 찾기 실패 (DocumentNotFoundError): product=%s", product_info.product_name)
+                    yield {"type": "document_not_found", "product_name": product_info.product_name}
                 except Exception as e:
                     logger.warning("자동 JIT 파이프라인 실패, 벡터 검색으로 폴백: %s", str(e))
 

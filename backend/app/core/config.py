@@ -135,6 +135,10 @@ class Settings(BaseSettings):
     # @MX:REASON: PIPA(개인정보보호법) - 고객 PII 암호화 키 관리 의무
     b2b_encryption_key: str = ""
 
+    # SPEC-JIT-003: SearXNG 검색 엔진 URL
+    # Fly.io 내부 네트워크 주소 (기본값), 로컬 개발 시 재정의 가능
+    searxng_url: str = "http://bodam-search.internal:8080"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

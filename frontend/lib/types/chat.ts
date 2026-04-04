@@ -170,6 +170,7 @@ export type SSEEvent =
   | { type: "title_update"; title: string }
   | { type: "searching_document"; product_name: string }
   | { type: "document_ready"; product_name: string; page_count: number; source_url: string }
+  | { type: "document_not_found"; product_name: string }
 
 // API 오류 응답
 export interface ApiError {

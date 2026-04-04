@@ -95,6 +95,33 @@ describe("parseSSEStream - JIT 이벤트 타입", () => {
     expect(events).toHaveLength(0)
   })
 
+  // SPEC-JIT-003: document_not_found 이벤트 파싱 테스트
+  it("document_not_found 이벤트를 올바르게 파싱한다", async () => {
+    const events: SSEEvent[] = []
+    const response = createMockResponse([
+      'data: {"type":"document_not_found","product_name":"DB손보 아이사랑보험"}\n\n',
+    ])
+
+    await parseSSEStream(response, (event) => events.push(event))
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toEqual({
+      type: "document_not_found",
+      product_name: "DB손보 아이사랑보험",
+    })
+  })
+
+  it("document_not_found 이벤트에서 product_name이 없으면 무시된다", async () => {
+    const events: SSEEvent[] = []
+    const response = createMockResponse([
+      'data: {"type":"document_not_found"}\n\n',
+    ])
+
+    await parseSSEStream(response, (event) => events.push(event))
+
+    expect(events).toHaveLength(0)
+  })
+
   it("JIT 이벤트가 기존 token/done 이벤트와 함께 처리된다", async () => {
     const events: SSEEvent[] = []
     const response = createMockResponse([

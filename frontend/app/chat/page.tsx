@@ -56,6 +56,8 @@ interface ChatState {
   // @MX:NOTE: [AUTO] SPEC-JIT-002 자동 JIT 트리거 상태 - 문서 검색 중 여부
   isSearchingDocument: boolean
   searchingProductName: string | null
+  // SPEC-JIT-003: 약관 검색 실패 상품명 (PDF 업로드 안내용)
+  documentNotFound: string | null
 }
 
 type ChatAction =
@@ -83,6 +85,8 @@ type ChatAction =
   // SPEC-JIT-002: 자동 JIT 트리거 상태 액션
   | { type: "SET_SEARCHING_DOCUMENT"; productName: string }
   | { type: "SET_DOCUMENT_READY"; document: DocumentMeta }
+  // SPEC-JIT-003: 약관 검색 실패 → PDF 업로드 안내
+  | { type: "SET_DOCUMENT_NOT_FOUND"; productName: string }
 
 // ──────────────────────────────────────────────
 // 초기 상태 및 리듀서
@@ -104,6 +108,7 @@ const initialState: ChatState = {
   documentPanelExpanded: false,
   isSearchingDocument: false,
   searchingProductName: null,
+  documentNotFound: null,
 }
 
 // @MX:NOTE: 채팅 상태 리듀서 - 모든 채팅 관련 상태 변경을 처리
@@ -171,6 +176,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         isSearchingDocument: false,
         searchingProductName: null,
         documentSource: action.document,
+      }
+    // SPEC-JIT-003: 약관 검색 실패 - 검색 중 상태 해제, 검색 실패 플래그
+    case "SET_DOCUMENT_NOT_FOUND":
+      return {
+        ...state,
+        isSearchingDocument: false,
+        searchingProductName: null,
+        documentNotFound: action.productName || null,
       }
     default:
       return state
@@ -374,6 +387,10 @@ export default function ChatPage() {
               } satisfies DocumentMeta,
             })
             break
+          // SPEC-JIT-003: 약관 검색 실패 → PDF 업로드 안내
+          case "document_not_found":
+            dispatch({ type: "SET_DOCUMENT_NOT_FOUND", productName: event.product_name })
+            break
         }
       },
     []
@@ -571,6 +588,29 @@ export default function ChatPage() {
             )}
             <div ref={messagesEndRef} />
           </MessageList>
+        )}
+
+        {/* SPEC-JIT-003: 약관 검색 실패 시 PDF 업로드 안내 */}
+        {state.documentNotFound && (
+          <div className="mx-4 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm text-amber-800">
+              <strong>&ldquo;{state.documentNotFound}&rdquo;</strong> 약관을 자동으로 찾지 못했습니다.
+            </p>
+            <p className="mt-1 text-sm text-amber-700">
+              약관 PDF를 직접 업로드하시면 더 정확한 답변이 가능합니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: "TOGGLE_DOCUMENT_PANEL" })
+                // 안내 메시지 닫기
+                dispatch({ type: "SET_DOCUMENT_NOT_FOUND", productName: "" })
+              }}
+              className="mt-2 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700"
+            >
+              PDF 업로드하기
+            </button>
+          </div>
         )}
 
         {/* JIT 약관 문서 소스 패널 */}

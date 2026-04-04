@@ -176,6 +176,14 @@ function parseSSEEvent(data: unknown): SSEEvent | null {
       }
     }
 
+    // SPEC-JIT-003: 약관 검색 실패 시 PDF 업로드 안내
+    case "document_not_found": {
+      if (typeof obj["product_name"] !== "string") {
+        return null
+      }
+      return { type: "document_not_found", product_name: obj["product_name"] }
+    }
+
     default:
       return null
   }

@@ -1,0 +1,48 @@
+# SearXNG 설정 - Bodam 내부 전용 인스턴스
+# Fly.io 내부 네트워크에서만 접근 가능
+
+use_default_settings: true
+
+server:
+  # Fly.io 컨테이너 바인드 주소
+  bind_address: "0.0.0.0:8080"
+  secret_key: "${SEARXNG_SECRET_KEY}"
+  # 공개 인스턴스 기능 비활성화 (내부 전용)
+  public_instance: false
+  image_proxy: false
+
+search:
+  # JSON 응답 형식 허용 (API 클라이언트용)
+  formats:
+    - html
+    - json
+  # 기본 검색 언어
+  default_lang: "ko"
+
+engines:
+  # Google 검색 엔진 활성화
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+  # Bing 검색 엔진 활성화
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+  # 기타 엔진 비활성화 (성능 최적화)
+  - name: duckduckgo
+    engine: duckduckgo
+    disabled: true
+  - name: wikipedia
+    engine: wikipedia
+    disabled: true
+
+# 속도 제한 비활성화 (내부 서비스 전용)
+limiter: false
+
+# 공개 접근 관련 기능 비활성화
+enabled_plugins:
+  - 'Hash plugin'
+  - 'Self Information'
+  - 'Tracker URL remover'
