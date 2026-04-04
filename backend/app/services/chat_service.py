@@ -100,7 +100,14 @@ class ChatService:
         self._jit_section_finder = SectionFinder()
         self._product_extractor = ProductNameExtractor()
         self._llm_chain = FallbackChain(self._settings)
-        if self._settings.gemini_api_key:
+        # 임베딩 제공자에 맞는 API 키가 있으면 벡터 검색 초기화
+        provider = self._settings.embedding_provider
+        has_key = (
+            (provider == "openai" and self._settings.openai_api_key)
+            or (provider == "gemini" and self._settings.gemini_api_key)
+            or (provider == "local")
+        )
+        if has_key:
             self._embedding_service = get_embedding_service()
             self._vector_search = VectorSearchService(self._db, self._embedding_service)
 

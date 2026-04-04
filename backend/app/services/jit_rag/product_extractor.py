@@ -44,8 +44,9 @@ class ProductNameExtractor:
         Returns:
             ProductInfo 또는 None (보험사명 미발견 시)
         """
+        message_lower = message.lower()
         for insurer in self._insurer_names:
-            if insurer in message:
+            if insurer.lower() in message_lower:
                 product_name = self._extract_product_name(message, insurer)
                 return ProductInfo(
                     company=insurer,
