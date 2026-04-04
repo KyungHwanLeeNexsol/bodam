@@ -1,7 +1,7 @@
 """JIT RAG 보험 상품명 추출기 (SPEC-JIT-002)
 
 메시지에서 보험사명 및 상품명을 추출하여 ProductInfo 반환.
-INSURER_MAPPING 기반으로 긴 이름을 우선 매칭 (greedy).
+INSURER_DOMAIN_MAPPING 기반으로 긴 이름을 우선 매칭 (greedy).
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.services.jit_rag.document_finder import INSURER_MAPPING
+from app.services.jit_rag.document_finder import INSURER_DOMAIN_MAPPING
 
 
 @dataclass
@@ -27,13 +27,13 @@ class ProductInfo:
 class ProductNameExtractor:
     """메시지에서 보험사 + 상품명을 추출하는 클래스
 
-    INSURER_MAPPING의 키를 길이 내림차순으로 정렬하여
+    INSURER_DOMAIN_MAPPING의 키를 길이 내림차순으로 정렬하여
     "DB손해보험"이 "DB손보"보다 먼저 매칭되도록 보장.
     """
 
     def __init__(self) -> None:
         # 긴 이름 우선 매칭을 위해 길이 내림차순 정렬
-        self._insurer_names = sorted(INSURER_MAPPING.keys(), key=len, reverse=True)
+        self._insurer_names = sorted(INSURER_DOMAIN_MAPPING.keys(), key=len, reverse=True)
 
     def extract(self, message: str) -> ProductInfo | None:
         """메시지에서 보험 상품 정보 추출

@@ -16,7 +16,7 @@ import httpx
 from app.services.jit_rag.document_finder import (
     DocumentFinder,
     DocumentNotFoundError,
-    INSURER_MAPPING,
+    INSURER_DOMAIN_MAPPING,
     _LIFE_KEYWORDS,
     _NON_LIFE_KEYWORDS,
 )
@@ -27,30 +27,36 @@ from app.services.jit_rag.document_finder import (
 # ──────────────────────────────────────────────
 
 
-class TestDirectMapping:
-    """보험사 직접 URL 매핑 테스트"""
+class TestInsurerDomainMapping:
+    """보험사 도메인 매핑 테스트"""
 
-    def test_known_insurer_returns_url(self):
-        """주요 보험사 이름이 포함된 상품명은 직접 URL을 반환해야 한다"""
+    def test_known_insurer_returns_domain(self):
+        """주요 보험사 이름이 포함된 상품명은 도메인을 반환해야 한다"""
         finder = DocumentFinder()
-        url = finder._try_direct_mapping("삼성화재 운전자보험")
-        assert url == "https://www.samsungfire.com/SFPF100024M.action"
+        domain = finder._find_insurer_domain("삼성화재 운전자보험")
+        assert domain == "samsungfire.com"
 
     def test_unknown_insurer_returns_none(self):
         """매핑에 없는 보험사는 None을 반환해야 한다"""
         finder = DocumentFinder()
-        url = finder._try_direct_mapping("미지보험 알 수 없는 상품")
-        assert url is None
+        domain = finder._find_insurer_domain("미지보험 알 수 없는 상품")
+        assert domain is None
 
     def test_life_insurer_mapped(self):
         """생명보험사 매핑이 동작해야 한다"""
         finder = DocumentFinder()
-        url = finder._try_direct_mapping("교보생명 종신보험")
-        assert url == "https://www.kyobo.co.kr/"
+        domain = finder._find_insurer_domain("교보생명 종신보험")
+        assert domain == "kyobo.co.kr"
+
+    def test_case_insensitive_matching(self):
+        """대소문자 무관하게 매칭되어야 한다"""
+        finder = DocumentFinder()
+        domain = finder._find_insurer_domain("db손해보험 아이사랑보험")
+        assert domain == "idbins.com"
 
     def test_insurer_mapping_has_25_entries(self):
-        """INSURER_MAPPING은 최소 25개 보험사를 포함해야 한다"""
-        assert len(INSURER_MAPPING) >= 25
+        """INSURER_DOMAIN_MAPPING은 최소 25개 보험사를 포함해야 한다"""
+        assert len(INSURER_DOMAIN_MAPPING) >= 25
 
     @pytest.mark.parametrize("insurer", [
         "삼성화재", "현대해상", "KB손보", "메리츠화재",
@@ -58,7 +64,7 @@ class TestDirectMapping:
     ])
     def test_all_major_insurers_are_mapped(self, insurer: str):
         """주요 보험사가 모두 매핑되어 있어야 한다"""
-        assert insurer in INSURER_MAPPING
+        assert insurer in INSURER_DOMAIN_MAPPING
 
 
 # ──────────────────────────────────────────────
