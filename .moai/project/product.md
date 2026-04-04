@@ -25,6 +25,16 @@ Korean insurance policies are notoriously complex and difficult to understand. B
 - Configurable top-k retrieval and similarity threshold (default: top 5, threshold 0.3)
 - Query rewriting for improved recall
 
+### 2.1 Just-In-Time Policy Search (JIT RAG)
+- Real-time policy document search via SearXNG meta-search engine (self-hosted on Fly.io)
+- 4-stage search strategy: insurer site → insurance associations → web PDF → general web
+- Automatic product name extraction from user questions
+- PDF/HTML document fetching and text extraction (pdfplumber, pymupdf, OCR)
+- Relevant section finding within extracted documents
+- Redis caching (1-hour TTL) for frequently searched policies
+- DuckDuckGo fallback for SearXNG resilience
+- Search failure user guidance: PDF upload recommendation for missing policies
+
 ### 3. Conversational AI Chat
 - Chat interface backed by RAG-retrieved policy chunks as context
 - LLM routing: Gemini 2.0 Flash (primary) with GPT-4o fallback

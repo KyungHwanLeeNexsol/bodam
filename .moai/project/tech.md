@@ -60,6 +60,14 @@
   - HTTPS enforced
   - Health check: `GET /api/v1/health` every 30s
 
+### Search
+- **SearXNG** (self-hosted meta-search engine) on Fly.io (app: `bodam-search`, region: `nrt`)
+  - `shared-cpu-1x`, 256 MB RAM
+  - Search engines: Google, Bing
+  - JSON API endpoint: `http://bodam-search.internal:8080/search`
+  - Private network access only (Fly.io internal DNS)
+  - Cost: ~$2/month
+
 ## LLM Configuration
 
 | Role | Model | Notes |

@@ -25,6 +25,10 @@ bodam/
 │   └── lib/                    # Shared utilities
 ├── .github/workflows/          # GitHub Actions CI/CD
 ├── infra/                      # Infrastructure configs
+│   └── searxng/                # SearXNG search engine deployment
+│       ├── fly.toml            # Fly.io SearXNG app config
+│       ├── Dockerfile          # SearXNG Docker image
+│       └── settings.yml        # SearXNG engine settings (Google, Bing)
 ├── docker-compose.yml          # Local dev stack
 ├── fly.toml                    # Fly.io deployment config
 └── Dockerfile                  # Backend container image
