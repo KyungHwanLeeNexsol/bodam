@@ -78,8 +78,20 @@ export class ChatApiClient {
         headers.set("Authorization", `Bearer ${token}`)
       }
       const response = await fetch(url, { ...options, headers })
+
+      // 401 인증 실패 시 토큰 정리 후 로그인 페이지로 리다이렉트
+      if (response.status === 401) {
+        localStorage.removeItem("auth_token")
+        document.cookie = "auth_token=; path=/; max-age=0"
+        window.location.href = "/login"
+        throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
+      }
+
       return response
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("인증이 만료")) {
+        throw e
+      }
       throw new Error(NETWORK_ERROR_MESSAGE)
     }
   }
