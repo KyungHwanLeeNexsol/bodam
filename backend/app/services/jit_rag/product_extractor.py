@@ -65,7 +65,7 @@ class ProductNameExtractor:
         Returns:
             "보험사명 + 상품유형" 형태의 전체 상품명
         """
-        idx = message.index(insurer)
+        idx = message.lower().index(insurer.lower())
         after = message[idx + len(insurer):].strip()
 
         # 한글 상품명 패턴: 보험/플러스/플랜/케어/라이프 포함 가능 + 숫자 버전
