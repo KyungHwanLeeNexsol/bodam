@@ -366,10 +366,12 @@ export default function ChatPage() {
             dispatch({
               type: "SET_DOCUMENT_READY",
               document: {
-                product_name: event.product_name,
-                page_count: event.page_count,
-                source_url: event.source_url,
-              } as DocumentMeta,
+                productName: event.product_name,
+                pageCount: event.page_count,
+                sourceUrl: event.source_url,
+                sourceType: "product_search",
+                fetchedAt: new Date().toISOString(),
+              } satisfies DocumentMeta,
             })
             break
         }
