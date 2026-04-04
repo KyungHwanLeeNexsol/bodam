@@ -23,12 +23,12 @@ class TestSearXNGConfig:
         assert hasattr(settings, "searxng_url")
 
     def test_searxng_url_default_value(self):
-        """searxng_url 기본값은 내부 Fly.io 주소여야 한다"""
+        """searxng_url 기본값은 Fly.io 외부 URL이어야 한다"""
         settings = Settings(
             database_url="postgresql+asyncpg://test:test@localhost/test",
             secret_key="test-secret-key",
         )
-        assert settings.searxng_url == "http://bodam-search.internal:8080"
+        assert settings.searxng_url == "https://bodam-search.fly.dev"
 
     def test_searxng_url_can_be_overridden(self):
         """환경변수로 searxng_url을 재정의할 수 있어야 한다"""
