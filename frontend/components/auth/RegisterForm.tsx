@@ -16,6 +16,41 @@ import { z } from 'zod'
 import { registerApi } from '@/lib/auth'
 import { SocialLoginButtons } from './SocialLoginButtons'
 
+// 회원가입 완료 모달 컴포넌트
+function RegisterSuccessModal({ onConfirm }: { onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-sm rounded-xl bg-white px-6 py-8 shadow-lg text-center">
+        {/* 체크 아이콘 */}
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#E6F4F4]">
+          <svg
+            className="h-7 w-7 text-[#0D6E6E]"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="mb-2 text-lg font-semibold text-[#1A1A1A]">회원가입이 완료되었습니다!</h2>
+        <p className="mb-6 text-sm text-[#666]">
+          보담에 오신 것을 환영합니다.
+          <br />
+          로그인 후 서비스를 이용해보세요.
+        </p>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="w-full rounded-lg bg-[#0D6E6E] py-3 text-[15px] font-semibold text-white transition-opacity hover:opacity-80"
+        >
+          로그인하러 가기
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // 회원가입 폼 유효성 스키마
 const registerSchema = z.object({
   email: z.string().min(1, '이메일을 입력해주세요.').email('유효한 이메일 주소를 입력해주세요.'),
@@ -38,6 +73,7 @@ export function RegisterForm() {
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
 
   const {
     register,
@@ -57,7 +93,7 @@ export function RegisterForm() {
         password: data.password,
         full_name: data.full_name,
       })
-      router.push('/login')
+      setShowSuccessModal(true)
     } catch (error) {
       setServerError(error instanceof Error ? error.message : '회원가입에 실패했습니다.')
     } finally {
@@ -66,7 +102,11 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+    <>
+      {showSuccessModal && (
+        <RegisterSuccessModal onConfirm={() => router.push('/login')} />
+      )}
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
       <div className="space-y-1">
         <label htmlFor="email" className="block text-sm font-medium text-[#1A1A1A]">
           이메일
@@ -144,7 +184,8 @@ export function RegisterForm() {
       </div>
 
       {/* 소셜 로그인 버튼 */}
-      <SocialLoginButtons />
-    </form>
+        <SocialLoginButtons />
+      </form>
+    </>
   )
 }
