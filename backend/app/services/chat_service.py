@@ -87,13 +87,19 @@ class ChatService:
         # 자동 JIT 트리거를 위한 보험 상품명 추출기
         self._product_extractor = ProductNameExtractor()
         self._llm_chain = FallbackChain(settings)
-        # API 키가 없는 경우 임베딩 서비스 초기화 스킵 (테스트 환경 등)
-        if settings.gemini_api_key:
+        # 임베딩/벡터검색 서비스는 지연 초기화 (세션 목록 등에서 불필요한 초기화 방지)
+        self._embedding_service = None
+        self._vector_search = None
+        self._rag_initialized = False
+
+    def _ensure_rag_services(self) -> None:
+        """RAG 서비스(임베딩 + 벡터검색) 지연 초기화. 메시지 전송 시에만 호출."""
+        if self._rag_initialized:
+            return
+        self._rag_initialized = True
+        if self._settings.gemini_api_key:
             self._embedding_service = get_embedding_service()
-            self._vector_search = VectorSearchService(db, self._embedding_service)
-        else:
-            self._embedding_service = None
-            self._vector_search = None
+            self._vector_search = VectorSearchService(self._db, self._embedding_service)
 
     async def create_session(self, title: str = "새 대화", user_id: str | uuid.UUID | None = None) -> ChatSession:
         """새 채팅 세션 생성
@@ -284,6 +290,7 @@ class ChatService:
             ]
         else:
             # 벡터 검색 폴백 (기존 RAG 파이프라인)
+            self._ensure_rag_services()
             if self._vector_search is not None:
                 search_results = await self._vector_search.search(
                     query=content,
@@ -462,6 +469,7 @@ class ChatService:
             ]
         else:
             # 벡터 검색 폴백 (기존 RAG 파이프라인)
+            self._ensure_rag_services()
             if self._vector_search is not None:
                 search_results = await self._vector_search.search(
                     query=content,
