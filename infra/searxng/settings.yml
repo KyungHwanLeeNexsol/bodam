@@ -6,7 +6,7 @@ use_default_settings: true
 server:
   # Fly.io 컨테이너 바인드 주소
   bind_address: "0.0.0.0:8080"
-  secret_key: "${SEARXNG_SECRET_KEY}"
+  secret_key: "47909017d388c9d89757e3bbb80d6e0331f5620d01972dbbb09aecc0df2eb109"
   # 공개 인스턴스 기능 비활성화 (내부 전용)
   public_instance: false
   image_proxy: false
