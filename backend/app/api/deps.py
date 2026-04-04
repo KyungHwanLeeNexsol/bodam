@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Callable
 
 import sqlalchemy as sa
-from fastapi import Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,9 @@ from app.models.user import User, UserRole
 
 # Bearer 토큰 추출기 (auto_error=False: 401 자동 반환 대신 None 반환)
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+# 쿠키 기반 인증 토큰 키 (프론트엔드와 동일)
+_AUTH_COOKIE_KEY = "auth_token"
 
 
 async def _get_user_from_token(
@@ -73,22 +76,31 @@ async def _get_user_from_token(
 
 
 # @MX:ANCHOR: 인증 의존성 - 보호된 모든 엔드포인트에서 사용
-# @MX:REASON: 인증 검사의 단일 진입점으로 일관성 보장
+# @MX:REASON: 인증 검사의 단일 진입점으로 일관성 보장 (Bearer 헤더 + 쿠키 폴백)
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    auth_token: str | None = Cookie(default=None, alias=_AUTH_COOKIE_KEY),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> User:
     """현재 인증된 사용자를 반환하는 FastAPI 의존성.
 
+    Bearer 헤더를 우선 확인하고, 없으면 쿠키의 auth_token을 폴백으로 사용.
+
     Args:
         credentials: HTTP Bearer 자격증명 (자동 추출)
+        auth_token: 쿠키의 인증 토큰 (Bearer 헤더 없을 때 폴백)
         db: 비동기 DB 세션
         settings: 애플리케이션 설정
 
     Returns:
         인증된 User 객체
     """
+    # Bearer 헤더가 없으면 쿠키 토큰을 폴백으로 사용
+    if credentials is None and auth_token:
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=auth_token
+        )
     return await _get_user_from_token(credentials=credentials, db=db, settings=settings)
 
 

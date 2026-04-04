@@ -52,9 +52,10 @@ class ChatSession(TimestampMixin, Base):
         server_default=sa.text("'새 대화'"),
     )
 
-    # 사용자 식별자 (nullable: 비로그인 사용자 지원)
+    # 사용자 식별자 (nullable: 비로그인 사용자 지원, 인덱스: 목록 조회 성능)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         nullable=True,
+        index=True,
     )
 
     # JIT 문서 소스 타입 (SPEC-JIT-001): "pdf", "html", None
