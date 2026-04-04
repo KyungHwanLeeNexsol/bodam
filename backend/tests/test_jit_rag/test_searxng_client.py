@@ -49,9 +49,9 @@ class TestSearXNGClientInit:
         assert client._base_url == "http://localhost:8080"
 
     def test_init_default_timeout(self):
-        """기본 타임아웃은 10.0초여야 한다"""
+        """기본 타임아웃은 15.0초여야 한다 (SearXNG 엔진 대기 8초 + 여유)"""
         client = SearXNGClient(base_url="http://localhost:8080")
-        assert client._timeout == 10.0
+        assert client._timeout == 15.0
 
     def test_init_custom_timeout(self):
         """커스텀 타임아웃을 설정할 수 있어야 한다"""
