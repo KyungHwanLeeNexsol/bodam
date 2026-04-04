@@ -83,20 +83,23 @@ class ChatService:
         self._intent_classifier = intent_classifier
         self._guidance_service = guidance_service
         self._jit_store = jit_session_store
-        self._jit_section_finder = SectionFinder()
-        # 자동 JIT 트리거를 위한 보험 상품명 추출기
-        self._product_extractor = ProductNameExtractor()
-        self._llm_chain = FallbackChain(settings)
-        # 임베딩/벡터검색 서비스는 지연 초기화 (세션 목록 등에서 불필요한 초기화 방지)
+        # 무거운 서비스(LLM, 임베딩, 벡터검색)는 모두 지연 초기화
+        # 세션 목록/조회 등에서 불필요한 라이브러리 로딩 방지
+        self._jit_section_finder = None
+        self._product_extractor = None
+        self._llm_chain = None
         self._embedding_service = None
         self._vector_search = None
         self._rag_initialized = False
 
     def _ensure_rag_services(self) -> None:
-        """RAG 서비스(임베딩 + 벡터검색) 지연 초기화. 메시지 전송 시에만 호출."""
+        """RAG/LLM 서비스 지연 초기화. 메시지 전송 시에만 호출."""
         if self._rag_initialized:
             return
         self._rag_initialized = True
+        self._jit_section_finder = SectionFinder()
+        self._product_extractor = ProductNameExtractor()
+        self._llm_chain = FallbackChain(self._settings)
         if self._settings.gemini_api_key:
             self._embedding_service = get_embedding_service()
             self._vector_search = VectorSearchService(self._db, self._embedding_service)
@@ -248,6 +251,8 @@ class ChatService:
         Returns:
             (user_message, assistant_message) 튜플
         """
+        self._ensure_rag_services()
+
         # 세션 조회
         session = await self.get_session(session_id)
 
@@ -374,6 +379,8 @@ class ChatService:
             {"type": "sources", "content": list}: 참조 약관 출처
             {"type": "done", "message_id": str}: 완료 신호
         """
+        self._ensure_rag_services()
+
         # 세션 조회
         session = await self.get_session(session_id)
 
