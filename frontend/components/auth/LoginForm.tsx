@@ -9,7 +9,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -32,9 +32,18 @@ type LoginFormData = z.infer<typeof loginSchema>
  */
 export function LoginForm() {
   const router = useRouter()
-  const { login } = useAuth()
+  const { login, isAuthenticated } = useAuth()
   const [serverError, setServerError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  // isAuthenticated 상태가 true로 커밋된 후 /chat으로 이동
+  // login() 호출 직후 router.push를 사용하면 React 상태 업데이트 전에
+  // 이동이 시작되어 ChatPage auth guard가 /login으로 되돌리는 race condition 방지
+  useEffect(() => {
+    if (isAuthenticated) {
+      void router.push('/chat')
+    }
+  }, [isAuthenticated, router])
 
   const {
     register,
@@ -54,7 +63,7 @@ export function LoginForm() {
         password: data.password,
       })
       login(tokenResponse.access_token)
-      router.push('/chat')
+      // 이동은 useEffect(isAuthenticated 변경 감지)에서 처리
     } catch (error) {
       setServerError(error instanceof Error ? error.message : '이메일 또는 비밀번호가 올바르지 않습니다')
     } finally {

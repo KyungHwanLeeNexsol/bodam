@@ -205,10 +205,11 @@ export default function ChatPage() {
 
   // 인증 확인 - 초기화 완료 후 토큰 없으면 로그인 페이지로 이동
   useEffect(() => {
-    if (isInitialized && !isAuthenticated) {
+    if (!isInitialized) return
+    if (!isAuthenticated) {
       void router.push("/login")
     }
-  }, [isAuthenticated, token, router])
+  }, [isAuthenticated, isInitialized, router])
 
   // 세션 목록 로딩 완료 여부 (스켈레톤 표시 제어)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
