@@ -90,7 +90,7 @@ class TestFSSSearch:
     async def test_fss_search_returns_none_on_network_error(self):
         """네트워크 오류 시 None을 반환해야 한다 (예외 전파 없음)"""
         finder = DocumentFinder()
-        with patch.object(finder, "_search_portal_domain", new_callable=AsyncMock) as mock_search:
+        with patch.object(finder, "_search_duckduckgo", new_callable=AsyncMock) as mock_search:
             mock_search.side_effect = Exception("네트워크 오류")
             result = await finder._try_fss_search("알 수 없는 상품명")
         assert result is None
@@ -99,36 +99,36 @@ class TestFSSSearch:
     async def test_fss_search_tries_life_domains_for_life_product(self):
         """생명보험 상품은 생보협회 도메인(klia.or.kr)을 먼저 검색해야 한다"""
         finder = DocumentFinder()
-        called_domains: list[str] = []
+        called_queries: list[str] = []
 
-        async def mock_search(product_name: str, domain: str) -> str | None:
-            called_domains.append(domain)
+        async def mock_search(query: str, pdf_only: bool = True) -> str | None:
+            called_queries.append(query)
             return None
 
-        with patch.object(finder, "_search_portal_domain", side_effect=mock_search):
+        with patch.object(finder, "_search_duckduckgo", side_effect=mock_search):
             await finder._try_fss_search("교보생명 종신보험")
 
-        assert "klia.or.kr" in called_domains
-        # 생명보험은 손보협회 도메인을 먼저 시도하면 안 됨
-        if called_domains:
-            assert called_domains[0] == "klia.or.kr"
+        assert any("klia.or.kr" in q for q in called_queries)
+        # 생명보험은 klia.or.kr이 첫 번째 쿼리에 포함
+        if called_queries:
+            assert "klia.or.kr" in called_queries[0]
 
     @pytest.mark.asyncio
     async def test_fss_search_tries_non_life_domains_for_non_life_product(self):
         """손해보험 상품은 손보협회 도메인(knia.or.kr)을 먼저 검색해야 한다"""
         finder = DocumentFinder()
-        called_domains: list[str] = []
+        called_queries: list[str] = []
 
-        async def mock_search(product_name: str, domain: str) -> str | None:
-            called_domains.append(domain)
+        async def mock_search(query: str, pdf_only: bool = True) -> str | None:
+            called_queries.append(query)
             return None
 
-        with patch.object(finder, "_search_portal_domain", side_effect=mock_search):
+        with patch.object(finder, "_search_duckduckgo", side_effect=mock_search):
             await finder._try_fss_search("삼성화재 운전자보험")
 
-        assert "knia.or.kr" in called_domains
-        if called_domains:
-            assert called_domains[0] == "knia.or.kr"
+        assert any("knia.or.kr" in q for q in called_queries)
+        if called_queries:
+            assert "knia.or.kr" in called_queries[0]
 
     @pytest.mark.asyncio
     async def test_fss_search_returns_found_url(self):
@@ -136,19 +136,19 @@ class TestFSSSearch:
         finder = DocumentFinder()
         expected_url = "https://www.klia.or.kr/terms/sample.pdf"
 
-        async def mock_search(product_name: str, domain: str) -> str | None:
-            if domain == "klia.or.kr":
+        async def mock_search(query: str, pdf_only: bool = True) -> str | None:
+            if "klia.or.kr" in query:
                 return expected_url
             return None
 
-        with patch.object(finder, "_search_portal_domain", side_effect=mock_search):
+        with patch.object(finder, "_search_duckduckgo", side_effect=mock_search):
             result = await finder._try_fss_search("NH농협생명 연금보험")
 
         assert result == expected_url
 
     @pytest.mark.asyncio
-    async def test_search_portal_domain_parses_pdf_url(self):
-        """포털 도메인 검색에서 PDF URL을 올바르게 파싱해야 한다"""
+    async def test_search_duckduckgo_parses_pdf_url(self):
+        """DuckDuckGo 검색에서 PDF URL을 올바르게 파싱해야 한다"""
         finder = DocumentFinder()
         fake_html = '''
         <html><body>
@@ -167,15 +167,15 @@ class TestFSSSearch:
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with patch("app.services.jit_rag.document_finder.httpx.AsyncClient", return_value=mock_client):
-            result = await finder._search_portal_domain("생명보험 약관", "klia.or.kr")
+            result = await finder._search_duckduckgo("site:klia.or.kr 생명보험 약관")
 
         assert result == "https://www.klia.or.kr/data/terms/sample.pdf"
 
     @pytest.mark.asyncio
-    async def test_search_portal_domain_returns_none_when_no_pdf(self):
-        """해당 도메인에 PDF가 없으면 None을 반환해야 한다"""
+    async def test_search_duckduckgo_returns_none_when_no_pdf(self):
+        """PDF가 없으면 None을 반환해야 한다 (pdf_only=True)"""
         finder = DocumentFinder()
-        fake_html = '<html><body><a href="https://other.com/file.pdf">다른 파일</a></body></html>'
+        fake_html = '<html><body><a href="https://duckduckgo.com/file.pdf">DDG 링크</a></body></html>'
 
         mock_response = MagicMock()
         mock_response.text = fake_html
@@ -187,7 +187,7 @@ class TestFSSSearch:
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with patch("app.services.jit_rag.document_finder.httpx.AsyncClient", return_value=mock_client):
-            result = await finder._search_portal_domain("생명보험 약관", "klia.or.kr")
+            result = await finder._search_duckduckgo("생명보험 약관", pdf_only=True)
 
         assert result is None
 
@@ -251,26 +251,32 @@ class TestFindUrl:
     """find_url 전체 흐름 테스트"""
 
     @pytest.mark.asyncio
-    async def test_direct_mapping_takes_priority(self):
-        """전략1(직접 매핑)이 성공하면 전략2,3을 시도하지 않아야 한다"""
+    async def test_insurer_site_search_takes_priority(self):
+        """전략1(보험사 사이트 검색)이 성공하면 전략2,3을 시도하지 않아야 한다"""
         finder = DocumentFinder()
+        site_url = "https://www.samsungfire.com/terms/driver.pdf"
         with (
+            patch.object(finder, "_try_insurer_site_search", new_callable=AsyncMock, return_value=site_url) as mock_site,
             patch.object(finder, "_try_fss_search", new_callable=AsyncMock) as mock_fss,
             patch.object(finder, "_try_duckduckgo_search", new_callable=AsyncMock) as mock_ddg,
         ):
             result = await finder.find_url("삼성화재 운전자보험")
 
-        assert result == "https://www.samsungfire.com/SFPF100024M.action"
+        assert result == site_url
+        mock_site.assert_called_once()
         mock_fss.assert_not_called()
         mock_ddg.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_falls_through_to_fss_when_mapping_fails(self):
+    async def test_falls_through_to_fss_when_site_search_fails(self):
         """전략1 실패 시 전략2(FSS)를 시도해야 한다"""
         finder = DocumentFinder()
         fss_url = "https://klia.or.kr/terms/sample.pdf"
 
-        with patch.object(finder, "_try_fss_search", new_callable=AsyncMock, return_value=fss_url):
+        with (
+            patch.object(finder, "_try_insurer_site_search", new_callable=AsyncMock, return_value=None),
+            patch.object(finder, "_try_fss_search", new_callable=AsyncMock, return_value=fss_url),
+        ):
             result = await finder.find_url("미지보험사 생명보험")
 
         assert result == fss_url
@@ -282,6 +288,7 @@ class TestFindUrl:
         ddg_url = "https://example.com/terms.pdf"
 
         with (
+            patch.object(finder, "_try_insurer_site_search", new_callable=AsyncMock, return_value=None),
             patch.object(finder, "_try_fss_search", new_callable=AsyncMock, return_value=None),
             patch.object(finder, "_try_duckduckgo_search", new_callable=AsyncMock, return_value=ddg_url),
         ):
@@ -295,6 +302,7 @@ class TestFindUrl:
         finder = DocumentFinder()
 
         with (
+            patch.object(finder, "_try_insurer_site_search", new_callable=AsyncMock, return_value=None),
             patch.object(finder, "_try_fss_search", new_callable=AsyncMock, return_value=None),
             patch.object(finder, "_try_duckduckgo_search", new_callable=AsyncMock, return_value=None),
         ):

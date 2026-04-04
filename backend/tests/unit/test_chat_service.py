@@ -55,8 +55,11 @@ def chat_service(mock_db, mock_settings):
         mock_vector_cls.return_value = AsyncMock()
 
         service = ChatService(db=mock_db, settings=mock_settings)
+        service._rag_initialized = True
         service._llm_chain = AsyncMock()
         service._vector_search = AsyncMock()
+        service._jit_section_finder = MagicMock()
+        service._product_extractor = MagicMock(extract=MagicMock(return_value=None))
 
         yield service
 
