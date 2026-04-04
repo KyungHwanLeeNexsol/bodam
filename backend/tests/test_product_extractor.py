@@ -149,3 +149,87 @@ def test_extract_all_insurer_names(insurer_name: str) -> None:
 
     assert result is not None, f"{insurer_name}이 추출되지 않았습니다"
     assert result.company == insurer_name
+
+
+# ─────────────────────────────────────────────
+# Bug 1: 축약 보험사명 alias 매칭 테스트 (RED)
+# ─────────────────────────────────────────────
+
+
+class TestProductNameExtractorAlias:
+    """축약/브랜드명으로 보험사 매칭 테스트"""
+
+    def test_extract_db_lowercase_abbreviation(self) -> None:
+        """'db아이사랑보험 2104' → DB손보로 매칭"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("db아이사랑보험 2104")
+
+        assert result is not None, "db 소문자 축약어가 추출되지 않았습니다"
+        assert result.company == "DB손보"
+        assert "아이사랑보험" in result.product_name
+
+    def test_extract_samsung_abbreviation(self) -> None:
+        """'삼성 운전자보험' → 삼성화재로 매칭"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("삼성 운전자보험")
+
+        assert result is not None, "삼성 축약어가 추출되지 않았습니다"
+        assert result.company == "삼성화재"
+        assert "운전자보험" in result.product_name
+
+    def test_extract_kb_uppercase_abbreviation(self) -> None:
+        """'KB 다이렉트 자동차보험' → KB손보로 매칭"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("KB 다이렉트 자동차보험")
+
+        assert result is not None, "KB 대문자 축약어가 추출되지 않았습니다"
+        assert result.company == "KB손보"
+
+    def test_extract_db_uppercase_abbreviation(self) -> None:
+        """'DB 암보험 약관 알려줘' → DB손보로 매칭"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("DB 암보험 약관 알려줘")
+
+        assert result is not None, "DB 대문자 축약어가 추출되지 않았습니다"
+        assert result.company == "DB손보"
+
+    def test_extract_alias_does_not_override_full_name(self) -> None:
+        """'DB손해보험 상품' 입력 시 full 이름(DB손해보험)이 축약(DB손보)보다 우선"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("DB손해보험 상품 알려줘")
+
+        assert result is not None
+        # 긴 이름 우선 매칭 유지
+        assert result.company == "DB손해보험"
+
+    def test_extract_hyundai_abbreviation(self) -> None:
+        """'현대 운전자보험' → 현대해상으로 매칭"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("현대 운전자보험 약관")
+
+        assert result is not None, "현대 축약어가 추출되지 않았습니다"
+        assert result.company == "현대해상"
+
+    def test_alias_product_name_uses_full_insurer_name(self) -> None:
+        """alias 매칭 시 product_name에 full 보험사명이 포함되어야 함"""
+        from app.services.jit_rag.product_extractor import ProductNameExtractor
+
+        extractor = ProductNameExtractor()
+        result = extractor.extract("삼성 화재보험 약관")
+
+        assert result is not None
+        # product_name에 alias("삼성")가 아닌 full name("삼성화재")이 포함
+        assert "삼성화재" in result.product_name
+        assert result.full_query == result.product_name

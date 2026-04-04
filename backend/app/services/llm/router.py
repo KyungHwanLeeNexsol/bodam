@@ -268,24 +268,38 @@ class LLMRouter:
 class FallbackChain:
     """API 오류 시 순차 폴백 체인
 
-    Gemini → GPT-4o → GPT-4o-mini 순서로 폴백합니다.
+    Gemini 키1 → 키2 → 키3 → GPT-4o → GPT-4o-mini 순서로 폴백합니다.
+    무료 티어 일일 한도 소진(429) 시 다음 Gemini 키로 자동 전환됩니다.
     """
 
     def __init__(self, settings: object) -> None:
         """폴백 체인 초기화
 
+        Gemini 키 1~3을 순서대로 시도하고, 모두 실패하면 OpenAI로 폴백.
+        키가 비어있으면 해당 제공자는 등록하지 않음.
+
         Args:
             settings: 애플리케이션 설정
         """
         gemini_key = getattr(settings, "gemini_api_key", "") or ""
+        gemini_key_2 = getattr(settings, "gemini_api_key_2", "") or ""
+        gemini_key_3 = getattr(settings, "gemini_api_key_3", "") or ""
         openai_key = getattr(settings, "openai_api_key", "") or ""
 
-        # 폴백 순서: Gemini Flash → GPT-4o → GPT-4o-mini
-        self._providers: list[BaseLLMProvider] = [
-            GeminiProvider(api_key=gemini_key, model="gemini-2.0-flash"),
-            OpenAIProvider(api_key=openai_key, model="gpt-4o"),
-            OpenAIProvider(api_key=openai_key, model="gpt-4o-mini"),
-        ]
+        self._providers: list[BaseLLMProvider] = []
+
+        # Gemini 키 순차 시도 (무료 티어 일일 한도 소진 시 다음 키로 폴백)
+        if gemini_key:
+            self._providers.append(GeminiProvider(api_key=gemini_key, model="gemini-2.0-flash"))
+        if gemini_key_2:
+            self._providers.append(GeminiProvider(api_key=gemini_key_2, model="gemini-2.0-flash"))
+        if gemini_key_3:
+            self._providers.append(GeminiProvider(api_key=gemini_key_3, model="gemini-2.0-flash"))
+
+        # OpenAI 폴백 (Gemini 키 전부 소진 시)
+        if openai_key:
+            self._providers.append(OpenAIProvider(api_key=openai_key, model="gpt-4o"))
+            self._providers.append(OpenAIProvider(api_key=openai_key, model="gpt-4o-mini"))
 
     async def generate(self, messages: list[dict]) -> LLMResponse:
         """폴백 체인을 통한 텍스트 생성
