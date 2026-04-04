@@ -136,8 +136,8 @@ class Settings(BaseSettings):
     b2b_encryption_key: str = ""
 
     # SPEC-JIT-003: SearXNG 검색 엔진 URL
-    # Fly.io 내부 네트워크 주소 (기본값), 로컬 개발 시 재정의 가능
-    searxng_url: str = "http://bodam-search.internal:8080"
+    # Fly.io 외부 URL (내부 DNS .internal이 해석되지 않는 환경 대응)
+    searxng_url: str = "https://bodam-search.fly.dev"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
