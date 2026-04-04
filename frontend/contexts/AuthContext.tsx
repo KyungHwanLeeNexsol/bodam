@@ -21,6 +21,8 @@ interface UserProfile {
 interface AuthContextValue {
   /** 현재 인증 여부 */
   isAuthenticated: boolean
+  /** localStorage 초기화 완료 여부 (토큰 확인 전 리다이렉트 방지용) */
+  isInitialized: boolean
   /** 저장된 JWT 토큰 */
   token: string | null
   /** 사용자 프로필 (email, fullName) - 로그인 후 /api/v1/auth/me 조회 결과 */
@@ -41,6 +43,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
 
   // @MX:NOTE: [AUTO] fetchUserProfile - 토큰으로 /api/v1/auth/me 호출, 401 시 자동 로그아웃
@@ -80,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true)
       void fetchUserProfile(storedToken)
     }
+    setIsInitialized(true)
   }, [fetchUserProfile])
 
   const login = useCallback((newToken: string) => {
@@ -99,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, token, userProfile, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, isInitialized, token, userProfile, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

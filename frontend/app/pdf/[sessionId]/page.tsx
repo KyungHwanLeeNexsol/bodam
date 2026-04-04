@@ -22,18 +22,18 @@ interface PageProps {
 export default function PDFSessionPage({ params }: PageProps) {
   const { sessionId } = use(params)
   const router = useRouter()
-  const { token, isAuthenticated } = useAuth()
+  const { token, isAuthenticated, isInitialized } = useAuth()
 
   const [session, setSession] = useState<SessionDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // 인증 확인
+  // 인증 확인 - 초기화 완료 후 토큰 없으면 로그인 페이지로 이동
   useEffect(() => {
-    if (!isAuthenticated && token === null) {
+    if (isInitialized && !isAuthenticated) {
       void router.push('/login')
     }
-  }, [isAuthenticated, token, router])
+  }, [isInitialized, isAuthenticated, router])
 
   // 세션 데이터 로드
   useEffect(() => {

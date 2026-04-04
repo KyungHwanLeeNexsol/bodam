@@ -185,7 +185,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 // @MX:REASON: 모든 채팅 기능의 진입점. M3 통합 테스트의 렌더링 대상
 export default function ChatPage() {
   const router = useRouter()
-  const { isAuthenticated, token } = useAuth()
+  const { isAuthenticated, isInitialized, token } = useAuth()
   const [state, dispatch] = useReducer(chatReducer, initialState)
   // @MX:NOTE: [AUTO] tokenRef - 프로덕션 빌드에서 localStorage 직접 읽기 이슈 회피
   const tokenRef = useRef(token)
@@ -203,9 +203,9 @@ export default function ChatPage() {
     []
   )
 
-  // 인증 확인 - 토큰 없으면 로그인 페이지로 이동
+  // 인증 확인 - 초기화 완료 후 토큰 없으면 로그인 페이지로 이동
   useEffect(() => {
-    if (!isAuthenticated && token === null) {
+    if (isInitialized && !isAuthenticated) {
       void router.push("/login")
     }
   }, [isAuthenticated, token, router])

@@ -29,18 +29,18 @@ interface AnalysisData {
 
 export default function PDFPage() {
   const router = useRouter()
-  const { token, isAuthenticated } = useAuth()
+  const { token, isAuthenticated, isInitialized } = useAuth()
 
   const [pageState, setPageState] = useState<PageState>('idle')
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
 
-  // 인증 확인 - 토큰 없으면 로그인 페이지로 이동
+  // 인증 확인 - 초기화 완료 후 토큰 없으면 로그인 페이지로 이동
   useEffect(() => {
-    if (!isAuthenticated && token === null) {
+    if (isInitialized && !isAuthenticated) {
       void router.push('/login')
     }
-  }, [isAuthenticated, token, router])
+  }, [isInitialized, isAuthenticated, router])
 
   const handleUploadComplete = useCallback(
     async (uploadId: string, filename: string) => {
