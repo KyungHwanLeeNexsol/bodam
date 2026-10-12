@@ -1034,6 +1034,7 @@
           "ref": "m1gMGk",
           "name": "Prev Button",
           "width": 300,
+          "height": 88,
           "descendants": {
             "BnQOE": {
               "enabled": true
@@ -1046,6 +1047,7 @@
           "ref": "s8D6J",
           "name": "Next Button",
           "width": "fill_container",
+          "height": 88,
           "descendants": {
             "rj0b3": {
               "enabled": true
@@ -1125,7 +1127,8 @@
               "type": "ref",
               "ref": "m1gMGk",
               "name": "Help Action A",
-              "width": "fill_container"
+              "width": "fill_container",
+              "height": 88
             }
           ]
         }
@@ -1384,6 +1387,7 @@
               "ref": "m1gMGk",
               "name": "Dialog Cancel",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "zVSRN": {
                   "content": "계속 이용"
@@ -1396,6 +1400,7 @@
               "ref": "s8D6J",
               "name": "Dialog Confirm",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "z2xgo": {
                   "content": "처음으로"
@@ -1522,6 +1527,7 @@
               "ref": "m1gMGk",
               "name": "Timeout Reset",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "zVSRN": {
                   "content": "처음으로"
@@ -1534,6 +1540,7 @@
               "ref": "s8D6J",
               "name": "Timeout Continue",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "z2xgo": {
                   "content": "계속 사용할게요"
@@ -2067,6 +2074,7 @@
                   "ref": "m1gMGk",
                   "name": "Help 세대를 모르겠어요",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "세대를 모르겠어요",
@@ -2085,6 +2093,7 @@
                   "ref": "m1gMGk",
                   "name": "Help 가입 조건이 목록에 없어요",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "가입 조건이 목록에 없어요",
@@ -2358,6 +2367,7 @@
                   "ref": "m1gMGk",
                   "name": "Help 세대를 모르겠어요",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "세대를 모르겠어요",
@@ -2376,6 +2386,7 @@
                   "ref": "m1gMGk",
                   "name": "Help 가입 조건이 목록에 없어요",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "가입 조건이 목록에 없어요",
@@ -4764,7 +4775,7 @@
                       "id": "DBOEH",
                       "name": "Chip Label",
                       "fill": "$accent-dark",
-                      "content": "보장 조건 확인 1 / N",
+                      "content": "보험 조건 확인 1 / 3",
                       "fontFamily": "$font-ko",
                       "fontSize": "$fs-label",
                       "fontWeight": "bold"
@@ -4778,7 +4789,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "N은 선택한 상품에서 확인이 필요한 조건 수입니다. 필요한 질문만 표시됩니다.",
+                  "content": "선택하신 보험과 치료에 필요한 질문만 하나씩 여쭤봅니다.",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-ko",
                   "fontSize": "$fs-label",
@@ -4814,7 +4825,7 @@
                   "fill": "$text-body",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "치료를 받게 된 원인을 기준으로 선택해 주세요. 선택 내용은 안내를 위한 참고값이며 진단이나 보험사 판단을 확정하지 않습니다.",
+                  "content": "치료를 받게 된 원인을 기준으로 선택해 주세요. 선택한 내용으로 보험사 판단이 확정되지는 않습니다.",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-ko",
                   "fontSize": 26,
@@ -4934,7 +4945,7 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "한도·공제율 등 확인되지 않은 값은 기본값으로 미리 선택하지 않습니다. 확인된 조건만 계산에 사용하며, 원인 구분은 보험사 심사 결과에 따라 달라질 수 있습니다.",
+              "content": "확인되지 않은 조건은 임의로 정하지 않고 ‘확인 필요’로 안내해 드립니다.",
               "lineHeight": 1.45,
               "fontFamily": "$font-ko",
               "fontSize": "$fs-label",
@@ -5052,7 +5063,7 @@
                       "id": "wMuIB",
                       "name": "Chip Label",
                       "fill": "$accent-dark",
-                      "content": "보장 조건 확인 3 / N",
+                      "content": "보험 조건 확인 3 / 3",
                       "fontFamily": "$font-ko",
                       "fontSize": "$fs-label",
                       "fontWeight": "bold"
@@ -5066,7 +5077,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "N은 선택한 상품에서 확인이 필요한 조건 수입니다. 필요한 질문만 표시됩니다.",
+                  "content": "선택하신 보험과 치료에 필요한 질문만 하나씩 여쭤봅니다.",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-ko",
                   "fontSize": "$fs-label",
@@ -5102,7 +5113,7 @@
                   "fill": "$text-body",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "외래 보장한도(회당 지급한도)는 자기부담 유형과 다른 조건입니다. 확인된 값이 있으면 다음 화면에서 목록으로 선택합니다.",
+                  "content": "외래 보장한도(회당 지급한도)는 자기부담 유형과 다른 조건입니다. 보험증권에서 확인하실 수 있습니다.",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-ko",
                   "fontSize": 26,
@@ -5132,7 +5143,7 @@
                       "content": "한도를 알고 있어요"
                     },
                     "H7O5CR": {
-                      "content": "다음 화면에서 약관으로 확인된 한도 값 목록에서 선택합니다"
+                      "content": "다음 화면에서 한도 값을 선택합니다"
                     }
                   }
                 },
@@ -5157,19 +5168,6 @@
                       "fill": "$accent-dark"
                     }
                   }
-                },
-                {
-                  "type": "text",
-                  "id": "RQ3du",
-                  "name": "Option Source Caption",
-                  "fill": "$text-muted",
-                  "textGrowth": "fixed-width",
-                  "width": "fill_container",
-                  "content": "확인된 한도 값이 없으면 선택지를 띄우지 않고 ‘확인 필요’로 진행합니다. 직원이 대신 값을 입력하지 않습니다.",
-                  "lineHeight": 1.45,
-                  "fontFamily": "$font-ko",
-                  "fontSize": "$fs-label",
-                  "fontWeight": "normal"
                 }
               ]
             },
@@ -5198,7 +5196,7 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "표시 규칙 — 1세대(A·S)는 자기부담 유형을 묻지 않습니다. 2세대(C1)·2.5세대(C2)는 자기부담 유형과 외래 보장한도를, 3세대(C3)·4세대(C4)는 급여·비급여 구분과 특약 한도를 확인합니다. 선택한 상품에 필요한 조건만 질문합니다.",
+              "content": "확인되지 않은 조건은 임의로 정하지 않고 ‘확인 필요’로 안내해 드립니다.",
               "lineHeight": 1.45,
               "fontFamily": "$font-ko",
               "fontSize": "$fs-label",
@@ -5568,6 +5566,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 계산 근거 보기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "계산 근거 보기",
@@ -5581,6 +5580,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 치료 다시 선택",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "치료 다시 선택",
@@ -5594,6 +5594,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 조건 수정",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 조건 수정",
@@ -5607,6 +5608,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원에게 문의",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원에게 문의",
@@ -5635,6 +5637,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 처음으로",
                   "width": 300,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "처음으로",
@@ -6078,6 +6081,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 계산 근거 보기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "계산 근거 보기",
@@ -6091,6 +6095,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 치료 다시 선택",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "치료 다시 선택",
@@ -6104,6 +6109,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 조건 수정",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 조건 수정",
@@ -6117,6 +6123,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원에게 문의",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원에게 문의",
@@ -6140,6 +6147,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 처음으로",
                   "width": 300,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "처음으로",
@@ -6329,7 +6337,7 @@
               "strokeWidth": 2,
               "layout": "vertical",
               "gap": "$sp-3",
-              "padding": 22,
+              "padding": 18,
               "children": [
                 {
                   "type": "frame",
@@ -6444,7 +6452,7 @@
               "name": "Amount Cards",
               "width": "fill_container",
               "layout": "vertical",
-              "gap": "$sp-3",
+              "gap": "$sp-2",
               "children": [
                 {
                   "id": "XT6Lu",
@@ -6544,7 +6552,7 @@
               "name": "NoticeBar",
               "width": "fill_container",
               "padding": [
-                20,
+                16,
                 28
               ]
             }
@@ -6580,6 +6588,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 계산 근거 보기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "계산 근거 보기",
@@ -6593,6 +6602,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 치료 다시 선택",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "치료 다시 선택",
@@ -6606,6 +6616,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 조건 수정",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 조건 수정",
@@ -6619,6 +6630,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원에게 문의",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원에게 문의",
@@ -6642,6 +6654,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 처음으로",
                   "width": 300,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "처음으로",
@@ -7887,6 +7900,7 @@
               "ref": "m1gMGk",
               "name": "Consult Back",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "zVSRN": {
                   "content": "이전 화면으로 돌아가기"
@@ -7899,6 +7913,7 @@
               "ref": "s8D6J",
               "name": "Consult Continue",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "z2xgo": {
                   "content": "치료비만 먼저 확인"
@@ -8236,6 +8251,7 @@
                   "ref": "m1gMGk",
                   "name": "Error Consult",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원 문의"
@@ -8248,6 +8264,7 @@
                   "ref": "m1gMGk",
                   "name": "Error End",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "이용 종료"
@@ -8385,6 +8402,7 @@
               "width": 300,
               "fill": "$disabled",
               "stroke": "$disabled",
+              "height": 88,
               "descendants": {
                 "zVSRN": {
                   "content": "이전",
@@ -8399,6 +8417,7 @@
               "name": "Loading Next",
               "width": "fill_container",
               "fill": "$disabled",
+              "height": 88,
               "descendants": {
                 "z2xgo": {
                   "content": "계산 중…",
@@ -8785,6 +8804,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 선택으로 돌아가기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 선택으로 돌아가기",
@@ -8798,6 +8818,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원 문의 안내 보기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원 문의 안내 보기",
@@ -9063,6 +9084,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원에게 확인 요청",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원에게 확인 요청",
@@ -9076,6 +9098,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 선택으로 돌아가기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 선택으로 돌아가기",
@@ -9338,6 +9361,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원 문의 안내 보기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원 문의 안내 보기",
@@ -9351,6 +9375,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 선택으로 돌아가기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 선택으로 돌아가기",
@@ -9806,9 +9831,9 @@
           "width": "fill_container",
           "height": "fill_container",
           "layout": "vertical",
-          "gap": "$sp-6",
+          "gap": "$sp-4",
           "padding": [
-            32,
+            20,
             "$sp-12"
           ],
           "children": [
@@ -9988,7 +10013,7 @@
           "layout": "vertical",
           "gap": "$sp-4",
           "padding": [
-            24,
+            20,
             "$sp-12"
           ],
           "children": [
@@ -10022,7 +10047,30 @@
                   "height": 104,
                   "descendants": {
                     "zVSRN": {
-                      "content": "다시 선택",
+                      "content": "치료 다시 선택",
+                      "fontSize": 32
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "dZtYu",
+              "name": "Result Actions Row 1b",
+              "width": "fill_container",
+              "gap": "$sp-6",
+              "children": [
+                {
+                  "id": "z8y27X",
+                  "type": "ref",
+                  "ref": "m1gMGk",
+                  "name": "Action 보험 조건 수정",
+                  "width": "fill_container",
+                  "height": 88,
+                  "descendants": {
+                    "zVSRN": {
+                      "content": "보험 조건 수정",
                       "fontSize": 32
                     }
                   }
@@ -10033,6 +10081,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원에게 문의",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원에게 문의",
@@ -10056,6 +10105,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 처음으로",
                   "width": 340,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "처음으로",
@@ -10778,6 +10828,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 계산 근거 보기",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "계산 근거 보기",
@@ -10791,6 +10842,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 치료 다시 선택",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "치료 다시 선택",
@@ -10804,6 +10856,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 보험 조건 수정",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "보험 조건 수정",
@@ -10817,6 +10870,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 직원에게 문의",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "직원에게 문의",
@@ -10840,6 +10894,7 @@
                   "ref": "m1gMGk",
                   "name": "Action 처음으로",
                   "width": 300,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "처음으로",
@@ -13585,7 +13640,7 @@
                       "id": "N6ORf3",
                       "name": "Role Chip Label",
                       "fill": "$blue",
-                      "content": "권한: 치료명·금액 편집 (검토 승인 불가)",
+                      "content": "권한: 메뉴·금액 편집 · 분류 변경 요청",
                       "fontFamily": "$font-ko",
                       "fontSize": 13,
                       "fontWeight": "bold"
@@ -13782,7 +13837,7 @@
                       "id": "HQ2j1",
                       "name": "Permission Note Title",
                       "fill": "$warn",
-                      "content": "보험 규칙 편집 권한 없음",
+                      "content": "보장 매핑 승인 권한 없음",
                       "fontFamily": "$font-ko",
                       "fontSize": 13,
                       "fontWeight": "bold"
@@ -13794,7 +13849,7 @@
                       "fill": "$text-body",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "공제율·지급한도 등 보험 지급 규칙은 병원 관리자가 변경할 수 없습니다.",
+                      "content": "공제율·지급한도 등 보험 지급 규칙은 변경할 수 없고, 보장 분류 변경도 직접 승인할 수 없습니다.",
                       "lineHeight": 1.45,
                       "fontFamily": "$font-ko",
                       "fontSize": 12,
@@ -13839,7 +13894,7 @@
                       "fill": "$text-muted",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "치료명과 환자 예상 결제액을 수정합니다. 보험 지급 규칙과 ‘검토 완료’ 승인은 이 화면에서 할 수 없습니다.",
+                      "content": "치료 메뉴와 환자 예상 결제액을 수정하고, 보장 분류 검토에 필요한 정보를 등록하거나 변경을 요청합니다. 보장 매핑 승인과 반려는 보험 기준 검토 담당자가 합니다.",
                       "lineHeight": 1.5,
                       "fontFamily": "$font-ko",
                       "fontSize": 15,
@@ -14078,7 +14133,7 @@
                               "fill": "$warn",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "급여 구분을 변경하면 보장 판단에 영향을 주므로 재검토가 필요합니다.",
+                              "content": "급여 구분 변경은 보장 분류 변경 요청으로 처리되며, 승인 전까지 환자 계산에 반영되지 않습니다.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 13,
@@ -14212,7 +14267,7 @@
                               "fill": "$warn",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "병원 수가 코드. 변경 시 보장 분류 재검토가 필요합니다.",
+                              "content": "병원 수가 코드. 변경하면 보장 분류 재검토가 필요하며, 승인 전까지 환자 계산에 반영되지 않습니다.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 13,
@@ -14270,7 +14325,7 @@
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "공제율·회당 지급한도·보장 판정 규칙과 ‘검토 완료’ 승인은 보험 기준 검토 담당자만 할 수 있습니다. 병원 관리자는 치료명·설명·금액만 수정합니다.",
+                              "content": "공제율·회당 지급한도·보장 판정 규칙은 보험 기준 검토 담당자만 변경합니다. 병원 관리자는 메뉴·금액을 수정하고 분류 정보를 등록하거나 변경을 요청할 수 있으며, 승인과 반려는 검토 담당자 권한입니다.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 13,
@@ -14490,7 +14545,7 @@
                                       "fill": "$text-body",
                                       "textGrowth": "fixed-width",
                                       "width": "fill_container",
-                                      "content": "보장 분류 변경(급여 구분 · 행위 코드 · 치료 분류)은 재검토가 필요합니다. 금액만 변경한 경우에는 재검토 없이 게시 요청할 수 있습니다.",
+                                      "content": "보장 분류 변경(급여 구분 · 행위 코드 · 치료 분류)은 재검토 대상입니다. 승인 전까지는 직전 승인 분류로 환자 계산이 유지됩니다. 금액만 변경한 경우에는 재검토 없이 게시 요청할 수 있습니다.",
                                       "lineHeight": 1.45,
                                       "fontFamily": "$font-ko",
                                       "fontSize": 12,
@@ -14536,7 +14591,7 @@
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "‘검토 완료’ 승인은 보험 기준 검토 권한을 가진 담당자만 할 수 있습니다. 병원 관리자는 상태를 직접 바꿀 수 없습니다.",
+                              "content": "승인과 반려는 보험 기준 검토 담당자 권한입니다. 병원 관리자는 검토 상태를 직접 바꿀 수 없습니다.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 12,
@@ -16472,6 +16527,7 @@
                   "ref": "m1gMGk",
                   "name": "Help 세대를 모르겠어요",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "세대를 모르겠어요",
@@ -16490,6 +16546,7 @@
                   "ref": "m1gMGk",
                   "name": "Help 가입 조건이 목록에 없어요",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "가입 조건이 목록에 없어요",
@@ -18101,6 +18158,7 @@
               "ref": "m1gMGk",
               "name": "Action 직원에게 문의",
               "width": "fill_container",
+              "height": 88,
               "descendants": {
                 "zVSRN": {
                   "content": "직원에게 문의",
@@ -18114,6 +18172,7 @@
               "ref": "m1gMGk",
               "name": "Action 처음으로",
               "width": 300,
+              "height": 88,
               "descendants": {
                 "zVSRN": {
                   "content": "처음으로",
@@ -18389,6 +18448,7 @@
                   "ref": "s8D6J",
                   "name": "Primary Default",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "z2xgo": {
                       "content": "다음"
@@ -18422,6 +18482,7 @@
                   "name": "Primary Disabled",
                   "width": "fill_container",
                   "fill": "$disabled",
+                  "height": 88,
                   "descendants": {
                     "z2xgo": {
                       "content": "다음",
@@ -18455,6 +18516,7 @@
                   "ref": "m1gMGk",
                   "name": "Secondary Default",
                   "width": "fill_container",
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "이전"
@@ -18490,6 +18552,7 @@
                   "fill": "$accent-soft",
                   "stroke": "$accent",
                   "strokeWidth": 4,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "모르겠어요",
@@ -18526,6 +18589,7 @@
                   "fill": "$danger-soft",
                   "stroke": "$danger",
                   "strokeWidth": 3,
+                  "height": 88,
                   "descendants": {
                     "zVSRN": {
                       "content": "다시 시도",
@@ -19705,7 +19769,7 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "필요한 질문 있으면 K02Q_Conditions, 없으면 K03_Treatments_Empty",
+                              "content": "상품에 필요한 조건 질문의 첫 화면(K02Q_Conditions). 필요한 질문이 없으면 K03_Treatments_Empty",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -19736,7 +19800,7 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": 320,
-                              "content": "K02Q_Conditions",
+                              "content": "K02Q_Conditions (원인)",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -19749,7 +19813,7 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": 280,
-                              "content": "선택지 선택 → 다음",
+                              "content": "상해 / 질병 선택 → 다음",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -19762,7 +19826,178 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "다음 질문 또는 K03_Treatments_Empty",
+                              "content": "남은 필요 질문(K02Q_Conditions_Copay → K02Q_Conditions_Unknown 순) 또는 K03_Treatments_Empty",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ausch",
+                          "name": "T Row",
+                          "width": "fill_container",
+                          "fill": "$surface",
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": "$sp-3",
+                          "padding": [
+                            10,
+                            14
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "uqN08",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": 320,
+                              "content": "K02Q_Conditions_Copay (자기부담 유형)",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            },
+                            {
+                              "type": "text",
+                              "id": "bJHaA",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": 280,
+                              "content": "표준형 / 선택형Ⅱ 선택 → 다음",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            },
+                            {
+                              "type": "text",
+                              "id": "RFJCM",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "남은 필요 질문(K02Q_Conditions_Unknown) 또는 K03_Treatments_Empty",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "S1aouN",
+                          "name": "T Row",
+                          "width": "fill_container",
+                          "fill": "$surface",
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": "$sp-3",
+                          "padding": [
+                            10,
+                            14
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "LfQbK",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": 320,
+                              "content": "K02Q_Conditions_Unknown (한도 확인)",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            },
+                            {
+                              "type": "text",
+                              "id": "OZBbe",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": 280,
+                              "content": "한도를 알고 있어요 → 다음",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            },
+                            {
+                              "type": "text",
+                              "id": "WhBTC",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "K02Q_Conditions_LimitValue",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "u2jGhc",
+                          "name": "T Row",
+                          "width": "fill_container",
+                          "fill": "$surface",
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
+                          "gap": "$sp-3",
+                          "padding": [
+                            10,
+                            14
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "O5Vmy2",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": 320,
+                              "content": "K02Q_Conditions_LimitValue",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            },
+                            {
+                              "type": "text",
+                              "id": "pXBoN",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": 280,
+                              "content": "한도 값 선택 → 선택한 한도로 계속",
+                              "lineHeight": 1.45,
+                              "fontFamily": "$font-ko",
+                              "fontSize": 19,
+                              "fontWeight": "regular"
+                            },
+                            {
+                              "type": "text",
+                              "id": "vRoyu",
+                              "name": "T Cell",
+                              "fill": "$navy",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "남은 필요 질문 또는 K03_Treatments_Empty (한도 = 확인됨)",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -19793,7 +20028,7 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": 320,
-                              "content": "K02Q_Conditions",
+                              "content": "모든 조건 질문 화면",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -19806,7 +20041,7 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": 280,
-                              "content": "모르겠어요",
+                              "content": "모르겠어요 / 모르는 채로 계속 / 목록에 없어요",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -19819,64 +20054,7 @@
                               "fill": "$navy",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "K02Q_Conditions_Unknown (확인 필요 플래그 유지)",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "f82TQ",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "R5Uqq",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions_Unknown",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "OrAYL",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "모르는 채로 계속",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "GFibq",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "K03_Treatments_Empty",
+                              "content": "해당 조건을 ‘확인 필요’로 기록하고 남은 필요 질문으로 이동. 남은 질문이 없으면 K03_Treatments_Empty",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ko",
                               "fontSize": 19,
@@ -20741,348 +20919,6 @@
                         },
                         {
                           "type": "frame",
-                          "id": "GxRcO",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "Ticr5",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "D4kAp",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "모르겠어요",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "kwekw",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "다음 필요 조건 질문으로 이동 (확인 필요 플래그 유지)",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "ausch",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "uqN08",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions_Copay",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "bJHaA",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "표준형 / 선택형Ⅱ 선택 → 다음",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "RFJCM",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "다음 필요 조건 질문 또는 K03_Treatments_Empty",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "B0rsnM",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "JDjuG",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions_Copay",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "tR4IC",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "자기부담 유형을 모르겠어요",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "oUada",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "다음 질문으로 이동 (자기부담 유형 = 확인 필요)",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "S1aouN",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "LfQbK",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions_Unknown",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "OZBbe",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "한도를 알고 있어요",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "WhBTC",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "K02Q_Conditions_LimitValue (확인된 값 목록)",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "u2jGhc",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "O5Vmy2",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions_LimitValue",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "pXBoN",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "한도 값 선택 → 선택한 한도로 계속",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "vRoyu",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "K03_Treatments_Empty (한도 = 확인됨)",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "GPzhe",
-                          "name": "T Row",
-                          "width": "fill_container",
-                          "fill": "$surface",
-                          "stroke": "$border",
-                          "strokeWidth": {
-                            "bottom": 1
-                          },
-                          "gap": "$sp-3",
-                          "padding": [
-                            10,
-                            14
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "U44Kqs",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 320,
-                              "content": "K02Q_Conditions_LimitValue",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "oLEev",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": 280,
-                              "content": "목록에 없어요 · 확인 필요",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            },
-                            {
-                              "type": "text",
-                              "id": "s9Zes6",
-                              "name": "T Cell",
-                              "fill": "$navy",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "K03_Treatments_Empty (한도 = 확인 필요)",
-                              "lineHeight": 1.45,
-                              "fontFamily": "$font-ko",
-                              "fontSize": 19,
-                              "fontWeight": "regular"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
                           "id": "h0ujL",
                           "name": "T Row",
                           "width": "fill_container",
@@ -21682,6 +21518,32 @@
                     },
                     {
                       "type": "text",
+                      "id": "JPZxN",
+                      "name": "Doc Line",
+                      "fill": "$text-body",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "• 질문 순서와 진행 표시 — 기본 순서는 원인(상해·질병) → 자기부담 유형 → 외래 보장한도 확인 → 한도 값 선택이며, 상품에서 필요한 질문만 이 순서로 거칩니다. 화면의 진행 숫자(‘보험 조건 확인 1 / 3’)는 디자인 예시 값이고, 구현에서는 해당 상품에서 실제로 필요한 질문 수로 계산해 표시합니다. ‘N’ 같은 기호는 환자 화면에 노출하지 않습니다.",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ko",
+                      "fontSize": 21,
+                      "fontWeight": "regular"
+                    },
+                    {
+                      "type": "text",
+                      "id": "LvJu6",
+                      "name": "Doc Line",
+                      "fill": "$text-body",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "• 환자 화면 표기 범위 — 조건 질문 화면에는 질문, 선택지, 짧은 도움말, ‘모르겠어요’만 둡니다. 질문 수 계산 방식, 세대별 질문 규칙, 데이터 조회와 선택지 생성 방식, 직원 대리 입력을 제공하지 않는다는 범위 설명 등 내부 설계 내용은 환자 화면에 넣지 않고 이 명세에서 관리합니다.",
+                      "lineHeight": 1.55,
+                      "fontFamily": "$font-ko",
+                      "fontSize": 21,
+                      "fontWeight": "regular"
+                    },
+                    {
+                      "type": "text",
                       "id": "R0rBIm",
                       "name": "Doc Line",
                       "fill": "$text-body",
@@ -21804,7 +21666,7 @@
                       "fill": "$text-body",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "• 조건 질문 — 보장 조건 질문은 모든 세대에 동일하게 묻지 않습니다. 선택한 상품에서 계산에 필요한 조건만 순서대로 표시하고, 질문 수(N)는 상품에 따라 달라집니다. 1세대(A·S)는 자기부담 유형을 묻지 않고, 2세대(C1)·2.5세대(C2)는 자기부담 유형과 외래 보장한도를, 3세대(C3)·4세대(C4)는 급여·비급여 구분과 특약 한도를 확인합니다. 5세대는 범위 제외입니다.",
+                      "content": "• 조건 질문 구성 — 보장 조건 질문은 세대로 고정하지 않습니다. 선택한 상품의 검토된 보장 조건 데이터에서 계산에 필요한 항목만 뽑아 질문을 구성하고, 필요 없는 질문은 건너뜁니다. 자기부담 유형도 세대와 무관하게 해당 상품에서 필요하면 묻습니다(3세대 상품 포함). 어떤 세대가 어떤 질문을 받는지 미리 단정하지 않습니다. 5세대는 이번 범위에서 제외합니다.",
                       "lineHeight": 1.55,
                       "fontFamily": "$font-ko",
                       "fontSize": 21,
@@ -21817,7 +21679,7 @@
                       "fill": "$text-body",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "• 한도 값 선택 — ‘한도를 알고 있어요’ 선택 시 검토된 약관 데이터에서 확인된 값만 목록으로 보여 줍니다. 자유 입력란과 직원 대리 입력은 두지 않으며, 확인된 값이 없거나 목록에 없으면 ‘확인 필요’로 진행합니다.",
+                      "content": "• 선택지 생성 — 자기부담 유형(표준형·선택형Ⅱ 등)과 한도 값 목록은 해당 상품의 검토된 데이터가 있을 때만 노출합니다. 디자인 파일의 ‘표준형 / 선택형Ⅱ’와 ‘회당 10·25·30만원’은 화면 구성을 보여 주는 예시이며 공통 선택값이 아닙니다. 확인된 선택지가 없으면 그 질문을 띄우지 않고 해당 조건을 ‘확인 필요’로 기록합니다. 자유 입력란과 직원 대리 입력 기능은 이번 범위에 없습니다.",
                       "lineHeight": 1.55,
                       "fontFamily": "$font-ko",
                       "fontSize": 21,
@@ -21830,7 +21692,7 @@
                       "fill": "$text-body",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "• 검토 권한 — 병원 관리자는 치료명·설명·금액만 편집하고 검토 상태는 읽기 전용으로 봅니다. 상태 변경은 ‘검토 요청’만 가능하며 ‘검토 완료’ 승인은 보험 기준 검토 담당자 권한입니다. 급여·비급여 구분, 행위 코드, 치료 분류 등 보장 판단에 영향을 주는 값이 바뀌면 재검토 필요 상태로 전환하고, 금액만 바뀐 경우에는 재검토 없이 게시 요청할 수 있습니다. 반려 결과와 사유는 편집 화면에서 확인합니다.",
+                      "content": "• 검토 권한 — 병원 관리자는 치료 메뉴·금액을 편집하고, 급여 구분·행위 코드 등 보장 분류 정보를 등록하거나 변경을 요청할 수 있습니다. 검토 상태는 읽기 전용이며 상태 변경은 ‘검토 요청’만 가능합니다. 승인과 반려는 보험 기준 검토 담당자 권한이고, 병원 관리자는 보장 매핑을 직접 승인할 수 없습니다. 보장 분류 변경은 승인 전까지 환자 계산에 반영되지 않고 직전 승인 분류가 유지됩니다. 금액만 변경한 경우에는 재검토 없이 게시 요청할 수 있습니다. 반려 결과와 사유는 편집 화면에서 확인합니다.",
                       "lineHeight": 1.55,
                       "fontFamily": "$font-ko",
                       "fontSize": 21,
@@ -21869,7 +21731,7 @@
                       "fill": "$text-body",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "• 버튼 규격 — 키오스크 주요 버튼(Button_Primary·Button_Secondary)은 기본 높이 88(디자인 토큰 h-btn=88)이며 구현 시 최소 72 CSS px 이상의 터치 영역을 확보합니다. 문구가 길면 줄바꿈하되 잘리지 않도록 라벨을 가변 폭·가운데 정렬로 두고, 인접 버튼 간격은 24 이상, 큰 글자 보기에서도 같은 높이와 여백을 유지합니다. PC 관리자 버튼은 높이 42의 별도 규격을 적용합니다. (.pen에서 height 속성은 변수 참조를 받지 않아 컴포넌트에는 88을 직접 지정했습니다.)",
+                      "content": "• 버튼 규격 — 키오스크 주요 버튼은 Button_Primary(s8D6J)·Button_Secondary(m1gMGk) 컴포넌트에 높이 88을 지정했습니다. 인스턴스에 height가 없으면 이 값을 그대로 상속하므로, height 속성이 없다는 이유만으로 높이가 다르다고 보지 마세요. 더 큰 값(96~132)을 지정한 인스턴스만 개별 높이를 씁니다. 구현에서는 이 88을 토큰 h-btn에 대응시키고 최소 72 CSS px 이상의 터치 영역을 확보합니다. 현재 Pencil 버전은 height 속성에 변수 참조를 받지 않아 컴포넌트에 값을 직접 넣었고, h-btn은 구현 토큰 대응용으로 유지합니다. 문구가 길면 줄바꿈하되 잘리지 않도록 라벨을 가변 폭·가운데 정렬로 두고, 인접 버튼 간격은 24 이상, 큰 글자 보기에서도 같은 높이와 여백을 유지합니다. PC 관리자 버튼은 높이 42의 별도 규격을 적용합니다.",
                       "lineHeight": 1.55,
                       "fontFamily": "$font-ko",
                       "fontSize": 21,
@@ -22076,7 +21938,7 @@
                       "id": "LP66c",
                       "name": "Chip Label",
                       "fill": "$accent-dark",
-                      "content": "보장 조건 확인 2 / N",
+                      "content": "보험 조건 확인 2 / 3",
                       "fontFamily": "$font-ko",
                       "fontSize": "$fs-label",
                       "fontWeight": "bold"
@@ -22090,7 +21952,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "N은 선택한 상품에서 확인이 필요한 조건 수입니다. 필요한 질문만 표시됩니다.",
+                  "content": "선택하신 보험과 치료에 필요한 질문만 하나씩 여쭤봅니다.",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-ko",
                   "fontSize": "$fs-label",
@@ -22126,7 +21988,7 @@
                   "fill": "$text-body",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "같은 세대 안에서도 자기부담 유형에 따라 계산이 달라집니다. 외래 보장한도와는 별개 조건이라 따로 여쭤봅니다.",
+                  "content": "자기부담 유형에 따라 돌려받는 금액이 달라집니다. 보험증권이나 약관에서 확인하실 수 있습니다.",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-ko",
                   "fontSize": 26,
@@ -22199,19 +22061,6 @@
                       "fill": "$accent-dark"
                     }
                   }
-                },
-                {
-                  "type": "text",
-                  "id": "ehGIm",
-                  "name": "Option Source Caption",
-                  "fill": "$text-muted",
-                  "textGrowth": "fixed-width",
-                  "width": "fill_container",
-                  "content": "약관으로 확인된 유형만 표시합니다. 확인된 유형이 없으면 선택지를 띄우지 않고 ‘확인 필요’로 진행합니다.",
-                  "lineHeight": 1.45,
-                  "fontFamily": "$font-ko",
-                  "fontSize": "$fs-label",
-                  "fontWeight": "normal"
                 }
               ]
             },
@@ -22226,7 +22075,7 @@
                   "content": "유형을 모르셔도 진행됩니다"
                 },
                 "MzQqc": {
-                  "content": "유형이 확인되지 않으면 치료비 합계만 보여 드리고 예상 보험금과 보험금 수령 후 예상 본인 부담은 ‘확인 필요’로 표시합니다. 직원이 대신 값을 입력하지 않습니다."
+                  "content": "유형이 확인되지 않으면 치료비 합계만 보여 드리고, 예상 보험금과 보험금 수령 후 예상 본인 부담은 ‘확인 필요’로 표시합니다."
                 },
                 "q4T86R/zVSRN": {
                   "content": "직원 문의 방법 보기"
@@ -22240,7 +22089,7 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "표시 규칙 — 1세대(A·S)는 자기부담 유형을 묻지 않습니다. 2세대(C1)·2.5세대(C2)는 자기부담 유형과 외래 보장한도를, 3세대(C3)·4세대(C4)는 급여·비급여 구분과 특약 한도를 확인합니다. 선택한 상품에 필요한 조건만 질문합니다.",
+              "content": "확인되지 않은 조건은 임의로 정하지 않고 ‘확인 필요’로 안내해 드립니다.",
               "lineHeight": 1.45,
               "fontFamily": "$font-ko",
               "fontSize": "$fs-label",
@@ -22358,7 +22207,7 @@
                       "id": "lwiad",
                       "name": "Chip Label",
                       "fill": "$accent-dark",
-                      "content": "보장 조건 확인 3 / N · 한도 선택",
+                      "content": "보험 조건 확인 3 / 3",
                       "fontFamily": "$font-ko",
                       "fontSize": "$fs-label",
                       "fontWeight": "bold"
@@ -22372,7 +22221,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "약관으로 확인된 값만 표시합니다. 직접 입력란은 제공하지 않습니다.",
+                  "content": "선택하신 보험과 치료에 필요한 질문만 하나씩 여쭤봅니다.",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-ko",
                   "fontSize": "$fs-label",
@@ -22408,7 +22257,7 @@
                   "fill": "$text-body",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "선택하신 상품의 약관에서 확인된 회당 지급한도만 표시합니다. 해당되는 값이 없으면 ‘확인 필요’로 진행합니다.",
+                  "content": "보험증권에 적힌 회당 지급한도를 선택해 주세요. 해당되는 값이 없으면 아래 ‘목록에 없어요’를 선택해 주세요.",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-ko",
                   "fontSize": 26,
@@ -22438,7 +22287,8 @@
                       "content": "회당 10만원"
                     },
                     "H7O5CR": {
-                      "content": "약관에서 확인된 값"
+                      "content": "약관에서 확인된 값",
+                      "enabled": false
                     },
                     "SjMQG": {
                       "enabled": true
@@ -22465,7 +22315,8 @@
                       "content": "회당 25만원"
                     },
                     "H7O5CR": {
-                      "content": "약관에서 확인된 값"
+                      "content": "약관에서 확인된 값",
+                      "enabled": false
                     },
                     "SjMQG": {
                       "enabled": false
@@ -22489,7 +22340,8 @@
                       "content": "회당 30만원"
                     },
                     "H7O5CR": {
-                      "content": "약관에서 확인된 값"
+                      "content": "약관에서 확인된 값",
+                      "enabled": false
                     },
                     "SjMQG": {
                       "enabled": true
@@ -22520,19 +22372,6 @@
                       "fill": "$accent-dark"
                     }
                   }
-                },
-                {
-                  "type": "text",
-                  "id": "JTNHi",
-                  "name": "Option Source Caption",
-                  "fill": "$text-muted",
-                  "textGrowth": "fixed-width",
-                  "width": "fill_container",
-                  "content": "표시된 한도 값은 디자인 예시입니다. 실제 목록은 검토된 약관 데이터에서 가져오며, 목록에 없는 값은 임의로 입력하지 않습니다.",
-                  "lineHeight": 1.45,
-                  "fontFamily": "$font-ko",
-                  "fontSize": "$fs-label",
-                  "fontWeight": "normal"
                 }
               ]
             },
@@ -22561,7 +22400,7 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "선택한 한도 값만 계산에 사용합니다. 확인되지 않은 값은 기본값으로 미리 선택하지 않습니다.",
+              "content": "확인되지 않은 조건은 임의로 정하지 않고 ‘확인 필요’로 안내해 드립니다.",
               "lineHeight": 1.45,
               "fontFamily": "$font-ko",
               "fontSize": "$fs-label",
