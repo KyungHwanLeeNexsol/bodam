@@ -106,6 +106,8 @@ Rules that follow from this:
 
 Condition questions (§4 screen 2): deduction type and outpatient coverage limit are different conditions and are asked separately. No answer to one is placed among the options of the other (for example "선택형Ⅱ 가입이에요" is never an option of "외래 보장한도를 알고 계신가요?"). Offered values come only from confirmed policy data; without a real value or evidence the item is ‘확인 필요’. The same conditions and values are not forced on every C1, C2, or C3 contract. A staff-entry route is mentioned to patients only when its flow and permission are defined; none is defined for the MVP.
 
+The questions are not fixed per generation. They are composed from the selected product's reviewed condition data: only items the calculation needs are asked, the rest are skipped, and the deduction-type question appears for any generation whose product needs it. Generation-by-generation condition lists in the planning document are candidates before policy confirmation, not rules. Default order is cause (injury/illness) → deduction type → outpatient-limit check → limit value, limited to the questions the product needs. The progress number on the patient screen (for example "1 / 3") is computed from the real count for that product; no symbol such as "N" appears on the patient screen. Patient condition screens carry only the question, the options, a short help text, and "모르겠어요"; internal design content (question-count method, generation rules, data lookup, the statement that staff entry is not offered) stays in the design specification. Every "모르겠어요" / "모르는 채로 계속" / "목록에 없어요" does the same thing: record that condition as "확인 필요" and move on to the remaining needed questions, or to treatment selection when none remain.
+
 Injury/illness help text is cause-based:
 - 상해: 넘어짐·부딪힘 등 사고나 외부 충격으로 생긴 치료
 - 질병: 사고나 외부 충격 없이 발생한 질환으로 받는 치료
@@ -127,7 +129,7 @@ Case E does not state that any real treatment is excluded. The general group for
 
 ### 5.2 Admin permission split
 
-- Hospital administrator: manage treatment menu and prices; view review status; request review; see review results and rejection reasons. Cannot approve a coverage mapping by choosing "검토 완료" themselves.
+- Hospital administrator: manage treatment menu and prices; register coverage-classification fields (benefit class, procedure code, treatment class) or request a change to them; view review status (read-only); request review; see review results and rejection reasons. Cannot approve or reject a coverage mapping, and cannot choose "검토 완료" themselves.
 - Insurance-rule reviewer (보험 기준 검토 담당자): review treatment classification and coverage rules; approve or reject; manage the evidence and versions that were applied.
 - A change that affects the coverage judgement (treatment or procedure code, benefit/non-benefit class) sends the existing approved mapping back to re-review; a price-only change does not.
 - Settings and permissions are separated between hospitals.
@@ -146,7 +148,7 @@ Case E does not state that any real treatment is excluded. The general group for
 - Single initial hospital, with data and permission structure that already supports multiple hospitals.
 - Generations 1 (A·S), 2 (C1), 2.5 (C2), 3 (C3), 4 (C4) only; anything else returns UNSUPPORTED.
 - Kiosk start state, three input steps, separate result screen, idle reset, consultation guidance.
-- Large-text mode (required, not a roadmap candidate) and assistive keyboard operation (navigation, selection, confirmation, visible focus, modal focus handling) alongside full touch-only completion (§13.1).
+- Large-text mode (required, not a roadmap candidate; it keeps every function of the normal mode, including "보험 조건 수정" on the result screen) and assistive keyboard operation (navigation, selection, confirmation, visible focus, modal focus handling) alongside full touch-only completion (§13.1).
 - PC admin web and insurance-rule management with source tracking and review states.
 - Server-side recalculation from published prices and rules, with version checks.
 - Example data labelled DEMO (see §7 below).

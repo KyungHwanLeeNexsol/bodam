@@ -35,7 +35,7 @@ Single Next.js (App Router) + TypeScript application with two clearly separated 
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/clinics/{slug}/catalog` | Published treatments and price version for the clinic |
-| `GET /api/insurance/options` | Verified selection options and the follow-up questions they require |
+| `GET /api/insurance/options` | Verified selection options and the follow-up questions they require; the question list is built from the selected product's reviewed condition data, not from a fixed per-generation list |
 | `POST /api/estimate` | Takes treatment IDs, the selected insurance conditions, and the price and rule versions; returns the result and its basis |
 | Admin settings and publish APIs | Processed only after authentication and clinic-permission checks; concrete paths are not specified by the planning document |
 
@@ -103,7 +103,7 @@ Initial admin price fields for treatments (from §5): display name and descripti
 
 | Role | Can | Cannot |
 |------|-----|--------|
-| Hospital administrator | Manage own clinic's name, logo, institution type, notice, consultation number, kiosk device settings; add/edit/deactivate/reorder treatments; set benefit class, price, conditions, common base fees; view coverage-review status, request review, read review results and rejection reasons; preview portrait/landscape; draft and publish; view version and change history; set idle-reset, result-hold, and warning times | Change insurance deductions or payout limits; approve or mark a coverage mapping "검토 완료" (review status is read-only for them, only "request review" is available); read or change another clinic's data |
+| Hospital administrator | Manage own clinic's name, logo, institution type, notice, consultation number, kiosk device settings; add/edit/deactivate/reorder treatments; set benefit class, price, conditions, common base fees; register coverage-classification fields (benefit class, procedure code, treatment class) or request a change to them; view coverage-review status (read-only), request review, read review results and rejection reasons; preview portrait/landscape; draft and publish; view version and change history; set idle-reset, result-hold, and warning times | Change insurance deductions or payout limits; approve or reject a coverage mapping or mark it "검토 완료" (review status is read-only for them; the only status action is "request review"); read or change another clinic's data |
 | Insurance-rule reviewer (보험 기준 검토 담당자) | Review treatment classification and coverage rules; approve or reject mappings with a recorded reason; manage applied evidence and versions; manage insurers, products, coverages, deduction types, policy versions; record sources and clauses; move rules through draft, approved (reviewed), published, suspended; approve calculation examples against policy text | Not specified in the planning document |
 | Platform operator | Manage clinic administrator permissions and the rule scope a clinic may use | Not specified in the planning document |
 
