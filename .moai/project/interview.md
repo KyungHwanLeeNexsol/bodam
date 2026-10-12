@@ -20,7 +20,8 @@ Constraints:
 - The server never trusts client-submitted prices, deductible rates, or hospital IDs; it recalculates from published data. The instant preview and final server calculation use the same engine (§8).
 - Multi-hospital data and permission isolation; roles split into hospital administrator, insurance-rule reviewer, and platform operator (§7).
 - Insurance rules need verified policy sources (insurer, product, clause/page, revision date, effective date, review status); rules without source stay DRAFT/DEMO and never apply to a real patient's estimate (§8, §9).
-- Touch-only kiosk use: no physical keyboard or mouse hover required; provisional review screens 1080×1920 portrait and 1920×1080 landscape; large touch targets (§4, §13.1).
+- Touch-only kiosk use: no physical keyboard or mouse hover required; assistive keyboard operation (navigation, selection, confirmation, visible focus, modal focus handling) also supported; large-text mode is required in the MVP; provisional review screens 1080×1920 portrait and 1920×1080 landscape (real device size undecided); large touch targets with a primary button reference height of 88 and a 72 CSS px implementation minimum (§4, §13.1; details in `design-requirements.md`).
+- Generation periods are half-open ranges (Gen 1 before 2009.08.01; Gen 4 = 4th-generation contracts from 2021.07.01, 5th generation excluded); converted or re-enrolled contracts are not classified by first enrollment date alone (§3).
 - Session reset: idle timeout with warning and extension, completion resets everything, refresh/back must never restore a previous patient's result, late API responses after reset are ignored (§13.2).
 - Kiosk web UI is distinct from device lockdown and auto-launch, which are configured on the device OS/browser and verified separately (§13.3).
 Money handling: amounts stored as integer won; rates as integer fractions or basis points; rounding policy stated per rule (§6.3).
@@ -45,3 +46,6 @@ Team sharing: unresolved. The document assigns design to Pencil.dev, development
 - First insurer, product, and coverage whose real policy text will back the first published rules, and its limit options.
 - The complete "1588" number; operating entity, hours, and purpose of 1544-8069.
 - Applicable medical-advertising rules at deployment time (the cited source is a 2026 legislative notice, not settled law).
+
+## Revision note (2026-10-12, consistency pass)
+Answers above were reconciled with the clarified project criteria: the keyboard/touch scope and large-text requirement are settled (no longer open), the hospital-administrator versus insurance-rule-reviewer split is settled, and result amounts use the names 예상 병원 결제액 / 예상 보험금 / 보험금 수령 후 예상 본인 부담. Still unresolved and carried forward: real device specification, real hospital data, first real policy source, consultation-number operator and hours, and the revised Pencil design (awaiting revision). This note records document edits only; no interview was re-run.

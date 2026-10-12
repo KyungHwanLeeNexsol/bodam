@@ -16,7 +16,7 @@
 |----------|--------------------------|
 | Patients at the kiosk | Use the shared touch screen without sign-up; no personal phone or QR start in the default flow (§1) |
 | Hospital administrators | Log in to a separate PC admin web to manage clinic settings, treatments, prices, publication (§7) |
-| Insurance-rule reviewers (proposed split) | Review and publish insurer, product, coverage, and policy-source rules; approve rules against policy text (§7) |
+| Insurance-rule reviewers (보험 기준 검토 담당자; proposed split) | Review and publish insurer, product, coverage, and policy-source rules; approve rules against policy text (§7) |
 | Platform operator (proposed split) | Manages hospital administrator permissions and which rules a hospital may use (§7) |
 
 The same person may hold several roles at first, but permissions stay separate (§7).
@@ -39,9 +39,9 @@ Flow: start, insurance generation, insurer and conditions, treatments, result, f
 |-------|----------------------|----------------------------------|
 | Start (idle) | Sees the hospital name, ‘메디헬퍼’, the description ‘실손보험 예상 부담액 안내’, and a large ‘실손 예상 부담액 확인’ button | Shows no previous amounts or selections; pressing start always opens screen 1 with an empty session; the device is preconfigured to one clinic (§4) |
 | Screen 1 (step 1/3) | Chooses one of five generation cards, with the image-based enrollment period shown on the card | Prompt ‘내 실손보험을 선택해 주세요’. Escape routes: ‘가입 조건이 목록에 없어요’ (out-of-scope contract, consultation instead of calculation); ‘가입 시기는 알지만 세대는 모르겠어요’ (year/month buttons or on-screen numeric keypad to show candidates); ‘실손을 전환하거나 보장내용을 변경했나요?’ (yes/no/unknown; if yes, guide the patient to choose by the current policy (현재 증권 기준)); ‘세대를 모르겠어요’ (how to check, consultation). A generation is never picked on the patient's behalf. Patients may skip consultation and go to the treatment-cost total only (§4) |
-| Screen 2 (step 2/3) | Chooses an insurer and answers only the extra questions that are needed, one question at a time | Insurer tabs: 손해보험 / 생명보험 / 우체국 / 농협·공제, plus main-insurer and full-list views, paged with ‘이전 목록/다음 목록’. Search is optional and only enabled where a verified on-screen Korean keyboard exists. Every question offers ‘모르겠어요/직원에게 문의’. Choices are kept when navigating back (§4) |
+| Screen 2 (step 2/3) | Chooses an insurer and answers only the extra questions that are needed, one question at a time | Insurer tabs: 손해보험 / 생명보험 / 우체국 / 농협·공제, plus main-insurer and full-list views, paged with ‘이전 목록/다음 목록’. Search is optional and only enabled where a verified on-screen Korean keyboard exists. Every question offers ‘모르겠어요/직원에게 문의’. Choices are kept when navigating back (§4). Deduction type and outpatient coverage limit are separate questions, each with its own ‘모르겠어요’, shown only when the product has that condition; only limits and deduction types registered in a confirmed policy are offered, otherwise ‘확인 필요’ (see section 5.1) |
 | Screen 3 (step 3/3) | Selects hospital-published treatments on large cards | Nothing is preselected or recommended; multiple selection; selecting the same item twice in one visit counts once; benefit and non-benefit totals and the total update immediately; selection persists across list pages; fixed bottom bar shows the selection count, ‘총 예상 결제액’, and the button ‘예상 부담액 확인’ (§4) |
-| Result | Reads three large amount cards; may open ‘계산 근거 보기’ | Actions: ‘치료 다시 선택’, ‘보험 조건 수정’ (session kept), ‘이용 완료’ (clears everything, back to start), ‘직원에게 문의’ (§4) |
+| Result | Reads three large amount cards; may open ‘계산 근거 보기’ | Actions: ‘치료 다시 선택’, ‘보험 조건 수정’ (session kept), ‘상담 안내’ (session kept; returning restores the same result), ‘이용 완료’ (clears everything, back to start). The consultation entry exists on every result screen, including the normal one (§4) |
 
 A patient who does not know the insurance condition can still see the treatment-cost total only (§1).
 
@@ -53,11 +53,13 @@ Image-based classification only; the codes C1 to C4 are internal aliases tied to
 
 | Card | Enrollment period as shown on the image | Extra checks |
 |------|------------------------------------------|--------------|
-| 1세대(A·S) | on or before 2009.08.01 | Current coverage name, injury/illness, per-accident/per-visit limit, deductible |
+| 1세대(A·S) | before 2009.08.01 (2009.08.01 itself belongs to Gen 2) | Current coverage name, injury/illness, per-accident/per-visit limit, deductible |
 | 2세대(C1) | 2009.08.01 to before 2015.09.01 | 2009.08 to 09 boundary contracts, deduction type, outpatient enrollment limit |
 | 2.5세대(C2) | 2015.09.01 to before 2017.04.01 | Standard type / selectable-II, outpatient enrollment limit |
 | 3세대(C3) | 2017.04.01 to before 2021.07.01 | Standard type / selectable-II, three-major-non-benefit riders |
-| 4세대(C4) | 4th-generation contracts from 2021.07.01 | Non-benefit rider, per-item limit and count, current coverage |
+| 4세대(C4) | 4th-generation contracts from 2021.07.01 (not "every contract after 2021.07.01"; 5th generation is excluded) | Non-benefit rider, per-item limit and count, current coverage |
+
+Periods are half-open: each range includes its start date and excludes the next range's start date. Converted or re-enrolled contracts are never assigned a current generation from the first enrollment date alone; the current coverage and policy decide.
 
 C1 and C2 are separate cards from the first screen. A contract whose current coverage is outside the supported range stops calculation and routes to consultation; it is never calculated as C4. Contracts from 2009.08 to 09 get a dedicated help text and a check of current coverage, because the enrollment date alone must not decide the coverage (§2, §3).
 
@@ -73,11 +75,11 @@ C1 and C2 are separate cards from the first screen. A contract whose current cov
 
 ### Three numbers (§4)
 
-1. Expected hospital payment: what the patient pays at the hospital, excluding the National Health Insurance portion.
-2. Expected indemnity payout: a conditional estimate under the entered conditions and verified rules.
-3. Expected burden after payout: item 1 minus item 2.
+1. 예상 병원 결제액 (expected hospital payment): what the patient is expected to pay at the hospital today, excluding the National Health Insurance portion.
+2. 예상 보험금 (expected insurance payout): a conditional estimate under the entered conditions and verified rules.
+3. 보험금 수령 후 예상 본인 부담 (expected out-of-pocket burden after payout): item 1 minus item 2.
 
-The after-payout burden must never be worded as the amount to pay at the hospital today.
+Every result distinguishes these three amounts. The after-payout burden must never be worded or laid out so it can be read as the amount to pay at the hospital today.
 
 ### Three calculation states (§6.1)
 
@@ -85,7 +87,12 @@ The after-payout burden must never be worded as the amount to pay at the hospita
 |-------|-----------|-------|
 | 조건부 예상 계산 (conditional estimate) | Rule and required conditions confirmed; calculable under stated assumptions | Expected payout, expected burden, assumptions |
 | 확인된 규칙상 미보장 (confirmed uncovered) | An unsubscribed rider or exclusion clause is confirmed | 0 won for that item, with reason and basis |
-| 계산 보류 (calculation on hold) | Rule, coverage, treatment classification, or a required condition is unclear | Treatment total, unconfirmed items, what must be confirmed |
+| 계산 보류 (calculation on hold) | Rule, coverage, treatment classification, or a required condition is unclear | Treatment total, unconfirmed items, ‘확인 필요’, what must be confirmed; computed values are null |
+| 계산 실패 (calculation failed) | Communication error or other failure to finish the calculation | Failure notice with retry / end-of-use; computed values are null |
+
+Zero handling is by state, not a blanket rule: unconfirmed condition = null; communication error = null; confirmed exclusion = that item's payout 0 won with the exclusion reason; a normal calculation that results in 0 = 0 won with its calculation basis. "Unconfirmed" is never turned into "excluded".
+
+An assumption sentence such as "all selected treatments are covered and limits remain" is shown only when every selected item is confirmed covered. A result with a confirmed exclusion replaces it with the excluded items, their reasons, and an assumption that matches the actual state.
 
 Rules that follow from this:
 - "Unknown" is never treated as "not subscribed" or "uncovered". An unknown condition puts the item on hold; it is not zero.
@@ -95,6 +102,42 @@ Rules that follow from this:
 - The explanation area gives the selected generation, deduction type, coverage, enrollment limit, the injury/illness premise, the deduction formula and limit overage, exclusions, the policy source (insurer, product, revision date, clause or page, source link), and a "remaining limit/count assumed" notice when remaining annual or per-accident limits are not confirmed. Policy sources are shown in the detail view only, and the kiosk never opens an external website directly.
 - The planning document supplies a fixed wording for the standard disclaimer and for the deduction explanation example (§4); those texts are to be reused as written when the screens are specified.
 
+### 5.1 Condition questions, injury/illness wording, and review examples
+
+Condition questions (§4 screen 2): deduction type and outpatient coverage limit are different conditions and are asked separately. No answer to one is placed among the options of the other (for example "선택형Ⅱ 가입이에요" is never an option of "외래 보장한도를 알고 계신가요?"). Offered values come only from confirmed policy data; without a real value or evidence the item is ‘확인 필요’. The same conditions and values are not forced on every C1, C2, or C3 contract. A staff-entry route is mentioned to patients only when its flow and permission are defined; none is defined for the MVP.
+
+Injury/illness help text is cause-based:
+- 상해: 넘어짐·부딪힘 등 사고나 외부 충격으로 생긴 치료
+- 질병: 사고나 외부 충격 없이 발생한 질환으로 받는 치료
+- 모르겠어요: 원인이 불분명하면 직원에게 확인해 주세요
+
+Symptoms such as pain or inflammation do not decide illness. The wording helps the patient choose and does not fix a diagnosis or an insurer's payment decision.
+
+Review examples (DEMO patient amounts: X-ray 10,000 + ultrasound 70,000 + 신장분사치료 40,000 + physical therapy 4,000 = 124,000; benefit 14,000, non-benefit 110,000). They are illustrations, not confirmed hospital fees or coverage decisions. Expected hospital payment is 124,000 in every row. Arithmetic checked by hand for this document; no engine exists yet.
+
+| Case | Assumptions | Expected insurance payout | Burden after payout |
+|------|-------------|--------------------------:|--------------------:|
+| A | A confirmed specific C1 profile: all items covered, deduction 10,000, outpatient payout limit 250,000. Not applied to all C1 contracts | 114,000 | 10,000 |
+| B | C2 standard type, 20% deduction: max(10,000, 124,000 x 20%) = 24,800 | 99,200 | 24,800 |
+| C | C2 selectable-II: max(10,000, 10% benefit + 20% non-benefit) = 23,400 | 100,600 | 23,400 |
+| D | Hypothetical 4th gen: calculable in the general benefit and general non-benefit groups, rider enrolled, remaining limit sufficient | 4,000 + 77,000 = 81,000 | 43,000 |
+| E | Hypothetical: the 40,000 item is excluded, the remaining 84,000 is covered, deduction 10,000, sufficient remaining limit | 74,000 | 50,000 |
+
+Case E does not state that any real treatment is excluded. The general group formula P = min(max(E - D, 0), L) explains typical cases only; real products' benefit/non-benefit split, riders, counts, and shared limits must be reviewed, and no single formula is forced on every contract.
+
+### 5.2 Admin permission split
+
+- Hospital administrator: manage treatment menu and prices; view review status; request review; see review results and rejection reasons. Cannot approve a coverage mapping by choosing "검토 완료" themselves.
+- Insurance-rule reviewer (보험 기준 검토 담당자): review treatment classification and coverage rules; approve or reject; manage the evidence and versions that were applied.
+- A change that affects the coverage judgement (treatment or procedure code, benefit/non-benefit class) sends the existing approved mapping back to re-review; a price-only change does not.
+- Settings and permissions are separated between hospitals.
+
+### 5.3 Consultation and reset
+
+- The consultation entry appears on the normal result screen too; returning from it keeps the selections and result. Finishing (‘이용 완료’) and automatic reset are different actions.
+- 1544-8069 is the user-provided consultation number; operating entity and hours are unconfirmed; the incomplete "1588" is not completed; real call connection and staff-call integration are out of the MVP. Individual exclusions, waiting periods, rider enrollment, and remaining limits still need a check against the patient's own contract.
+- Idle reset: input screens warn at 100 s and reset at 120 s; result screens warn at 160 s and reset at 180 s. The warning shows the remaining time, ‘계속 사용할게요’, and ‘처음으로’. Extension can repeat and restarts the idle time. Patient selections and results are removed on reset and are not kept in localStorage, IndexedDB, or service-worker cache; late responses after reset do not restore the screen; no admin sign-in state stays on a shared kiosk. This is a specification; no behavior has been tested.
+
 ## 6. MVP scope
 
 ### In scope (§1, §4, §7, §8)
@@ -103,6 +146,7 @@ Rules that follow from this:
 - Single initial hospital, with data and permission structure that already supports multiple hospitals.
 - Generations 1 (A·S), 2 (C1), 2.5 (C2), 3 (C3), 4 (C4) only; anything else returns UNSUPPORTED.
 - Kiosk start state, three input steps, separate result screen, idle reset, consultation guidance.
+- Large-text mode (required, not a roadmap candidate) and assistive keyboard operation (navigation, selection, confirmation, visible focus, modal focus handling) alongside full touch-only completion (§13.1).
 - PC admin web and insurance-rule management with source tracking and review states.
 - Server-side recalculation from published prices and rules, with version checks.
 - Example data labelled DEMO (see §7 below).
@@ -143,7 +187,6 @@ Candidates only. None is committed; any of them becomes a SPEC later through `/m
 - Further insurers, products, and coverages, starting with the first insurer whose real policy text is obtained, and limited use of confirmed profiles at the pilot (§10 steps 5 and 6).
 - Roll-out to additional hospitals on the existing multi-hospital data and permission structure (§1, §7).
 - Optional insurer search when a verified on-screen Korean keyboard exists (§4).
-- Text enlargement option for body text (§13.1).
 - Items the MVP excludes and that the document does not rule out for later: offline calculation, printer, phone connection, staff-call integration, result QR transfer (§13.3).
 
 ## 10. Success metrics
@@ -183,3 +226,5 @@ Additional, found while writing:
 - Real classification of 신장분사치료 (procedure code, billing content, purpose).
 - Which of the six rule-administration duties belong to the insurance-rule reviewer and which to the platform operator is not split in the document.
 - Whether a staff-call or phone feature will ever exist depends on device integration not yet known.
+- Whether a staff-entry route for insurance conditions will exist: undefined, so no screen may imply it.
+- Revised Pencil design: not yet saved; design items are "awaiting revision" in `design-requirements.md`, which also lists the decisions and input materials needed before the next SPEC (working name SPEC-REIMBURSEMENT-ESTIMATOR-001, not started).

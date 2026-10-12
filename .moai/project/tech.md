@@ -57,18 +57,18 @@ Rationale given by the planning document:
 - Admin authentication is never left on a shared kiosk; the patient screen has no admin link and no hidden touch entry.
 - Reload, restart, and browser Back never restore a previous patient's result.
 - In-flight requests are cancelled on reset and the session identifier is replaced, so late responses are ignored.
-- Idle timing (initial proposal, to be adjusted after observing real use): reset after 120 seconds without input during input steps and 180 seconds on the result screen; a ‘계속 이용하시겠어요?’ warning with large ‘계속 이용/이용 완료’ buttons appears 20 seconds before expiry; ‘계속 이용’ grants a new period and can be repeated. Inactivity is judged by patient touch or key input; server responses and internal refreshes must not extend the time. The hospital can set these times in the admin (§7).
+- Idle timing (initial proposal, to be adjusted after observing real use): input screens warn at 100 s and reset at 120 s; result screens warn at 160 s and reset at 180 s (warning 20 s before reset). The warning shows the remaining time and large ‘계속 사용할게요’ and ‘처음으로’ buttons; extension can repeat and restarts the idle time. Inactivity is judged by patient touch or key input; server responses and internal refreshes must not extend the time. The hospital can set these times in the admin (§7). This is a design specification; no behavior was tested.
+- On reset, selections and results are removed; they are never written to localStorage, IndexedDB, or service-worker cache; a response to a request issued before the reset must not restore any screen (cancel the request and replace the session identifier); no administrator authentication state may remain on the shared kiosk.
 
 ## 6. Kiosk display requirements (§13.1)
 
 - Provisional review sizes: portrait 1080x1920 and landscape 1920x1080. These are not confirmed device resolutions or physical sizes.
 - Layout is adjusted per orientation (card columns, items per list page, amount placement); content is not simply scaled.
-- Provisional visual baselines (starting points, not accessibility certification values): primary button height 72 CSS px or more, card height 120 CSS px or more, body text 24 CSS px or more, title 36 CSS px or more, result amount 56 CSS px or more, spacing between major touch targets 16 CSS px or more.
+- Design baselines (design references, not accessibility certification or real-device verification): primary button default height 88; implemented primary touch area at least 72 CSS px; selection card height target 120 or more; body text 24 or more; title 36 or more; key result number 56 or more; spacing between major elements 16 or more. The PC admin screens use a separate specification.
 - CSS pixels versus physical size depends on device scaling. Legibility, touch accuracy, and reach must be checked on the real installed device with elderly users, low-vision users, and wheelchair users.
-- A body-text enlargement option is provided, and buttons and amounts must not be clipped when enlarged.
-- Touch-only: the whole flow works with no physical keyboard and no mouse hover. Selection is shown by a check mark and text as well as color. Insurer search is optional and only enabled with a verified on-screen Korean keyboard; every insurer must be reachable without typing.
+- Large-text mode is a required MVP feature. Buttons, amounts, and key guidance must not be clipped and must stay operable when it is on; selections persist.
+- Touch-only and assistive keyboard operation are both satisfied, not in tension: the whole flow completes with no physical keyboard and no mouse hover, and when a keyboard is present navigation, selection, and confirmation work with a visible focus indicator and modal focus handling (focus moves into a modal, stays inside, and returns to the opener on close). Selection is shown by a check mark and text as well as color. Insurer search is optional and only enabled with a verified on-screen Korean keyboard; every insurer must be reachable without typing.
 - Warnings, extension, and time adjustment follow the W3C timing-adjustable guidance ([7]) and need review.
-- §13.1 also says touch and keyboard assistive navigation should both work, while the rest of the document requires only touch; this tension is carried as an open item for the SPEC to reconcile.
 
 ## 7. Device lockdown is separate (§13.3)
 
@@ -90,6 +90,12 @@ Numeric examples to reproduce (all from the planning document; DEMO data: X-ray 
 | 2nd gen late standard | D = max(10,000, 124,000 x 20%) = 24,800 | Payout 99,200; burden 24,800 |
 | 2nd gen late selectable-II | D = max(10,000, 14,000 x 10% + 110,000 x 20%) = 23,400 | Payout 100,600; burden 23,400 |
 | 4th gen | Benefit D = 10,000; non-benefit D = 33,000 | Benefit 4,000 + non-benefit 77,000 = 81,000; burden 43,000 |
+| Confirmed exclusion (hypothetical case E) | Hospital payment 124,000; the 40,000 item excluded; covered 84,000; D=10,000; sufficient remaining limit | P=74,000; burden after payout 50,000; the excluded 40,000 is not mixed into the deduction base |
+| Unconfirmed condition | Required condition unknown | Calculation on hold; values null; "확인 필요"; never 0 and never "excluded" |
+| Communication error | Estimate request fails | Calculation failed; values null; retry / end of use offered; never 0 |
+| Normal zero | Calculation completes with P=0 | 0 won shown with its basis |
+
+In these rows "burden after payout" means 보험금 수령 후 예상 본인 부담 (hospital payment minus expected insurance payout); it is not what the patient pays at the hospital today. The label "expected insurance payout" is 예상 보험금 and "expected hospital payment" is 예상 병원 결제액. The case labels A to E and the general formula caveat are described in `product.md` section 5.1.
 
 The 4th-generation benefit deduction is 10,000, not the full 14,000; the non-benefit part is 110,000 minus 33,000. The planning document says this example assumes every item is covered, limits and counts remain, and no separate rider item exists; it is not a confirmed classification of 신장분사치료. Template deduction formulas (§6.3, test and design templates, not operating policy): generation 2 fixed D=10,000; generation 2 percentage D=max(10,000, rate x E); generation 4 benefit D=min(G, max(10,000, 0.20 x G)); generation 4 general non-benefit D=min(N, max(30,000, 0.30 x N)) (clinic basis).
 
@@ -134,7 +140,6 @@ Unresolved:
 - Calculation formulas not specified in the planning document: generation 1 injury/illness outpatient (fixed or percentage per policy), generation 2 percentage deduction rate, generation 3 basic and three-major non-benefit deduction and limit rules, shared-limit relationships.
 - 1588 and the 1544-8069 operating entity, hours, and purpose.
 - Medical-advertising rules at deployment time. The cited source ([5]) is a 2026 legislative notice, not a settled legal basis.
-- Whether the keyboard-assisted navigation mentioned in §13.1 is required given the touch-only flow.
 - Source documents cited in the planning document ([1] to [8]) were not fetched or independently checked.
 
 ## 11. References cited by the planning document (as given; not independently fetched)

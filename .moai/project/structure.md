@@ -103,16 +103,18 @@ Initial admin price fields for treatments (from §5): display name and descripti
 
 | Role | Can | Cannot |
 |------|-----|--------|
-| Hospital administrator | Manage own clinic's name, logo, institution type, notice, consultation number, kiosk device settings; add/edit/deactivate/reorder treatments; set benefit class, price, conditions, common base fees; preview portrait/landscape; draft and publish; view version and change history; set idle-reset, result-hold, and warning times | Change insurance deductions or payout limits; read or change another clinic's data |
-| Insurance-rule reviewer | Manage insurers, products, coverages, deduction types, policy versions; record sources and clauses; review treatment-code to coverage mapping; move rules through draft, reviewed, published, suspended; approve calculation examples against policy text | Not specified in the planning document |
+| Hospital administrator | Manage own clinic's name, logo, institution type, notice, consultation number, kiosk device settings; add/edit/deactivate/reorder treatments; set benefit class, price, conditions, common base fees; view coverage-review status, request review, read review results and rejection reasons; preview portrait/landscape; draft and publish; view version and change history; set idle-reset, result-hold, and warning times | Change insurance deductions or payout limits; approve or mark a coverage mapping "검토 완료" (review status is read-only for them, only "request review" is available); read or change another clinic's data |
+| Insurance-rule reviewer (보험 기준 검토 담당자) | Review treatment classification and coverage rules; approve or reject mappings with a recorded reason; manage applied evidence and versions; manage insurers, products, coverages, deduction types, policy versions; record sources and clauses; move rules through draft, approved (reviewed), published, suspended; approve calculation examples against policy text | Not specified in the planning document |
 | Platform operator | Manage clinic administrator permissions and the rule scope a clinic may use | Not specified in the planning document |
+
+Review trigger split: a change that affects the coverage judgement (treatment or procedure code, benefit/non-benefit class, insurance calculation class) invalidates the existing approved mapping and requires re-review, and the treatment's expected payout is on hold until then; a price-only change does not invalidate the mapping but is published as a new price version with a change record. Settings, prices, and permissions are isolated between clinics.
 
 The planning document groups the six rule-administration duties under "platform operator / insurance-rule reviewer" without splitting them between the two roles; the split above is a proposal. The server verifies the clinic permission on every admin call, so one clinic's administrator cannot read or change another clinic's prices or settings (§7, §9 "병원 격리").
 
 ## 8. Kiosk session state
 
 - Patient selections and results live only in the kiosk page's in-memory session. Nothing is stored in localStorage, IndexedDB, or service-worker caches. The server stores no personal health data by default. No treatment or insurance condition is put in a URL query or an analytics event; operating statistics use step-level aggregates and anonymous events (§8).
-- Reset triggers: reload/restart starts an empty session; ‘이용 완료’ clears immediately; ‘처음으로’ asks for confirmation while in progress and then clears all; idle timeout shows a warning with extension, then clears; Back and Edit keep the current patient's choices (§13.2).
+- Reset triggers: reload/restart starts an empty session; ‘이용 완료’ (patient ends use) clears immediately; ‘처음으로’ asks for confirmation while in progress and then clears all; idle timeout warns (input screens at 100 s, result screens at 160 s) with ‘계속 사용할게요’ / ‘처음으로’ and the remaining time, then clears at 120 s / 180 s; extension can repeat and restarts the idle time; Back, Edit, and ‘상담 안내’ keep the current patient's choices and result (§13.2). No administrator authentication state remains on the kiosk after reset.
 - A request in flight when a reset happens is cancelled, and the session identifier is replaced so a late response is ignored and never shows on the next patient's screen (§13.2, §9 "늦은 계산 응답").
 - Browser history, page cache, and Back must not bring back the previous patient's result; this must be verified on the real device (§13.2).
 - State machine as stated: idle (start) is separate from the three input steps; the result is a separate screen; extra insurance questions are an additional state inside step 2; a question caused by a treatment chosen in step 3 can be asked on that screen or by returning to the matching item in step 2 (§1, §4).
@@ -150,7 +152,8 @@ tests/
 - How a kiosk device is bound to a clinic (device ID versus the `clinicSlug` route versus both) is not specified; KioskDevice exists as an entity but the binding mechanism is open.
 - Admin API paths, authentication provider, database, and hosting are undecided (see tech.md).
 - Relationships in section 6 and the `server/` layer are inferences.
-- Split of rule-administration duties between the insurance-rule reviewer and platform operator.
+- Split of rule-administration duties between the insurance-rule reviewer and platform operator (the hospital-administrator / reviewer boundary itself is settled: administrators request, reviewers approve or reject).
+- Design requirements, frame-level review checklist, and the inputs needed for the next SPEC are in `design-requirements.md`.
 - Real hospital data (name, logo, treatments, prices, whether a price is full fee or copay, base fees) and the first real policy source.
 - Treatment-code mapping for 신장분사치료 and for items whose insurance class is unreviewed.
 - Storage for hospital-configurable idle-reset / result-hold / warning times (§7), the common brand setting (§8), and common base-fee items (§5) is not assigned to an entity (Clinic, KioskDevice, or a new entity), and a parent "Treatment" identity for TreatmentVersion is not defined; all undecided.
