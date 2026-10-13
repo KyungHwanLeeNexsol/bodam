@@ -1,8 +1,8 @@
 # Design Requirements and Review Criteria: 보담 (bodam)
 
-> Status: planning only. Derived from `보담_기획설계_v0.2.md` ("§N" refers to it) and from read-only inspection of `design/design.pen`. Review basis commit: `f0520ad6da6caa78e40a1d45f56caa54eb6e8ce8`. Later saves of the same file are recorded separately in section 5.3: the save committed as `fecc9fa`, and the rebrand save (service name 보담, new color palette) committed as `836a8f6`. The brand-change review at repository HEAD `a9ffcfd` (save `c4a5800`) is recorded in section 5.7; the review of the next save is section 5.8. Nothing here claims that any screen was rendered, that the app exists, or that any device was tested. `design/design.pen` is edited only by Pencil; MoAI reviews it and never writes it.
+> Status: planning only. Derived from `보담_기획설계_v0.2.md` ("§N" refers to it) and from read-only inspection of `design/design.pen`. Review basis commit: `f0520ad6da6caa78e40a1d45f56caa54eb6e8ce8`. Later saves of the same file are recorded separately in section 5.3: the save committed as `fecc9fa`, and the rebrand save (service name 보담, new color palette) committed as `836a8f6`. The brand-change review at repository HEAD `a9ffcfd` (save `c4a5800`) is recorded in section 5.7; the review of the next save is section 5.8, and the rendering check of that same save is section 5.9. Nothing here claims that the app exists or that any device was tested; a screen is claimed as rendered only where section 5.9 says so. `design/design.pen` is edited only by Pencil; MoAI reviews it and never writes it.
 
-> **Latest review (current state): section 5.8.** Repository HEAD `d1ad73f5d176489e6aa7d7ac8aa2365a0669ea2b`; `design/design.pen` git blob `08e3f2209ff29fd330cf1affc0126642f1857002`. Sections 5.2 to 5.7 are dated records of earlier saves (`f0520ad`, `fecc9fa`, `c4a5800`) and are kept as they were; where they disagree with 5.8, 5.8 is the current state. 5.8 is a structure-and-text review of the saved file only: no screen was rendered (5.8.5) and no app exists.
+> **Latest review (current state): section 5.8.** Repository HEAD `d1ad73f5d176489e6aa7d7ac8aa2365a0669ea2b`; `design/design.pen` git blob `08e3f2209ff29fd330cf1affc0126642f1857002`. Sections 5.2 to 5.7 are dated records of earlier saves (`f0520ad`, `fecc9fa`, `c4a5800`) and are kept as they were; where they disagree with 5.8, 5.8 is the current state. 5.8 is a structure-and-text review of the saved file only; its rendering rows (5.8.5) were written while Pencil could not open the file. The rendering check of the same blob is section 5.9 (documentation HEAD `6e3ae53`, design blob unchanged), which replaces 5.8.5 for rendering status. No app exists.
 
 ## 1. Purpose and ownership
 
@@ -177,7 +177,7 @@ A to E correspond to the five fixes requested of Pencil after `f0520ad`. F to H 
 | E | Admin 급여 구분 / 행위 코드 UI vs scope text | 파일 구조·문구 확인 완료 for the copy: role chip "권한: 메뉴·금액 편집 · 분류 변경 요청" (`N6ORf3`), "보장 매핑 승인 권한 없음" (`HQ2j1`), admin description (`hc7K8`) say register or request a change, with approval and rejection by the reviewer. 추가 수정 필요 / 추가 수정본 대기 (minor): the copy speaks of a "변경 요청" but A03 has a "검토 요청" button and no separate change-request control; unify the terms or add a control. `A02_Admin_TreatmentList` has three "검토 완료" text nodes (`GHGjX`, `c10Gp`, `GYSQ1`), each the label inside a node named "Status 검토 완료" in a table row; A03 has none. Whether the A02 badges behave as controls is 실제 렌더링 미확인 |
 | F | Large-text button heights | Observation, no verdict: `K04_Result_LargeText` secondary buttons are 104, 104, 88, 88, 88 and the primary is 112; `K04_Result` has five secondary at 88 and a primary at 100; `L_K04_Result` has 96, 96, 96, 88, 88 and a primary at 96. Confirm intent; 실제 렌더링 미확인 |
 | G | Preview images | `design/previews/` holds 8 PNG (`ECPf6`, `H5Xw9I`, `TJoQ2`, `VwsQ9`, `woEM7`, `zREqB`, `ZxXPh`, `h4KfhK`), untracked, not created by MoAI, file time 09:25 on 2026-10-13, before the 09:33 and 09:51 saves, so it cannot be assumed that they show the name or colors as saved (an earlier version of this document counted 13 images). They cannot be tied to a specific saved revision, are not evidence for the latest save, and were not viewed in this review or in 5.7. They stay out of the commit |
-| H | Items never read in a rendered view | `K05_Consult`, `K03_Treatments_Dialog_Reset`, full large-text clipping, `ZZ_HandoffSpec` long-text clipping, `A02` status labels, and the spacing changes in `K04_Result_NotCovered` and `K04_Result_LargeText` (5.3): 실제 렌더링 미확인 |
+| H | Items never read in a rendered view | **Current (5.9):** `K05_Consult`, `K03_Treatments_Dialog_Reset`, and the large-text action rows were rendered; still not seen: `ZZ_HandoffSpec` long-text clipping, `A02` status labels, and the spacing in `K04_Result_NotCovered`. At `c4a5800`: `K05_Consult`, `K03_Treatments_Dialog_Reset`, full large-text clipping, `ZZ_HandoffSpec` long-text clipping, `A02` status labels, and the spacing changes in `K04_Result_NotCovered` and `K04_Result_LargeText` (5.3): 실제 렌더링 미확인 |
 | I | Text contrast of the new palette | **Current (5.8): 파일 구조·문구 확인 완료 (계산 결과만; 실제 렌더링 미확인)**: `text-muted` is `#58687E`, 5.68 / 5.43 / 5.19:1 on `surface` / `bg` / `surface-alt`; 0 resolvable text nodes below their threshold (5.8.2 row 3). At `c4a5800`: 추가 수정 필요 (계산 결과; criteria now in 2.1). `text-muted` (`#94A3B8`) is 2.45:1 on `bg`, 2.56:1 on `surface`, 2.34:1 on `surface-alt`: below 3:1, so it fails the large-text minimum as well as the 4.5:1 normal-text minimum. It is the fill of 97 text nodes (kiosk 40 at 20 to 24 px, admin 33 at 11 to 16 px, shared components and notes 24) and 22 icons. Several kiosk nodes are key guidance (for example `K00_Start` `CHgw8`, `K05_Consult` `yGXlJ`, "확인 필요" `tBSNm`). Fix for Pencil: darken the `text-muted` variable so every pair is 4.5:1 or more (a candidate such as `#5B6B80` gives 5.20, 5.44, 4.97 by calculation; the value itself is Pencil's choice). The 6 `disabled-text` nodes on `K03_Treatments_Page2` are 2.56:1 at 32 and 36 px; see 5.7.3. Tables, counts, and unresolved nodes: 5.7.3. 실제 렌더링 미확인 |
 | J | `ZZ_HandoffSpec` color line vs variables | **Current (5.8): 파일 구조·문구 확인 완료**: `lwc8y` lists all 21 color variables and every value equals its variable (5.8.2 row 1). At `c4a5800`: 추가 수정 필요. `lwc8y` lists the pre-rebrand teal palette: 14 of 20 listed values differ from the file's variables and `shadow` is not listed. Table: 5.7.2 |
 | K | Official logo version and where each is used | **Current (5.8): 파일 구조·문구 확인 완료**: one official logo, defined once as `BrandMark`, with `Wordmark`, `Wordmark_Hero`, `Wordmark_Admin` and the `A04` mock using it; usage described in `ZZ_HandoffSpec` and shown in `ZZ_Logo_Official` (5.8.3). One minor mismatch with that description is recorded in 5.8.4. At `c4a5800`: 추가 수정 필요. The file holds two forms of the logo and nothing marks either as official; `ZZ_HandoffSpec` does not mention the logo. Details: 5.7.5 |
@@ -371,6 +371,8 @@ Observations, no fix requested:
 
 #### 5.8.5 Rendering and app behavior
 
+> Record as of the 5.8 review, kept unchanged below. The rendering rows were later checked against the same blob; the current rendering status is section 5.9.
+
 | Check requested | Status |
 |-----------------|--------|
 | Portrait and landscape start-screen logo (`K00_Start`, `L_K00_Start`) | 실제 렌더링 미확인 |
@@ -383,6 +385,32 @@ Observations, no fix requested:
 Why: `get_app_state` and `get_screenshot` (with the file path) both answered "A file needs to be open in the editor", so Pencil could not render the saved file. No exported image of this save exists, and `design/previews/` predates it and was not used. The structure checks and the contrast calculation above are not recorded as rendering checks. Only these items stay open; nothing already confirmed in 5.8.2 is re-requested because of them.
 
 앱 동작 미검증: no app exists. Timers, session reset, calculation, the hold behavior of a reclassified treatment, and permissions were not run. No real insurance, device, or hospital data was added or confirmed.
+
+### 5.9 Rendering check of the same save: HEAD `6e3ae53`, design blob `08e3f22…` (current rendering status)
+
+Basis. The reviewed design save is `d1ad73f`; repository HEAD at this check is `6e3ae53c2c81ab36da180f07048424ef99533efd` (the `docs:` commit that recorded 5.8), on `main`, divergence `0 0` after `git fetch origin main`, only `design/previews/` untracked. `git rev-parse HEAD:design/design.pen` and `git hash-object design/design.pen` both gave `08e3f2209ff29fd330cf1affc0126642f1857002`, before and after the rendering, so the file did not change. Nothing was written to `design/design.pen`: only `Get`, `Print`, and `TakeScreenshot` were run in Pencil. `design/previews/` was not used.
+
+What was rendered. This time Pencil had the file open (`get_app_state` listed `design/design.pen` as the active editor), so screens were rendered with `TakeScreenshot`. The open document matched the saved file by count: 74 top-level frames, 1,643 nodes, 665 text nodes, and `text-muted` = `#58687E` in both (the saved file counted by a read-only script). That is a count-level match, not a byte comparison; an unsaved editor change that keeps these counts cannot be excluded.
+
+Resolution limit. Each image is about 400 px on its longer side, so a 1080x1920 screen is seen at roughly one fifth of its size. Whole-screen images show layout, overlap, and whether a block is present; text of 11 to 16 px cannot be read in them. Where the question was text clipping, the containing block was captured alone.
+
+| Check requested | Status | What was seen |
+|-----------------|--------|---------------|
+| Portrait start logo (`K00_Start`) | 렌더링 확인 (whole screen) | Header lockup and hero logo (mark, "보담", description, divider, hospital name) shown, no overlap. `Wordmark_Hero` and `Wordmark` captured alone: mark and name legible |
+| Landscape start logo (`L_K00_Start`) | 렌더링 확인 (whole screen) | Same elements in the left column, no overlap |
+| Admin top-bar logo (`A01` to `A04`) | 렌더링 확인 (`A01`, `A04` whole screen; `Wordmark_Admin` alone) | Mark + "보담" + "관리자" shown and legible; `A02` and `A03` top bars seen only in whole-screen images, same appearance |
+| `A04` preview logo (`Mock Brand`, `tQOoD`) | 렌더링 확인: present; fine legibility at 13 px 미확인 | Mark and "보담" visible next to each other; the image is about 50 px wide, so only presence and no overlap are established |
+| `A01` service-name value (`bv2zb`) | 렌더링 확인 | "보담" in blue gradient text on a pale field, legible; confirms the 5.8.4 finding 1 (gradient instead of `navy`), which stays a minor Pencil fix |
+| Normal and large-text result: amounts and actions | 렌더링 확인 | `K04_Result` and `K04_Result_LargeText` show 124,000원, 114,000원, 10,000원 and all six actions. Action blocks captured alone: every label on one line, no overlap, no text outside its button |
+| Landscape result (`L_K04_Result`) | 렌더링 확인 (whole screen only) | Same amounts; six actions in one row, no overlap. Whether each label stays on one line was not judged at this size |
+| Result helper and assumption text | 렌더링 확인: `K04_Result` body captured alone, no clipped text. `K04_Result_LargeText` and `L_K04_Result`: whole screen only, text blocks present, small text not readable | |
+| Long admin sentences | 렌더링 확인: `VLDdc` (4 lines inside its box), `F8XwNC` (1 line), `Pz5m4` (2 lines), none clipped. `JKWXH` sits in `ZZ_HandoffSpec`, whose single tall image is unreadable at this size: 실제 렌더링 미확인 | |
+| Consultation screen (`K05_Consult`) | 렌더링 확인 (whole screen) | 1544-8069 notice, guidance text, and both buttons shown, no overlap or clipping seen |
+| Timeout warning (`K04_Result_Dialog_Timeout`) and reset dialog (`K03_Treatments_Dialog_Reset`) | 렌더링 확인 (whole screen) | Both dialogs sit over the dimmed screen: "남은 시간 20초" with 처음으로 / 계속 사용할게요, and the reset dialog with 계속 이용 / 처음으로; no overlap or clipping seen |
+
+Layout-engine check (not a rendering check). For all 74 top-level frames, Pencil's resolved bounds were searched for any node that sticks out of its parent. One hit: `L_K01_Generation` `Question Column` (`UP40d`) is 688 high inside `Body` (686 high), 2 px over, in a frame with `clip: true`; no cut is visible in the whole-screen image. This is outside the requested list and is recorded as a minor observation, not a request. It was not compared with earlier saves.
+
+Not checked: 앱 동작 미검증 (no app exists); touch area and size on a real device; fine legibility of the 13 px gradient wordmark at kiosk size; `ZZ_HandoffSpec` text clipping, `A02` status labels, and the spacing of `K04_Result_NotCovered`, `K04_Result_Unconfirmed`, and the other frames not named above, which were not rendered. The contrast in 5.8.2 row 3 is still a calculation; the screenshots were not used to measure it. Nothing already confirmed in 5.8.2 is re-requested because of these gaps.
 
 ## 6. Git handling for `.pen` files
 
@@ -412,7 +440,7 @@ Decisions needed:
 
 Settled, no longer open (listed so they are not asked again):
 - Behavior of a classification change before reviewer approval: invalidate the approved mapping and hold that treatment's expected payout; a price-only change keeps the mapping and publishes a new price version (section 3 row 14; the Pencil wording is in the save `08e3f22…`, 5.8.2 rows 5 and 6).
-- Minimum text contrast: 4.5:1 normal, 3:1 large, key kiosk guidance aiming for 4.5:1 (section 2.1; calculated as met in the save `08e3f22…`, 5.8.2 row 3; the rendered check is still open, 5.8.5).
+- Minimum text contrast: 4.5:1 normal, 3:1 large, key kiosk guidance aiming for 4.5:1 (section 2.1; calculated as met in the save `08e3f22…`, 5.8.2 row 3; the rendered check is done for the screens listed in 5.9 and open for the rest).
 
 Input materials needed:
 - Actual policy texts with clause, page, revision, and effective dates; the original comparison image; the hospital's price list and procedure codes; Pencil's further saved revisions of `design.pen` and, if available, rendered views of the same saved revision.
