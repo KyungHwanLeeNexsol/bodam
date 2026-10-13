@@ -1,5 +1,5 @@
 # .moai/project/harness-spec.yaml - machine-readable harness generation input
-# Source: .moai/project/interview.md (extracted from 메디헬퍼_기획설계_v0.2.md, not collected interactively).
+# Source: .moai/project/interview.md (extracted from 보담_기획설계_v0.2.md, not collected interactively).
 # A null value means "not resolved", not "none".
 
 domain: "healthcare-insurance-estimation"

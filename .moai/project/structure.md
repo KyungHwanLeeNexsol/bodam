@@ -1,6 +1,6 @@
-# Structure: 메디헬퍼 (medi-helper)
+# Structure: 보담 (bodam)
 
-> Proposed - not yet created; to be finalized by the plan/run phases. No source code exists in the repository. Everything below is a proposed architecture derived from `메디헬퍼_기획설계_v0.2.md` ("§N" refers to its sections). Entity relationships and directory names marked "inferred" are not stated by the planning document and are proposals only. Final decisions belong to the SPEC (the planning document asks for `SPEC-REIMBURSEMENT-ESTIMATOR-001` as a later `/moai plan` step).
+> Proposed - not yet created; to be finalized by the plan/run phases. No source code exists in the repository. Everything below is a proposed architecture derived from `보담_기획설계_v0.2.md` ("§N" refers to its sections). Entity relationships and directory names marked "inferred" are not stated by the planning document and are proposals only. Final decisions belong to the SPEC (the planning document asks for `SPEC-REIMBURSEMENT-ESTIMATOR-001` as a later `/moai plan` step).
 
 ## 1. Architecture overview
 

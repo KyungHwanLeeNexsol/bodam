@@ -1,10 +1,10 @@
-# Product: 메디헬퍼 (medi-helper)
+# Product: 보담 (bodam)
 
-> Status: planning only. No source code, tests, or deployment exist yet. Everything below is derived from the planning document `메디헬퍼_기획설계_v0.2.md` (repository root, Korean; "§N" refers to its sections). Nothing here is claimed as implemented, tested, or verified.
+> Status: planning only. No source code, tests, or deployment exist yet. Everything below is derived from the planning document `보담_기획설계_v0.2.md` (repository root, Korean; "§N" refers to its sections). Nothing here is claimed as implemented, tested, or verified.
 
 ## 1. Project name and description
 
-- Project name: medi-helper. Patient-facing service name: ‘메디헬퍼’ (default brand string, managed as a common brand setting; the hospital name is managed separately) (§8).
+- Project name: bodam. Patient-facing service name: ‘보담’ (default brand string, managed as a common brand setting; the hospital name is managed separately) (§8).
 - Description: a web application used on a shared touch-screen kiosk installed in a hospital. Without sign-up or login, a patient selects (1) the current indemnity-insurance (실손보험) generation, (2) the insurer and any required coverage conditions, and (3) treatments, then sees on a separate result screen the total expected payment, the expected insurance payout, and the expected out-of-pocket amount after the payout (§1).
 - The core of the product is not generation explainer pages but an estimate that links the hospital's treatment menu to policy rules. The same input must give the same result and the same calculation basis. Generative AI is not used for insurance calculation or coverage explanation (§1).
 - Not a booking, reception, or payment function. The service is for insurance guidance only (§4).
@@ -37,7 +37,7 @@ Flow: start, insurance generation, insurer and conditions, treatments, result, f
 
 | Stage | What the patient does | Notes from the planning document |
 |-------|----------------------|----------------------------------|
-| Start (idle) | Sees the hospital name, ‘메디헬퍼’, the description ‘실손보험 예상 부담액 안내’, and a large ‘실손 예상 부담액 확인’ button | Shows no previous amounts or selections; pressing start always opens screen 1 with an empty session; the device is preconfigured to one clinic (§4) |
+| Start (idle) | Sees the hospital name, ‘보담’, the description ‘실손보험 예상 부담액 안내’, and a large ‘실손 예상 부담액 확인’ button | Shows no previous amounts or selections; pressing start always opens screen 1 with an empty session; the device is preconfigured to one clinic (§4) |
 | Screen 1 (step 1/3) | Chooses one of five generation cards, with the image-based enrollment period shown on the card | Prompt ‘내 실손보험을 선택해 주세요’. Escape routes: ‘가입 조건이 목록에 없어요’ (out-of-scope contract, consultation instead of calculation); ‘가입 시기는 알지만 세대는 모르겠어요’ (year/month buttons or on-screen numeric keypad to show candidates); ‘실손을 전환하거나 보장내용을 변경했나요?’ (yes/no/unknown; if yes, guide the patient to choose by the current policy (현재 증권 기준)); ‘세대를 모르겠어요’ (how to check, consultation). A generation is never picked on the patient's behalf. Patients may skip consultation and go to the treatment-cost total only (§4) |
 | Screen 2 (step 2/3) | Chooses an insurer and answers only the extra questions that are needed, one question at a time | Insurer tabs: 손해보험 / 생명보험 / 우체국 / 농협·공제, plus main-insurer and full-list views, paged with ‘이전 목록/다음 목록’. Search is optional and only enabled where a verified on-screen Korean keyboard exists. Every question offers ‘모르겠어요/직원에게 문의’. Choices are kept when navigating back (§4). Deduction type and outpatient coverage limit are separate questions, each with its own ‘모르겠어요’, shown only when the product has that condition; only limits and deduction types registered in a confirmed policy are offered, otherwise ‘확인 필요’ (see section 5.1) |
 | Screen 3 (step 3/3) | Selects hospital-published treatments on large cards | Nothing is preselected or recommended; multiple selection; selecting the same item twice in one visit counts once; benefit and non-benefit totals and the total update immediately; selection persists across list pages; fixed bottom bar shows the selection count, ‘총 예상 결제액’, and the button ‘예상 부담액 확인’ (§4) |

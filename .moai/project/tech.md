@@ -1,6 +1,6 @@
-# Tech: 메디헬퍼 (medi-helper)
+# Tech: 보담 (bodam)
 
-> Status: planning only. No code, dependencies, or tests exist yet, and no stack choice is final. Derived from `메디헬퍼_기획설계_v0.2.md` ("§N" refers to its sections) and `.moai/config/sections/quality.yaml`. Library versions, hosting, costs, and device specifications are not known and are not stated here.
+> Status: planning only. No code, dependencies, or tests exist yet, and no stack choice is final. Derived from `보담_기획설계_v0.2.md` ("§N" refers to its sections) and `.moai/config/sections/quality.yaml`. Library versions, hosting, costs, and device specifications are not known and are not stated here.
 
 ## 1. Candidate stack (§8)
 

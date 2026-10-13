@@ -1,6 +1,6 @@
 # Project Interview
 
-> Source note: these answers were NOT collected through the interactive interview. The user supplied a complete planning document (`메디헬퍼_기획설계_v0.2.md`, repository root) and asked for project documents to be written from it. Each answer below is extracted from that document; section numbers refer to it. Anything the document does not state is recorded as unresolved, not guessed.
+> Source note: these answers were NOT collected through the interactive interview. The user supplied a complete planning document (`보담_기획설계_v0.2.md`, repository root) and asked for project documents to be written from it. Each answer below is extracted from that document; section numbers refer to it. Anything the document does not state is recorded as unresolved, not guessed.
 
 ## Stage A Round 1: Vision and Domain
 Question: What does this project do, who is it for, and what problem domain does it sit in?
