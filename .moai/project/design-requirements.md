@@ -1,6 +1,6 @@
 # Design Requirements and Review Criteria: 메디헬퍼 (medi-helper)
 
-> Status: planning only. Derived from `메디헬퍼_기획설계_v0.2.md` ("§N" refers to it) and from read-only inspection of `design/design.pen`. Review basis commit: `f0520ad6da6caa78e40a1d45f56caa54eb6e8ce8`. A later save of the same file exists in the working tree and is recorded separately in section 5.3. Nothing here claims that any screen was rendered, that the app exists, or that any device was tested. `design/design.pen` is edited only by Pencil; MoAI reviews it and never writes it.
+> Status: planning only. Derived from `메디헬퍼_기획설계_v0.2.md` ("§N" refers to it) and from read-only inspection of `design/design.pen`. Review basis commit: `f0520ad6da6caa78e40a1d45f56caa54eb6e8ce8`. Two later saves of the same file are recorded separately in section 5.3: the save committed as `fecc9fa`, and a newer save that exists only in the working tree. Nothing here claims that any screen was rendered, that the app exists, or that any device was tested. `design/design.pen` is edited only by Pencil; MoAI reviews it and never writes it.
 
 ## 1. Purpose and ownership
 
@@ -15,7 +15,7 @@
 | 실제 렌더링 미확인 | Clipping, overlap, alignment, and touch area were not seen on a rendered screen |
 | 앱 동작 미검증 | No app exists; behavior (timers, reset, calculation, permissions) was not run |
 
-- "추가 수정본 대기" marks an item whose Pencil change was requested and has not been saved yet.
+- "추가 수정본 대기" marks an item whose Pencil change was requested and is not in the saved file read in the latest review. It is not a completion state: the item closes only after the saved file is read again and shows the change.
 
 ## 2. Kiosk operation specification (design reference values)
 
@@ -58,7 +58,7 @@ These numbers are design references. They are not an accessibility certification
 
 Run after Pencil reports a saved revision, against the actual file in the working tree:
 
-1. `git status`, `git ls-files --eol`, `git diff --stat` for `design/design.pen`: confirm a revision exists, line endings are LF, and the diff is a content change and not a whole-file rewrite caused by line-ending conversion.
+1. `git status`, `git ls-files --eol`, `git diff --stat` for `design/design.pen`: confirm a revision exists, line endings are LF, and the diff is a content change and not a whole-file rewrite caused by line-ending conversion. Record the git blob (`git hash-object design/design.pen`) of the file that was read, and compare it with `HEAD:design/design.pen`, so a later save is never mistaken for the reviewed one.
 2. Parse the file as JSON; list top-level frames and confirm the IDs in section 3 still exist.
 3. Check component and variable references resolve. For buttons, check the component height (88, direct value allowed) **and** each instance: an absent `height` means it inherits the component's 88; an explicit value is compared with 88. Do not report an instance as inconsistent only because its own `height` is absent. Whether `h-btn` is bound is recorded but is not a pass condition.
 4. Search the file text for the old wording (section 5) and for the new required wording (section 3).
@@ -71,7 +71,7 @@ Run after Pencil reports a saved revision, against the actual file in the workin
 
 ### 5.1 Past record (superseded)
 
-The first observation was made at commit `5d4c4fc` before any revision was saved: the old wording was present in the file, the working file equalled `5d4c4fc`, and no screen was rendered. Those statements described that moment only and no longer describe the repository. They are kept here as history; the current state is in 5.2 to 5.6.
+The first observation was made at commit `5d4c4fc` before any revision was saved: the old wording was present in the file, the working file equalled `5d4c4fc`, and no screen was rendered. Those statements described that moment only and no longer describe the repository. The same is true of the statement in `62d38bd` that blob `6cede25…` was an uncommitted working-tree save: it was committed as `fecc9fa`. These are kept here as history; the current state is in 5.2 to 5.6.
 
 ### 5.2 Review basis: committed `f0520ad`
 
@@ -92,63 +92,101 @@ The first observation was made at commit `5d4c4fc` before any revision was saved
 | 11 | Admin classification UI vs scope text | 추가 수정 필요: copy said admins edit only name, description, and amount, while the screen shows 급여 구분 and 행위 코드 controls |
 | 12 | Button height | See 5.5 |
 
-### 5.3 Later save in the working tree (not committed)
+### 5.3 Saves after `f0520ad`
 
-After `f0520ad`, Pencil saved `design/design.pen` again (file time 22:30 on 2026-10-12). Observed: git blob `6cede25c6354ef868133dcfd3e29f0d4e2a8f154`, 819,114 bytes, 0 CR (LF), 73 top-level frames, 1,640 nodes; no frame added or removed; `git ls-files --eol` reports `i/lf w/lf attr/-text`. This save is **not part of the commit that carries this document** and is not reviewed by any commit; its content changes were read directly from the file and are recorded below.
+Two saves exist after the review basis. Each version was read by parsing the JSON and comparing nodes by id; a text search alone was not used as evidence.
 
-| # | Item | Status in the working-tree save |
-|---|------|---------------------------------|
-| 7 | `K02Q_Conditions` "모르겠어요" destination | 파일 구조·문구 확인 완료: one row for all condition screens ("모르겠어요 / 모르는 채로 계속 / 목록에 없어요" → record "확인 필요", go to the remaining needed question, else `K03_Treatments_Empty`). Residual: see 5.4 item A |
-| 8 | Product-needed vs generation-fixed | 파일 구조·문구 확인 완료: `ZZ_HandoffSpec` "조건 질문 구성 — 세대로 고정하지 않습니다…"; the generation rule text is gone from the patient frames |
-| 9 | Internal text on patient screens | 파일 구조·문구 확인 완료 for `K02Q_*`: progress reads "보험 조건 확인 1 / 3" (design example, stated in the spec), no "N", no 표시 규칙, no staff-entry scope note. Residual: see 5.4 item C |
-| 10 | Large-text result: condition-edit entry | 파일 구조·문구 확인 완료: `K04_Result_LargeText` now has "보험 조건 수정" and "치료 다시 선택" |
-| 11 | Admin classification UI vs scope text | 파일 구조·문구 확인 완료 for the copy (register or request change; approval and rejection by reviewer). Residual: see 5.4 items D and E |
-| 12 | Button height | 파일 구조·문구 확인 완료: see 5.5 |
+| | `f0520ad` | `fecc9fa` (committed 2026-10-12 22:50) | Latest save (working tree, **not committed**) |
+|---|---|---|---|
+| git blob | `9cd193139598d156caff45e6cb4b66cac7e3200e` | `6cede25c6354ef868133dcfd3e29f0d4e2a8f154` | `f8f28cc9190f4b58dabb63627b4177f797e302b0` |
+| bytes | 826,452 | 819,114 | 819,382 |
+| file time | not recorded | 22:30 on 2026-10-12 | 09:33 on 2026-10-13 |
+| top-level frames / nodes | 73 / 1,655 | 73 / 1,640 | 73 / 1,640 |
+| line endings | LF | LF | LF, 0 CR (`git ls-files --eol`: `i/lf w/lf attr/-text`) |
+
+`fecc9fa` is the save that an earlier version of this document (`62d38bd`) described as an uncommitted working-tree save; it has since been committed. The latest save is newer than `fecc9fa`, is **not part of the commit that carries this document**, and is not reviewed by any commit. It was read directly from the file in the working tree.
+
+Differences from `f0520ad` to the latest save: 4 nodes added, 19 removed, 108 changed.
+
+- 54 changed nodes differ only in `height`: no own `height` became an explicit 88 (see 5.5).
+- 54 changed nodes differ in other properties. By frame: `ZZ_HandoffSpec` 17, `A03_Admin_TreatmentEdit` 9, `K02Q_Conditions_LimitValue` 7, `K02Q_Conditions_Copay` 5, `K02Q_Conditions_Unknown` 5, `K02Q_Conditions` 4, `K04_Result_NotCovered` 3 (padding and gap only), `K04_Result_LargeText` 3 (one action label and spacing), Note 2 (`ZxXPh`) 1.
+- Added: "Action 보험 조건 수정" (`z8y27X`, height 88) and its row frame (`dZtYu`) in `K04_Result_LargeText`; two `ZZ_HandoffSpec` lines (`JPZxN`, `LvJu6`).
+- Removed: 4 frames and 12 text nodes in `ZZ_HandoffSpec`, and 3 internal-explanation text nodes on `K02Q_*` patient frames (`RQ3du`, `ehGIm`, `JTNHi`). The "표시 규칙" notes (`I0NIg`, `fMUNw`) were replaced by the generic "확인 필요" notice.
+- No text changed in `K04_Result`, `K04_Result_Unconfirmed`, `L_K04_Result`, `KXX_Error_Network`, `K04_Result_Dialog_Timeout`, `K05_Consult`, `K03_Treatments_Dialog_Reset`, or in the timer and state notes (`MVOb1`, `bI1cW`). The 5.2 results for items 4 to 6 therefore carry over. The spacing changes in `K04_Result_NotCovered` and `K04_Result_LargeText` cannot be judged without rendering.
+
+Differences from `fecc9fa` to the latest save: 3 text nodes, nothing added or removed.
+
+- `JPZxN` (`ZZ_HandoffSpec`): now says the limit-check and limit-value screens share one progress number, which is why the design example reads "3 / 3" on both.
+- `ZxXPh` (Note 2): now says questions follow "선택한 상품의 검토된 보장 조건" and "세대로 질문을 고정하지 않습니다". At `fecc9fa` it still said "선택한 세대·치료에 따라".
+- `b292e` (`ZZ_HandoffSpec` entry cell): now reads "상품에 필요한 조건 질문의 첫 화면(예: K02Q_Conditions)…" instead of naming `K02Q_Conditions` as the fixed first screen.
+
+| # | Item | At `fecc9fa` (committed) | In the latest save (working tree) |
+|---|------|--------------------------|-----------------------------------|
+| 7 | `K02Q_Conditions` "모르겠어요" destination | 파일 구조·문구 확인 완료: one row (`VnL8t`) for all condition screens ("모르겠어요 / 모르는 채로 계속 / 목록에 없어요" → record "확인 필요", go to the remaining needed question, else `K03_Treatments_Empty`). Residual: the entry cell called `K02Q_Conditions` the first screen | 파일 구조·문구 확인 완료; the entry cell now says "(예: K02Q_Conditions)". The word "첫 화면" remains (minor, see 5.4 item A) |
+| 8 | Product-needed vs generation-fixed | 파일 구조·문구 확인 완료 in `ZZ_HandoffSpec` ("조건 질문 구성 — 세대로 고정하지 않습니다…"). 추가 수정 필요 (minor): Note 2 (`ZxXPh`) still said "선택한 세대·치료에 따라" | 파일 구조·문구 확인 완료, Note 2 included |
+| 9 | Internal text on patient screens | 파일 구조·문구 확인 완료 for `K02Q_*`: progress reads "보험 조건 확인 n / 3" (design example), no "N", no 표시 규칙, no staff-entry scope note. Residual: see 5.4 item C | Same, plus the spec line `JPZxN` explains the repeated "3 / 3" |
+| 10 | Large-text result: condition-edit entry | 파일 구조·문구 확인 완료: `K04_Result_LargeText` has "보험 조건 수정" (`z8y27X`, 88), "치료 다시 선택", and the same six actions as `K04_Result` | Same |
+| 11 | Admin classification UI vs scope text | 파일 구조·문구 확인 완료 for the copy (register or request change; approval and rejection by reviewer). Residual: see 5.4 items D and E | Same |
+| 12 | Button height | 파일 구조·문구 확인 완료: see 5.5 | Same |
 
 All of the above are 실제 렌더링 미확인 and 앱 동작 미검증.
 
 ### 5.4 Open items register (additional fixes and checks)
 
-A to E correspond to the five fixes requested of Pencil after `f0520ad`. F to H are further observations made while reading the working-tree save. Items in the first group are listed with their current status; none is closed by a report alone.
+A to E correspond to the five fixes requested of Pencil after `f0520ad`. F to H are further observations. Statuses refer to the latest save (blob `f8f28cc…`); none is closed by a report alone. "추가 수정본 대기" marks an item whose change was requested of Pencil and is not in the file read in this review.
 
 | Id | Item | Status |
 |----|------|--------|
-| A | `K02Q_Conditions` "모르겠어요" destination duplicated | Text fixed in the working-tree save (5.3 #7), 파일 구조·문구 확인 완료. Residual 추가 수정 필요 (minor): the hand-off row calls `K02Q_Conditions` "the first screen of the condition questions", but the cause question is not necessarily the first needed question for every product (a product needing only deduction type starts at `K02Q_Conditions_Copay`). Ask Pencil to word the entry as "first needed question" |
-| B | Product-needed conditions vs fixed per-generation rules | Hand-off text fixed in the working-tree save (5.3 #8), 파일 구조·문구 확인 완료. Documents aligned in this commit (planning document §4, product.md 5.1, structure.md API table) |
-| C | "N", display rules, internal explanations on patient screens | Removed from `K02Q_*` in the working-tree save, 파일 구조·문구 확인 완료. Residual 추가 수정 필요 (owner decision): placeholder wording such as "디자인 예시입니다" appears in the visible assumption panel of `K04_Result` (S39FN), `K04_Result_NotCovered` (reynT), `K04_Result_Dialog_Timeout` (p17ndv), `L_K04_Result` (AMVGI), and "구현 단계에서 … 연결합니다" / "디자인 예시입니다" on `K04_Basis_Calculation` (o16qMt, hmlxu). Decide whether these are demo markers to be removed at implementation or text that stays |
-| D | Behavior of a classification change before approval | 추가 수정 필요 (conflict between sources): the working-tree `A03_Admin_TreatmentEdit` says "승인 전까지는 직전 승인 분류로 환자 계산이 유지됩니다", while planning document §7 says re-review invalidates the approved mapping and the treatment's expected payout is on hold until re-reviewed. Until the owner decides, the planning document rule (hold) is the governing one and the design copy needs revision. If the owner chooses "keep the last approved class", the planning document, product.md, structure.md, and the test table must change together. No payout rule is added here |
-| E | Admin 급여 구분 / 행위 코드 UI vs scope text | Copy now matches the intent (register / request change) in the working-tree save, 파일 구조·문구 확인 완료. Residual 추가 수정 필요 (minor): the copy speaks of a "변경 요청" but the screen has only a "검토 요청" button and no separate change-request control; the two terms should be unified or the control added. `A02_Admin_TreatmentList` contains three "검토 완료" text nodes; they are text nodes (status display), and whether they behave as controls is 실제 렌더링 미확인 |
-| F | Large-text button heights | Observation, no verdict: in `K04_Result_LargeText` the secondary buttons are 104, 104, 88, 88, 88 and the primary is 112, while the spec says large-text keeps the same heights. Confirm intent; 실제 렌더링 미확인 |
-| G | Preview images | `design/previews/` (13 PNG, untracked, not created by MoAI) were exported at 22:21, before the 22:30 save. They are not evidence for the current file and stay out of the commit |
-| H | Items never read in a rendered view | `K05_Consult`, `K03_Treatments_Dialog_Reset`, full large-text clipping, `ZZ_HandoffSpec` long-text clipping, `A02` status labels: 실제 렌더링 미확인 |
+| A | `K02Q_Conditions` "모르겠어요" destination duplicated | 파일 구조·문구 확인 완료. The control has one hand-off row (`VnL8t`, 5.3 #7). The entry cell (`b292e`) now reads "상품에 필요한 조건 질문의 첫 화면(예: K02Q_Conditions)", so a product that starts at `K02Q_Conditions_Copay` is not contradicted. Minor wording note, not blocking: "첫 번째로 필요한 질문" would be more exact than "첫 화면" |
+| B | Product-needed conditions vs fixed per-generation rules | 파일 구조·문구 확인 완료: `ZZ_HandoffSpec` (`U2xB3Q`) and Note 2 (`ZxXPh`) both say questions come from the product's reviewed condition data and are not fixed by generation. Documents aligned: planning document §4, product.md 5.1, structure.md API table |
+| C | "N", display rules, internal explanations on patient screens | 파일 구조·문구 확인 완료 for `K02Q_*`: no "N", no 표시 규칙, no data/option-generation explanation, no staff-entry note; that content now lives in `ZZ_HandoffSpec` (`LvJu6`, `JPZxN`). 추가 수정 필요 / 추가 수정본 대기 (owner decision): placeholder wording "디자인 예시입니다" is still in the visible assumption panel of `K04_Result` (`S39FN`), `K04_Result_NotCovered` (`reynT`), `K04_Result_Dialog_Timeout` (`p17ndv`), `L_K04_Result` (`AMVGI`), and "구현 단계에서 … 연결합니다" / "디자인 예시입니다" on `K04_Basis_Calculation` (`o16qMt`, `hmlxu`). Decide whether these are demo markers removed at implementation or text that stays |
+| D | Behavior of a classification change before approval | 추가 수정 필요 / 추가 수정본 대기 (conflict between sources; owner decision first). The "재검토 필요" body of `A03_Admin_TreatmentEdit` (`VLDdc`) says "승인 전까지는 직전 승인 분류로 환자 계산이 유지됩니다" (added after `f0520ad`, present at `fecc9fa`). The field hints (`F8XwNC`, `Pz5m4`) say a change is "승인 전까지 환자 계산에 반영되지 않습니다", which fits either rule. Planning document §7, product.md, and structure.md say a coverage-affecting change invalidates the approved mapping and the treatment's expected payout is on hold until re-reviewed. Until the owner decides, the "hold" rule in those three documents governs and the `VLDdc` sentence needs revision. If the owner chooses "keep the last approved class", the planning document, product.md, structure.md, and the test table must change together. No payout rule is added here |
+| E | Admin 급여 구분 / 행위 코드 UI vs scope text | 파일 구조·문구 확인 완료 for the copy: role chip "권한: 메뉴·금액 편집 · 분류 변경 요청" (`N6ORf3`), "보장 매핑 승인 권한 없음" (`HQ2j1`), admin description (`hc7K8`) say register or request a change, with approval and rejection by the reviewer. 추가 수정 필요 / 추가 수정본 대기 (minor): the copy speaks of a "변경 요청" but A03 has a "검토 요청" button and no separate change-request control; unify the terms or add a control. `A02_Admin_TreatmentList` has three "검토 완료" text nodes (`GHGjX`, `c10Gp`, `GYSQ1`), each the label inside a node named "Status 검토 완료" in a table row; A03 has none. Whether the A02 badges behave as controls is 실제 렌더링 미확인 |
+| F | Large-text button heights | Observation, no verdict: `K04_Result_LargeText` secondary buttons are 104, 104, 88, 88, 88 and the primary is 112; `K04_Result` has five secondary at 88 and a primary at 100; `L_K04_Result` has 96, 96, 96, 88, 88 and a primary at 96. Confirm intent; 실제 렌더링 미확인 |
+| G | Preview images | `design/previews/` holds 8 PNG (`ECPf6`, `H5Xw9I`, `TJoQ2`, `VwsQ9`, `woEM7`, `zREqB`, `ZxXPh`, `h4KfhK`), untracked, not created by MoAI, file time 09:25 on 2026-10-13, before the 09:33 save (an earlier version of this document counted 13 images). They cannot be tied to a specific saved revision, are not evidence for the latest save, and were not viewed in this review. They stay out of the commit |
+| H | Items never read in a rendered view | `K05_Consult`, `K03_Treatments_Dialog_Reset`, full large-text clipping, `ZZ_HandoffSpec` long-text clipping, `A02` status labels, and the spacing changes in `K04_Result_NotCovered` and `K04_Result_LargeText` (5.3): 실제 렌더링 미확인 |
 
 ### 5.5 Button height
 
-Component values (both versions): `Button_Primary` (s8D6J) and `Button_Secondary` (m1gMGk) both have width 420 and height 88, written as literals. The variable `h-btn` = 88 exists and is not bound to either component's `height`. The saved file notes that this Pencil version does not bind `height` to a variable, which MoAI did not test; binding is therefore not a pass condition.
+Component values (all three versions): `Button_Primary` (s8D6J) and `Button_Secondary` (m1gMGk) both have width 420 and height 88, written as literals. The variable `h-btn` = 88 exists and is not bound to either component's `height`. The saved file notes that this Pencil version does not bind `height` to a variable, which MoAI did not test.
+
+Reading rule: the effective height of an instance is its own `height` when present, otherwise the component's 88. The review compares the effective height with 88. An instance without its own `height` is not a finding, and an unbound `h-btn` is a note, not a failure. Three questions are kept apart:
+
+| Question | Answer from the saved file | Status |
+|----------|----------------------------|--------|
+| Is `h-btn` bound to the component height? | No; the direct value 88 is used | Note only, not a pass condition |
+| Does any instance have an effective height below 88? | No, in any of the three versions | 파일 구조·문구 확인 완료 |
+| Do buttons clip, overlap, or fall short of the touch area when rendered? | Not seen | 실제 렌더링 미확인 |
 
 Instances:
 
 | Version | Secondary (m1gMGk) | Primary (s8D6J) |
 |---------|--------------------|-----------------|
-| `f0520ad` | 47 instances without own `height` (inherit 88); 6 at 96; 6 at 104 | 7 without own `height` (inherit 88); 5 at 96; 9 at 100; 1 each at 112, 124, 132 |
-| Working-tree save | 48 at 88 (explicit); 6 at 96; 6 at 104 | 7 at 88 (explicit); 5 at 96; 9 at 100; 1 each at 112, 124, 132 |
+| `f0520ad` | 47 with no own `height` (inherit 88); 6 at 96; 6 at 104 (59) | 7 with no own `height` (inherit 88); 5 at 96; 9 at 100; 1 each at 112, 124, 132 (24) |
+| `fecc9fa` and the latest save | 48 at 88 (explicit); 6 at 96; 6 at 104 (60) | 7 at 88 (explicit); 5 at 96; 9 at 100; 1 each at 112, 124, 132 (24) |
 
-No instance is below 88 in either version. In `f0520ad`, an absent `height` means the instance takes the component's 88, so absence alone is not a mismatch.
+From `f0520ad` to `fecc9fa`, all 54 instances that had no own `height` (47 Secondary, 7 Primary) were given an explicit 88, the value they already inherited, so their effective height did not change. The one extra Secondary instance is the new "Action 보험 조건 수정" in `K04_Result_LargeText` (88). The 3 text nodes that differ in the latest save do not touch heights.
 
 Correction of an earlier report: the first review described the portrait result frames' bottom secondary buttons as shorter than 88 and the unbound `h-btn` as an open defect. That came from eyeballing exported images and from the absent instance `height`, not from a rendered check of the saved file. It is withdrawn as a finding. What remains: 실제 렌더링 미확인 for clipping, overlap, alignment, and touch area; and the unbound `h-btn` is a note, not a failure.
 
 ### 5.6 Not verified in this review
 
-- Rendering: the Pencil MCP server could not be connected in this session, so no screen was rendered or screenshotted. All visual claims (clipping, overlap, alignment, button size, touch area) are 실제 렌더링 미확인.
-- App behavior: no app exists. Timers, session reset, calculation, permission enforcement, and the hand-off flows are 앱 동작 미검증.
+| Kind of check | State in this review |
+|---------------|----------------------|
+| 파일 구조 검사 (saved `.pen` JSON: node ids, text, component properties) | Done for `f0520ad`, `fecc9fa`, and the latest save (blob `f8f28cc…`), by parsing each file and comparing nodes by id |
+| 실제 렌더링 (clipping, overlap, alignment, touch area on a rendered screen) | Not done: no screen was rendered or screenshotted in this review, and `design/previews/` predates the latest save and was not used. All visual claims are 실제 렌더링 미확인 |
+| 앱 동작 (timers, session reset, calculation, permission enforcement, hand-off flows) | 앱 동작 미검증: no app exists |
+
 - Insurance content: no real policy terms, limits, deductibles, riders, or treatment classes were added or confirmed; the numbers in the design remain examples.
-- The working-tree save may change again after this review; re-read the file before relying on 5.3.
+- The latest save may change again after this review. Before relying on 5.3, compare the file's git blob with `f8f28cc…`; if it differs, re-read the file.
 
 ## 6. Git handling for `.pen` files
 
 `.gitattributes` carries `*.pen -text` so Git does not convert line endings in `.pen` files and file bytes are preserved. The file name `design/design.pen` stays unchanged.
 
-History: when the attribute was added, the Windows clone (`core.autocrlf=true`) held a CRLF working copy of an LF blob (21,224 CR; content identical once CR is removed), and `-text` would have made that look like a whole-file change. Pencil's saved revisions are LF: both the committed revision and the later working-tree save report `i/lf w/lf attr/-text`, so the feared whole-file rewrite did not occur. Review checklist step 1 keeps checking this on every saved revision.
+History: when the attribute was added, the Windows clone (`core.autocrlf=true`) held a CRLF working copy of an LF blob (21,224 CR; content identical once CR is removed), and `-text` would have made that look like a whole-file change. Pencil's saved revisions are LF: the committed revisions (`f0520ad`, `fecc9fa`) and the latest working-tree save all report `i/lf w/lf attr/-text`, so the feared whole-file rewrite did not occur. Review checklist step 1 keeps checking this on every saved revision.
+
+Staging rule for review commits: stage documents by explicit path. MoAI never writes or stages `design/design.pen` in a review commit, so a save made by Pencil after the review stays in the working tree untouched. `design/previews/` is not committed.
 
 ## 7. Inputs needed for the next SPEC (working name SPEC-REIMBURSEMENT-ESTIMATOR-001)
 
@@ -164,6 +202,7 @@ Decisions needed:
 - Whether a staff-entry or staff-call feature will ever exist (needs flow and permission definition first).
 - Split of rule-administration duties between the insurance-rule reviewer and the platform operator.
 - Behavior of a classification change before reviewer approval (5.4 item D): hold the expected payout or keep the last approved class.
+- Whether the placeholder sentences "디자인 예시입니다" / "구현 단계에서 … 연결합니다" in the result and calculation-basis frames are demo markers removed at implementation or text that stays (5.4 item C).
 - Medical-advertising rules in force at deployment time.
 - Exact shape of the per-group plus overall calculation result.
 - Stack: database, hosting, admin authentication provider, test runner.
