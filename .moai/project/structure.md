@@ -35,8 +35,8 @@ Single Next.js (App Router) + TypeScript application with two clearly separated 
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/clinics/{slug}/catalog` | Published treatments and price version for the clinic |
-| `GET /api/insurance/options` | Verified selection options and the follow-up questions they require; the question list is built from the selected product's reviewed condition data, not from a fixed per-generation list |
-| `POST /api/estimate` | Takes treatment IDs, the selected insurance conditions, and the price and rule versions; returns the result and its basis |
+| `GET /api/insurance/options` | Verified selection options (generation cards, insurer types, cause cards); the patient is not asked follow-up questions (condition questions were removed from the design saved on 2026-10-13, and the standard values the estimate applies are not defined yet) |
+| `POST /api/estimate` | Takes treatment IDs, the selected generation and insurer type, and the price and rule versions; returns the result and its basis |
 | Admin settings and publish APIs | Processed only after authentication and clinic-permission checks; concrete paths are not specified by the planning document |
 
 Server-side rules for these endpoints:
@@ -114,10 +114,10 @@ The planning document groups the six rule-administration duties under "platform 
 ## 8. Kiosk session state
 
 - Patient selections and results live only in the kiosk page's in-memory session. Nothing is stored in localStorage, IndexedDB, or service-worker caches. The server stores no personal health data by default. No treatment or insurance condition is put in a URL query or an analytics event; operating statistics use step-level aggregates and anonymous events (§8).
-- Reset triggers: reload/restart starts an empty session; ‘이용 완료’ (patient ends use) clears immediately; ‘처음으로’ asks for confirmation while in progress and then clears all; idle timeout warns (input screens at 100 s, result screens at 160 s) with ‘계속 사용할게요’ / ‘처음으로’ and the remaining time, then clears at 120 s / 180 s; extension can repeat and restarts the idle time; Back, Edit, and ‘상담 안내’ keep the current patient's choices and result (§13.2). No administrator authentication state remains on the kiosk after reset.
+- Reset triggers: reload/restart starts an empty session; ‘이용 완료’ (patient ends use) clears immediately; ‘처음으로’ asks for confirmation while in progress and then clears all; idle timeout warns (input screens at 100 s, result screens at 160 s) with ‘계속 사용할게요’ / ‘처음으로’ and the remaining time, then clears at 120 s / 180 s; extension can repeat and restarts the idle time; Back, Edit, and the required-documents screen keep the current patient's choices and result (§13.2). No administrator authentication state remains on the kiosk after reset.
 - A request in flight when a reset happens is cancelled, and the session identifier is replaced so a late response is ignored and never shows on the next patient's screen (§13.2, §9 "늦은 계산 응답").
 - Browser history, page cache, and Back must not bring back the previous patient's result; this must be verified on the real device (§13.2).
-- State machine as stated: idle (start) is separate from the three input steps; the result is a separate screen; extra insurance questions are an additional state inside step 2; a question caused by a treatment chosen in step 3 can be asked on that screen or by returning to the matching item in step 2 (§1, §4).
+- State machine: idle (start) is separate from the four input steps; the result is a separate screen; the calculation-basis screen and the required-documents screen are reached from the result and return to it with the choices kept; the completion screen follows ‘이용 완료’ and returns to idle. The current design has no extra insurance questions (§1, §4).
 
 ## 9. Proposed directory layout
 
@@ -126,11 +126,11 @@ Proposed - not yet created. Each entry is one purpose; names are suggestions.
 ```
 src/
   app/
-    kiosk/[clinicSlug]/     patient flow: start, three steps, result
+    kiosk/[clinicSlug]/     patient flow: start, four steps, result, required documents
     admin/                  PC admin web
     api/
       clinics/[slug]/catalog/   published treatments and price version
-      insurance/options/        selectable options and follow-up questions
+      insurance/options/        selectable options (generation cards, insurer types)
       estimate/                 server-side recalculation and basis
   engine/                   pure TypeScript calculation module (no UI, DB, or network imports)
   server/                   (inferred) data access, authentication, clinic-scope checks, version checks

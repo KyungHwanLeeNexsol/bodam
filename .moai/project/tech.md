@@ -66,7 +66,7 @@ Rationale given by the planning document:
 - Layout is adjusted per orientation (card columns, items per list page, amount placement); content is not simply scaled.
 - Design baselines (design references, not accessibility certification or real-device verification): primary button default height 88; implemented primary touch area at least 72 CSS px; selection card height target 120 or more; body text 24 or more; title 36 or more; key result number 56 or more; spacing between major elements 16 or more. The PC admin screens use a separate specification.
 - CSS pixels versus physical size depends on device scaling. Legibility, touch accuracy, and reach must be checked on the real installed device with elderly users, low-vision users, and wheelchair users.
-- Large-text mode is a required MVP feature. Buttons, amounts, and key guidance must not be clipped and must stay operable when it is on; selections persist. It keeps every function of the normal mode (on the result screen: edit insurance conditions, view the calculation basis, reselect treatments, ask staff, start over, finish); when space is short, layout or paging changes, not functions.
+- Large-text mode is a required MVP feature. Buttons, amounts, and key guidance must not be clipped and must stay operable when it is on; selections persist. It keeps every function of the normal mode (on the result screen: view required documents, view the calculation basis, reselect treatments, edit insurance conditions, start over, finish); when space is short, layout or paging changes, not functions.
 - A design-file button height written directly as 88 on the Button_Primary / Button_Secondary components is acceptable: the Pencil version used does not bind `height` to a variable, so `h-btn` (88) is kept for the implementation token mapping and variable binding is not a pass condition. Rendered clipping, overlap, and touch area still need a separate check.
 - Touch-only and assistive keyboard operation are both satisfied, not in tension: the whole flow completes with no physical keyboard and no mouse hover, and when a keyboard is present navigation, selection, and confirmation work with a visible focus indicator and modal focus handling (focus moves into a modal, stays inside, and returns to the opener on close). Selection is shown by a check mark and text as well as color. Insurer search is optional and only enabled with a verified on-screen Korean keyboard; every insurer must be reachable without typing.
 - Warnings, extension, and time adjustment follow the W3C timing-adjustable guidance ([7]) and need review.
@@ -75,7 +75,7 @@ Rationale given by the planning document:
 
 - Auto-launch, address-bar hiding, preventing the administrator from leaving the page, and relaunch after power recovery are configured and verified on the actual OS and browser, not in the web UI.
 - The Fullscreen API has user-activation constraints ([8]), so a page's fullscreen button alone must not be reported as device lockdown being done.
-- Kiosk start reads clinic settings and published data. On a communication error the screen offers ‘다시 시도/직원에게 문의/이용 종료’ and never shows a payout of 0 won. No unconfirmed offline-cached data is used to keep calculating. Offline calculation, printer, phone connection, staff call, and result QR are not in the initial MVP.
+- Kiosk start reads clinic settings and published data. On a communication error the screen offers the buttons ‘다시 시도/이용 종료’ and the sentence ‘계속 안 되면 접수 직원에게 문의해 주세요’ as text, and never shows a payout of 0 won. No unconfirmed offline-cached data is used to keep calculating. Offline calculation, printer, phone connection, staff call, and result QR are not in the initial MVP.
 
 ## 8. Testing and verification strategy (§9, §10)
 
@@ -110,9 +110,12 @@ Other verification topics (§9), each needing a meaningful test or check:
 - Excluded costs are not mixed into the deduction base. Remaining limit or period used up is reflected when confirmed, and the assumption is shown when unknown. Rounding policy is applied consistently.
 - DRAFT or DEMO rules are never applied to a real patient's personal estimate.
 - Price tampering in the browser still yields the server's published-price result. Clinic A's administrator cannot read or change clinic B. Stale price or rule versions are not finalized.
-- Kiosk flow start to finish keeps selections on in-session edits; list paging keeps selections and a repeated tap never increases quantity; idle warning, extension, completion, and timeout reset work and remove the previous result; a late response after reset is not shown; reload, restart, or Back never restores a previous result.
+- Kiosk flow start to finish keeps selections on in-session edits; list paging keeps selections and a repeated tap never increases quantity; returning from the required-documents screen keeps selections and result; idle warning, extension, completion, and timeout reset work and remove the previous result; a late response after reset is not shown; reload, restart, or Back never restores a previous result.
 - Layout at 1080x1920 and 1920x1080 without clipped buttons, amounts, or warnings; whole flow without physical keyboard or mouse hover.
 - Communication errors offer retry or end of use and never show 0 won.
+- The patient is not asked deduction type or outpatient limit; the applied standard assumption is shown on the basis screen marked ‘(가정)’.
+- Cause step: one of injury / illness / unknown must be chosen before ‘다음’ is active; the cause never changes the amounts; ‘잘 모르겠어요’ does not put the result on hold and splits the documents list into common lines plus an injury-only and an illness-only line.
+- Required-documents screen: nine lines always shown; the needed ones marked with a one-line reason; receipt and itemized statement always marked together; the mapping rules are data and the example mapping needs verification.
 
 No test runner, test command, or CI is chosen yet because the stack is unconfirmed.
 
@@ -137,6 +140,7 @@ Unresolved:
 - DB, hosting, and admin authentication provider.
 - Real hospital data and whether prices are full fee or copay.
 - First insurer, product, coverage, and real policy text with limit options; per-company policy references.
+- Standard deduction and limit assumption per generation and insurer type; document-requirement rules per insurer, product, and claim-amount band.
 - Rounding rule per policy.
 - Calculation formulas not specified in the planning document: generation 1 injury/illness outpatient (fixed or percentage per policy), generation 2 percentage deduction rate, generation 3 basic and three-major non-benefit deduction and limit rules, shared-limit relationships.
 - 1588 and the 1544-8069 operating entity, hours, and purpose.
