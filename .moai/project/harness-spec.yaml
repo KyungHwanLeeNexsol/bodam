@@ -8,7 +8,7 @@ constraints:
   - "No generative AI in insurance calculation or coverage explanation; same input gives the same result and the same calculation basis"
   - "Supported generations fixed to Gen 1 (A/S), Gen 2 (C1), Gen 2.5 (C2), Gen 3 (C3), Gen 4 (C4); anything else returns UNSUPPORTED and is never calculated as C4"
   - "Gen 5, severe/non-severe branching, riders 1/2, and national-health-insurance copay-rate linkage are out of scope, including their data and tests"
-  - "Unknown is not uncovered: a missing required condition puts calculation on hold, never 0 won or full coverage"
+  - "Unknown is not uncovered: an absent, unapproved, invalid, or under-review standard assumption profile or treatment coverage mapping puts calculation on hold, never 0 won or full coverage; unfixed standard values are never estimated; an unknown treatment cause only branches the required-documents list"
   - "Patient selections live only in the kiosk in-memory session; no localStorage, IndexedDB, or service-worker cache; no insurance or treatment conditions in URL queries or analytics; no personal health data stored on the server by default"
   - "Server never trusts client-submitted prices, rates, or clinic IDs and recalculates from published data with the same engine as the preview"
   - "Multi-hospital data and permission isolation; roles split into hospital administrator, insurance-rule reviewer, and platform operator"

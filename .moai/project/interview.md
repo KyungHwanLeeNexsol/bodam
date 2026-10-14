@@ -15,7 +15,7 @@ Constraints:
 - No generative AI in insurance calculation or coverage explanation; same input must yield the same result and the same calculation basis (§1, §8).
 - Supported generations are fixed: Gen 1 (A·S), Gen 2 (C1), Gen 2.5 (C2), Gen 3 (C3), Gen 4 (C4). Anything else returns UNSUPPORTED and must not be calculated as C4 (§9).
 - Out of scope for this development: Gen 5, severe/non-severe branching, riders 1/2, national-health-insurance copay-rate linkage (§ header, §12 rule 8).
-- Unknown is not uncovered: when a required condition is unknown, calculation is put on hold; never show 0 won or assume full coverage (§6.1).
+- Unknown is not uncovered: when the approved standard assumption profile or an approved treatment coverage mapping is absent, unapproved, invalid, or under re-review, calculation is put on hold; never show 0 won or assume full coverage, and never estimate an unfixed standard value (§4, §6.1). An unknown treatment cause does not hold the calculation; it only branches the required-documents list. The patient's own deductible, limit, and riders are not asked and not presented as confirmed.
 - Patient privacy: patient selections live only in the kiosk's in-memory session; no personal health data stored on the server by default; nothing stored in localStorage, IndexedDB, or service-worker cache; no insurance or treatment conditions in URL queries or analytics events; no name, resident number, policy, or diagnosis uploads (§8).
 - The server never trusts client-submitted prices, deductible rates, or hospital IDs; it recalculates from published data. The instant preview and final server calculation use the same engine (§8).
 - Multi-hospital data and permission isolation; roles split into hospital administrator, insurance-rule reviewer, and platform operator (§7).
@@ -49,3 +49,6 @@ Team sharing: unresolved. The document assigns design to Pencil.dev, development
 
 ## Revision note (2026-10-12, consistency pass)
 Answers above were reconciled with the clarified project criteria: the keyboard/touch scope and large-text requirement are settled (no longer open), the hospital-administrator versus insurance-rule-reviewer split is settled, and result amounts use the names 예상 병원 결제액 / 예상 보험금 / 보험금 수령 후 예상 본인 부담. Still unresolved and carried forward: real device specification, real hospital data, first real policy source, consultation-number operator and hours. Pencil design status is tracked in `design-requirements.md` section 5 (review basis `f0520ad`; a later working-tree save is recorded there; further Pencil fixes pending). This note records document edits only; no interview was re-run.
+
+## Revision note (2026-10-14, calculation-basis wording)
+Only the "Unknown is not uncovered" constraint was aligned with the planning document's 2026-10-14 split between what the result confirms, assumes, and does not calculate (§4 "계산 기준 구분"). The other answers above are the historical extraction of 2026-10-12 and were not rewritten (for example, they still describe three input steps and an insurer-and-conditions step); the current flow and design are in `product.md` and `design-requirements.md`.

@@ -57,7 +57,7 @@ Rationale given by the planning document:
 - Admin authentication is never left on a shared kiosk; the patient screen has no admin link and no hidden touch entry.
 - Reload, restart, and browser Back never restore a previous patient's result.
 - In-flight requests are cancelled on reset and the session identifier is replaced, so late responses are ignored.
-- Idle timing (initial proposal, to be adjusted after observing real use): input screens warn at 100 s and reset at 120 s; result screens warn at 160 s and reset at 180 s (warning 20 s before reset). The warning shows the remaining time and large ‘계속 사용할게요’ and ‘처음으로’ buttons; extension can repeat and restarts the idle time. Inactivity is judged by patient touch or key input; server responses and internal refreshes must not extend the time. The hospital can set these times in the admin (§7). This is a design specification; no behavior was tested.
+- Idle timing (initial proposal, to be adjusted after observing real use): input screens warn at 100 s and reset at 120 s; result screens warn at 160 s and reset at 180 s (warning 20 s before reset). The calculation-basis screen and the required-documents screens use the result-screen times (160 s warning, 180 s reset), restart the idle time on every patient touch, and on reset go to the start screen, not back to the result (provisional default decided on 2026-10-14; dwell times have not been observed). ‘이용 완료’ clears the selections and result first, then opens the completion screen (`K06_Complete`), which returns to the start screen (`K00_Start`) after a short wait whose length is left to implementation design; ‘처음으로’ (after confirmation) and the idle reset clear everything and go to the start screen without the completion screen. The warning shows the remaining time and large ‘계속 사용할게요’ and ‘처음으로’ buttons; extension can repeat and restarts the idle time. Inactivity is judged by patient touch or key input; server responses and internal refreshes must not extend the time. The hospital can set these times in the admin (§7). This is a design specification; no behavior was tested.
 - On reset, selections and results are removed; they are never written to localStorage, IndexedDB, or service-worker cache; a response to a request issued before the reset must not restore any screen (cancel the request and replace the session identifier); no administrator authentication state may remain on the shared kiosk.
 
 ## 6. Kiosk display requirements (§13.1)
@@ -66,7 +66,7 @@ Rationale given by the planning document:
 - Layout is adjusted per orientation (card columns, items per list page, amount placement); content is not simply scaled.
 - Design baselines (design references, not accessibility certification or real-device verification): primary button default height 88; implemented primary touch area at least 72 CSS px; selection card height target 120 or more; body text 24 or more; title 36 or more; key result number 56 or more; spacing between major elements 16 or more. The PC admin screens use a separate specification.
 - CSS pixels versus physical size depends on device scaling. Legibility, touch accuracy, and reach must be checked on the real installed device with elderly users, low-vision users, and wheelchair users.
-- Large-text mode is a required MVP feature. Buttons, amounts, and key guidance must not be clipped and must stay operable when it is on; selections persist. It keeps every function of the normal mode (on the result screen: view required documents, view the calculation basis, reselect treatments, edit insurance conditions, start over, finish); when space is short, layout or paging changes, not functions.
+- Large-text mode is a required MVP feature, implemented as a responsive enlargement of the same screens: no separate route, screen, or calculation, and no dedicated design frame (decided 2026-10-14; none is to be re-requested). Buttons, amounts, and key guidance must not be clipped and must stay operable when it is on; selections and results persist and the amounts and wording are the same as in the normal mode. It keeps every function of the normal mode (on the result screen: view required documents, view the calculation basis, reselect treatments, edit insurance conditions, start over, finish; on the documents screen: all nine lines with checks and reasons, the unknown-cause branch, and the return rule); when space is short, type size, button size, and card and amount layout are adjusted and lists are split into pages ("이전 목록 / 다음 목록", selection kept across pages), not functions. Toggling it on any screen keeps that screen. It is verified on the built screen at 1080x1920 and 1920x1080 by running the whole flow with it on (section 8.1).
 - A design-file button height written directly as 88 on the Button_Primary / Button_Secondary components is acceptable: the Pencil version used does not bind `height` to a variable, so `h-btn` (88) is kept for the implementation token mapping and variable binding is not a pass condition. Rendered clipping, overlap, and touch area still need a separate check.
 - Touch-only and assistive keyboard operation are both satisfied, not in tension: the whole flow completes with no physical keyboard and no mouse hover, and when a keyboard is present navigation, selection, and confirmation work with a visible focus indicator and modal focus handling (focus moves into a modal, stays inside, and returns to the opener on close). Selection is shown by a check mark and text as well as color. Insurer search is optional and only enabled with a verified on-screen Korean keyboard; every insurer must be reachable without typing.
 - Warnings, extension, and time adjustment follow the W3C timing-adjustable guidance ([7]) and need review.
@@ -92,7 +92,10 @@ Numeric examples to reproduce (all from the planning document; DEMO data: X-ray 
 | 2nd gen late selectable-II | D = max(10,000, 14,000 x 10% + 110,000 x 20%) = 23,400 | Payout 100,600; burden 23,400 |
 | 4th gen | Benefit D = 10,000; non-benefit D = 33,000 | Benefit 4,000 + non-benefit 77,000 = 81,000; burden 43,000 |
 | Confirmed exclusion (hypothetical case E) | Hospital payment 124,000; the 40,000 item excluded; covered 84,000; D=10,000; sufficient remaining limit | P=74,000; burden after payout 50,000; the excluded 40,000 is not mixed into the deduction base |
-| Unconfirmed condition | Required condition unknown | Calculation on hold; values null; "확인 필요"; never 0 and never "excluded" |
+| Profile or mapping not usable | The approved standard assumption profile for the chosen generation and insurer type, or an approved coverage mapping for a chosen treatment, is absent, draft or DEMO, unapproved, invalid, or under re-review | Calculation on hold for the affected item and for the overall total; values null; "확인 필요"; never 0, never "excluded", never another generation's or insurer type's profile, never an estimated value |
+| Unknown treatment cause | The patient chose ‘잘 모르겠어요’ on step 3 | Calculation is not held and the amounts are unchanged; only the documents list branches (common lines plus injury-only and illness-only line) |
+| Unknown generation | The patient cannot choose a generation | Not a result state: the patient stays on step 1 with the enrollment-date guidance; no calculation request is made |
+| Personal contract values | The result or basis screen is rendered | The patient's own deductible, limit, riders, and remaining limit are never worded as confirmed; the standard assumption is shown as ‘예시 계산’ and ‘(가정)’ |
 | Communication error | Estimate request fails | Calculation failed; values null; retry / end of use offered; never 0 |
 | Normal zero | Calculation completes with P=0 | 0 won shown with its basis |
 
@@ -102,7 +105,7 @@ The 4th-generation benefit deduction is 10,000, not the full 14,000; the non-ben
 
 Other verification topics (§9), each needing a meaningful test or check:
 - Same visit and same coverage are summed and deducted once.
-- Unsubscribed rider: only that treatment is uncovered; other subscribed coverages stay. Unknown rider: calculation on hold, never 0 won.
+- Unsubscribed rider (confirmed from an approved profile or rule): only that treatment is uncovered; other subscribed coverages stay. Rider not defined by the approved profile: the affected items are on hold, never 0 won; the patient is not asked about riders.
 - Three-major non-benefit: group and shared-limit relationship applied per policy.
 - Generation 1: general injury medical cost and injury outpatient medical cost can give different results.
 - 2009.08 to 09 boundary contract: no automatic decision from enrollment date without checking current coverage.
@@ -118,6 +121,16 @@ Other verification topics (§9), each needing a meaningful test or check:
 - Required-documents screen: nine lines always shown; the needed ones marked with a one-line reason; receipt and itemized statement always marked together; the mapping rules are data and the example mapping needs verification.
 
 No test runner, test command, or CI is chosen yet because the stack is unconfirmed.
+
+### 8.1 Verification levels and implementation-stage acceptance criteria
+
+Three levels of verification are recorded separately and never stand in for each other (planning document §14): file check (the saved `.pen` file was read; says nothing about how it looks or behaves), rendering check (the same saved revision was drawn and the screen inspected), and app behavior check (the built app was run). Nothing below is verified today: no app exists, and the Pencil editor could not open the file in the 2026-10-14 review, so no screen of blob `4b4a158…` was rendered.
+
+These items cannot be shown from the design file and stay as acceptance criteria for the implementation stage:
+- Pretendard is actually applied on the built screen (installed on the device or loaded as a web font, with the fallback order Noto Sans KR, 맑은 고딕, system sans-serif when loading fails), and text does not clip or wrap badly in that font. Pencil draws the design in a fallback font, so its clipping results do not count for this.
+- Responsive large-text mode: the same screens enlarge with every function, selection, result, and amount unchanged; lists split into pages with the selection kept; no clipping, overlap, off-screen element, or inoperable control across the whole flow at 1080x1920 and 1920x1080.
+- Idle warning, extension, and reset (including the calculation-basis and required-documents screens at 160 s / 180 s), the completion flow (clear, then `K06_Complete`, then `K00_Start`), no restore after reload or Back, and discarding of late responses.
+- Touch accuracy and legibility on the real device, and device lockdown, which the web UI does not provide.
 
 ## 9. Development environment
 
@@ -140,7 +153,7 @@ Unresolved:
 - DB, hosting, and admin authentication provider.
 - Real hospital data and whether prices are full fee or copay.
 - First insurer, product, coverage, and real policy text with limit options; per-company policy references.
-- Standard deduction and limit assumption per generation and insurer type; document-requirement rules per insurer, product, and claim-amount band.
+- Standard deduction and limit assumption per generation and insurer type (values, source policy, approver); until it is entered and approved the profile counts as absent and the calculation is held, and no value is estimated. Document-requirement rules per insurer, product, and claim-amount band.
 - Rounding rule per policy.
 - Calculation formulas not specified in the planning document: generation 1 injury/illness outpatient (fixed or percentage per policy), generation 2 percentage deduction rate, generation 3 basic and three-major non-benefit deduction and limit rules, shared-limit relationships.
 - 1588 and the 1544-8069 operating entity, hours, and purpose.

@@ -1,6 +1,6 @@
 # Product: 보담 (bodam)
 
-> Status: planning only. No source code, tests, or deployment exist yet. Everything below is derived from the planning document `보담_기획설계_v0.2.md` (repository root, Korean; "§N" refers to its sections). Nothing here is claimed as implemented, tested, or verified. Updated 2026-10-13 to follow the Pencil save `01bacca…` (condition questions and the consultation screen removed, cause step and required-documents screen added); the review of that save is `design-requirements.md` section 5.11.
+> Status: planning only. No source code, tests, or deployment exist yet. Everything below is derived from the planning document `보담_기획설계_v0.2.md` (repository root, Korean; "§N" refers to its sections). Nothing here is claimed as implemented, tested, or verified. Updated 2026-10-13 to follow the Pencil save `01bacca…` (condition questions and the consultation screen removed, cause step and required-documents screen added), and on 2026-10-14 to follow the committed save with design blob `4b4a158…` (repository HEAD `875f71b`) and to separate what the result confirms, assumes, and does not calculate (section 5.4); the review of that save is `design-requirements.md` section 5.13.
 
 ## 1. Project name and description
 
@@ -34,7 +34,7 @@ The same person may hold several roles at first, but permissions stay separate (
 
 ## 4. Use cases and patient journey
 
-Flow: start, insurance generation, insurer type, treatment cause, treatments, calculation, result, optional required documents, finish. Idle timeout or finish returns to the start state with everything cleared (§9 "키오스크 동선", §13.2).
+Flow: start, insurance generation, insurer type, treatment cause, treatments, calculation, result, optional calculation basis and required documents, finish. Everything is cleared before the patient sees the start state again. ‘이용 완료’ clears the selections and result first, then opens the completion screen (`K06_Complete`), which returns to the start screen (`K00_Start`) automatically after a short wait (its length is left to implementation design). ‘처음으로’ (after confirmation) and the idle timeout clear everything and go straight to the start screen, without the completion screen (§9 "키오스크 동선", "이용 완료 동선", §13.2).
 
 | Stage | What the patient does | Notes from the planning document |
 |-------|----------------------|----------------------------------|
@@ -44,7 +44,7 @@ Flow: start, insurance generation, insurer type, treatment cause, treatments, ca
 | Screen 3 (step 3/4) | Chooses why the patient came: ‘다쳐서 왔어요 (상해)’, ‘아파서 왔어요 (질병)’, or ‘잘 모르겠어요’ | Prompt ‘어떤 일로 병원에 오셨나요?’ with the help text that the question is asked only to guide the claim documents and does not change the expected amounts. ‘다음’ stays inactive until a card is chosen; ‘이전’ keeps the choice. The value feeds only the required-documents screen; ‘잘 모르겠어요’ does not put the result on hold (§4) |
 | Screen 4 (step 4/4) | Selects hospital-published treatments on large cards | Nothing is preselected or recommended; multiple selection; selecting the same item twice in one visit counts once; benefit and non-benefit totals and the total update immediately; selection persists across list pages; fixed bottom bar shows the selection count, ‘총 예상 결제액’, and the button ‘예상 부담액 확인’ (§4) |
 | Result | Reads three large amount cards; may open ‘계산 근거 보기’ or the required-documents screen | Actions: ‘보험 청구에 필요한 서류 확인’ (primary), ‘계산 근거 보기’, ‘치료 다시 선택’ and ‘보험 조건 수정’ (session kept), ‘처음으로’ (confirmation, then reset), ‘이용 완료’ (clears everything, shows the completion screen, then back to start). There is no consultation screen and no staff-inquiry button (§4) |
-| Required documents | Reads which claim documents are needed | Reached only from the result; asks nothing more. Nine lines are always shown; the needed ones are marked with a one-line reason; receipt and itemized statement are one line, always marked. If the cause is unknown, the lines are grouped as seven common lines plus one injury-only line (초진기록지) and one illness-only line (진단서). ‘결과로 돌아가기’ keeps the selections and the result. The mapping is an example and needs verification (§4) |
+| Required documents | Reads which claim documents are needed | Reached only from the result; asks nothing more. Nine lines are always shown; the needed ones are marked with a one-line reason; receipt and itemized statement are one line, always marked. If the cause is unknown, the lines are grouped as seven common lines plus one injury-only line (초진기록지) and one illness-only line (진단서). ‘결과로 돌아가기’ returns to the result screen the patient came from (normal, not-covered, or landscape; never a fixed normal result) and keeps the selections and the result. The calculation-basis screen returns the same way. The mapping is an example and needs verification (§4) |
 
 A patient who does not know the generation gets guidance on how to check it and returns to step 1. The treatment-cost-total-only path of the earlier planning document was dropped by the owner on 2026-10-13 (§1).
 
@@ -88,9 +88,9 @@ Every result distinguishes these three amounts. The after-payout burden must nev
 
 | State | Condition | Shown |
 |-------|-----------|-------|
-| 조건부 예상 계산 (conditional estimate) | Rule and required conditions confirmed; calculable under stated assumptions | Expected payout, expected burden, assumptions |
+| 조건부 예상 계산 (conditional estimate) | The approved standard assumption profile and the approved treatment coverage mappings exist; calculable under stated assumptions (the patient's own contract values are not confirmed) | Expected payout, expected burden, assumptions |
 | 확인된 규칙상 미보장 (confirmed uncovered) | An unsubscribed rider or exclusion clause is confirmed | 0 won for that item, with reason and basis |
-| 계산 보류 (calculation on hold) | Rule, coverage, treatment classification, or a required condition is unclear | Treatment total, unconfirmed items, ‘확인 필요’, what must be confirmed; computed values are null |
+| 계산 보류 (calculation on hold) | The approved standard assumption profile or the approved treatment coverage mapping is absent, unapproved, invalid, or under re-review, so the rule, coverage, or treatment classification cannot be fixed (section 5.4) | Treatment total, unconfirmed items, ‘확인 필요’, what must be confirmed; computed values are null |
 | 계산 실패 (calculation failed) | Communication error or other failure to finish the calculation | Failure notice with retry / end-of-use; computed values are null |
 
 Zero handling is by state, not a blanket rule: unconfirmed condition = null; communication error = null; confirmed exclusion = that item's payout 0 won with the exclusion reason; a normal calculation that results in 0 = 0 won with its calculation basis. "Unconfirmed" is never turned into "excluded".
@@ -98,10 +98,10 @@ Zero handling is by state, not a blanket rule: unconfirmed condition = null; com
 An assumption sentence such as "all selected treatments are covered and limits remain" is shown only when every selected item is confirmed covered. A result with a confirmed exclusion replaces it with the excluded items, their reasons, and an assumption that matches the actual state.
 
 Rules that follow from this:
-- "Unknown" is never treated as "not subscribed" or "uncovered". An unknown condition puts the item on hold; it is not zero.
+- "Unknown" is never treated as "not subscribed" or "uncovered". An item whose approved standard profile or treatment mapping cannot be used is put on hold; it is not zero. An unknown treatment cause is not such a case: it only branches the required-documents list and never holds the calculation (section 5.4).
 - If any unconfirmed amount exists, a single overall payout number is not shown as final; confirmable groups may appear as reference values while the overall burden stays on hold.
-- When no treatment is selected or a required condition is unconfirmed, the result does not show a payout of 0 won; it explains the state.
-- A disclaimer does not repair a wrong calculation; when a condition is unknown the result itself becomes "on hold".
+- When no treatment is selected, or the approved standard profile or treatment mapping cannot be used, the result does not show a payout of 0 won; it explains the state.
+- A disclaimer does not repair a wrong calculation; when the approved profile or mapping cannot be used, the result itself becomes "on hold". The patient's own deductible, limit, and riders are not asked and not looked up, so they are not a reason to hold: they are stated as unconfirmed premises.
 - The explanation area gives the selected generation and insurer type, the standard deduction and limit assumption applied (marked ‘(가정)’), the coverage premise, the deduction formula and limit overage, exclusions, the policy source (insurer, product, revision date, clause or page, source link), and a "remaining limit/count assumed" notice when remaining annual or per-accident limits are not confirmed. Policy sources are shown in the detail view only, and the kiosk never opens an external website directly.
 - The planning document supplies a fixed wording for the standard disclaimer and for the deduction explanation example (§4); those texts are to be reused as written when the screens are specified.
 
@@ -134,7 +134,24 @@ Case E does not state that any real treatment is excluded. The general group for
 
 - There is no consultation screen and no staff-inquiry button; the number 1544-8069 appears only as text in the ‘세대를 모르겠어요’ guidance. Finishing (‘이용 완료’), ‘처음으로’ (with confirmation), and automatic reset are different actions. Returning from the required-documents screen keeps the selections and result.
 - 1544-8069 is the user-provided consultation number; operating entity and hours are unconfirmed; the incomplete "1588" is not completed; real call connection and staff-call integration are out of the MVP. Individual exclusions, waiting periods, rider enrollment, and remaining limits still need a check against the patient's own contract.
-- Idle reset: input screens warn at 100 s and reset at 120 s; result screens warn at 160 s and reset at 180 s. The warning shows the remaining time, ‘계속 사용할게요’, and ‘처음으로’. Extension can repeat and restarts the idle time. Patient selections and results are removed on reset and are not kept in localStorage, IndexedDB, or service-worker cache; late responses after reset do not restore the screen; no admin sign-in state stays on a shared kiosk. This is a specification; no behavior has been tested.
+- Idle reset: input screens warn at 100 s and reset at 120 s; result screens warn at 160 s and reset at 180 s. The calculation-basis screen and the required-documents screens (portrait, landscape, unknown-cause variants) use the result-screen times (160 s / 180 s), restart the idle time on every patient touch (including moving between the result and these screens), and on reset go to the start screen, not back to the result. This is a provisional default decided on 2026-10-14 without observed dwell times. The warning shows the remaining time, ‘계속 사용할게요’, and ‘처음으로’. Extension can repeat and restarts the idle time. Patient selections and results are removed on reset and are not kept in localStorage, IndexedDB, or service-worker cache; late responses after reset do not restore the screen; no admin sign-in state stays on a shared kiosk. This is a specification; no behavior has been tested.
+
+### 5.4 Calculation basis: what the result confirms, assumes, and does not calculate (§4, §6.1)
+
+The result keeps four things apart and never mixes them.
+
+| Level | What it is | How the result words it |
+|-------|------------|-------------------------|
+| Confirmed from input | The generation, insurer type, treatment cause, and treatments the patient chose, and the prices the hospital published | Shown as chosen |
+| Not confirmed | The patient's own deductible, limit, riders, remaining limit, waiting period, and exclusions. The kiosk neither asks for nor looks them up | Never written as if confirmed; the result says the actual values depend on the personal contract |
+| Assumed | The approved standard assumption profile for the generation and insurer type (values, source policy, approver) and the approved treatment coverage mappings | ‘예시 계산’ and ‘(가정)’; the applied profile is shown on the basis screen |
+| Not calculated | Anything for which the assumed level cannot be used | Calculation on hold: ‘확인 필요’, values null |
+
+- Calculate (as an example, not a personal payout) only when the profile for the chosen generation and insurer type is approved and every chosen treatment has an approved coverage mapping.
+- Hold the calculation when the profile or a treatment mapping is absent (no data), draft or DEMO, unapproved (unreviewed, rejected), invalid (superseded, expired), or under re-review. The hold applies to the affected treatment; any hold keeps the overall payout and burden on hold (§6.1, cost U).
+- An unknown treatment cause does not hold the calculation. It only splits the required-documents list into common lines plus an injury-only and an illness-only line.
+- An unknown generation is not a result state: the patient cannot leave step 1 and gets the enrollment-date guidance instead.
+- Unfixed standard values are never estimated: no neighbouring generation's value, no average, no substitute profile for another generation or insurer type, no 0 won, no full coverage. The design's generation-2 (C1) example (10,000 deductible, 250,000 per-visit limit) illustrates the screen and is not an approved profile.
 
 ## 6. MVP scope
 
@@ -144,7 +161,7 @@ Case E does not state that any real treatment is excluded. The general group for
 - Single initial hospital, with data and permission structure that already supports multiple hospitals.
 - Generations 1 (A·S), 2 (C1), 2.5 (C2), 3 (C3), 4 (C4) only; anything else returns UNSUPPORTED.
 - Kiosk start state, four input steps, separate result screen, required-documents screen, idle reset, and the number 1544-8069 as guidance text.
-- Large-text mode (required, not a roadmap candidate; it keeps every function of the normal mode, including "보험 조건 수정" on the result screen) and assistive keyboard operation (navigation, selection, confirmation, visible focus, modal focus handling) alongside full touch-only completion (§13.1).
+- Large-text mode (required, not a roadmap candidate; it enlarges the same screens responsively, with no dedicated design frames, and keeps every function, selection, and result of the normal mode, including "보험 조건 수정" on the result screen; layout is adjusted and lists are split into pages when space runs short; verified on the built screen, section 13.1 of the planning document) and assistive keyboard operation (navigation, selection, confirmation, visible focus, modal focus handling) alongside full touch-only completion (§13.1).
 - PC admin web and insurance-rule management with source tracking and review states.
 - Server-side recalculation from published prices and rules, with version checks.
 - Example data labelled DEMO (see §7 below).
@@ -225,8 +242,9 @@ Additional, found while writing:
 - Which of the six rule-administration duties belong to the insurance-rule reviewer and which to the platform operator is not split in the document.
 - Whether a staff-call or phone feature will ever exist depends on device integration not yet known.
 - Whether a staff-entry route for insurance conditions will exist: undefined, so no screen may imply it.
-- Standard deduction and limit assumption per generation and insurer type (values, source policy, approver) and what the insurer type means for rule selection. The owner will attach a table (image) to the GPT review request; the values are entered afterwards.
+- Standard deduction and limit assumption per generation and insurer type (values, source policy, approver) and what the insurer type means for rule selection. The owner will attach a table (image) to the GPT review request; the values are entered afterwards. Until the table is entered and approved the profile counts as absent and the calculation is held (section 5.4).
 - The real document requirements per insurer, product, and claim-amount band; whether the injury/illness split should also drive the amounts.
 - How unsupported contracts are screened out (the treatment-total-only path was dropped on 2026-10-13).
-- Font: Pretendard (decided 2026-10-13; the design's spec sentences now say so). Open: whether the real device has it or it is loaded as a web font.
-- Revised Pencil design: the working-tree save `01bacca…` (not committed) is reviewed in `design-requirements.md` section 5.11, which lists the findings and the decisions and input materials needed before the next SPEC (working name SPEC-REIMBURSEMENT-ESTIMATOR-001, not started).
+- Font: Pretendard (decided 2026-10-13; the design's spec sentences now say so). Open: whether the real device has it or it is loaded as a web font. Confirming that Pretendard is actually applied, and that no text clips in it, is an implementation acceptance criterion (planning document §13.1, §14); it cannot be shown from the design file.
+- Large text: no dedicated design frames exist and none is required. The responsive layout is checked on the built screen at 1080x1920 and 1920x1080 (planning document §13.1).
+- Pencil design: the current saved file is design blob `4b4a158…` at repository HEAD `875f71b` (the `design:` commit is `3a76482`). It is reviewed in `design-requirements.md` section 5.13, which lists the findings and the decisions and input materials needed before the next SPEC (working name SPEC-REIMBURSEMENT-ESTIMATOR-001, not started). Earlier saves (`01bacca…` and before) are dated records in sections 5.2 to 5.12.

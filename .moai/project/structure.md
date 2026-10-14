@@ -49,7 +49,8 @@ Server-side rules for these endpoints:
 
 Kept apart from UI, database, and rule data (§8, §10 step 2).
 
-- Input: published treatment prices (patient-payable amounts), the patient's selected insurance conditions, and a rule version supplied as data.
+- Input: published treatment prices (patient-payable amounts), the patient's selected insurance conditions (generation and insurer type), and a rule version supplied as data, including the approved standard assumption profile for that generation and insurer type and the approved treatment coverage mappings. The treatment cause (injury / illness / unknown) is not an input to the calculation; it feeds only the required-documents screen. The patient's own deductible, limit, and riders are not inputs and are never presented as confirmed.
+- Hold rule: a profile or a treatment mapping that is absent, draft or DEMO, unapproved, invalid, or under re-review puts the affected item on hold (cost U) and, with it, the overall payout and burden. Unfixed standard values are never estimated, borrowed from another generation or insurer type, or replaced by 0 won or full coverage (`product.md` section 5.4).
 - Output: a calculation state per group/item (conditional estimate / confirmed uncovered / calculation on hold) plus an overall roll-up, the amounts, and the calculation basis. Any group on hold (unconfirmed cost U present) keeps the overall burden on hold; confirmable groups may be shown as reference values (§6.1). The exact result shape is an open item to be fixed in the SPEC.
 - Formula symbols (T, G, N, E, X, U, D, L, P) are defined in `tech.md` section 3 (§6.1).
 - Deterministic: the same input yields the same result and basis; no generative AI (§1).
@@ -114,10 +115,10 @@ The planning document groups the six rule-administration duties under "platform 
 ## 8. Kiosk session state
 
 - Patient selections and results live only in the kiosk page's in-memory session. Nothing is stored in localStorage, IndexedDB, or service-worker caches. The server stores no personal health data by default. No treatment or insurance condition is put in a URL query or an analytics event; operating statistics use step-level aggregates and anonymous events (§8).
-- Reset triggers: reload/restart starts an empty session; ‘이용 완료’ (patient ends use) clears immediately; ‘처음으로’ asks for confirmation while in progress and then clears all; idle timeout warns (input screens at 100 s, result screens at 160 s) with ‘계속 사용할게요’ / ‘처음으로’ and the remaining time, then clears at 120 s / 180 s; extension can repeat and restarts the idle time; Back, Edit, and the required-documents screen keep the current patient's choices and result (§13.2). No administrator authentication state remains on the kiosk after reset.
+- Reset triggers: reload/restart starts an empty session; ‘이용 완료’ (patient ends use) clears the selections and result first, then opens the completion screen (`K06_Complete`), which returns to the start screen (`K00_Start`) automatically after a short wait; ‘처음으로’ asks for confirmation while in progress and then clears all and goes to the start screen without the completion screen; idle timeout warns (input screens at 100 s, result screens at 160 s) with ‘계속 사용할게요’ / ‘처음으로’ and the remaining time, then clears at 120 s / 180 s and goes to the start screen without the completion screen; the calculation-basis and required-documents screens use the result-screen times (160 s / 180 s) and restart the idle time on every patient touch; extension can repeat and restarts the idle time; Back, Edit, and the required-documents screen keep the current patient's choices and result (§13.2). No administrator authentication state remains on the kiosk after reset.
 - A request in flight when a reset happens is cancelled, and the session identifier is replaced so a late response is ignored and never shows on the next patient's screen (§13.2, §9 "늦은 계산 응답").
 - Browser history, page cache, and Back must not bring back the previous patient's result; this must be verified on the real device (§13.2).
-- State machine: idle (start) is separate from the four input steps; the result is a separate screen; the calculation-basis screen and the required-documents screen are reached from the result and return to it with the choices kept; the completion screen follows ‘이용 완료’ and returns to idle. The current design has no extra insurance questions (§1, §4).
+- State machine: idle (start) is separate from the four input steps; the result is a separate screen; the calculation-basis screen and the required-documents screen are reached from any finished-calculation result (normal, not-covered, landscape) and return to the result the patient came from, with the choices kept; the completion screen follows ‘이용 완료’ (after the clearing) and returns to idle. The current design has no extra insurance questions (§1, §4).
 
 ## 9. Proposed directory layout
 
@@ -143,6 +144,7 @@ tests/
 ## 10. Layout behavior
 
 - Separate layouts for portrait 1080x1920 and landscape 1920x1080 (provisional, not real device specs): card columns, items per list page, and amount placement differ by orientation instead of simply scaling up (§13.1).
+- Large-text mode enlarges the same screens responsively; it has no separate route, screen, or calculation and no dedicated design frame. Only type size, button size, and card and amount layout change; every function, selection, and result stays, and a list is split into pages when space runs short. It is verified on the built screen in both orientations, not in the design file (planning document §13.1).
 - Screen composition: top shows hospital name, a short question, and the current step; the center shows large selection cards; the bottom shows Back/Next and the total area. Important actions are not placed only at the very top (§13.1).
 - Web UI development is separate from kiosk device lockdown (auto-launch, address-bar hiding, admin-escape prevention, relaunch after power recovery), which is set and verified on the real OS and browser (§13.3).
 
@@ -158,4 +160,5 @@ tests/
 - Treatment-code mapping for 신장분사치료 and for items whose insurance class is unreviewed.
 - Storage for hospital-configurable idle-reset / result-hold / warning times (§7), the common brand setting (§8), and common base-fee items (§5) is not assigned to an entity (Clinic, KioskDevice, or a new entity), and a parent "Treatment" identity for TreatmentVersion is not defined; all undecided.
 - Exact shape of the per-group plus overall calculation result (section 4) is to be fixed in the SPEC.
+- Whether the standard assumption profile is its own entity or a kind of CoverageRuleVersion, and the profile states it needs (approved, draft or DEMO, invalid, under re-review) and who may move a profile between them, are undecided (planning document §8). Until a profile is entered and approved it counts as absent and the calculation is held.
 - Medical-advertising rules in force at deployment time.
