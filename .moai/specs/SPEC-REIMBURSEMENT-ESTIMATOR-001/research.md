@@ -13,7 +13,8 @@
 | `.moai/project/structure.md` | 1-165행 (전체) | |
 | `.moai/project/tech.md` | 1-173행 (전체) | |
 | `.moai/project/interview.md` | 1-55행 (전체) | 2026-10-12 시점 추출본이라 일부 서술이 옛 흐름이다(§5 모순 5) |
-| `.moai/project/design-requirements.md` | 1-113행(§1-§4), 150-199행(§5.3-§5.4, 프레임 이름 확인용), 613-714행(§5.13, §6, §7); 나머지는 프레임 이름·ID를 Grep으로만 확인 | `design/design.pen`은 읽지 않았다(암호화 파일이며 이번 작업 범위 밖) |
+| `.moai/project/design-requirements.md` | 1-113행(§1-§4), 150-199행(§5.3-§5.4, 프레임 이름 확인용), 613-714행(§5.13, §6, §7); 나머지는 프레임 이름·ID를 Grep으로만 확인 | `design/design.pen`은 최초 작성 때는 읽지 않았다(암호화 파일이며 당시 범위 밖). 개정 3에서는 아래 `design/design.pen` 행의 범위만 읽었다 |
+| `design/design.pen` (blob `4b4a1587e4361996ec834b5122515051c84cf7e8`) | 개정 3에서 Pencil로 파일의 사본을 읽기 전용으로 읽었다(원본은 바뀌지 않았다). 읽은 것: spec.md §4.2가 인용한 프레임 전부의 이름과 ID, `A02_Admin_TreatmentList`(`RM9ZF`)·`A04_Admin_PublishPreview`(`TMXlM`)·`KXX_Loading_Calculating`(`BfNvc`)·`ZZ_HandoffSpec`(`cvUDQ`)의 이름과 ID, `K01_Generation_*`와 가로형 프레임 안의 `HelpPanel` 인스턴스(`LMKmS`·`gQtVy`·`JNcEQ`)와 컴포넌트 기본 문구(`MzQqc`), `K04_Basis_Calculation`·`K04_Result_NotCovered` 안의 `HelpPanel` 인스턴스(`f3IUJ`·`reynT`), 큰 글자 토글 `P3xKHF`와 라벨 `MkKly`, `K00_Start` 시작 버튼 문구, `K04_Basis_Calculation`의 자리 표시 문구(`hmlxu`·`o16qMt`)와 치료 표 열, `K04_Result`·`K04_Result_NotCovered`의 금액 카드, `K07_Documents_Unknown`의 서류 줄, `ZZ_HandoffSpec` 표의 글자 칸(`ZBdWg`·`QUcQ1`·`tNbyp`) | 오케스트레이터가 노드 트리와 글자를 읽었고 이 SPEC은 그 결과를 옮겨 적었다. 화면을 그리거나 스크린숏을 찍지 않았다. 따라서 파일 확인 수준이며 렌더링 확인이 아니다 |
 | `.moai/config/sections/quality.yaml` | `development_mode`, `test_coverage_target`, `min_coverage_per_commit` 세 줄(Grep) | `tdd` / 85 / 80 |
 | `.claude/rules/moai/development/spec-frontmatter-schema.md` | 전체 | frontmatter 12필드, progress.md 절 구성 |
 
@@ -109,15 +110,15 @@
 | U-13 | `K06_Complete` 대기 시간, 안내·계산 중·오류 화면 무조작 처리(기획서 613행, 622행) | 소유자 | 없음. 대기 시간은 SPEC 기본값 없음(plan.md §E #12). 안내·계산 중·오류 화면 무조작 시간은 SPEC이 제안한 잠정 기본값이며 소유자가 승인하지 않았다(§E #13). 둘 다 미해결 확인 항목 |
 | U-14 | 초기화 시 큰 글자 보기 유지 여부(design-requirements 699행) | 소유자 | 없음. "끔"은 SPEC이 제안한 잠정 기본값이며 소유자가 승인하지 않았다. 미해결 확인 항목(plan.md §E #17) |
 | U-15 | 규칙 관리 업무 1·2·3·5의 역할 분담(기획서 363-370행; structure.md 113행) | 소유자 | 없음. DD-17 권한 표는 SPEC 제안이며 소유자가 승인하지 않았다. 미해결 확인 항목(plan.md §E #30) |
-| U-16 | 상해·질병 구분을 앞으로 금액에도 쓸지(기획서 125행, 496행) | 소유자 | 없음(이 SPEC은 쓰지 않음) |
+| U-16 | 상해·질병 구분을 앞으로 금액에도 쓸지(기획서 125행, 496행; design-requirements 694행) | 소유자 | 없음. 현재 MVP 쪽은 이미 기록된 결정이다: 원인은 서류 안내에만 쓰고 금액에는 쓰지 않으며 "잘 모르겠어요"는 보류 사유가 아니다(기획서 111행, 123행; plan.md §E #9, 기록된 결정으로 닫음). 앞으로 금액에도 쓸지는 이 결정을 다시 열지 않고 후속 SPEC 후보로 둔다(plan.md §F 8번). 같은 질문은 기획서와 design-requirements에 소유자 질문으로 남아 있다 |
 | U-17 | 지원 범위 밖 계약(노후·유병력자·단체 실손, 전환·재가입으로 현재 담보가 범위 밖인 계약 등)을 가려내는 방법. 현재 디자인에 화면이 없다(기획서 17행, 59행, 494행) | 소유자 | M1-M7은 막지 않는다. 엔진은 범위 밖 계약을 판별하지 않으며(그런 입력이 없음), 환자가 고른 카드로만 계산하고 결과 문구·공통 안내로 개인 계약에 따라 달라질 수 있음을 알린다. 남은 위험은 plan.md §C R-11, §E #11 |
-| U-18 | 2009.08~09 경계 계약의 별도 도움말: 기획서 §3은 이 구간 계약을 별도 도움말로 안내하고 가입일만으로 현재 담보를 정하지 않는다고 한다(기획서 35행, 43행, 61행). 현재 디자인에는 이 도움말이나 현재 담보 확인 프레임이 없다(product.md 67행) | 소유자 | M6에서 문구·표시 위치가 처음 필요하다. 이 SPEC은 문구를 만들지 않고 기존 프레임으로 구현된 것으로 보지 않는다. 키오스크는 가입일로 세대를 정하거나 제안하지 않는다(날짜 입력이 없음). plan.md §C R-12, §E #35 |
+| U-18 | 2009.08~09 경계 계약의 별도 도움말: 기획서 §3은 이 구간 계약을 별도 도움말로 안내하고 가입일만으로 현재 담보를 정하지 않는다고 한다(기획서 35행, 43행, 61행). 현재 디자인에는 이 도움말이나 현재 담보 확인 프레임이 없다(product.md 67행). 개정 3 파일 확인: 어느 화면도 2009.08~09 경계를 알리는 도움말을 보이지 않는다. `HelpPanel` 컴포넌트의 기본 문구(`MzQqc`, "가입 시기가 경계에 있거나 전환·재가입 계약은 담보 확인이 필요합니다.")는 컴포넌트에만 있고 모든 화면 인스턴스가 다른 문구로 덮어쓴다 | 소유자 | M6에서 문구·표시 위치가 처음 필요하다. 이 SPEC은 문구를 만들지 않고 기존 프레임으로 구현된 것으로 보지 않는다. 키오스크는 가입일로 세대를 정하거나 제안하지 않는다(날짜 입력이 없음). plan.md §C R-12, §E #35 |
 
 ## 4. 디자인과 문서의 남은 차이 (design-requirements §5.13.3)와 이 SPEC의 처리
 
 | # | 차이 | 이 SPEC의 처리 |
 |---|------|----------------|
-| 13-1 | 계산 근거 프레임은 `K04_Basis_Calculation` (GhMYi) 하나뿐이고 `ZBdWg` 행은 `K04_Result`로만 돌아간다 | 공통 구현 규칙으로 해결한다. 계산 근거 화면은 (결과, 진입한 결과 종류)의 순수 함수로 그리고, 복귀는 ReturnContext로 진입했던 결과를 그대로 복원한다(design.md DD-11, REQ-FLOW-003). 보장 제외·가로형 전용 근거 프레임은 요청하지 않는다. `ZBdWg` 문구 정정은 다음 Pencil 저장 때 소유자에게 넘긴다(plan.md §F) |
+| 13-1 | 계산 근거 프레임은 `K04_Basis_Calculation` (GhMYi) 하나뿐이고 `ZBdWg` 행은 `K04_Result`로만 돌아간다 | 공통 구현 규칙으로 해결한다. 계산 근거 화면은 (결과, 진입한 결과 종류)의 순수 함수로 그리고, 복귀는 ReturnContext로 진입했던 결과 종류를 복원하고 화면 방향·큰 글자는 복귀 시점의 최신 값을 따른다(design.md DD-11, REQ-FLOW-003). 보장 제외·가로형 전용 근거 프레임은 요청하지 않는다. `ZBdWg` 문구 정정은 다음 Pencil 저장 때 소유자에게 넘긴다(plan.md §F) |
 | 13-2 | `K04_Result_Dialog_Timeout` (YcF5k) 배경 결과에 서류 확인 버튼이 없다 | 구현은 TimeoutDialog를 현재 화면 위에 띄우므로 배경은 실제 결과 화면 그대로이며 여섯 동작이 모두 남는다(DD-07, DD-10, REQ-FLOW-004). 디자인 정렬은 작은 후속 작업으로 넘긴다(plan.md §F) |
 | 13-3 | `MzQqc`의 "표준값" 표현이 확정값처럼 읽힌다 | 디자인 문구 변경을 요청하지 않는다. 구현은 승인·게시된 OPERATING 프로필일 때만 프로필 값을 보여 주고, 그 밖의 출처이면 테스트 데이터 표시를 띄운다(DD-04, REQ-DATA-003) |
 | 13-4 | 디자인의 무조작 행에 계산 근거·서류 화면이 없다 | SPEC이 160/180초와 같은 TimeoutDialog를 정한다(DD-10, REQ-FLOW-004). 디자인 행 보완은 작은 후속 작업으로 넘긴다(plan.md §F) |
@@ -128,12 +129,12 @@
 
 | # | 위치 | 내용 | 이 SPEC의 처리 |
 |---|------|------|----------------|
-| 1 | 기획서 67행 vs product.md 41행 | 시작 화면 버튼이 기획서는 "시작하기", product.md는 "실손 예상 부담액 확인"이다 | 기획서를 따른다("시작하기"). 디자인 문구는 확인하지 않았으므로 plan.md에 확인 항목으로 둔다 |
+| 1 | 기획서 67행 vs product.md 41행 | 시작 화면 버튼이 기획서는 "시작하기", product.md는 "실손 예상 부담액 확인"이다 | 기획서를 따른다("시작하기"). 처음 작성할 때는 디자인 문구를 확인하지 않아 확인 항목으로 두었다. 개정 3 파일 확인에서 저장된 디자인 파일의 `K00_Start` 시작 버튼 문구가 "시작하기"임을 확인했다(`Button_Primary` 인스턴스 `OdYLw`). 그래서 plan.md §E #25는 파일로 확인된 사실로 닫았다. product.md 41행의 "실손 예상 부담액 확인"은 저장된 파일에 없는 표현이다(plan.md §H H-11) |
 | 2 | 기획서 264행 / product.md 87행 | "세 가지로 분리한다"고 쓴 뒤 표에는 네 상태(계산 실패 포함)가 있다 | 엔진 상태는 세 가지(ESTIMATED, ESTIMATED_WITH_EXCLUSIONS, ON_HOLD), 계산 실패(FAILED)는 전송·클라이언트 상태로 분리한다(DD-03) |
 | 3 | tech.md 71행 vs 기획서 92행 | tech.md는 "보험사 검색은 선택 사항이며 모든 보험사가 입력 없이 도달 가능해야 한다"고 적었지만, 기획서 화면 2에는 보험사 이름 목록·검색이 없다 | 기획서를 따른다. 보험사 검색은 이 SPEC 범위 밖이다 |
 | 4 | 기획서 234행 vs structure.md 101행 | 보장 검토 상태가 기획서는 미검토/검토 요청됨/승인/반려/상담필요, structure.md는 not reviewed/reviewed/needs consultation이다 | 하나의 생명주기(DD-17)로 통일한다. "상담필요"는 검토 담당자 측의 미결 상태로 보고 매핑이 승인되지 않은 것으로 다룬다(MAPPING_UNREVIEWED) |
 | 5 | interview.md 9행, 33행 | 입력 3단계와 "보험사와 조건" 단계를 서술한다 | interview.md 54행이 스스로 옛 추출본이라고 밝힌다. 현재 흐름은 product.md와 기획서를 따른다 |
-| 6 | design-requirements 77행 vs 92행·644행 | 노드 `MzQqc`를 77행은 `HelpPanel` 본문으로, 92행과 644행은 `K04_Basis_Calculation`의 가정 문구로 적었다 | SPEC은 노드 ID를 요구사항 근거로 쓰지 않고 프레임 이름·ID만 인용한다 |
+| 6 | design-requirements 77행 vs 92행·644행 | 노드 `MzQqc`를 77행은 `HelpPanel` 본문으로, 92행과 644행은 `K04_Basis_Calculation`의 가정 문구로 적었다 | 처음에는 서로 다른 설명으로 읽혀 모순으로 적었고, SPEC은 노드 ID를 요구사항 근거로 쓰지 않기로 했다. 개정 3 파일 확인에서 모순이 아님을 확인했다. `MzQqc`는 `HelpPanel` 컴포넌트(`PxiwY`) 안의 본문 글자 노드이고, 화면마다 인스턴스가 그 문구를 덮어쓴다. 77행은 컴포넌트 쪽 노드를, 92행·644행은 `K04_Basis_Calculation`의 `HelpPanel` 인스턴스 `f3IUJ`(`GhMYi` 안)가 보이는 문구를 같은 ID로 부른 것이다. 컴포넌트 기본 문구는 "가입 시기가 경계에 있거나 …"이고 "표준값"이 든 문구는 `f3IUJ`가 덮어쓴 글자다. SPEC은 여전히 노드 ID를 요구사항 근거로 쓰지 않고 프레임 이름·ID만 인용한다(plan.md §H H-10) |
 | 7 | 기획서 348행 | 병원 관리자가 설정하는 값에 "결과 화면 유지 시간"이 있으나, 무조작 초기화 시간과 무엇이 다른지 정의가 없다 | 결과 화면류의 경고·초기화 시간(160/180초)으로 해석한다(DD-10). plan.md에 확인 항목으로 둔다 |
-| 8 | design-requirements 87행 vs 586행 | 같은 프레임 `K01_Generation_Empty`·`K01_Generation_Selected`의 ID가 87행(현재 상태 표)에서는 `Z3izyJ`·`lYlRt`, 586행(5.12 날짜 기록)에서는 다른 값이다. 원문 문서 안에서 서로 맞지 않는다 | 프레임 이름을 기준으로 삼고, ID는 87행의 현재 상태 표 값을 쓴다. 저장된 파일의 실제 ID는 소유자 확인 항목으로 둔다(plan.md §E #28) |
+| 8 | design-requirements 87행 vs 586행 | 같은 프레임 `K01_Generation_Empty`·`K01_Generation_Selected`의 ID가 87행(현재 상태 표)에서는 `Z3izyJ`·`lYlRt`, 586행(5.12 날짜 기록)에서는 `LMKmS`·`gQtVy`(가로형은 `JNcEQ`)로 적혀 있어, 처음에는 원문 문서 안에서 서로 맞지 않는 것으로 읽었다 | 개정 3 파일 확인에서 모순이 아님을 확인했다. 프레임 ID는 `K01_Generation_Empty` = `Z3izyJ`, `K01_Generation_Selected` = `lYlRt`, `L_K01_Generation` = `xeW3n`이다. 586행이 괄호에 적은 `LMKmS`(`Z3izyJ` 안), `gQtVy`(`lYlRt` 안), `JNcEQ`(`xeW3n` 안)는 프레임이 아니라 `HelpPanel` 인스턴스 ID로, 두 종류의 ID를 같은 괄호 형식으로 적은 표기 문제다. 프레임 이름을 기준으로 삼고 ID는 87행 값을 쓰며 파일과 일치한다. plan.md §E #28은 파일로 확인된 사실로 닫았다(plan.md §H H-9) |
 | 9 | 기획서 399-404행 vs 이 SPEC의 경로 | 기획서의 예상 API는 `GET /api/insurance/options`, `POST /api/estimate`로 병원 식별이 없다 | SPEC 결정: 두 경로에 병원 slug를 넣어 `GET /api/clinics/{slug}/insurance/options`, `POST /api/clinics/{slug}/estimate`로 쓴다(규칙 묶음이 병원별이므로). plan.md §E #33 |

@@ -23,6 +23,7 @@ tier: L
 | 0.1.0 | 2026-10-14 | Nexsol | 최초 작성. 기준: 저장소 HEAD `c1f5d76`, 디자인 blob `4b4a158…`, 기획서 `보담_기획설계_v0.2.md`(2026-10-14 수정본). 구현·렌더링·실행은 하지 않았다 |
 | 0.1.0 (1차 수정) | 2026-10-14 | Nexsol | 계획 감사 1회차(D-01~D-22) 반영. 공개 API 경로에 병원 slug 추가, 판정 기준에 있던 동작을 요구사항 문장으로 올림, 근거 없는 긴급 중지 권한 삭제, 출처 판정을 치료·기본비용 줄까지 확장, 보류 사유 표 보완. 소유자 결정(단일 SPEC 유지, Vitest, 운영 데이터 보류)은 plan.md §A.5 |
 | 0.1.0 (2차 수정) | 2026-10-14 | Nexsol | 계획 감사 2회차(N-01~N-08) 반영. 확인 항목 해소 시점을 구현 착수 승인 전으로 통일, 2009.08~09 경계 계약 도움말을 미확정 항목으로 등록하고 가입일로 세대를 정하지 않는다는 조건 추가, 플랫폼 운영자 권한을 기획서 §7 6번의 두 권한으로 축소, 서류 규칙이 없을 때 서류 화면 동작을 기획서 §4에 맞춤 |
+| 0.1.0 (3차 수정) | 2026-10-14 | Nexsol | 외부 검토 반영. (1) 줄 단위 지급액 필드를 없애고 지급액을 그룹(`P`, 공유 한도 적용 뒤 `P_pooled`)과 전체 합계에서만 내며 공유 한도 배분 규칙을 명시. (2) 규칙 묶음 중지를 묶음 내용과 따로 남기는 가용성 기록(`RuleBundleStatusEvent`)과 보류 코드 `RULE_BUNDLE_SUSPENDED`로 정함(항목 상태는 그대로, 복구는 새 묶음 게시). (3) 계산 시도마다 `requestId`를 만들어 늦은 결과를 막음. (4) 수치 검증 계약(DD-24)을 추가. (5) 서류 규칙 게시 검증을 구조 검사로 한정(디자인 예시 7+1+1의 상한 삭제). (6) 결과 복귀 정보를 결과 종류만 남기고 화면 방향·큰 글자는 복귀 시점의 최신 값을 따르게 함. (7) 확인 항목 36개를 분류 A~E로 다시 나누고 행마다 근거·결정 주체·처음 필요 마일스톤을 적었으며, 기록되었거나 파일로 확인된 3개(#9, #25, #28)만 근거를 남기고 닫음(열린 33개는 구현 착수 승인 게이트에 그대로 오름, 소유자 승인 아님). 원문 문장 가운데 소유자가 바꿔야 할 것은 plan.md §H에 모음. (8) 하드코딩 검사를 숫자 몇 개만 허용하는 방식에서 동작 시험 중심으로 바꿈. 디자인 파일은 개정 3에서 사본을 Pencil로 읽기 전용으로 확인했고(blob `4b4a1587…`, 노드 트리와 글자만 확인, 렌더링은 하지 않음) 그 결과를 research.md와 §4.2에 반영. 구현·렌더링·실행은 하지 않았다 |
 
 ## 1. 개요
 
@@ -74,21 +75,21 @@ tier: L
 
 ### 3.1 모듈 A — 결정적 계산·서류 엔진
 
-**REQ-ENG-001** (High) — 계산 엔진(`src/engine`)은 UI·데이터베이스·네트워크·파일시스템 모듈을 가져오지 않고 시각과 난수는 주입받은 값만 쓰며, 금액은 원 단위 정수로, 비율은 basis points 정수로(SPEC 결정: 기획서 §6.3은 정수 분수와 basis points를 모두 허용) 다루고, 공제·한도·비율 값을 코드에 두지 않고(허용 상수는 0, basis points 척도 10000, `ROUND_HALF_UP`에 쓰는 그 절반 5000뿐) 표준 가정 프로필에서만 받아 같은 입력과 같은 데이터 버전에 바이트 단위로 같은 결과와 계산 근거를 반환해야 하며, 엔진·서버·키오스크 어디에서도 계산과 보상 설명을 위해 생성형 AI나 외부 모델 API를 호출해서는 안 된다(shall not).
-- 근거: DD-02, DD-20 · 수용기준: AC-001, AC-021
+**REQ-ENG-001** (High) — 계산 엔진(`src/engine`)은 UI·데이터베이스·네트워크·파일시스템 모듈을 가져오지 않고 시각과 난수는 주입받은 값만 쓰며, 금액은 원 단위 정수로, 비율은 basis points 정수로(SPEC 결정: 기획서 §6.3은 정수 분수와 basis points를 모두 허용하며, 값의 범위와 안전 정수 검사는 DD-24) 다루고, 공제·한도·비율 같은 보험 업무 값을 리터럴이나 상수로 코드에 두지 않고(인덱스·카운터·반복 한계·배열 길이 같은 일반 구현 상수, 한 번만 선언한 basis points 척도 10000과 그 절반 5000, DD-24의 기술 안전 한도는 허용) 표준 가정 프로필에서만 받아 같은 입력과 같은 데이터 버전에 바이트 단위로 같은 결과와 계산 근거를 반환해야 하며, 엔진·서버·키오스크 어디에서도 계산과 보상 설명을 위해 생성형 AI나 외부 모델 API를 호출해서는 안 된다(shall not).
+- 근거: DD-02, DD-20, DD-24 · 수용기준: AC-001, AC-021
 
-**REQ-ENG-002** (High) — 계산 엔진은 기획서 §6.2의 순서대로 줄을 보장 대상·확인된 제외·보류로 먼저 나누고, 프로필이 정한 계산 그룹마다 보장 대상 비용 E를 합산해 그룹당 한 번만 공제 D를 구하되 서로 다른 그룹의 공제를 합치지 않고 확인된 제외 비용 X를 공제 기준에 넣지 않으며, 공제 방식은 닫힌 네 가지(`FIXED`, `RATE_WITH_FIXED_FLOOR`, `SPLIT_RATE_WITH_FIXED_FLOOR`, `CAPPED_RATE_WITH_FIXED_FLOOR`), 한도는 다섯 가지(`PER_VISIT_PAYOUT`, `UNLIMITED_DECLARED`(SPEC 결정), `PER_ACCIDENT`, `ANNUAL`, `COUNT`)만 계산해 `P = min(max(E − D, 0), L)`로 그룹 지급액을 정하고 명목 공제와 실제 적용 공제를 따로 기록하며, 그룹 사이 공유 한도는 한 번만 적용하고, `PER_ACCIDENT`·`ANNUAL`·`COUNT` 한도를 적용하면 `REMAINING_LIMIT_ASSUMED` 가정을 내고, 비율 규칙의 원 단위 처리(`TRUNCATE` | `ROUND_HALF_UP`)가 빠지면 기본값 없이 `PROFILE_VALUE_MISSING`으로, 닫힌 목록 밖의 공제 방식이나 `limitBasis = COVERED_COST`이면 `PROFILE_FORMULA_UNSUPPORTED`로, `UNLIMITED_DECLARED`에 조항 참조가 없으면 `PROFILE_SOURCE_INCOMPLETE`로 그 그룹의 줄을 보류해야 한다.
-- 근거: DD-02 · 수용기준: AC-002, AC-003, AC-005
+**REQ-ENG-002** (High) — 계산 엔진은 기획서 §6.2의 순서대로 줄을 보장 대상·확인된 제외·보류로 먼저 나누고, 프로필이 정한 계산 그룹마다 보장 대상 비용 E를 합산해 그룹당 한 번만 공제 D를 구하되 서로 다른 그룹의 공제를 합치지 않고 확인된 제외 비용 X를 공제 기준에 넣지 않으며, 공제를 치료마다 적용하거나 그룹의 공제·지급액을 치료에 나누거나 치료별 지급액을 만들어서는 안 되고(shall not), 공제 방식은 닫힌 네 가지(`FIXED`, `RATE_WITH_FIXED_FLOOR`, `SPLIT_RATE_WITH_FIXED_FLOOR`, `CAPPED_RATE_WITH_FIXED_FLOOR`), 한도는 다섯 가지(`PER_VISIT_PAYOUT`, `UNLIMITED_DECLARED`(SPEC 결정), `PER_ACCIDENT`, `ANNUAL`, `COUNT`)만 계산해 `P = min(max(E − D, 0), L)`로 공유 한도를 적용하기 전의 그룹 지급액 P를 정하고 명목 공제와 실제 적용 공제를 따로 기록하며, 그룹 사이 공유 한도는 풀마다 한 번만 적용하되 프로필의 `groupOrder` 순서로 그룹 몫을 정해(SPEC 제안) 적용 뒤의 그룹 지급액 `P_pooled`(풀이 없으면 P와 같음)를 P와 함께 기록하고, `PER_ACCIDENT`·`ANNUAL`·`COUNT` 한도를 적용하면 `REMAINING_LIMIT_ASSUMED` 가정을 내고, 비율 규칙의 원 단위 처리(`TRUNCATE` | `ROUND_HALF_UP`)가 빠지면 기본값 없이 `PROFILE_VALUE_MISSING`으로, 프로필 값이 DD-24 범위 밖이면 `PROFILE_VALUE_INVALID`로, 계산 도중 곱이나 합이 안전 정수 범위를 넘으면 `CALC_RANGE_EXCEEDED`로, 닫힌 목록 밖의 공제 방식이나 `limitBasis = COVERED_COST`이면 `PROFILE_FORMULA_UNSUPPORTED`로, `UNLIMITED_DECLARED`에 조항 참조가 없으면 `PROFILE_SOURCE_INCOMPLETE`로 그 그룹의 줄을 보류해야 한다.
+- 근거: DD-02, DD-24 · 수용기준: AC-002, AC-003, AC-005
 
-**REQ-ENG-003** (High) — **While** 줄 가운데 하나라도 `ON_HOLD`인 동안, 계산 엔진은 전체 상태를 `ON_HOLD`로 하고 예상 보험금과 보험금 수령 후 예상 본인 부담을 모두 null로, 예상 병원 결제액은 숫자로 반환하되 사용할 수 없는 줄은 어느 그룹에도 넣지 않고(`lines[]`와 `holdReasons[]`에만 기록) 보류 그룹과 한도를 공유하지 않는 `ESTIMATED` 그룹만 참고값(`referenceGroups`)으로 내야 하며, 보류가 없을 때에는 두 값을 정수로 반환해 예상 보험금 + 수령 후 부담 = 예상 병원 결제액, 0 ≤ 예상 보험금 ≤ 예상 병원 결제액이 되게 하고 확인된 제외가 있으면 전체 상태를 `ESTIMATED_WITH_EXCLUSIONS`로 하며, 어느 경우에나 DD-03 가정 코드 규칙(보류 결과에도 `PERSONAL_CONTRACT_NOT_CONFIRMED` 포함)에 따른 가정과 사용 버전·프로필·약관 출처·그룹별 계산 단계를 담은 계산 근거를 함께 내야 한다.
-- 판정 기준: 0원은 정상 계산 결과(근거와 함께)나 확인된 제외 줄(사유와 함께)에만 나온다. "선택한 치료가 모두 보장 대상이고 한도가 남아 있다고 가정"(`ALL_COVERED_AND_LIMIT_REMAINS`)은 모든 줄이 `ESTIMATED`일 때만 나온다.
+**REQ-ENG-003** (High) — **While** 줄 가운데 하나라도 `ON_HOLD`인 동안, 계산 엔진은 전체 상태를 `ON_HOLD`로 하고 예상 보험금과 보험금 수령 후 예상 본인 부담을 모두 null로, 예상 병원 결제액은 숫자로 반환하되 사용할 수 없는 줄은 어느 그룹에도 넣지 않고(`lines[]`와 `holdReasons[]`에만 기록) 보류 그룹과 한도를 공유하지 않는 `ESTIMATED` 그룹만 참고값(`referenceGroups`)으로 내야 하며, 보류가 없을 때에는 두 값을 정수로 반환해 예상 보험금(= 공유 한도 적용 뒤 그룹 지급액 `P_pooled`의 합) + 수령 후 부담 = 예상 병원 결제액, 0 ≤ 예상 보험금 ≤ 예상 병원 결제액이 되게 하고 확인된 제외가 있으면 전체 상태를 `ESTIMATED_WITH_EXCLUSIONS`로 하며 제외 항목에는 계산값이 아닌 상수 `payout` 0과 사유를 붙이고, 어느 경우에나 DD-03 가정 코드 규칙(보류 결과에도 `PERSONAL_CONTRACT_NOT_CONFIRMED` 포함)에 따른 가정과 사용 버전·프로필·약관 출처·그룹별 계산 단계를 담은 계산 근거를 함께 내야 한다.
+- 판정 기준: 0원은 정상 계산 결과(근거와 함께)나 확인된 제외 항목(상수 `payout` 0과 사유)에만 나온다. "선택한 치료가 모두 보장 대상이고 한도가 남아 있다고 가정"(`ALL_COVERED_AND_LIMIT_REMAINS`)은 모든 줄이 `ESTIMATED`일 때만 나온다.
 - 근거: DD-03, DD-05 · 수용기준: AC-002, AC-004, AC-005, AC-013
 
-**REQ-ENG-004** (High) — **When** 계산 입력을 받으면, 계산 엔진은 세대가 지원 목록(`GEN1_AS`, `GEN2_C1`, `GEN2_5_C2`, `GEN3_C3`, `GEN4_C4`) 밖이면 `UNSUPPORTED_GENERATION`으로, 치료가 하나도 없으면 `NO_TREATMENT_SELECTED`로 계산 없이 거절하고, 같은 치료 ID는 한 번으로 치며, 등록된 공통 기본비용을 자동 포함 줄로 넣어 예상 병원 결제액에 더하고 그 등록 여부를 `baseFeeIncluded`(`INCLUDED` | `NOT_REGISTERED`)로 표시해야 하며, 지원 범위 밖 계약을 스스로 판별하거나 C4로 대신 계산하지 않고 치료 원인을 금액 계산에 쓰지 않아야 한다(shall not).
+**REQ-ENG-004** (High) — **When** 계산 입력을 받으면, 계산 엔진은 세대가 지원 목록(`GEN1_AS`, `GEN2_C1`, `GEN2_5_C2`, `GEN3_C3`, `GEN4_C4`) 밖이면 `UNSUPPORTED_GENERATION`으로, 치료가 하나도 없으면 `NO_TREATMENT_SELECTED`로, 줄 금액이 DD-24의 범위(0 이상 `MAX_AMOUNT_WON` 이하의 정수) 밖이거나 예상 병원 결제액의 합이 안전 정수 범위를 넘으면 값을 0이나 기본값으로 고치지 않고 `INVALID_NUMERIC_INPUT`으로 계산 없이 거절하고, 같은 치료 ID는 한 번으로 치며, 등록된 공통 기본비용을 자동 포함 줄로 넣어 예상 병원 결제액에 더하고 그 등록 여부를 `baseFeeIncluded`(`INCLUDED` | `NOT_REGISTERED`)로 표시해야 하며, 지원 범위 밖 계약을 스스로 판별하거나 C4로 대신 계산하지 않고 치료 원인을 금액 계산에 쓰지 않아야 한다(shall not).
 - 판정 기준: 원인 `INJURY` / `ILLNESS` / `UNKNOWN`의 `result` 블록이 바이트 단위로 같으며, 원인 `UNKNOWN`은 보류 사유가 아니다.
-- 근거: DD-01, DD-03 · 수용기준: AC-004, AC-006, AC-014
+- 근거: DD-01, DD-03, DD-24 · 수용기준: AC-004, AC-006, AC-014
 
-**REQ-ENG-005** (High) — 서류 산출(DD-06)은 전체 결과가 `ON_HOLD`이면 null을, 사용 가능한 서류 규칙 묶음이 없으면 `RULES_UNAVAILABLE`을 반환하고, 그 밖에는 치료 원인·보험사 형태·선택 치료의 서류 관련 표시·병원 종별(의원 = 외래 전용)로 고정 9줄(영수증·진료비 세부내역서는 한 줄로 묶어 항상 필요)을 산출해 필요한 줄마다 우선순위가 가장 높은 규칙의 사유 하나를 달아야 하며, 원인이 `UNKNOWN`이면 상해와 질병 두 조건으로 각각 평가해 줄마다 `COMMON` / `INJURY_ONLY` / `ILLNESS_ONLY`를 표시하고 원인 하나로 정하지 않아야 한다.
+**REQ-ENG-005** (High) — 서류 산출(DD-06)은 전체 결과가 `ON_HOLD`이면 null을, 사용 가능한 서류 규칙 묶음이 없으면 `RULES_UNAVAILABLE`을 반환하고, 그 밖에는 치료 원인·보험사 형태·선택 치료의 서류 관련 표시·병원 종별(의원 = 외래 전용)로 고정 9줄(영수증·진료비 세부내역서는 한 줄로 묶어 항상 필요)을 산출해 필요한 줄마다 우선순위가 가장 높은 규칙의 사유 하나를 달아야 하며, 원인이 `UNKNOWN`이면 상해와 질병 두 조건으로 각각 평가해 9줄이 세 범위(`COMMON` / `INJURY_ONLY` / `ILLNESS_ONLY`) 가운데 한 곳에 한 번씩만 나오게 표시하되 두 평가의 사유가 다른 `COMMON` 줄은 서로 다른 사유를 모두 우선순위 순으로 유지하고 원인 하나로 정하지 않아야 한다.
 - 근거: DD-06 · 수용기준: AC-007, AC-014
 
 ### 3.2 모듈 B — 표준 가정 프로필·치료 보장 매핑·서류 규칙 데이터
@@ -96,17 +97,17 @@ tier: L
 **REQ-DATA-001** (High) — 규칙 데이터(표준 가정 프로필, 치료 보장 매핑, 서류 규칙 묶음)는 DD-17의 생명주기와 약관 출처 기록(보험사 원문 식별, 개정일, 조항·페이지, 효력일, 확인자, 확인일)과 작성자·승인자 기록을 갖춰야 하고, 표준 가정 프로필은 (세대, 보험사 형태) 칸마다 독립 엔티티로 저장되어 다른 칸의 프로필·인접 값·평균·0원·전액 보장으로 대신 채워지지 않아야 하며, 보험사 데이터는 NH농협손해보험·NH농협생명·과거 농협공제를 서로 다른 기관으로 저장해야 한다.
 - 근거: DD-17, DD-18(SPEC 결정: 프로필은 별도 엔티티) · 수용기준: AC-008, AC-011
 
-**REQ-DATA-002** (High) — **When** 계산이 병원의 규칙 사용 범위·프로필·매핑·서류 규칙 묶음을 쓰려 할 때, 시스템은 게시 상태·허용 출처·유효 기간·약관 출처 완비·승인자 기록·무결성(프로필 내용 해시, 매핑 지문)을 함께 보는 단일 사용 가능 판정(DD-04) 하나로만 사용 여부를 정하고, 병원에 규칙 사용 범위가 없거나 프로필을 쓸 수 없으면 모든 줄을, 매핑을 쓸 수 없으면 그 줄만 DD-03 보류 사유 표의 코드와 판정 순서에 따라 `ON_HOLD`로 처리해야 하며, 매핑 지문이 현재 치료 버전의 보장 판단 필드(`treatmentCode`, `procedureCode(s)`, `benefitType`, `calcClass`)와 맞지 않으면 관리 화면의 상태 전환 여부와 관계없이 `MAPPING_UNDER_REREVIEW`로 판정해야 한다(가격은 지문에 들어가지 않는다).
-- 근거: DD-03, DD-04, DD-05, DD-15 · 수용기준: AC-003, AC-008, AC-009
+**REQ-DATA-002** (High) — **When** 계산이 병원의 규칙 사용 범위·규칙 묶음·프로필·매핑·서류 규칙 묶음을 쓰려 할 때, 시스템은 게시 상태·허용 출처·유효 기간·약관 출처 완비·승인자 기록·무결성(프로필 내용 해시, 매핑 지문)과 규칙 묶음의 가용성(`ACTIVE` | `SUSPENDED`)을 함께 보는 단일 사용 가능 판정(DD-04) 하나로만 사용 여부를 정하고, 병원에 규칙 사용 범위가 없거나 규칙 묶음이 중지(`SUSPENDED`)되었거나 프로필을 쓸 수 없으면 모든 줄을, 매핑을 쓸 수 없으면 그 줄만 DD-03 보류 사유 표의 코드와 판정 순서(규칙 사용 범위 없음, 묶음 중지, 프로필 사유 순)에 따라 `ON_HOLD`로 처리하고 묶음의 버전이나 내용 해시가 같다는 사실만으로 중지된 묶음을 쓰지 않아야 하며, 매핑 지문이 현재 치료 버전의 보장 판단 필드(`treatmentCode`, `procedureCode(s)`, `benefitType`, `calcClass`)와 맞지 않으면 관리 화면의 상태 전환 여부와 관계없이 `MAPPING_UNDER_REREVIEW`로 판정해야 한다(가격은 지문에 들어가지 않는다).
+- 근거: DD-03, DD-04, DD-05, DD-14, DD-15 · 수용기준: AC-003, AC-008, AC-009, AC-011
 
 **REQ-DATA-003** (High) — 시스템은 구성별 허용 출처(운영 구성: 규칙 데이터와 줄 모두 `OPERATING`; 시험 구성: 규칙 데이터 `OPERATING`·`TEST_FIXTURE`, 줄 `OPERATING`·`TEST_FIXTURE`·`DEMO`)만 계산에 쓰고 그 밖의 출처를 `PROFILE_DEMO` · `MAPPING_INVALID` · `LINE_ORIGIN_NOT_ACCEPTED`로 보류해야 하며, `DEMO`·`TEST_FIXTURE` 데이터를 운영 카탈로그에 게시하거나 운영 저장소에 승인·게시 상태로 기록해서는 안 되고(shall not), 계산에 쓰인 프로필·매핑·서류 규칙·줄 가운데 하나라도 출처가 `OPERATING`이 아니면 응답의 `origin` 요약과 키오스크 화면의 테스트 데이터 표시가 함께 나타나야 한다.
 - 판정 기준: 기획서 §5의 예시 치료 4종은 `DEMO` 출처 자료이므로 운영 구성에서는 계산에 쓰이지 않는다.
 - 근거: DD-04 · 수용기준: AC-010
 
-**REQ-DATA-004** (High) — 시스템은 병원 단위 카탈로그 버전(`CatalogVersion`)과 플랫폼 단위 규칙 묶음 버전(`RuleBundleVersion`)을 바꿀 수 없는 버전으로 게시하고, 규칙과 게시 버전을 덮어쓰거나 삭제하지 않으며, 이전 버전 복구는 사본을 새 버전으로 게시하는 방식으로만 하고, 가격만 바뀐 게시도 변경 이력이 남는 새 카탈로그 버전으로 내야 하며, 세대 5종 × 보험사 형태 3종의 운영 준비 상태표를 산출해 승인·게시된 `OPERATING` 프로필과 완비된 약관 출처가 없는 칸을 `NOT_READY`로 표시해야 한다.
-- 근거: DD-14, DD-23 · 수용기준: AC-009, AC-011
+**REQ-DATA-004** (High) — 시스템은 병원 단위 카탈로그 버전(`CatalogVersion`)과 플랫폼 단위 규칙 묶음 버전(`RuleBundleVersion`)을 바꿀 수 없는 버전으로 게시하고, 규칙과 게시 버전을 덮어쓰거나 삭제하지 않으며, 이전 버전 복구는 사본을 새 버전으로 게시하는 방식으로만 하고, 규칙 묶음의 사용 가능 여부는 바뀌지 않는 묶음 내용과 따로 추가 전용 가용성 기록(`RuleBundleStatusEvent`)으로 남겨 게시할 때 `ACTIVE`를 처음 기록하고 묶음 중지(`SUSPENDED`)는 그 묶음 기록만 바꿔 묶음에 든 개별 규칙 항목의 상태를 바꾸지 않으며 중지한 묶음 id를 다시 활성으로 돌리지 않고 복구는 새 묶음 버전 게시와 플랫폼 운영자의 재지정으로만 하고, 가격만 바뀐 게시도 변경 이력이 남는 새 카탈로그 버전으로 내야 하며, 게시를 요청받으면 금액(치료 가격·공통 기본비용·프로필의 공제·한도 금액)이 0 이상 `MAX_AMOUNT_WON` 이하의 정수가 아니거나 비율이 0 이상 10000 이하의 정수가 아닌 값은 어긋난 필드 경로와 함께 거절하고 아무것도 저장하지 않아 이전 게시 버전을 그대로 두어야 하며, 세대 5종 × 보험사 형태 3종의 운영 준비 상태표를 산출해 승인·게시된 `OPERATING` 프로필과 완비된 약관 출처가 없는 칸을 `NOT_READY`로 표시해야 한다.
+- 근거: DD-14, DD-17, DD-18, DD-23, DD-24 · 수용기준: AC-009, AC-011
 
-**REQ-DATA-005** (Medium) — **When** 서류 규칙 묶음의 게시가 요청되면, 시스템은 어떤 (보험사 형태, 치료 표시) 조합에서든 상해 전용 줄이나 질병 전용 줄이 각각 1줄을 넘게 만드는 묶음의 게시를 거절하고 경고를 남겨야 한다(잠정: 원인 모름 서류 화면의 디자인 수용 한계).
+**REQ-DATA-005** (Medium) — **When** 서류 규칙 묶음의 게시가 요청되면, 시스템은 구조만 검사해 문서 코드가 닫힌 10종 밖에 있거나, 규칙에 `documentCode`·`when`·`reason`·`priority`가 빠졌거나, 고정 9줄의 표시 줄 키를 모두 해석할 수 없거나, 출처·약관 출처·승인자·내용 해시가 빠진 묶음의 게시를 거절해야 하며, 상해 전용 줄과 질병 전용 줄의 수는 게시 거절 사유로 보지 않고 규칙 평가 결과를 따라야 한다.
 - 근거: DD-06 · 수용기준: AC-007
 
 ### 3.3 모듈 C — 키오스크 흐름·세션
@@ -117,13 +118,13 @@ tier: L
 **REQ-FLOW-002** (High) — **When** 계산 응답을 받으면, 키오스크는 전체 상태에 따라 정상 결과(`K04_Result`)·보장 제외 결과(`K04_Result_NotCovered`)·보류 결과(`K04_Result_Hold`)를 보여야 하고, 정상·보장 제외 결과에는 세 금액 이름, 세 번째 카드 보조 설명, 결과 문구 원칙, 공통 안내를 기획서 §4 문장 그대로 쓰고 예시 계산임을 표시하며 여섯 동작을 모두 두어야 하고, 보류 결과에는 예상 병원 결제액만 숫자로, 나머지 두 금액은 "확인 필요"로, 보류 줄은 환자용 사유 분류(DD-21)로 보이고, 결과 문구 원칙을 쓰지 않고 공통 안내 가운데 개인 계약 조건 문장만 쓰며, 동작은 "치료 다시 선택 / 보험 조건 수정 / 처음으로 / 이용 완료" 넷만 두어야 하고, 보류·통신 오류 화면에서 보험금을 0원으로 표시하거나 내부 코드를 보여서는 안 된다(shall not).
 - 근거: DD-07, DD-21, DD-22 · 수용기준: AC-013
 
-**REQ-FLOW-003** (High) — **When** 환자가 확정한 입력값(세대, 보험사 형태, 치료 원인, 치료 묶음) 가운데 하나를 다른 값으로 바꾸면, 키오스크는 계산 결과·서류 목록·계산 근거·복귀 정보를 즉시 지우고 `inputRevision`을 올려 "예상 부담액 확인"을 다시 눌러야 새 결과가 나오게 해야 하며(같은 값 재선택·목록 페이지 이동·이전·다음·큰 글자 전환은 입력 변경이 아니다), 계산이 끝난 결과에서 연 계산 근거는 입력 확인값, "(가정)"을 붙인 프로필 값과 약관 출처, 계산 단계, 보장 제외 결과에서 들어온 경우의 제외 항목과 사유를 보이고, 서류 확인은 원인이 상해·질병이면 `K07_Documents`로, 모름이면 `K07_Documents_Unknown`으로 가고, 서류 규칙을 쓸 수 없는 결과에서는 서류 화면이 서류 목록 대신 안내 문구를 보이되 "결과로 돌아가기"·"이용 완료"를 그대로 두며(잠정), 두 화면의 "결과로 돌아가기"는 진입 때 기록한 결과 종류·화면 방향·큰 글자 상태로 정확히 복귀해야 한다.
+**REQ-FLOW-003** (High) — **When** 환자가 확정한 입력값(세대, 보험사 형태, 치료 원인, 치료 묶음) 가운데 하나를 다른 값으로 바꾸면, 키오스크는 계산 결과·서류 목록·계산 근거·복귀 정보를 즉시 지우고 `inputRevision`을 올려 "예상 부담액 확인"을 다시 눌러야 새 결과가 나오게 해야 하며(같은 값 재선택·목록 페이지 이동·이전·다음·큰 글자 전환·화면 방향 변경은 입력 변경이 아니다), 계산이 끝난 결과에서 연 계산 근거는 입력 확인값, "(가정)"을 붙인 프로필 값과 약관 출처, 계산 단계, 보장 제외 결과에서 들어온 경우의 제외 항목과 사유를 보이고, 서류 확인은 원인이 상해·질병이면 `K07_Documents`로, 모름이면 `K07_Documents_Unknown`으로 가고, 서류 규칙을 쓸 수 없는 결과에서는 서류 화면이 서류 목록 대신 안내 문구를 보이되 "결과로 돌아가기"·"이용 완료"를 그대로 두며(잠정), 두 화면의 "결과로 돌아가기"는 진입한 결과 종류(정상·보장 제외)로 정확히 복귀하되 화면 방향과 큰 글자 상태는 복귀 시점의 최신 값을 따르고 선택·결과·금액은 바꾸지 않아야 한다.
 - 근거: DD-08, DD-11, DD-22, DD-06 · 수용기준: AC-007, AC-014
 
 **REQ-FLOW-004** (High) — **While** 환자 데이터가 있는 화면에 머무는 동안, 키오스크는 입력 단계 100초 경고·120초 초기화, 정상·보장 제외 결과 160초·180초, 계산 근거·서류 화면 160초·180초(기획서 §13.2의 2026-10-14 임시 결정, 실제 머무는 시간 미관찰), 보류 결과 160초·180초(잠정), 세대 확인 안내·계산 중·통신 오류 100초·120초(잠정)로 같은 TimeoutDialog를 현재 화면 위에 띄워 경고하고 초기화해야 하며, 환자의 터치·키 입력만 무조작 시간을 다시 시작하게 하고, "이용 완료"와 통신 오류 화면의 "이용 종료"(잠정)는 먼저 세션을 지운 뒤 `K06_Complete`를 거쳐 `completionHoldSeconds` 뒤 `K00_Start`로, "처음으로"는 세션에 환자 입력이 하나라도 있으면 ResetConfirm 확인 뒤에 없으면 바로(SPEC 해석: 기획서 §13.2의 "진행 중"), 무조작 초기화는 경고 뒤 연장이 없을 때 각각 `K06_Complete` 없이 `K00_Start`로 보내야 한다.
 - 근거: DD-07, DD-10, DD-13 · 수용기준: AC-015
 
-**REQ-FLOW-005** (High) — 키오스크와 서버는 환자 선택·결과를 키오스크 메모리 세션에만 두고 브라우저 저장소(localStorage·sessionStorage·IndexedDB·Cache Storage·서비스워커, sessionStorage와 Cache Storage 포함은 SPEC 결정)·서버 저장소·로그·URL·분석 이벤트(단계별 익명 집계 제외)에 남겨서는 안 되며(shall not), 초기화 때 진행 중 계산 요청을 취소하고 `sessionId`를 새로 만들어 이전 (`sessionId`, `inputRevision`) 표시의 늦은 응답을 버리고, 뒤로·앞으로 이동·새로고침·페이지 캐시 복원을 빈 세션의 `K00_Start`로 처리하며, 키오스크 문서와 계산 응답을 `Cache-Control: no-store`로 제공하고(SPEC 결정), 키오스크에 관리자 인증 상태·`/admin` 링크·숨은 터치 진입이 없게 해야 한다.
+**REQ-FLOW-005** (High) — 키오스크와 서버는 환자 선택·결과를 키오스크 메모리 세션에만 두고 브라우저 저장소(localStorage·sessionStorage·IndexedDB·Cache Storage·서비스워커, sessionStorage와 Cache Storage 포함은 SPEC 결정)·서버 저장소·로그·URL·분석 이벤트(단계별 익명 집계 제외)에 남겨서는 안 되며(shall not), 초기화 때 진행 중 계산 요청을 취소하고 `sessionId`를 새로 만들며, 계산 시도마다 키오스크 안에서만 쓰는 `requestId`를 새로 만들어(서버로 보내거나 저장·로그·URL·분석 이벤트에 남기지 않는다) 활성 요청과 일치하는 응답·오류·시간 초과·버전 불일치 응답만 반영하고 입력 변경·초기화·요청 만료·새 시도로 활성 요청이 바뀐 뒤에 도착한 이전 시도의 결과는 요청 취소가 듣지 않아도 어느 종류든 버리며(`sessionId`·`inputRevision` 일치도 함께 확인), 뒤로·앞으로 이동·새로고침·페이지 캐시 복원을 빈 세션의 `K00_Start`로 처리하며, 키오스크 문서와 계산 응답을 `Cache-Control: no-store`로 제공하고(SPEC 결정), 키오스크에 관리자 인증 상태·`/admin` 링크·숨은 터치 진입이 없게 해야 한다.
 - 근거: DD-09, DD-17 · 수용기준: AC-016, AC-021
 
 **REQ-FLOW-006** (High) — 키오스크는 세로 1080×1920과 가로 1920×1080(임시 검토 크기) 두 방향, 같은 화면·같은 흐름·같은 계산의 반응형 큰 글자 보기(공간이 모자라면 기능을 빼지 않고 목록을 "이전 목록 / 다음 목록"으로 나누며 선택 유지, 전환 때 현재 화면 유지, 초기화 때 꺼짐(잠정)), 터치만으로 끝까지 이용하는 흐름과 보조 키보드 조작(보이는 포커스, 모달 안 포커스 가두기와 닫은 뒤 원래 위치 복귀), Pretendard 글꼴과 대체 순서(Noto Sans KR → 맑은 고딕 → 시스템 산세리프)를 지원하고, 디자인 조작 규격(기획서 §13.1; 이 가운데 구현 터치 영역 72 CSS px 이상은 통과·실패 기준으로 쓰며 이는 SPEC 결정)과 글자 대비 기준(design-requirements §2.1)을 디자인 기준으로 삼으며(접근성 인증이나 실기기 검증을 뜻하지 않음), 환자 화면에 내부 코드·내부 설계 설명·외부 웹 링크·"환자분의 실손은 C1입니다" 같은 확인 사실 표현을 두지 않아야 한다.
@@ -131,17 +132,17 @@ tier: L
 
 ### 3.4 모듈 D — 서버 API·재계산·버전
 
-**REQ-API-001** (High) — 서버는 `GET /api/clinics/{slug}/catalog`와 `GET /api/clinics/{slug}/insurance/options`(SPEC 결정: 기획서의 `/api/insurance/options`에 병원 slug를 넣음)에서 화면 표시 필드만 반환해야 하며, catalog에는 보장 검토 내부 정보를 넣지 않고, options에는 승인된 프로필 유무와 관계없이 세대 카드 5장·보험사 형태 카드 3장·치료 원인 카드 3장·세대 확인 안내 문구(1544-8069는 문자열)와 그 병원의 현재 `ruleBundleVersion`을 항상 담아야 하고, 없는 slug에는 404 `CLINIC_NOT_FOUND`를 반환해야 한다.
+**REQ-API-001** (High) — 서버는 `GET /api/clinics/{slug}/catalog`와 `GET /api/clinics/{slug}/insurance/options`(SPEC 결정: 기획서의 `/api/insurance/options`에 병원 slug를 넣음)에서 화면 표시 필드만 반환해야 하며, catalog에는 보장 검토 내부 정보를 넣지 않고, options에는 승인된 프로필 유무와 관계없이 세대 카드 5장·보험사 형태 카드 3장·치료 원인 카드 3장·세대 확인 안내 문구(1544-8069는 문자열)와 그 병원의 현재 `ruleBundleVersion`, 그 묶음의 가용성 `ruleBundleStatus`(`ACTIVE` | `SUSPENDED`, 규칙 사용 범위가 없으면 null)를 항상 담고 `Cache-Control: no-store`(SPEC 결정)로 제공해야 하며, 없는 slug에는 404 `CLINIC_NOT_FOUND`를 반환해야 한다.
 - 근거: DD-19, DD-05 · 수용기준: AC-012, AC-018
 
 **REQ-API-002** (High) — **When** `POST /api/clinics/{slug}/estimate`(SPEC 결정: 기획서의 `/api/estimate`에 병원 slug를 넣음)를 받으면, 서버는 경로의 slug로 병원을 정하고 모든 치료 ID가 그 병원의 현재 게시 카탈로그에 속하는지 확인한 뒤(아니면 422 `TREATMENT_NOT_PUBLISHED`) 그 병원의 게시 가격·공통 기본비용·규칙 묶음으로 키오스크 미리보기와 같은 엔진 모듈로 다시 계산해야 하며, 요청 본문의 가격·비율·병원 ID 같은 다른 필드는 읽지 않아야 한다(shall not).
 - 근거: DD-19 · 수용기준: AC-019
 
-**REQ-API-003** (High) — **When** 계산 요청의 `catalogVersion`이나 `ruleBundleVersion`이 그 병원의 현재 버전과 다르면, 서버는 결과 없이 HTTP 409 `VERSION_MISMATCH`와 DD-14의 본문(최신 두 버전, `priceChanged`, `ruleChanged`, `treatmentsUnpublished[]`)을 반환해야 하고, 키오스크는 그 병원의 catalog와 options를 다시 받아 게시 중인 선택만 남기고 내려간 치료는 안내와 함께 빼며 새 합계를 보인 뒤 4단계에서 환자가 다시 확인해야 결과가 나오게 해야 한다.
+**REQ-API-003** (High) — **When** 계산 요청의 `catalogVersion`이나 `ruleBundleVersion`이 그 병원의 현재 버전과 다르면, 서버는 결과 없이 HTTP 409 `VERSION_MISMATCH`와 DD-14의 본문(최신 두 버전과 최신 묶음의 `ruleBundleStatus`, `priceChanged`, `ruleChanged`, `treatmentsUnpublished[]`)을 반환해야 하되(두 버전이 같다는 사실은 묶음을 쓸 수 있다는 뜻이 아니므로 버전이 같고 묶음이 중지되었으면 409가 아니라 `ON_HOLD` 결과로 처리한다), 키오스크는 활성 요청의 409에 대해서만 그 병원의 catalog와 options를 다시 받아 게시 중인 선택만 남기고 내려간 치료는 안내와 함께 빼며 새 합계를 보인 뒤 4단계에서 환자가 다시 확인해야 결과가 나오게 해야 하고 활성 요청이 아닌 이전 시도의 409는 버려야 한다.
 - 근거: DD-14 · 수용기준: AC-020
 
-**REQ-API-004** (High) — 서버는 계산 보류를 HTTP 200 결과로 반환하고 오류는 DD-19 오류 표(SPEC 결정: 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·403 `FORBIDDEN`(관리자 경로), 404 `CLINIC_NOT_FOUND`, 409 `VERSION_MISMATCH`, 422 `UNSUPPORTED_GENERATION`·`NO_TREATMENT_SELECTED`·`TREATMENT_NOT_PUBLISHED`, 5xx)로만 반환하며 성공 응답에 계산에 실제로 쓴 버전·프로필 id·버전·`origin` 요약을 담아야 하고, 키오스크는 409를 버전 불일치 흐름으로, `NO_TREATMENT_SELECTED`와 `TREATMENT_NOT_PUBLISHED`를 DD-19 클라이언트 처리 표의 해당 행으로, 그 밖의 4xx와 5xx·시간 초과·연결 실패를 `FAILED`로 보아 통신 오류 화면(`KXX_Error_Network`)으로 처리해야 한다.
-- 근거: DD-19, DD-03, DD-07 · 수용기준: AC-006, AC-013, AC-021
+**REQ-API-004** (High) — 서버는 계산 보류를 HTTP 200 결과로 반환하고 오류는 DD-19 오류 표(SPEC 결정: 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·403 `FORBIDDEN`(관리자 경로), 404 `CLINIC_NOT_FOUND`, 409 `VERSION_MISMATCH`, 422 `UNSUPPORTED_GENERATION`·`NO_TREATMENT_SELECTED`·`TREATMENT_NOT_PUBLISHED`, 500 `INTERNAL_ERROR`와 그 밖의 5xx; 관리자 입력의 수치 범위 위반은 400 `INVALID_REQUEST`, 엔진의 `INVALID_NUMERIC_INPUT` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`)로만 반환하며 성공 응답에 계산에 실제로 쓴 버전·규칙 묶음 가용성(`ruleBundleStatus`)·프로필 id·버전·`origin` 요약을 담아야 하고, 키오스크는 활성 요청의 응답에 한해 409를 버전 불일치 흐름으로, `NO_TREATMENT_SELECTED`와 `TREATMENT_NOT_PUBLISHED`를 DD-19 클라이언트 처리 표의 해당 행으로, 그 밖의 4xx와 5xx·시간 초과·연결 실패를 `FAILED`로 보아 통신 오류 화면(`KXX_Error_Network`)으로 처리하되 활성 요청과 일치하지 않는 응답·오류·시간 초과는 어느 종류든 버려야 한다.
+- 근거: DD-19, DD-03, DD-07, DD-24 · 수용기준: AC-006, AC-013, AC-021
 
 ### 3.5 모듈 E — 관리자·권한·승인·게시·재검토
 
@@ -154,7 +155,7 @@ tier: L
 **REQ-ADM-003** (High) — **When** 병원 관리자가 검토를 요청하면, 시스템은 병원이 제안한 보장 분류 정보를 담은 검토 요청 기록(`REVIEW_REQUESTED`)을 만들고 보험 기준 검토 담당자만 그 요청으로 매핑 초안(`DRAFT`)을 작성해 승인하거나 사유가 필수인 반려를 기록하게 해야 하며, 보장 판단 필드가 바뀐 치료 버전이 게시되면 승인(`APPROVED`)·게시(`PUBLISHED`) 상태의 매핑을 `UNDER_REREVIEW`로 돌리고, 매핑이 없는 새 치료의 가격 게시는 허용하되 그 줄이 `MAPPING_ABSENT`로 보류되게 해야 한다.
 - 근거: DD-16, DD-17 · 수용기준: AC-009, AC-024
 
-**REQ-ADM-004** (Medium) — 시스템은 모든 게시·승인·반려·중지·복구를 수행자·역할·일시·사유·이전/이후 버전과 함께 감사 기록에 남기고, 작성자와 승인자가 같은 승인에 `selfApproval: true`를 기록하며(SPEC 결정), 게시 전 세로·가로 미리보기를 같은 엔진으로 제공하고, 플랫폼 운영자만 병원별 규칙 사용 범위(`ClinicRuleScope`)를 지정하게 하며, 검토 담당자가 프로필 승인에 계산 예제-약관 대조 기록을 첨부할 수 있게 해야 한다.
+**REQ-ADM-004** (Medium) — 시스템은 모든 게시·승인·반려·중지·복구를 수행자·역할·일시·사유·이전/이후 버전(규칙 묶음 중지는 영향을 받는 병원 수 포함)과 함께 감사 기록에 남기고, 작성자와 승인자가 같은 승인에 `selfApproval: true`를 기록하며(SPEC 결정), 게시 전 세로·가로 미리보기를 같은 엔진으로 제공하고, 플랫폼 운영자만 병원별 규칙 사용 범위(`ClinicRuleScope`)를 지정하게 하며, 보험 기준 검토 담당자만 비어 있지 않은 사유와 함께 규칙 묶음을 중지하게 하고 그 응답에 현재 범위가 그 묶음을 가리키는 병원 목록(`affectedClinics`)을 담으며(플랫폼 운영자에게 병원별 긴급 중지는 주지 않는다), 검토 담당자가 프로필 승인에 계산 예제-약관 대조 기록을 첨부할 수 있게 해야 한다.
 - 근거: DD-14, DD-17 · 수용기준: AC-025
 
 **REQ-ADM-005** (Medium) — **When** 병원 관리자가 무조작 정책을 저장하면, 시스템은 화면 종류마다 경고 시점 < 초기화 시점이고 둘의 차이가 20초 이상인 값만 저장해야 하며(잠정: 기획서 §13.2의 기본값 "초기화 20초 전에 경고"를 저장 하한으로 삼은 SPEC 결정), `completionHoldSeconds`는 이 하한 없이 양의 정수로 병원별로 저장해야 한다.
@@ -173,17 +174,17 @@ tier: L
 | REQ-ENG-003 | §4 결과 상태별 표시·가정 문구, §6.1, §9 공통 불변 조건 | product.md §5; tech.md §3 | §3 행 4·5·6·20 / `K04_Result` (TJoQ2), `K04_Result_NotCovered` (XxmHQ) | AC-002, AC-004, AC-005, AC-013 | M1.3, M6 |
 | REQ-ENG-004 | §3, §4 화면 3, §5 공통 기본비용, §9 지원 범위·치료 원인 모름 | product.md §4·§7; structure.md §4 | §3 행 2·16 / `K02b_Cause_Empty` (QfXL0), `K02b_Cause_Selected` (FFtQN) | AC-004, AC-006, AC-014 | M1.1, M1.3, M4, M5, M6 |
 | REQ-ENG-005 | §4 필요 서류 안내 화면, §9 필요 서류 안내·치료 원인 모름 | product.md §4; tech.md §8 | §3 행 18·18a / `K07_Documents` (F19r1B), `K07_Documents_Unknown` (J6jAj) | AC-007, AC-014 | M2, M3, M5, M6 |
-| REQ-DATA-001 | §4 계산 기준 구분, §7, §8 | product.md §5.4; structure.md §5·§6 | §3 행 17·20 | AC-008, AC-011 | M1.2, M3 |
-| REQ-DATA-002 | §4 계산 기준 구분, §6.1, §7 변경 종류별 재검토 기준, §9 표준 프로필 상태·치료 매핑 상태·특약 가정 없음 | product.md §5.4; structure.md §4·§7 | §3 행 14·20 | AC-003, AC-008, AC-009 | M1.2, M1.3, M3 |
+| REQ-DATA-001 | §4 계산 기준 구분, §7, §8 | product.md §5.4; structure.md §5·§6 | §3 행 17·20 | AC-008, AC-011 | M1.2, M3, M4 |
+| REQ-DATA-002 | §4 계산 기준 구분, §6.1, §7 변경 종류별 재검토 기준, §9 표준 프로필 상태·치료 매핑 상태·특약 가정 없음 | product.md §5.4; structure.md §4·§7 | §3 행 14·20 | AC-003, AC-008, AC-009, AC-011 | M1.2, M1.3, M3, M4 |
 | REQ-DATA-003 | §5, §8, §9 초안 규칙, §10 2단계 | structure.md §4·§5; tech.md §1 | §5.13.3 13-3 / `K04_Basis_Calculation` (GhMYi) | AC-010 | M1.2, M1.4, M3, M4, M6 |
-| REQ-DATA-004 | §7, §8, §11 | structure.md §5; tech.md §4 | `A04_Admin_PublishPreview` | AC-009, AC-011 | M1.2, M3, M8(준비 상태 관문) |
+| REQ-DATA-004 | §7, §8, §11 | structure.md §5; tech.md §4 | `A04_Admin_PublishPreview` | AC-009, AC-011 | M1.2, M3, M4, M8(준비 상태 관문) |
 | REQ-DATA-005 | §4 필요 서류 안내 화면 | product.md §4 | §3 행 18 / `K07_Documents_Unknown` (J6jAj), `L_K07_Documents_Unknown` (mZDkv) | AC-007 | M2, M3, M6 |
 | REQ-FLOW-001 | §1, §4 시작 화면·화면 1-4, §8 브랜드, §9 키오스크 동선·목록 페이지·세대 모름·치료 원인 선택·상담 진입 없음 | product.md §4 | §3 행 16·19 / `K00_Start` (u5CZTt), `K01_Generation_Empty` (Z3izyJ), `K01_Generation_Selected` (lYlRt), `K01_Generation_Unknown` (p1nNbK), `K02_Type_Empty` (ghhVb), `K02_Type_Selected` (eDRoY), `K02b_Cause_Empty` (QfXL0), `K02b_Cause_Selected` (FFtQN), `K03_Treatments_*` | AC-012, AC-023 | M5, M6, M7 |
 | REQ-FLOW-002 | §4 결과 화면·결과 상태별 표시·결과 문구 원칙, §6.1, §9 세 금액 구분·확인 불가와 보장 제외·통신 오류 | product.md §5 | §3 행 4·5·6·12·19·20 / `K04_Result` (TJoQ2), `K04_Result_NotCovered` (XxmHQ), `L_K04_Result` (n3WXk), `KXX_Error_Network` (bWvFJ) | AC-013 | M6 |
 | REQ-FLOW-003 | §4 결과 화면·설명 영역·필요 서류 안내 화면, §9 서류 안내 복귀·계산 근거 복귀·서류 안내 원인 분기 | structure.md §8 | §3 행 18a·22 / `K04_Basis_Calculation` (GhMYi), `K07_Documents` (F19r1B), `K07_Documents_Unknown` (J6jAj), `L_K07_Documents` (CL4xk), `L_K07_Documents_Unknown` (mZDkv) | AC-007, AC-014 | M2, M3, M5, M6 |
 | REQ-FLOW-004 | §13.2, §9 이용 완료 동선·무조작 초기화 | tech.md §5; structure.md §8 | §3 행 7·21 / `K06_Complete` (ilzkX), `K04_Result_Dialog_Timeout` (YcF5k), `K03_Treatments_Dialog_Reset` (r4N0OQ) | AC-015 | M5, M6 |
-| REQ-FLOW-005 | §8, §13.2, §13.3, §9 늦은 계산 응답·재시작·뒤로가기 | tech.md §5; structure.md §2·§8 | — | AC-016, AC-021 | M4, M6, M8 |
-| REQ-FLOW-006 | §13.1, §9 기기 표시·터치 이용·보조 키보드 조작·큰 글자 모드·환자 화면 내부 설명 | tech.md §6, §8.1; structure.md §10 | §2, §2.1, §3 행 9·23 / `KioskHeader` (nacd2) 토글 `MkKly` | AC-017 | M6, M8 |
+| REQ-FLOW-005 | §8, §13.2, §13.3, §9 늦은 계산 응답·재시작·뒤로가기 | tech.md §5; structure.md §2·§8 | — | AC-016, AC-021 | M4, M5, M6, M8 |
+| REQ-FLOW-006 | §13.1, §9 기기 표시·터치 이용·보조 키보드 조작·큰 글자 모드·환자 화면 내부 설명 | tech.md §6, §8.1; structure.md §10 | §2, §2.1, §3 행 9·23 / `KioskHeader` (nacd2) 토글 `P3xKHF`(라벨 글자 `MkKly`) | AC-017 | M6, M8 |
 | REQ-API-001 | §8 예상 API, §4 화면 1·2 | structure.md §3 | §3 행 16 | AC-012, AC-018 | M4, M5, M6 |
 | REQ-API-002 | §8, §9 가격 변조 | structure.md §3; tech.md §4 | — | AC-019 | M4 |
 | REQ-API-003 | §7 마지막 문단, §9 버전 변경 | tech.md §4; structure.md §3 | `A04_Admin_PublishPreview` | AC-020 | M4, M6 |
@@ -198,12 +199,12 @@ tier: L
 
 ### 4.2 디자인 대응
 
-프레임 이름이 기준이며, ID는 design-requirements §3(현재 상태 표)의 값이다. 원문 문서 안에서 ID가 어긋나는 경우는 research.md §5 #8에 적었다.
+프레임 이름이 기준이며, ID는 design-requirements §3(현재 상태 표)의 값을 개정 3의 파일 확인(blob `4b4a1587…`, 사본을 읽기 전용으로 읽음, 렌더링 아님)으로 맞춰 본 것이다. design-requirements 586행이 적은 `LMKmS`·`gQtVy`·`JNcEQ`는 프레임이 아니라 각 프레임 안의 HelpPanel 인스턴스 ID여서 프레임 ID와 모순되지 않는다(research.md §5 #8, plan.md §E #28, 파일로 확인된 사실로 닫음).
 
 | 프레임 (이름·ID) | 이 SPEC의 대응 |
 |------------------|----------------|
 | `K00_Start` (u5CZTt) | 시작 상태(DD-07), REQ-FLOW-001 |
-| `K01_Generation_Empty` (Z3izyJ), `K01_Generation_Selected` (lYlRt), `L_K01_Generation` (JNcEQ) | 1단계, REQ-FLOW-001 |
+| `K01_Generation_Empty` (Z3izyJ), `K01_Generation_Selected` (lYlRt), `L_K01_Generation` (xeW3n) | 1단계, REQ-FLOW-001 |
 | `K01_Generation_Unknown` (p1nNbK) | 세대 확인 안내(결과 상태 아님), REQ-FLOW-001 |
 | `K02_Type_Empty` (ghhVb), `K02_Type_Selected` (eDRoY) | 2단계, REQ-FLOW-001 |
 | `K02b_Cause_Empty` (QfXL0), `K02b_Cause_Selected` (FFtQN), `L_K02b_Cause` (CpUd6) | 3단계, REQ-FLOW-001, REQ-ENG-004 |
@@ -217,7 +218,7 @@ tier: L
 | `K07_Documents` (F19r1B), `K07_Documents_Unknown` (J6jAj), `L_K07_Documents` (CL4xk), `L_K07_Documents_Unknown` (mZDkv) | 필요 서류, REQ-ENG-005, REQ-FLOW-003 |
 | `K06_Complete` (ilzkX) | 이용 완료, REQ-FLOW-004 |
 | `KXX_Error_Network` (bWvFJ) | 통신 오류, REQ-API-004 |
-| `KioskHeader` (nacd2) 토글 `MkKly` | 큰 글자 보기, REQ-FLOW-006 |
+| `KioskHeader` (nacd2) 토글 `P3xKHF`(라벨 글자 `MkKly`) | 큰 글자 보기, REQ-FLOW-006 |
 | `A01_Admin_HospitalSettings` (HHJq7), `A02_Admin_TreatmentList`, `A03_Admin_TreatmentEdit` (ECPf6), `A04_Admin_PublishPreview` | 관리자, REQ-ADM-002~005 |
 
 | 디자인 차이 (design-requirements §5.13.3) | 해결하는 요구사항 |
