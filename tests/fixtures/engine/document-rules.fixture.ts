@@ -1,5 +1,6 @@
 import { documentRuleSetContent } from '../../../src/engine/usability';
-import type { DocumentCode, DocumentLineKey, DocumentRule, DocumentRuleSet, DocumentWhen } from '../../../src/engine/types';
+import type { DeriveDocumentsInput } from '../../../src/engine/documents';
+import type { DocumentCode, DocumentFlags, DocumentLineKey, DocumentRule, DocumentRuleSet, DocumentWhen } from '../../../src/engine/types';
 import { TEST_FIXTURE_APPROVER, TEST_VALIDITY, testDigest, testPolicySource } from './profiles.fixture';
 
 // 시험 자료(TEST_FIXTURE). 이 파일의 모든 값은 엔진 시험용 가짜 값이다.
@@ -81,7 +82,7 @@ export function planningExampleRuleSet(overrides: Partial<DocumentRuleSet> = {})
 
 /**
  * 이 예시 묶음에서 원인 UNKNOWN, 서류 표시 없음, 통원 진료일 때 나와야 하는 결과(7 + 1 + 1).
- * 이 예시 묶음 하나의 결과일 뿐이며 일반 규칙도 상한도 아니다(AC-007c, AC-007h). deriveDocuments 와의 일치는 M2.B 에서 확인한다.
+ * 이 예시 묶음 하나의 결과일 뿐이며 일반 규칙도 상한도 아니다(AC-007c, AC-007h). deriveDocuments 와의 일치는 documents.test.ts 가 확인한다.
  */
 export const PLANNING_EXAMPLE_UNKNOWN_CAUSE_OUTCOME: ScopeOutcome = {
   common: [
@@ -95,12 +96,16 @@ export const PLANNING_EXAMPLE_UNKNOWN_CAUSE_OUTCOME: ScopeOutcome = {
   ],
   injuryOnly: ['INITIAL_EXAM_RECORD'],
   illnessOnly: ['DIAGNOSIS_CERT'],
+  required: ['DIAGNOSIS_CERT', 'OUTPATIENT_CONFIRMATION', 'TREATMENT_CONFIRMATION', 'RECEIPT_AND_ITEMIZED', 'INITIAL_EXAM_RECORD'],
 };
 
 export interface ScopeOutcome {
+  /** 범위별 줄 키, 고정 9줄 순서. 필요 없는 줄도 COMMON 에 든다. */
   common: DocumentLineKey[];
   injuryOnly: DocumentLineKey[];
   illnessOnly: DocumentLineKey[];
+  /** 필요(required: true)인 줄 전부, 고정 9줄 순서. */
+  required: DocumentLineKey[];
 }
 
 // ───────────────────────── (iii) 전용 줄 수 변형 (AC-007h) ─────────────────────────
@@ -130,6 +135,7 @@ export const TWO_INJURY_THREE_ILLNESS_OUTCOME: ScopeOutcome = {
   common: ['OUTPATIENT_CONFIRMATION', 'TREATMENT_CONFIRMATION', 'RECEIPT_AND_ITEMIZED', 'ADMISSION_DISCHARGE_CONFIRMATION'],
   injuryOnly: ['INITIAL_EXAM_RECORD', 'MEDICAL_OPINION'],
   illnessOnly: ['DIAGNOSIS_CERT', 'IMAGING_READING', 'BIOPSY_RESULT'],
+  required: ['DIAGNOSIS_CERT', 'OUTPATIENT_CONFIRMATION', 'RECEIPT_AND_ITEMIZED', 'INITIAL_EXAM_RECORD', 'MEDICAL_OPINION', 'IMAGING_READING', 'BIOPSY_RESULT'],
 };
 
 /** 상해 전용 0줄 + 질병 전용 4줄(진단서, 소견서, 판독지, 조직검사결과지). */
@@ -150,6 +156,7 @@ export const ZERO_INJURY_FOUR_ILLNESS_OUTCOME: ScopeOutcome = {
   common: ['OUTPATIENT_CONFIRMATION', 'TREATMENT_CONFIRMATION', 'RECEIPT_AND_ITEMIZED', 'INITIAL_EXAM_RECORD', 'ADMISSION_DISCHARGE_CONFIRMATION'],
   injuryOnly: [],
   illnessOnly: ['DIAGNOSIS_CERT', 'MEDICAL_OPINION', 'IMAGING_READING', 'BIOPSY_RESULT'],
+  required: ['DIAGNOSIS_CERT', 'OUTPATIENT_CONFIRMATION', 'RECEIPT_AND_ITEMIZED', 'MEDICAL_OPINION', 'IMAGING_READING', 'BIOPSY_RESULT'],
 };
 
 /** 상해 전용 0줄 + 질병 전용 0줄: 원인에 따라 달라지는 규칙이 없다. */
@@ -171,4 +178,30 @@ export const NO_CAUSE_LINES_OUTCOME: ScopeOutcome = {
   ],
   injuryOnly: [],
   illnessOnly: [],
+  required: ['OUTPATIENT_CONFIRMATION', 'RECEIPT_AND_ITEMIZED'],
 };
+
+// ───────────────────────── 산출 입력 빌더 ─────────────────────────
+
+/** 서류 표시가 모두 없는 치료. */
+export function plainTreatment(): { documentFlags: DocumentFlags } {
+  return { documentFlags: { imaging: false, biopsy: false, opinionRequired: false } };
+}
+
+/** 지정한 표시만 가진 치료. */
+export function treatmentWith(flags: Partial<DocumentFlags>): { documentFlags: DocumentFlags } {
+  return { documentFlags: { imaging: false, biopsy: false, opinionRequired: false, ...flags } };
+}
+
+/** deriveDocuments 입력. 기본값: 결과 ESTIMATED, 원인 UNKNOWN, 손해보험사, 치료 하나(표시 없음), 통원 전용, 기획서 §4 예시 묶음. */
+export function documentInput(overrides: Partial<DeriveDocumentsInput> = {}): DeriveDocumentsInput {
+  return {
+    overallState: 'ESTIMATED',
+    cause: 'UNKNOWN',
+    insurerType: 'NON_LIFE',
+    treatments: [plainTreatment()],
+    clinicSetting: 'OUTPATIENT_ONLY',
+    ruleSet: planningExampleRuleSet(),
+    ...overrides,
+  };
+}

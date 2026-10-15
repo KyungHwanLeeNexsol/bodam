@@ -1,13 +1,26 @@
-import { DOCUMENT_CODE_LINE } from './types';
-import type { DocumentRuleSet, RuleBundleSnapshot } from './types';
+import { DOCUMENT_CODE_LINE, DOCUMENT_LINE_KEYS } from './types';
+import type {
+  Cause,
+  DocumentFlags,
+  DocumentLine,
+  DocumentLineKey,
+  DocumentRule,
+  DocumentRuleSet,
+  DocumentScope,
+  DocumentsResult,
+  DocumentWhen,
+  InsurerType,
+  OverallState,
+  RuleBundleSnapshot,
+} from './types';
 import { documentRuleSetToRuleItem, isBundleUsable, isUsable } from './usability';
 import type { UsabilityContext } from './usability';
 import { compareCodePoints } from './validate';
 
-// 서류 규칙 묶음의 구조 검사와 사용 가능한 묶음 고르기 (design.md DD-06, DD-04).
-// 이 파일에는 서류 산출(deriveDocuments) 자체가 아직 없다. 여기 있는 것은 산출이 기대는 두 가지다:
+// 서류 규칙 묶음의 구조 검사, 사용 가능한 묶음 고르기, 필요 서류 산출 (design.md DD-06, DD-04).
 //  1) checkDocumentRuleSetStructure — 규칙 묶음 게시 검증(M3, AC-007f)과 엔진이 같은 함수를 쓰는 순수 구조 검사
 //  2) selectDocumentRuleSet — 묶음 단위 선행 판정 → 항목 판정 → 구조 검사를 거쳐 쓸 수 있는 묶음만 돌려주는 함수
+//  3) deriveDocuments — 쓸 수 있는 묶음과 선택한 치료의 서류 표시로 고정 9줄을 만드는 순수 함수(estimate() 와 별개다, DD-01)
 
 // ───────────────────────── 구조 검사 (DD-06 "규칙 평가" 9번, REQ-DATA-005) ─────────────────────────
 
@@ -136,4 +149,195 @@ export function selectDocumentRuleSet(bundle: RuleBundleSnapshot | null, ctx: Us
     return null;
   }
   return checkDocumentRuleSetStructure(candidate).ok ? candidate : null;
+}
+
+// ───────────────────────── 필요 서류 산출 (DD-06, AC-007a~l) ─────────────────────────
+
+export interface DeriveDocumentsInput {
+  overallState: OverallState;
+  cause: Cause;
+  insurerType: InsurerType;
+  /** 선택한 치료 전부(중복 제거 뒤). 확인된 제외 줄도 포함하고 공통 기본비용 줄은 넣지 않는다. 줄 상태는 입력 형식에 없다. */
+  treatments: Array<{ documentFlags: DocumentFlags }>;
+  clinicSetting: 'OUTPATIENT_ONLY';
+  /** 호출하는 쪽이 selectDocumentRuleSet 으로 고른 묶음, 없으면 null. */
+  ruleSet: DocumentRuleSet | null;
+}
+
+type FlagKey = 'imaging' | 'biopsy' | 'opinionRequired';
+const FLAG_KEYS: readonly FlagKey[] = ['imaging', 'biopsy', 'opinionRequired'];
+
+/** 영수증·세부내역서 줄은 규칙과 무관하게 항상 필요하다(기획서 §4). 사유 없이 필요할 수 있는 줄은 이 줄뿐이다. */
+const ALWAYS_REQUIRED_LINE: DocumentLineKey = 'RECEIPT_AND_ITEMIZED';
+
+/** 한 번의 평가가 보는 사실. 원인은 평가마다 INJURY 또는 ILLNESS 하나다. */
+interface EvaluationFacts {
+  cause: 'INJURY' | 'ILLNESS';
+  insurerType: unknown;
+  clinicSetting: unknown;
+  flags: Record<FlagKey, boolean>;
+}
+
+/** 줄 하나의 사유 후보. 우선순위가 작을수록, 같으면 사유가 코드 포인트 순에서 앞설수록 이긴다. */
+interface Winner {
+  priority: number;
+  reason: string;
+}
+
+/**
+ * 선택한 치료의 서류 표시를 표시마다 OR 로 합친다(DD-06 "규칙 평가" 4번). 모든 요소를 센다.
+ * 배열이 아니거나, 객체가 아닌 요소, 객체가 아닌 documentFlags, `true` 가 아닌 표시값은 표시를 더하지 않는다(던지지 않는다).
+ * 서버가 검증된 줄로 치료를 만들기 전(M4)의 안전망이며, 잘못된 입력은 표시 없음으로 본다.
+ */
+function collectFlags(treatments: unknown): Record<FlagKey, boolean> {
+  const found: Record<FlagKey, boolean> = { imaging: false, biopsy: false, opinionRequired: false };
+  if (!Array.isArray(treatments)) {
+    return found;
+  }
+  for (const treatment of treatments as unknown[]) {
+    if (!isRecord(treatment) || !isRecord(treatment.documentFlags)) {
+      continue;
+    }
+    for (const key of FLAG_KEYS) {
+      if (treatment.documentFlags[key] === true) {
+        found[key] = true;
+      }
+    }
+  }
+  return found;
+}
+
+/** 규칙 안은 AND, 적히지 않은 키는 와일드카드, `when: {}` 는 언제나 맞는다(DD-06 "규칙 평가" 1·5·6번). */
+function matches(when: DocumentWhen, facts: EvaluationFacts): boolean {
+  if (when.cause !== undefined && when.cause !== facts.cause) {
+    return false;
+  }
+  // INPATIENT 는 이 MVP 에서 맞는 일이 없다(입원은 범위 밖). OUTPATIENT 는 clinicSetting 이 OUTPATIENT_ONLY 일 때만 맞는다.
+  if (when.setting !== undefined && !(when.setting === 'OUTPATIENT' && facts.clinicSetting === 'OUTPATIENT_ONLY')) {
+    return false;
+  }
+  if (when.insurerType !== undefined && when.insurerType !== facts.insurerType) {
+    return false;
+  }
+  for (const key of FLAG_KEYS) {
+    if (when[key] !== undefined && !facts.flags[key]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 사유 선택의 키: 우선순위 오름차순, 같으면 사유의 유니코드 코드 포인트 순(UTF-16 코드 유닛 순이 아니다). 배열 위치는 쓰지 않는다. */
+function beats(candidate: Winner, current: Winner | undefined): boolean {
+  if (current === undefined) {
+    return true;
+  }
+  if (candidate.priority !== current.priority) {
+    return candidate.priority < current.priority;
+  }
+  return compareCodePoints(candidate.reason, current.reason) < 0;
+}
+
+/** 한 번의 평가: 맞는 규칙을 줄로 모으고 줄마다 이기는 규칙 하나를 남긴다(DD-06 "규칙 평가" 2·3·7번). 줄이 맵에 있으면 필요하다. */
+function evaluate(rules: readonly DocumentRule[], facts: EvaluationFacts): Map<DocumentLineKey, Winner> {
+  const winners = new Map<DocumentLineKey, Winner>();
+  for (const rule of rules) {
+    if (!matches(rule.when, facts)) {
+      continue;
+    }
+    const line = DOCUMENT_CODE_LINE[rule.documentCode];
+    const candidate: Winner = { priority: rule.priority, reason: rule.reason };
+    if (beats(candidate, winners.get(line))) {
+      winners.set(line, candidate);
+    }
+  }
+  return winners;
+}
+
+function reasonsOf(winner: Winner | undefined): string[] {
+  return winner === undefined ? [] : [winner.reason];
+}
+
+/**
+ * 원인 모름에서 두 평가 모두 필요한 COMMON 줄의 사유. 두 평가의 이긴 사유를 우선순위 오름차순으로 두고(우선순위가 같으면
+ * 상해 평가의 사유가 먼저, SPEC 제안) 문장이 같은 사유는 하나로 모은다. 한쪽에만 사유가 있으면(영수증 줄만 가능) 그 사유다.
+ */
+function commonReasons(injury: Winner | undefined, illness: Winner | undefined): string[] {
+  const ordered = [injury, illness].filter((winner): winner is Winner => winner !== undefined);
+  const [head, tail] = ordered;
+  if (head !== undefined && tail !== undefined && tail.priority < head.priority) {
+    ordered.reverse();
+  }
+  return [...new Set(ordered.map((winner) => winner.reason))];
+}
+
+/** 줄 객체의 속성 순서는 line, required, scope, reasons 로 고정하고 없는 속성은 두지 않는다(직렬화 비교가 의미를 갖는다). */
+function buildLine(line: DocumentLineKey, required: boolean, scope: DocumentScope | undefined, reasons: string[]): DocumentLine {
+  const built: DocumentLine = { line, required };
+  if (scope !== undefined) {
+    built.scope = scope;
+  }
+  if (reasons.length > 0) {
+    built.reasons = reasons;
+  }
+  return built;
+}
+
+// @MX:ANCHOR: [AUTO] 필요 서류 산출. 서버의 estimate 경로(M4)와 서류 화면 표시 입력(M6), 준비 상태 계산의 서류 동치 시험(M3 표 D)이 같은 함수를 쓴다.
+// @MX:REASON: 규칙 평가·사유 선택·원인 모름 이중 평가가 한 곳에만 있어야 같은 입력이 화면마다 다른 서류를 내지 않는다(DD-06).
+/**
+ * 필요 서류를 산출한다. 순수 함수이며 던지지 않고 입력을 바꾸지 않는다. 반환:
+ *  - 전체 결과가 ESTIMATED / ESTIMATED_WITH_EXCLUSIONS 가 아니면 null: ON_HOLD 는 물론 알 수 없는 상태 값도 null 이다
+ *    (모르는 상태에서는 서류 목록을 보이지 않는다). 입력 자체가 객체가 아니어도 null 이다.
+ *  - 서류 규칙 묶음이 없거나 구조가 틀리면 RULES_UNAVAILABLE. 호출하는 쪽이 이미 selectDocumentRuleSet 으로 항목 판정을 마쳤더라도
+ *    구조 검사를 한 번 더 한다 — 틀린 묶음이 던지거나 고쳐진 채 쓰이지 않게 하는 최후의 안전망이다(머리 정보는 보지 않는다).
+ *  - 그 밖에는 AVAILABLE: 고정 9줄(DOCUMENT_LINE_KEYS 순서, 범위와 무관)을 한 번씩.
+ *
+ * 원인 INJURY / ILLNESS 는 그 원인으로 한 번(SINGLE_CAUSE, 줄에 scope 없음), 그 밖의 값은 모두 UNKNOWN 으로 보고 INJURY 와
+ * ILLNESS 로 각각 평가한다(UNKNOWN_CAUSE) — 원인을 하나로 고르지 않는다. 줄은 두 평가에서 모두 필요하면 COMMON, 한쪽에서만
+ * 필요하면 INJURY_ONLY / ILLNESS_ONLY, 둘 다 필요하지 않으면 필요 없는 COMMON 이다. 전용 줄의 수에는 상한이 없다.
+ */
+export function deriveDocuments(input: DeriveDocumentsInput): DocumentsResult | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+  if (input.overallState !== 'ESTIMATED' && input.overallState !== 'ESTIMATED_WITH_EXCLUSIONS') {
+    return null;
+  }
+  const candidate: unknown = input.ruleSet;
+  if (!checkDocumentRuleSetStructure(candidate).ok) {
+    return { state: 'RULES_UNAVAILABLE' };
+  }
+  const ruleSet = candidate as DocumentRuleSet;
+  const shared = { insurerType: input.insurerType, clinicSetting: input.clinicSetting, flags: collectFlags(input.treatments) };
+  const cause = input.cause;
+
+  if (cause === 'INJURY' || cause === 'ILLNESS') {
+    const winners = evaluate(ruleSet.rules, { ...shared, cause });
+    const lines = DOCUMENT_LINE_KEYS.map((key) => {
+      const winner = winners.get(key);
+      return buildLine(key, key === ALWAYS_REQUIRED_LINE || winner !== undefined, undefined, reasonsOf(winner));
+    });
+    return { state: 'AVAILABLE', mode: 'SINGLE_CAUSE', lines, ruleSetId: ruleSet.id, ruleSetVersion: ruleSet.version, origin: ruleSet.origin };
+  }
+
+  const injury = evaluate(ruleSet.rules, { ...shared, cause: 'INJURY' });
+  const illness = evaluate(ruleSet.rules, { ...shared, cause: 'ILLNESS' });
+  const lines = DOCUMENT_LINE_KEYS.map((key) => {
+    const injuryWinner = injury.get(key);
+    const illnessWinner = illness.get(key);
+    const injuryRequired = key === ALWAYS_REQUIRED_LINE || injuryWinner !== undefined;
+    const illnessRequired = key === ALWAYS_REQUIRED_LINE || illnessWinner !== undefined;
+    if (injuryRequired && illnessRequired) {
+      return buildLine(key, true, 'COMMON', commonReasons(injuryWinner, illnessWinner));
+    }
+    if (injuryRequired) {
+      return buildLine(key, true, 'INJURY_ONLY', reasonsOf(injuryWinner));
+    }
+    if (illnessRequired) {
+      return buildLine(key, true, 'ILLNESS_ONLY', reasonsOf(illnessWinner));
+    }
+    return buildLine(key, false, 'COMMON', []);
+  });
+  return { state: 'AVAILABLE', mode: 'UNKNOWN_CAUSE', lines, ruleSetId: ruleSet.id, ruleSetVersion: ruleSet.version, origin: ruleSet.origin };
 }
