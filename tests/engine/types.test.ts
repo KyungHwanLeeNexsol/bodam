@@ -6,6 +6,7 @@ import {
   HOLD_REASON_CODES,
 } from '../../src/engine/types';
 import type {
+  CoverageGroupDef,
   EstimateInput,
   EstimateResult,
   GroupResult,
@@ -136,6 +137,20 @@ describe('형식 수준: 줄 단위 지급액 필드가 없다 (DD-02/DD-03 SPEC
     const keys = Object.keys(groupResultKeys);
     expect(keys).toContain('P');
     expect(keys).toContain('P_pooled');
+  });
+
+  const coverageGroupDefKeys = {
+    groupKey: true,
+    deduction: true,
+    limit: true,
+    sharedLimitPoolKey: true,
+  } satisfies Record<keyof CoverageGroupDef, true>;
+
+  it('CoverageGroupDef 의 키 집합은 groupKey·deduction·limit·sharedLimitPoolKey 뿐이며 coverage 와 exclusionReason 이 없다 (AC-008j 형식 부분, 증거만)', () => {
+    const keys = Object.keys(coverageGroupDefKeys);
+    expect(keys.sort()).toEqual(['deduction', 'groupKey', 'limit', 'sharedLimitPoolKey']);
+    expect(keys).not.toContain('coverage');
+    expect(keys).not.toContain('exclusionReason');
   });
 
   it('제외 항목의 payout 은 리터럴 상수 0 이다 (계산값이 아님)', () => {

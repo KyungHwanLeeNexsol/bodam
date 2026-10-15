@@ -363,6 +363,132 @@ Coverage `include` check: a temporary unimported file `src/engine/zz-probe.ts` a
 - Silent first-wins deduplication hides conflicting duplicate lines if the catalog ever produced them.
 - TypeScript 7.0.2 and Vitest 5.0.4 were the latest releases at install time; later majors may change `tsconfig` or coverage options.
 
+### M1.2 — usability, resolve, profile structure, estimate front end, fixtures (cycle_type = tdd), 2026-10-15
+
+**Attribution.** All results below were observed in this run, on Windows 11, Node v24.19.0, npm 11.6.2, against HEAD `eb983aa` (the M1.1 commit) plus the uncommitted M1.2 working tree; the M1.2 commit SHA is reported by the commit itself. No new dependency was added (typescript 7.0.2, vitest 5.0.4, @vitest/coverage-v8 5.0.4, @types/node 24.19.2 unchanged). The `moai` CLI and the moai MCP server are unavailable: the formal SPEC lint and `moai verify` were NOT run, and no linter/formatter is configured, so formal lint is UNVERIFIED. Bounded tails of long outputs went to `.moai/state/verify/m1-2/` (local, gitignored); the quoted excerpts are copied verbatim from those files. `spec.md` status is unchanged (`in-progress` since M1.1).
+
+**Files (M1.2).** `src/engine/usability.ts`, `src/engine/profile-structure.ts`, `src/engine/resolve.ts`, `src/engine/estimate.ts` (front end only); `tests/engine/usability.test.ts`, `profile-structure.test.ts`, `mapping-resolve.test.ts`, `hold-matrix.test.ts`, `bundle-gate.test.ts`, `origins.test.ts`; fixtures `tests/fixtures/engine/profiles.fixture.ts`, `mappings.fixture.ts`, `lines.fixture.ts`; one added case in `tests/engine/types.test.ts` (format part of AC-008j). `src/engine/types.ts` is unchanged. No M1.3 file exists (no `constants.ts`, deduction, group-values, limit, rounding, sum). `estimateFront()` returns the pre-arithmetic result `{validated, blocked, profile, lines, hasHold}`; M1.3 attaches the arithmetic and the `EstimateResult` assembly to it.
+
+**Fixture status.** Every fixture value is `TEST_FIXTURE`: group keys `TEST_GROUP_*`, deduction/limit numbers, clause references, verifier names, and the approver `TEST_FIXTURE_APPROVER_NOT_A_REAL_APPROVAL` are made-up test data, not real insurance formulas, deductibles, limits, clauses, prices or approval records. `testDigest` is a non-cryptographic FNV-1a over key-sorted JSON used only because the engine receives its hash function by injection (DD-04).
+
+#### RED evidence (verbatim, captured before the implementation existed; every RED here is a missing-module failure)
+
+1. usability (`npx vitest run tests/engine/usability.test.ts`, exit 1):
+```
+ FAIL  tests/engine/usability.test.ts [ tests/engine/usability.test.ts ]
+Error: Cannot find module '../../src/engine/usability' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/usability.test.ts
+```
+2. profile-structure, exit 1:
+```
+ FAIL  tests/engine/profile-structure.test.ts [ tests/engine/profile-structure.test.ts ]
+Error: Cannot find module '../../src/engine/profile-structure' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/profile-structure.test.ts
+```
+3. mapping-resolve (resolveMapping, decideLine), exit 1:
+```
+ FAIL  tests/engine/mapping-resolve.test.ts [ tests/engine/mapping-resolve.test.ts ]
+Error: Cannot find module '../../src/engine/resolve' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/mapping-resolve.test.ts
+```
+4. estimate front end (`hold-matrix`, `bundle-gate`, `origins`), exit 1:
+```
+ FAIL  tests/engine/bundle-gate.test.ts [ tests/engine/bundle-gate.test.ts ]
+Error: Cannot find module '../../src/engine/estimate' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/bundle-gate.test.ts
+ FAIL  tests/engine/hold-matrix.test.ts [ tests/engine/hold-matrix.test.ts ]
+ FAIL  tests/engine/origins.test.ts [ tests/engine/origins.test.ts ]
+ Test Files  3 failed (3)
+      Tests  no tests
+```
+Mutation checks (temporary edits to `src/`, reverted afterwards; the working-tree results above were re-run after reverting): `usable.length >= 2` changed to `> 2` made 3 tests fail (`Tests  3 failed | 389 passed (392)`); swapping `MAPPING_UNDER_REREVIEW` and `MAPPING_UNREVIEWED` in the priority list made 2 fail (`2 failed | 390 passed`); disabling the approver check made 11 fail (`11 failed | 381 passed`). These are spot checks, not a mutation-testing run.
+
+#### GREEN evidence
+
+| Step | Command | Exit | Result |
+|------|---------|------|--------|
+| usability | `npx vitest run tests/engine/usability.test.ts` | 0 | `Tests  50 passed (50)` (before three coverage-driven cases were added; 53 afterwards) |
+| profile-structure | same file | 0 | `Tests  19 passed (19)` |
+| mapping-resolve | same file | 0 | `Tests  56 passed (56)` |
+| estimate front end | three files together | 0 | `Test Files  3 passed (3)`, `Tests  105 passed (105)` (before the later added cases) |
+
+Final runs (this tree):
+```
+$ npx vitest run tests/engine tests/boundary  -> exit 0   (tests/boundary does not exist yet; only tests/engine runs)
+ Test Files  9 passed (9)
+      Tests  394 passed (394)
+$ npx tsc --noEmit                            -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine      -> exit 0
+ Test Files  9 passed (9)
+      Tests  394 passed (394)
+Statements   : 100% ( 254/254 )
+Branches     : 100% ( 209/209 )
+Functions    : 100% ( 56/56 )
+Lines        : 100% ( 248/248 )
+```
+Per file (cumulative `src/engine/**`, from `coverage/coverage-summary.json`; the text reporter collapses fully covered files): `estimate.ts`, `limits.ts`, `numeric.ts`, `profile-structure.ts`, `resolve.ts`, `types.ts`, `usability.ts`, `validate.ts` are each 100 / 100 / 100 / 100 (statements / branches / functions / lines). Earlier in the step the figures were `estimate.ts` 87.5% branches, `resolve.ts` 96.15%, `usability.ts` 96.66%; cases for non-array bundle lists, missing accepted-origin lists, missing validity, a non-object policy source and a non-string date were added, which are defensive branches written for those inputs. Coverage measures execution, not correctness; the M1-end 85% gate is met on the cumulative figure so far (it is re-evaluated after M1.3/M1.4).
+
+#### AC matrix (M1.2 scope; "front level" = through `estimateFront`, before M1.3 arithmetic)
+
+| AC | M1.2 status | Proving test (file : describe) | Notes |
+|----|-------------|--------------------------------|-------|
+| AC-006a | CLOSED (profile-lookup half; rejection half was M1.1) | `hold-matrix.test.ts` : "입력 검증 거절은 그대로 전달되고 묶음·프로필 조회가 일어나지 않는다" | a generation outside the enum is rejected and `isBundleUsable` (hence profile lookup) is never called |
+| AC-008a | CLOSED at front level | `hold-matrix.test.ts` : "AC-008a 프로필 보류 행렬" (every row incl. 9 structure defects tested one by one, two profiles in one cell, bundle SUSPENDED, six policy-source fields one by one) | all lines `ON_HOLD` with the row's code, `hasHold` true, hospital payment still a number (124,000). The "expected payout = null" itself is an `EstimateResult` field that exists only after M1.3 |
+| AC-008b | CLOSED at front level | `hold-matrix.test.ts` : "AC-008b 매핑 보류 행렬" (13 unusable states, absent, 2+ usable, group not in profile, EXCLUDED in each unusable state) | only the 신장분사치료 line holds, the other three are `ESTIMATED` |
+| AC-008c | CLOSED at front level | `hold-matrix.test.ts` : "AC-008c 분류 확인 필요" | |
+| AC-008d | CLOSED | `hold-matrix.test.ts` : "AC-008d 칸 조회" | no other cell's profile is used; an unknown `insurerType` also yields `PROFILE_ABSENT` |
+| AC-008f | CLOSED at front level | `bundle-gate.test.ts` : "AC-008f" | `bundle = null` -> `CLINIC_RULE_SCOPE_ABSENT`, zero `isUsable` calls |
+| AC-008h | CLOSED | `mapping-resolve.test.ts` : "resolveMapping — 후보 구성 행렬 (AC-008h)" | rows 1-9 incl. 9 unusable variants x both orders, every permutation of 3 usable candidates |
+| AC-008i | CLOSED | `mapping-resolve.test.ts` : "고정 우선순위 (AC-008i)" | every pair, triple and the quadruple of the four code classes in all permutations; 12-candidate case with fixed seeds 20261015+n and 777+n; multi-reason candidate resolved by the first failing check |
+| AC-008l | CLOSED | `bundle-gate.test.ts` : "AC-008l"; `usability.test.ts` : "형식 수준 시험" | call log for SUSPENDED / null is `['isBundleUsable']` only; ACTIVE call order recorded; throwing accessors on `profiles`/`mappings`/`documentRuleSet` do not fire; type-level checks (`@ts-expect-error`) for `isUsable` / `isBundleUsable` / `UsabilityContext` / `ItemUsabilityReason` |
+| AC-009b | CLOSED | `origins.test.ts` : "AC-009b 지문 방어" | a changed line fingerprint -> that line `MAPPING_UNDER_REREVIEW`, others `ESTIMATED` |
+| AC-010a | CLOSED | `origins.test.ts` : "AC-010a 운영 허용 출처" | `PROFILE_DEMO` (all lines), `MAPPING_INVALID`, `LINE_ORIGIN_NOT_ACCEPTED` x2; the same data is usable under the test accepted origins |
+| AC-008e | EVIDENCE ONLY (closes in M1.3) | `hold-matrix.test.ts` : "AC-008e 판정 순서" | bundle -> profile cell -> profile `isUsable` -> structure -> line origin -> classification -> mapping -> `groupKey` is shown for profile+mapping, structure+mapping, origin+mapping, classification+mapping and mapping+`groupKey`; the group-level `PROFILE_SOURCE_INCOMPLETE` combination needs M1.3 |
+| AC-008g | EVIDENCE ONLY (closes in M1.3) | `bundle-gate.test.ts` : "AC-008g" | scope-absent before suspended before profile reasons; "same content ACTIVE bundle computes normally" at front level; payout null / `documents = null` belong to M1.3 / M2 |
+| AC-008j | EVIDENCE ONLY (closes in M1.3) | `mapping-resolve.test.ts` (field-rule defense, `decideLine` states, `lookupGroup` call spy, no-shortcut rows); `types.test.ts` (`CoverageGroupDef` keys) | `E` exclusion and `excludedItems[]` assembly are M1.3 |
+| AC-008k | EVIDENCE ONLY (closes in M1.3) | `hold-matrix.test.ts` : "배열 순서 독립" | all permutations of `lines` and `profiles` with reversed `mappings`/`treatmentIds`; result serialized identically |
+| AC-008m | EVIDENCE ONLY (closes in M1.3) | `profile-structure.test.ts`; `hold-matrix.test.ts` structure rows | pool value defects are intentionally not structure defects (M1.3) |
+| AC-004f | EVIDENCE ONLY | `hold-matrix.test.ts` : "공통 기본비용 줄" | front level only: the base-fee amount is in the hospital payment (129,000), and the base-fee line goes through the same mapping decision (`MAPPING_ABSENT` -> hold) |
+
+#### plan.md §E.9 #8 (corrected wording) and the conflict candidates
+
+M1.2 follows the corrected wording: the common base cost is part of the expected hospital payment regardless of coverage (`validateEstimateInput` sums `baseFeeLines` into T before any mapping lookup), and in the payout path the base-fee line goes through the same `decideLine` as a treatment; no / unusable mapping -> the existing hold contract. Checked against the listed candidates: `design.md:155` agrees (included in the payment even if the line is held; "same mapping decision"); `spec.md:146` (C5) and `spec-compact.md:69` agree with the behavior but still label the mapping part "SPEC 제안 (승인 전, §E #8)" although plan.md §E.9 now records #8 as accepted with corrected wording; `plan.md:308` (the §E.2 row for #8) is worded "공통 기본비용도 보장 매핑이 필요하다는 SPEC 결정" with the old default "필요", which can be read as "a mapping is required for the cost to count at all"; `plan.md:400` (§E.8 B3 ③) says computing the base cost "without a mapping" would include an amount whose coverage is undetermined, which only holds for the payout side. `acceptance.md:85` (AC-004f) agrees. No document was edited (SPEC files are out of M1.2's write scope); the stale labels are listed for the owner.
+
+#### Assumptions (non-blocking; each takes the hold-leaning side)
+
+1. Dates are `YYYY-MM-DD` real calendar dates; validity includes both endpoint days; an unparseable `at`/`from`/`to`, a missing validity, or `from > to` is `OUTSIDE_VALIDITY`. The SPEC leaves the format open (design.md:377).
+2. Policy sources: at least one, and every source needs all six items non-empty strings (`PolicySourceRef` field names are placeholders). The approver needs non-empty `approverId` and `approvedAt` (placeholder names).
+3. A lifecycle `state` outside the nine known values is `STATE_INVALID`; a bundle `status` other than `ACTIVE` is treated as suspended (only `ACTIVE` is usable).
+4. An empty fingerprint or content hash is an integrity mismatch even when both sides are equally empty.
+5. The profile content-hash target is `profileContent()` = `{id, version, generation, insurerType, groups, groupOrder, sharedLimitPools}` (header fields and `contentHash` excluded). M3's hash writer must hash the same object; the SPEC does not define it.
+6. The digest function reaches the engine through `estimateFront(input, { digest })`; `EstimateInput` has no digest field and design.md:365 only says it is injected.
+7. `estimateFront` is the pre-arithmetic front end; its return shape (`validated`, `blocked`, `profile`, `lines`, `hasHold`) is mine. It does not build `excludedItems`, `baseFeeIncluded`, `amounts` or `groups`; those stay with M1.3. `decideLine` already yields `EXCLUDED_CONFIRMED` because the hold matrix needs it.
+8. Field-rule defense treats any defined `exclusionReason` on a `COVERED` mapping (including `null` or `''`) and any defined `groupKey` on an `EXCLUDED` mapping as a violation -> `MAPPING_INVALID`.
+9. Non-array `bundle.profiles`/`bundle.mappings`/`mapping.scope` count as empty; a missing accepted-origin list accepts nothing.
+10. Structure check: an empty profile reports only `EMPTY_PROFILE`; duplicate empty group keys are reported as empty keys (not duplicates); non-string group keys count as empty and are left out of the `groupOrder` comparison; a non-array `groupOrder` counts as missing every key.
+11. Treatment lines and base-fee lines are merged and sorted by treatment ID; an ID present in both lists is not collapsed across the lists (the SPEC says the id spaces do not overlap).
+12. The call-order evidence spies `isBundleUsable`, `resolveProfile`, `isUsable`, `checkProfileStructure`, `resolveMapping` (through `FrontDeps.functions`). Line-origin and classification checks are inline, so their position is shown by `resolveMapping` not being called for such lines, not by a spy.
+13. `tests/boundary` does not exist (M1.4), so `npx vitest run tests/engine tests/boundary` ran only `tests/engine` and exited 0.
+
+#### SPEC ambiguities / contradictions met
+
+- design.md:365 (digest injected) vs `EstimateInput` (design.md:134-143) without a digest field: how the function reaches `estimate()` is unspecified (assumption 6).
+- acceptance.md:124/139/155-156 state "expected payout null / documents null" as M1.2 outcomes (plan.md:70), but `EstimateResult` and `deriveDocuments` exist only after M1.3 / M2 (partial, listed above).
+- plan.md:70 names `estimate.ts` (front) as an M1.2 file but nothing defines the front's return type (assumption 7).
+- design.md:375-379 / :913-917: no field-level shapes for policy sources, approver, validity; design.md:3 notes names may change.
+- The base-cost wording conflict candidates listed above (plan.md:308, :400; spec.md:146; spec-compact.md:69).
+- acceptance.md:178 "exclusionReason 이 있음" does not say whether `null`/`''` count as present (assumption 8).
+
+#### Gaps (not observed)
+
+1. Every RED in this block is a missing-module failure. Behaviour-level RED was not separately captured, because each test file was written for a whole module before it existed. The three mutation spot checks above are the only evidence that the tests can fail on wrong behaviour.
+2. The result-level outcomes "expected payout / out-of-pocket = null" and "documents = null" are not observable before M1.3 / M2; they are shown only as `hasHold` and `blocked`.
+3. `testDigest` is not a real hash; the production hash and `profileContent` agreement with M3 are untested.
+4. No formal SPEC lint, no `moai verify`, no linter or formatter. `tests/boundary` and the M1.4 determinism / import-boundary suites do not exist yet.
+5. Only Windows 11 and Node 24.19.0 were run.
+
+#### Residual risk
+
+- `PolicySourceRef` / `ApproverRecord` / validity shapes may change when M3 defines the entities; the six-item and approver checks would need the same change.
+- The assumption that a non-`ACTIVE` bundle status is suspended could hide a future third status value (for example a draft bundle) behind `RULE_BUNDLE_SUSPENDED`.
+- First-wins semantics for duplicate lines (from M1.1) still hide conflicting duplicates.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
