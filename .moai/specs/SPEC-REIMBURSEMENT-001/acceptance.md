@@ -1,4 +1,4 @@
-# SPEC-REIMBURSEMENT-ESTIMATOR-001 — 수용기준 (acceptance.md)
+# SPEC-REIMBURSEMENT-001 — 수용기준 (acceptance.md)
 
 > 이 문서는 검증 기준이다. 요구사항 문장과 그 조건표(`REQ-ENG-002 C3`처럼 인용하는 행)는 spec.md에 있고 여기서 다시 쓰지 않는다. 아래 어느 항목도 아직 실행·렌더링·확인되지 않았다. 모든 항목은 구현 단계에서 처음 판정한다.
 

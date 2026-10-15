@@ -1,4 +1,4 @@
-# SPEC-REIMBURSEMENT-ESTIMATOR-001 — 요약본 (요구사항·수용기준·제외 범위)
+# SPEC-REIMBURSEMENT-001 — 요약본 (요구사항·수용기준·제외 범위)
 
 > spec.md §3·§5와 acceptance.md에서 다시 만든 요약본이다. 요구사항 핵심 문장과 조건표(모든 행이 규범이다)는 spec.md에서 스크립트로 그대로 옮겼다. 원문과 다를 경우 spec.md·acceptance.md를 따른다. 최상위 요구사항 25개, 최상위 수용기준 25개(세부 197개).
 

@@ -1,8 +1,10 @@
-# SPEC-REIMBURSEMENT-ESTIMATOR-001 — 구현 계획 (plan.md)
+# SPEC-REIMBURSEMENT-001 — 구현 계획 (plan.md)
 
 > 일정 추정은 쓰지 않는다. 순서와 우선순위만 적는다.
 >
 > **확인 표시 규칙 (plan 워크플로 규칙):** 모든 확인 표시(NEEDS CLARIFICATION)는 구현 착수 승인(Implementation Kickoff Approval, plan→run 사람 게이트) 전에 풀려야 한다. 확인 항목 36개 가운데 33개는 열려 있고(확인 표시 유지), 3개(#9, #25, #28)는 기록되었거나 파일로 확인된 근거로 닫았다(소유자 승인이 아니다). 열린 33개는 구현 착수 승인 게이트에서 소유자에게 제시된다. 확인 표시는 §E.2~§E.5에만 두고, 다른 절에서는 "(§E #n)"으로 가리킨다. §E의 "처음 필요" 마일스톤은 답이 처음 쓰이는 곳을 뜻하며, 그 마일스톤까지 답을 미뤄도 된다는 뜻이 아니다.
+>
+> **SPEC ID 정규화 (2026-10-15):** 이전 ID `SPEC-REIMBURSEMENT-ESTIMATOR-001` → 현재 ID `SPEC-REIMBURSEMENT-001`. 이유: 스키마 SSOT(`.claude/rules/moai/development/spec-frontmatter-schema.md` 38행)의 정규식 `^SPEC-[A-Z][A-Z0-9]+-[0-9]{3}$`가 이전 ID를 거절하고 현재 ID는 두 정규식을 모두 통과한다(§C R-14, research.md §5 #10). 사용자가 2026-10-15 구현 착수 답변에서 공통 스키마를 넓히는 대신 ID를 바꾸는 쪽을 승인했다. 이미 존재하는 계획 브랜치 `plan/SPEC-REIMBURSEMENT-ESTIMATOR-001`은 이름을 바꾸지 않고 과거 기록으로 남긴다. 감사 기록·개정 이력에 적힌 이전 ID는 당시 사실이라 그대로 둔다.
 
 ## §A 배경
 
@@ -220,7 +222,7 @@ npx tsc --noEmit
 | R-11 | 지원 범위 밖 계약(노후·유병력자·단체 실손, 전환 계약 등)의 환자가 다섯 카드 가운데 하나를 고르면 일반 규칙으로 계산됨 | 엔진은 판별하지 않으며 결과 문구 원칙·공통 안내로 개인 계약에 따라 달라질 수 있음을 알린다. 가려내는 방법은 §E #11 |
 | R-12 | 2009.08~09 경계 계약 가입자가 가입일만 보고 2세대(C1)를 골라 일반 규칙으로 계산될 수 있음. 기획서 §3은 이 계약에 별도 도움말을 요구하지만 디자인에 프레임이 없다 | 키오스크는 가입일로 세대를 정하거나 제안하지 않는다(날짜 입력이 없음). 도움말 문구·위치는 §E #35, 디자인 후속은 §F 7번 |
 | R-13 | 규칙 묶음을 중지하면 그 묶음을 쓰는 모든 병원이 새 묶음을 지정받을 때까지 계산 보류가 됨 | 중지 응답의 `affectedClinics`로 영향 병원을 바로 알리고, 새 묶음 게시 → 운영자 재지정 → 새 버전 정상 계산의 복구 경로를 AC-011f로 시험. 병원별 긴급 중지는 §F 6번의 선택 후속 항목 |
-| R-14 | SPEC ID 형식을 실제 lint로 확인하지 못함. 공통 워크플로 문서가 서로 다른 정규식을 적었고(스키마 문서는 도메인 한 마디 `^SPEC-[A-Z][A-Z0-9]+-[0-9]{3}$`, manager-spec 문서는 여러 마디 `^SPEC(-[A-Z][A-Z0-9]*)+-[0-9]{3}$`) 이 SPEC의 ID `SPEC-REIMBURSEMENT-ESTIMATOR-001`은 뒤의 것만 통과한다(research.md §5 #10에 재실행 출력). 실제 lint(`internal/spec/lint.go`)와 `moai` CLI는 이 저장소에 없어 어느 쪽을 쓰는지 확인하지 못했다. 결과: lint가 거절하면 plan 단계 게이트가 막힐 수 있다 | ID·폴더·브랜치와 공통 워크플로 문서는 바꾸지 않는다. ① `moai`가 있는 환경에서 SPEC audit/lint를 한 번 돌려 결과를 progress.md에 남긴다. ② 문서 불일치를 MoAI-ADK 관리자에게 알린다(`/moai feedback`). ③ 실제 lint가 여러 마디 ID를 거절한다는 증거가 있을 때만 `SPEC-REIMBURSEMENT-001`(두 정규식 모두 통과, 재실행으로 확인)로 바꾸는 안을 사용자 승인을 받아 낸다. 폴더·브랜치 이름·모든 참조가 바뀌므로 지금은 하지 않는다. 권장: ①②를 지금, ③은 증거가 있을 때만. 확인 표시가 아니라 위험 행이다 |
+| R-14 | SPEC ID 형식을 실제 lint로 확인하지 못함. 공통 워크플로 문서가 서로 다른 정규식을 적었고(스키마 문서는 도메인 한 마디 `^SPEC-[A-Z][A-Z0-9]+-[0-9]{3}$`, manager-spec 문서는 여러 마디 `^SPEC(-[A-Z][A-Z0-9]*)+-[0-9]{3}$`) 당시 ID `SPEC-REIMBURSEMENT-ESTIMATOR-001`은 뒤의 것만 통과했다. 정규화한 현재 ID `SPEC-REIMBURSEMENT-001`은 두 정규식을 모두 통과한다(재실행 출력은 research.md §5 #10과 progress.md "ID normalization (2026-10-15)" 항목). 실제 lint(`internal/spec/lint.go`)와 `moai` CLI는 이 저장소에 없어 어느 쪽을 쓰는지는 지금도 확인하지 못했다. 결과: lint가 거절하면 plan 단계 게이트가 막힐 수 있었다 | **상태: 2026-10-15 ID 정규화로 해소(사용자 승인).** SPEC ID를 `SPEC-REIMBURSEMENT-001`로 바꿨고 폴더는 `.moai/specs/SPEC-REIMBURSEMENT-001/`이다. 바꾼 것은 현재 참조(frontmatter `id`, 제목, 문서 사이 참조, 경로)이고, 감사 기록·개정 이력·당시 정규식 확인 증거·이미 존재하는 브랜치 이름 `plan/SPEC-REIMBURSEMENT-ESTIMATOR-001`은 당시 ID 그대로 둔다. 공통 워크플로 문서는 바꾸지 않는다(문서 사이 정규식 불일치 자체는 그대로 남아 있다). 남은 일: ① `moai`가 있는 환경에서 SPEC audit/lint를 한 번 돌려 결과를 progress.md에 남긴다(그 전까지 formal lint는 UNVERIFIED). ② 문서 불일치를 MoAI-ADK 관리자에게 알린다(`/moai feedback`). 확인 표시가 아니라 위험 행이다 |
 
 ## §D MX 태그 계획
 

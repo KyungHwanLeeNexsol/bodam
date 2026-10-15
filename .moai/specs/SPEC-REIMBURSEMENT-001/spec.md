@@ -1,5 +1,5 @@
 ---
-id: SPEC-REIMBURSEMENT-ESTIMATOR-001
+id: SPEC-REIMBURSEMENT-001
 title: "보담 실손보험 예상 부담액 계산기 (키오스크·관리자·결정적 계산 엔진)"
 version: "0.1.0"
 status: draft
@@ -14,7 +14,7 @@ tags: "reimbursement, kiosk, estimator, deterministic-engine, rule-data, hold-st
 tier: L
 ---
 
-# SPEC-REIMBURSEMENT-ESTIMATOR-001 — 보담 실손보험 예상 부담액 계산기
+# SPEC-REIMBURSEMENT-001 — 보담 실손보험 예상 부담액 계산기
 
 ## HISTORY
 
