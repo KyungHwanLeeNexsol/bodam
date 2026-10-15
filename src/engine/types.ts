@@ -257,14 +257,22 @@ export type AssumptionCode = (typeof ASSUMPTION_CODES)[number];
 
 /**
  * 엔진 입력 거절 코드. 계산 결과가 아니라 거절이며 보류 코드가 아니다.
- * 배열 순서가 판정 순서다: 세대 → 치료 없음 → 수치 (DD-03, DD-24).
+ * 배열 순서가 판정 순서다: 세대 → 치료 없음 → 입력 무결성(충돌하는 중복 줄) → 수치 (DD-03, DD-24).
  */
 export const ENGINE_REJECTION_CODES = [
   'UNSUPPORTED_GENERATION',
   'NO_TREATMENT_SELECTED',
+  'INPUT_INTEGRITY_VIOLATION',
   'INVALID_NUMERIC_INPUT',
 ] as const;
 export type EngineRejectionCode = (typeof ENGINE_REJECTION_CODES)[number];
+
+/**
+ * INPUT_INTEGRITY_VIOLATION 의 진단용 사유. 치료 ID·금액·내부 상세를 싣지 않는다(AC-006i와 같은 방침).
+ * 같은 treatmentId 의 줄이 여럿인데 내용이 다르면 어느 줄을 믿을지 정할 수 없어 거절한다.
+ * 치료 줄과 기본비용 줄을 따로 검사하며, 둘 다 충돌하면 치료 줄 사유를 돌려준다.
+ */
+export type InputIntegrityReason = 'CONFLICTING_DUPLICATE_TREATMENT_LINE' | 'CONFLICTING_DUPLICATE_BASE_FEE_LINE';
 
 /**
  * INVALID_NUMERIC_INPUT 의 진단용 사유. 환자·API 응답에는 싣지 않는다(금액·내부 상세 없음, AC-006i).
@@ -275,6 +283,7 @@ export type InvalidNumericReason = 'LINE_AMOUNT_INVALID' | 'HOSPITAL_PAYMENT_OVE
 export type EngineRejection =
   | { code: 'UNSUPPORTED_GENERATION' }
   | { code: 'NO_TREATMENT_SELECTED' }
+  | { code: 'INPUT_INTEGRITY_VIOLATION'; reason: InputIntegrityReason }
   | { code: 'INVALID_NUMERIC_INPUT'; reason: InvalidNumericReason };
 
 // ───────────────────────── 출력 (DD-03) ─────────────────────────

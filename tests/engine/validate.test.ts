@@ -308,19 +308,37 @@ describe('validateEstimateInput — 줄 금액 범위 (AC-006h, DD-24)', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('중복으로 걸러질 줄의 금액이 무효여도 조용히 버리지 않고 거절한다 (치료 줄·기본비용 줄 모두)', () => {
+  // R1(외부 검토 수정)로 기대값을 바꾼 시험이다. 이전에는 xray(10,000) 와 같은 ID 의 NaN 줄처럼 내용이 다른 중복 쌍도
+  // "중복으로 걸러질 줄의 무효 금액" 으로 보고 INVALID_NUMERIC_INPUT 으로 거절했다. 지금은 내용이 다른 중복 쌍이
+  // 금액 검사보다 먼저 INPUT_INTEGRITY_VIOLATION 으로 거절된다. 내용이 완전히 같은 무효 중복은 이전과 같이 INVALID_NUMERIC_INPUT 이다.
+  it('내용이 같은 중복 줄의 금액이 무효이면 조용히 버리지 않고 INVALID_NUMERIC_INPUT 으로 거절한다 (치료 줄·기본비용 줄 모두)', () => {
     const rejected = {
       ok: false,
       rejection: { code: 'INVALID_NUMERIC_INPUT', reason: 'LINE_AMOUNT_INVALID' },
     };
+    const bad = line('T-XRAY', Number.NaN);
+    expect(
+      validateEstimateInput(input({ lines: [bad, line('T-XRAY', Number.NaN), ultrasound, physio, injection] })),
+    ).toEqual(rejected);
+
+    const baseFeeBad = line('B-BASE', -1, { isBaseFee: true });
+    expect(
+      validateEstimateInput(input({ baseFeeLines: [baseFeeBad, line('B-BASE', -1, { isBaseFee: true })] })),
+    ).toEqual(rejected);
+  });
+
+  it('내용이 다른 중복 쌍은 한쪽 금액이 무효여도 금액 검사보다 먼저 INPUT_INTEGRITY_VIOLATION 으로 거절한다 (R1 변경, 상세 시험은 duplicate-conflict.test.ts)', () => {
     const duplicateBad = line('T-XRAY', Number.NaN);
     expect(
       validateEstimateInput(input({ lines: [xray, duplicateBad, ultrasound, physio, injection] })),
-    ).toEqual(rejected);
+    ).toEqual({ ok: false, rejection: { code: 'INPUT_INTEGRITY_VIOLATION', reason: 'CONFLICTING_DUPLICATE_TREATMENT_LINE' } });
 
     const baseFee = line('B-BASE', 5_000, { isBaseFee: true });
     const baseFeeBad = line('B-BASE', -1, { isBaseFee: true });
-    expect(validateEstimateInput(input({ baseFeeLines: [baseFee, baseFeeBad] }))).toEqual(rejected);
+    expect(validateEstimateInput(input({ baseFeeLines: [baseFee, baseFeeBad] }))).toEqual({
+      ok: false,
+      rejection: { code: 'INPUT_INTEGRITY_VIOLATION', reason: 'CONFLICTING_DUPLICATE_BASE_FEE_LINE' },
+    });
   });
 
   it('입력의 줄 객체를 고쳐 쓰지 않는다 (무효 금액이 0 으로 바뀌지 않음)', () => {

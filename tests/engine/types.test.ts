@@ -59,10 +59,11 @@ describe('열거값 — design.md DD-03', () => {
     ]);
   });
 
-  it('엔진 입력 거절 코드는 판정 순서대로 셋이며 보류 코드가 아니다', () => {
+  it('엔진 입력 거절 코드는 판정 순서대로 넷이며 보류 코드가 아니다', () => {
     expect([...ENGINE_REJECTION_CODES]).toEqual([
       'UNSUPPORTED_GENERATION',
       'NO_TREATMENT_SELECTED',
+      'INPUT_INTEGRITY_VIOLATION',
       'INVALID_NUMERIC_INPUT',
     ]);
     for (const code of ENGINE_REJECTION_CODES) {
