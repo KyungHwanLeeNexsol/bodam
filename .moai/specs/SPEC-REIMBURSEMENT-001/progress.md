@@ -189,6 +189,19 @@ New sub-criteria (8): AC-016o (unit, M5); AC-020c, AC-020d, AC-020e, AC-020f, AC
 - **Alternative check, not a lint.** Field-presence read of spec.md frontmatter keys: `id title version status created updated author priority phase module lifecycle tags tier` (12 canonical fields plus optional `tier`; `status: draft`, `phase: "v0.1.0 target"` unchanged).
 - **Gaps.** The `moai` CLI is not installed and the moai MCP server is down, so the real SPEC lint was NOT run: whether it accepts the new ID is UNVERIFIED (the two documents' regexes both accept it; which one the lint enforces is still unconfirmed). No audit, test, build or render was run. The spec.md HISTORY table has no row for the rename (the mapping lives in plan.md and here).
 
+### Implementation Kickoff Approval — M1 only (M1-limited exception), 2026-10-15
+
+**Status: documents only; no audit run, score not re-measured.** The user's 2026-10-15 implementation-start answer is recorded in plan.md §E.9. This entry only points to it.
+
+- **Approval.** The answer functions as the Implementation Kickoff Approval for **M1 only**. The user explicitly approved a project-specific M1-limited development exception to the rule that every open clarification row must be resolved before Implementation Kickoff Approval. The exception does NOT mean the SPEC passed a full audit and does NOT mean production readiness.
+- **Approved scope.** (1) Decision-record cleanup, (2) the M1 calculation-engine implementation. NOT approved: M2 onward, production deployment, registering real insurance values, merging into main. Later stages must not start before their own deferred items are decided (plan.md §E.9 (c)).
+- **Unchanged by this entry.** `plan_status: fail` and the last audit (iteration 5, FAIL 0.89, MP-7) are untouched; `status: draft` is untouched; the 33 open rows in plan.md §E.2~§E.5 and their counts are untouched. The §E.9 record layers on top of them and relabels nothing as PASS.
+- **Deferred, still open as decision targets** (details and timing in plan.md §E.9 (c)): #1 actual DB product (before the M3 DB adapter), #2 auth provider and login/2FA method (before M7), #3 hosting and #5 real device (before M8 pilot / real-device validation), #30 and #34 (before their domain/permission implementation), #31 (before the M3 lifecycle implementation), #32 operating entity and hours and #35 (before M6), S15 (truncated answer, not a blanket approval), and the 11 operating-data holds of plan.md §E.1 (M1 is verified with `TEST_FIXTURE` data only).
+- **Corrected item.** #8 was accepted with corrected wording (common base cost is in the expected hospital payment regardless of coverage; the payout side uses the same mapping decision as treatments; no or unusable mapping keeps the existing hold contract). Possible wording conflicts in other documents are listed in plan.md §E.9 "확인 필요" and were not edited.
+- **S1-S15 codes.** No definition of these codes exists in the repository (searched `.moai/` and all `*.md`); plan.md §E.9 keeps only the user's own descriptors and marks the rest "정의 위치 미확인".
+- **Verification note.** The formal SPEC lint is unavailable (no `moai` CLI, moai MCP server down), so lint stays UNVERIFIED. Fallback checks are regex, required-field and reference-substitution checks, which are not a lint. The absence of the lint tool does not stop the M1 work. No further full SPEC rewrite and no repeated automatic audits.
+- **Run-phase evidence.** None yet. The §E.2 section below stays a placeholder; manager-develop owns it.
+
 ### 범위 밖 개선 목록 (이번 개정에서 하지 않음)
 
 The remaining optional findings and observations below were NOT fixed, to keep this revision inside the seven requested items:
