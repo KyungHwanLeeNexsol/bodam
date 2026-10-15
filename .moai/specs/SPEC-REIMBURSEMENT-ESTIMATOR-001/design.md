@@ -557,13 +557,18 @@ type DocumentsResult =
 | `K03_Treatments` | 치료 카드 터치 | — | `K03_Treatments` | 묶음이 바뀌면 파생 무효 (이미 고른 치료의 반복 터치로 수량이 늘지 않음) |
 | `K03_Treatments` | "이전 목록 / 다음 목록" | — | `K03_Treatments` | 유지 |
 | `K03_Treatments` | "이전" | — | `K02b_Cause` | 유지 |
-| `K03_Treatments` | "예상 부담액 확인" | 치료 1개 이상 | `Calculating` | 이전 활성 요청이 있으면 먼저 `settleRequest(…, CANCELLED)`로 정리한 뒤, 새 `requestId`를 만들어 `activeRequest`로 기록하고 그 시도의 시간 제한 타이머를 시작(DD-09 "요청 생명주기") |
+| `K03_Treatments` | "예상 부담액 확인" | 치료 1개 이상이고 갱신이 필요하지 않음(`refreshState = NONE`). 갱신이 필요하면 버튼이 비활성이고 이 사건은 거절된다(계산 요청 없음, DD-09 "자료 갱신 생명주기" 규칙 1) | `Calculating` | 이전 활성 요청이 있으면 먼저 `settleRequest(…, CANCELLED)`로 정리한 뒤, 새 `requestId`를 만들어 `activeRequest`로 기록하고 그 시도의 시간 제한 타이머를 시작(DD-09 "요청 생명주기") |
 | `Calculating` | 200, `ESTIMATED` | 활성 `requestId` 일치 | `K04_Result` | `settleRequest(…, SUCCEEDED)`로 활성 요청·시간 제한 타이머·로딩 표시를 풀고 결과 저장 |
 | `Calculating` | 200, `ESTIMATED_WITH_EXCLUSIONS` | 활성 `requestId` 일치 | `K04_Result_NotCovered` | 같음(`SUCCEEDED`) |
 | `Calculating` | 200, `ON_HOLD` | 활성 `requestId` 일치 | `K04_Result_Hold` | 같음(`SUCCEEDED`) |
 | `Calculating` | 4xx(409 포함)·5xx·시간 초과·연결 실패 | 활성 `requestId` 일치 | DD-19 클라이언트 처리 표 | `settleRequest`가 먼저 활성 요청과 타이머를 풀고(409 `VERSION_MISMATCH`, 422 거절 둘, 그 밖의 `FAILED`, 시간 초과 `EXPIRED`) 그다음 표에 따라 화면을 바꾼다. `EXPIRED`는 그 시도의 요청을 취소하므로 뒤늦게 온 결과가 반영되지 않는다 |
 | `Calculating` | 응답·오류·시간 초과(어느 종류든) | 활성 `requestId` 불일치(`activeRequest`가 없거나 다른 시도) | (버림) | 없음. 상태·결과·로딩 표시·화면을 건드리지 않음 |
 | `Calculating` | 초기화(처음으로·이용 완료·무조작 초기화·새로고침)나 입력 변경 | — | 각 동작의 도착지 | 먼저 `settleRequest(…, CANCELLED)`(DD-09). 그 뒤 그 동작의 전이를 실행 |
+| `Calculating` | 409, 422 `TREATMENT_NOT_PUBLISHED` | 활성 `requestId` 일치 | `K03_Treatments` (갱신 `RUNNING`) | `settleRequest`로 요청을 푼 뒤 새 `refreshId`로 catalog·options 갱신을 시작한다. 갱신이 끝날 때까지 "예상 부담액 확인"은 비활성이고 치료 카드와 "이전"은 잠기며 인라인 진행 표시가 보인다(새 프레임 없음, DD-09 "자료 갱신 생명주기") |
+| `K03_Treatments` (갱신 `RUNNING`) | catalog와 options 둘 다 도착 | 활성 `refreshId` 일치, `sessionId`·`inputRevision` 일치 | `K03_Treatments` | 한 단계로 반영: 선택 유지·제거(내려간 치료는 안내와 함께), 새 합계, 자료와 두 버전 교체, 확인 버튼 활성(치료가 남아 있을 때). 무조작 시간은 그대로 |
+| `K03_Treatments` (갱신 `RUNNING`) | 한쪽이라도 실패, 또는 갱신 시간 제한 | 활성 `refreshId` 일치 | `K03_Treatments` (갱신 `FAILED`) | 아무것도 반영하지 않고 이전 자료·선택·합계를 유지한다. 인라인 안내와 인라인 "다시 시도"가 보이고 확인 버튼은 비활성이다(제안, 승인 전) |
+| `K03_Treatments` (갱신 `FAILED`) | 인라인 "다시 시도" | — | `K03_Treatments` (갱신 `RUNNING`) | 계산이 아니라 갱신을 먼저 실행한다(새 `refreshId`). 갱신이 완전히 성공하기 전에는 확인 버튼이 비활성이다 |
+| `K03_Treatments` (갱신 `RUNNING`) | 초기화 확정, 입력 변경, 도착한 갱신 결과의 `refreshId`·`sessionId`·`inputRevision` 불일치 | — | 초기화는 `K00_Start`, 그 밖에는 `K03_Treatments` (갱신 `FAILED`) | 먼저 `settleRefresh(…, CANCELLED)`. 초기화이면 새 세션이라 `refreshState = NONE`이고 이후 도착한 갱신 결과는 버려진다. 입력 변경으로 취소된 갱신은 결과를 쓰지 않는다 |
 | `K04_Result`, `K04_Result_NotCovered` | "보험 청구에 필요한 서류 확인" | 원인 `INJURY`/`ILLNESS` | `K07_Documents` | 복귀 정보(결과 종류) 기록 |
 | 〃 | 〃 | 원인 `UNKNOWN` | `K07_Documents_Unknown` | 복귀 정보(결과 종류) 기록 |
 | `K04_Result`, `K04_Result_NotCovered` | "계산 근거 보기" | — | `K04_Basis_Calculation` | 복귀 정보(결과 종류) 기록 |
@@ -576,7 +581,7 @@ type DocumentsResult =
 | `ResetConfirm` | 무조작 경고 시점 | — | `TimeoutDialog` (`ResetConfirm`은 닫음. 제안, 승인 전, §E #36) | 유지. 초기화 시점은 `ResetConfirm`을 열어 두었다고 늦춰지지 않음 |
 | 결과 3종, 근거, 서류 | "이용 완료" | — | `K06_Complete` | 먼저 전체 삭제 |
 | `K04_Basis_Calculation`, `K07_*` | "결과로 돌아가기" | — | 복귀 정보의 결과 종류(`resultVariant`)의 결과 화면. 세로형·가로형 변형과 큰 글자 보기는 복귀 시점의 최신 표시 설정을 따름(DD-11) | 유지 |
-| `KXX_Error_Network` | "다시 시도" | — | `Calculating` | 같은 `inputRevision`로 새 `requestId`의 새 요청(이전 시도는 만료된 채로 남아 반영되지 않음) |
+| `KXX_Error_Network` | "다시 시도" | 갱신이 필요하지 않음(`refreshState = NONE`). 갱신이 필요하면 계산 요청을 보내지 않는다 | `Calculating` | 같은 `inputRevision`로 새 `requestId`의 새 요청(이전 시도는 만료된 채로 남아 반영되지 않음) |
 | `KXX_Error_Network` | "이용 종료" | — | `K06_Complete` | 먼저 전체 삭제 (잠정, plan.md §E #20) |
 | `K06_Complete` | "처음 화면으로" 또는 `completionHoldSeconds` 경과 | — | `K00_Start` | 없음(이미 비어 있음) |
 | 환자 데이터 화면 | 무조작 경고 시점 | — | `TimeoutDialog` 겹침창 (겹침창은 동시에 하나만, 위 `ResetConfirm` 행) | 유지 |
@@ -589,13 +594,13 @@ type DocumentsResult =
 
 ### 겹침창이 열려 있는 동안 도착하는 요청 결말
 
-출처 표기: 규칙 1~4의 본문은 사용자 지시 (2026-10-15 개정 5 요청)다. "SPEC 제안 (승인 전)"이라고 적은 문장과 규칙 5는 이 SPEC이 덧붙인 제안이며 소유자 승인이 아니다. 이 절은 위 전이표와 DD-09의 요청 보호를 바꾸지 않고 둘이 만나는 곳을 정한다. `ResetConfirm`·`TimeoutDialog`가 열리는 조건(plan.md §E #36의 제안)도 바꾸지 않으며, §E #21과 #36은 열린 채 그대로다.
+출처 표기: 규칙 1~4의 본문은 사용자 지시 (2026-10-15 개정 5 요청)다. 자료 갱신 결과에 관한 표 2와 규칙 3의 갱신 문장은 사용자 지시 (2026-10-15 개정 6 요청)이며 DD-09 "자료 갱신 생명주기"가 계약이다. "SPEC 제안 (승인 전)"이라고 적은 문장과 규칙 5는 이 SPEC이 덧붙인 제안이며 소유자 승인이 아니다. 이 절은 위 전이표와 DD-09의 요청 보호를 바꾸지 않고 둘이 만나는 곳을 정한다. `ResetConfirm`·`TimeoutDialog`가 열리는 조건(plan.md §E #36의 제안)도 바꾸지 않으며, §E #21과 #36은 열린 채 그대로다.
 
 화면 상태(`Calculating`, 결과 3종, `KXX_Error_Network`, `K03_Treatments` 등)와 겹침창 상태(없음 / `ResetConfirm` / `TimeoutDialog`, 동시에 하나)는 따로 가진다. 겹침창은 화면 위에 그려질 뿐 요청의 결말을 막지 않고, 요청 보호(DD-09)는 겹침창과 상관없이 활성 `requestId`·`sessionId`·`inputRevision`만 본다.
 
 1. 활성 요청과 일치하는 결말은 겹침창이 열려 있어도 `settleRequest` 규칙대로 곧바로 밑 화면 상태에 반영한다. 겹침창 때문에 결말을 미루거나 따로 쌓아 두지 않는다.
 2. 환자가 `ResetConfirm`을 취소하거나 `TimeoutDialog`에서 "계속 사용할게요"를 누르면 응답 전의 `Calculating`으로 돌아가지 않고 이미 결말이 반영된 최신 화면을 보인다. 결과로 바뀌었으면 결과 화면이고 오류로 바뀌었으면 그 오류 화면이다.
-3. 초기화가 확정된 뒤에는 이전 시도의 응답·오류·시간 초과를 버린다. 확정은 `ResetConfirm`의 확인, `TimeoutDialog` 안의 "처음으로", 무조작 초기화이며, 모두 먼저 `settleRequest(…, CANCELLED)`로 활성 요청을 풀고 새 `sessionId`로 `K00_Start`를 연다. 그래서 늦게 온 결말은 `activeRequest`가 null이거나 다른 시도라서 DD-09 1단계에서 버려지고, 409·`TREATMENT_NOT_PUBLISHED` 뒤의 catalog·options 다시 받기도 시작되지 않는다. `K06_Complete`를 거치지 않는다.
+3. 초기화가 확정된 뒤에는 이전 시도의 응답·오류·시간 초과를 버린다. 확정은 `ResetConfirm`의 확인, `TimeoutDialog` 안의 "처음으로", 무조작 초기화이며, 모두 먼저 `settleRequest(…, CANCELLED)`로 활성 요청을 풀고 새 `sessionId`로 `K00_Start`를 연다. 그래서 늦게 온 결말은 `activeRequest`가 null이거나 다른 시도라서 DD-09 1단계에서 버려지고, 409·`TREATMENT_NOT_PUBLISHED` 뒤의 catalog·options 다시 받기도 시작되지 않는다. 이미 진행 중이던 갱신도 같은 자리에서 `settleRefresh(…, CANCELLED)`로 풀려(DD-09 "자료 갱신 생명주기" 규칙 5) 그 뒤 도착한 갱신 결과는 버려진다. `K06_Complete`를 거치지 않는다.
 4. 서버 응답·오류·요청 시간 제한 만료는 무조작 시간을 다시 시작하거나 연장하지 않는다. 환자의 터치·키 입력만 그렇게 한다(DD-10, 아래 표의 모든 행). SPEC 제안 (승인 전): 화면 종류가 바뀌어도 경과 시간은 마지막 환자 조작부터 계속 세고, 아직 경고 전이면 임계값만 새 화면 종류의 값(DD-10 표)을 쓴다. 이미 열린 `TimeoutDialog`의 초기화 시점은 열릴 때 정해진 그대로이며 응답이 도착해도 바뀌지 않는다.
 5. SPEC 제안 (승인 전): 요청 시간 제한과 무조작 경고 시간의 관계. plan.md §E #21은 열려 있고 값을 정하지 않는다. 이 SPEC의 어느 요구사항도 요청 시간 제한이 `Calculating`의 경고 시간(DD-10 표, 100초)보다 짧아야 한다고 요구하지 않으며, 현재 수치가 뜻하는 관계는 다음과 같다. (가) 제한이 경고 시간보다 짧으면 환자 조작이 없는 한 `TimeoutDialog`가 `Calculating` 위에 뜨기 전에 요청이 `EXPIRED`로 끝난다(plan.md §E.8 B4가 권하는 15초가 이 경우다). 그래도 `ResetConfirm`은 환자 조작으로 열리므로(조작이 무조작 시간을 다시 센다) 제한이 경고 시간보다 짧아도 `ResetConfirm` 위에서 만료가 일어날 수 있다. (나) 제한이 경고 시간 이상이면 `TimeoutDialog`가 `Calculating` 위에 뜬 채로 요청이 끝날 수 있고 아래 표가 그 경우를 정한다. (다) 제한이 초기화 시간(120초) 이상이면 만료 전에 무조작 초기화가 먼저 와서 요청이 취소되므로 제한이 쓰이지 않는다. 표는 (가)~(다)에 같은 규칙을 적용한다.
 
@@ -604,16 +609,27 @@ type DocumentsResult =
 | 열린 겹침창 | 도착한 결말 | 밑 화면에 적용되는 것 | 겹침창의 동작 | 닫은 뒤 환자가 보는 것 |
 |-------------|-------------|------------------------|---------------|------------------------|
 | `ResetConfirm` | 200 (`ESTIMATED`·`ESTIMATED_WITH_EXCLUSIONS`·`ON_HOLD`) | `settleRequest(SUCCEEDED)`가 활성 요청·타이머·로딩 표시를 풀고 밑 화면이 `K04_Result`·`K04_Result_NotCovered`·`K04_Result_Hold` 가운데 해당 화면이 되어 결과가 저장된다 | `ResetConfirm`이 그대로 열려 있다(자동으로 닫히거나 확인되지 않는다). 무조작 시간은 그대로다 | 취소: 결과가 반영된 결과 화면(`Calculating`이 아니다). 확인: 세션을 지우고 `K00_Start`, 방금 반영된 결과는 세션 삭제로 지워진다 |
-| `ResetConfirm` | 409 `VERSION_MISMATCH` | `settleRequest(VERSION_MISMATCH)`가 요청을 풀고 DD-14 갱신 흐름(catalog·options 다시 받기, 시작 때의 `sessionId`·`inputRevision`이 같을 때만 반영)이 시작되어 밑 화면이 `K03_Treatments`가 된다. 다시 받는 동안의 표시는 DD-14·DD-19의 기존 규칙을 따른다 | 그대로 열려 있다 | 취소: 갱신된 `K03_Treatments`(내려간 치료 안내, 환자가 다시 확인해야 결과가 나옴). 확인: `K00_Start`, 갱신 결과는 버려진다 |
-| `ResetConfirm` | 그 밖의 오류 (422 두 종, 그 밖의 4xx, 5xx, 연결 실패) | `settleRequest`가 요청을 푼 뒤 DD-19 처리 표대로 밑 화면이 `K03_Treatments`(`NO_TREATMENT_SELECTED`. `TREATMENT_NOT_PUBLISHED`는 갱신 흐름 뒤) 또는 `KXX_Error_Network`가 된다 | 그대로 열려 있다 | 취소: 그 화면. 확인: `K00_Start` |
+| `ResetConfirm` | 409 `VERSION_MISMATCH` | `settleRequest(VERSION_MISMATCH)`가 요청을 풀고 밑 화면이 곧바로 `K03_Treatments`(갱신 `RUNNING`: 확인 버튼 비활성, 인라인 진행 표시)가 되며 catalog·options 갱신이 시작된다(DD-09 "자료 갱신 생명주기") | 그대로 열려 있다 | 취소: 그 시점의 최신 `K03_Treatments`(갱신이 진행 중이면 확인 버튼 비활성, 이미 끝났으면 아래 표 2). 확인: `K00_Start`, 갱신 결과는 버려진다 |
+| `ResetConfirm` | 그 밖의 오류 (422 두 종, 그 밖의 4xx, 5xx, 연결 실패) | `settleRequest`가 요청을 푼 뒤 DD-19 처리 표대로 밑 화면이 `K03_Treatments`(`NO_TREATMENT_SELECTED`는 확인 버튼 비활성. `TREATMENT_NOT_PUBLISHED`는 409와 같이 갱신 `RUNNING`) 또는 `KXX_Error_Network`가 된다 | 그대로 열려 있다 | 취소: 그 화면. 확인: `K00_Start` |
 | `ResetConfirm` | 요청 시간 제한 도달 (`EXPIRED`) | `settleRequest(EXPIRED)`가 요청을 풀고 컨트롤러를 `abort()`하며 밑 화면이 `KXX_Error_Network`가 된다. 만료 뒤 늦게 온 응답은 버려진다 | 그대로 열려 있다. 만료는 무조작 시간을 다시 시작하지 않는다 | 취소: `KXX_Error_Network`("다시 시도"·"이용 종료"). 확인: `K00_Start` |
 | `TimeoutDialog` | 200 | 위 `ResetConfirm` 200 행과 같다 | `TimeoutDialog`가 그대로 열려 있고 남은 시간은 계속 준다. 초기화 시점은 응답과 상관없이 열릴 때 정해진 그대로다(규칙 4) | "계속 사용할게요": 결과가 반영된 결과 화면이고 무조작 시간을 그 화면 종류의 임계값으로 다시 센다. "처음으로"나 초기화 시점 도달: `K00_Start`(반영된 결과는 지워진다) |
-| `TimeoutDialog` | 409 | 위 `ResetConfirm` 409 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": 갱신된 `K03_Treatments`. "처음으로"·초기화 시점: `K00_Start`, 갱신 결과는 버려진다 |
+| `TimeoutDialog` | 409 | 위 `ResetConfirm` 409 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": 그 시점의 최신 `K03_Treatments`(갱신 중이면 확인 버튼 비활성, 끝났으면 아래 표 2). "처음으로"·초기화 시점: `K00_Start`, 갱신 결과는 버려진다 |
 | `TimeoutDialog` | 그 밖의 오류 | 위 `ResetConfirm`의 같은 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": 그 화면(`K03_Treatments` 또는 `KXX_Error_Network`). "처음으로"·초기화 시점: `K00_Start` |
 | `TimeoutDialog` | `EXPIRED` | 위 `ResetConfirm` `EXPIRED` 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": `KXX_Error_Network`. "처음으로"·초기화 시점: `K00_Start` |
 
-- 표의 모든 행에서 결말이 겹침창 뒤에 도착해도 환자의 선택·`inputRevision`·`sessionId`는 바뀌지 않는다. 확정된 초기화가 먼저면 규칙 3에 따라 어느 행의 결말도 반영되지 않는다.
-- 시험: AC-015l(`ResetConfirm` 취소와 응답), AC-015m(초기화 확정과 응답), AC-015n(무조작 초기화와 응답), AC-015o(`TimeoutDialog` "계속 사용할게요"와 응답), AC-015p(겹침창이 열린 동안의 요청 만료).
+**표 2: 겹침창이 열려 있는 동안 도착하는 자료 갱신 결과** (사용자 지시 (2026-10-15 개정 6 요청): 밑 화면에 곧바로 반영, 닫으면 최신 갱신 상태, 진행 중이면 확인 버튼 비활성, 확정된 초기화 뒤의 결과는 버림, 갱신 결과만으로 무조작 시간을 다시 세지 않음. 아래 "실패" 열의 인라인 표시와 `TimeoutDialog`의 초기화 시점 유지는 SPEC 제안 (승인 전)). `K03_Treatments`가 갱신 `RUNNING`이고 그 위에 겹침창이 열려 있다.
+
+| 열린 겹침창 | 도착한 갱신 결과 | 밑 화면에 적용되는 것 | 겹침창의 동작 | 닫은 뒤 환자가 보는 것 |
+|-------------|------------------|------------------------|---------------|------------------------|
+| `ResetConfirm` | 성공 (catalog와 options 둘 다 도착) | `settleRefresh(SUCCEEDED)`가 갱신을 풀고 가드를 통과하면 한 단계로 반영한다(선택 유지·제거, 새 합계, 자료와 버전 교체, 확인 버튼 활성) | 그대로 열려 있다. 무조작 시간은 그대로다 | 취소: 반영된 `K03_Treatments`(확인 버튼 활성, 갱신 전 상태가 아니다). 확인: `K00_Start`, 반영된 내용은 세션 삭제로 지워진다 |
+| `ResetConfirm` | 실패 또는 시간 제한 | `settleRefresh(FAILED 또는 EXPIRED)`가 갱신을 풀고 아무것도 반영하지 않는다. 갱신 `FAILED`가 되어 인라인 안내와 인라인 "다시 시도"가 보이고 확인 버튼은 비활성이다 | 그대로 열려 있다. 무조작 시간은 그대로다 | 취소: 인라인 안내가 보이는 `K03_Treatments`(확인 버튼 비활성). 확인: `K00_Start` |
+| `TimeoutDialog` | 성공 | 위 `ResetConfirm` 성공 행과 같다 | 그대로 열려 있고 남은 시간은 계속 준다. 초기화 시점은 열릴 때 정해진 그대로다 | "계속 사용할게요": 반영된 `K03_Treatments`, 무조작 시간을 다시 센다. "처음으로"·초기화 시점: `K00_Start` |
+| `TimeoutDialog` | 실패 또는 시간 제한 | 위 `ResetConfirm` 실패 행과 같다 | 위 `TimeoutDialog` 성공 행과 같다 | "계속 사용할게요": 인라인 안내가 보이는 `K03_Treatments`(확인 버튼 비활성). "처음으로"·초기화 시점: `K00_Start` |
+| 둘 중 하나 | 아직 도착하지 않음(갱신 `RUNNING`) | 아직 바뀌는 것이 없다. 확인 버튼 비활성, 인라인 진행 표시, 치료 카드와 "이전" 잠김 | 위 행들과 같다 | 취소 또는 "계속 사용할게요": 갱신 중인 `K03_Treatments`(확인 버튼 비활성) |
+
+- 표 2의 모든 행에서 확정된 초기화가 먼저이면 갱신은 `CANCELLED`로 풀려 그 뒤 도착한 결과를 반영하지 않는다. 갱신 결과가 겹침창 뒤에 도착해도 `sessionId`는 바뀌지 않으며, 반영이 선택 제거를 포함할 때만 `inputRevision`이 한 번 오른다.
+- 표의 모든 행에서 결말이 겹침창 뒤에 도착해도 환자의 선택·`inputRevision`·`sessionId`는 바뀌지 않는다(표 2의 선택 제거 반영은 제외). 확정된 초기화가 먼저면 규칙 3에 따라 어느 행의 결말도 반영되지 않는다.
+- 시험: AC-015l(`ResetConfirm` 취소와 응답), AC-015m(초기화 확정과 응답), AC-015n(무조작 초기화와 응답), AC-015o(`TimeoutDialog` "계속 사용할게요"와 응답), AC-015p(겹침창이 열린 동안의 요청 만료), AC-020h(표 2: 겹침창이 열린 동안의 자료 갱신 결과).
 
 ## DD-08 입력 변경과 파생 데이터 무효화
 
@@ -631,7 +647,7 @@ type DocumentsResult =
 | 화면 방향 변경 | 유지 | 유지 | 유지 | 유지 | 유지 | 유지 | 유지 | 그대로(터치·키 입력이 아니므로 다시 시작하지 않음) |
 | 근거·서류 진입 | 유지 | 유지 | 유지 | 유지 | 유지 | 기록(결과 종류만) | 유지 | 다시 시작 |
 | 결과로 돌아가기 | 유지 | 유지 | 유지 | 유지 | 유지 | 사용 후 유지(결과 종류만 복원) | 유지 | 다시 시작 |
-| 409 버전 불일치 처리 | 유지 | 유지 | 유지 | 게시 중인 것만 유지 | 삭제 | 삭제 | 유지 | 다시 시작 |
+| 409·422 뒤 자료 갱신 반영(DD-09 "자료 갱신 생명주기") | 유지 | 유지 | 유지 | 게시 중인 것만 유지(제거가 있으면 `inputRevision` +1) | 삭제 | 삭제 | 유지 | 그대로(서버 결과라 다시 시작하지 않음. 개정 6에서 "다시 시작"을 고쳤다. DD-10과 같다) |
 | 처음으로·이용 완료·무조작 초기화·새로고침 | 삭제 | 삭제 | 삭제 | 삭제 | 삭제 | 삭제 | 꺼짐(잠정) | 정지 |
 
 근거·서류 화면 안에서 큰 글자 보기나 화면 방향이 바뀌면 그 화면에 머물고, 바뀐 값은 "결과로 돌아가기" 뒤에도 남는다. "결과로 돌아가기"가 복원하는 것은 결과 종류뿐이다(DD-11). 여기서 표시 설정을 "그대로 유지"한다는 말은 초기화하거나 잃지 않는다는 뜻이며, 진입 때의 값으로 되돌린다는 뜻이 아니다.
@@ -639,7 +655,7 @@ type DocumentsResult =
 ## DD-09 세션 보호와 복원 금지
 
 - 세션은 메모리 저장소에만 둔다(기획서 §8). 초기화마다 `sessionId`를 새로 만든다(기획서 §13.2 "세션 식별자 교체").
-- 계산 시도마다 새 `requestId`를 만든다(SPEC 결정). 키오스크 안에서만 쓰는 값이며 `crypto.randomUUID()`로 만들고 메모리에만 둔다. 계산 요청의 본문·헤더·URL(경로·쿼리·해시)에 싣지 않고 서버로 보내지 않으며, 브라우저 저장소(localStorage·sessionStorage·IndexedDB·쿠키·Cache Storage)·서버 저장소(데이터베이스·저장소 구현과 키를 이 값으로 쓰는 서버 메모리 캐시·맵)·클라이언트와 서버의 로그·분석 이벤트에 남기지 않는다(서버는 요청 본문의 다른 필드를 읽지 않는다, REQ-API-002). 메모리에 두는 것, 곧 아래 `activeRequest`가 들고 있는 것은 허용된다. 이 식별자는 관리자 쪽 검토 요청 기록(`CoverageReviewRequest`)의 id(관리자 API 경로의 `{reviewRequestId}`, DD-17·DD-18·DD-19)와 다른 것이다. 둘은 만드는 쪽·쓰임·저장 여부가 다르며 같은 값이나 같은 필드로 쓰지 않는다. 시험은 발급기를 알려진 표지 값을 내는 것으로 바꿔 끼우고 요청 가로채기(fetch/XHR 감시), 로그 수집기, 분석 이벤트 수집기, 저장소 전후 덤프, 서버 저장소와 서버 메모리 캐시·맵 덤프를 뒤져 그 값이 나오지 않음을 보인다. 같은 구성에서 `activeRequest`에는 그 값이 있음을 대조군으로 확인해 '없음'이 빈 검사가 되지 않게 한다(AC-016k~n). 키오스크 상태는 `activeRequest: { requestId, sessionId, inputRevision, controller, timeoutHandle } | null`을 가지며, 취소 수단으로 `AbortController`를, 그 시도의 클라이언트 시간 제한(plan.md §E #21)을 재는 타이머 핸들(`timeoutHandle`)을 붙인다(SPEC 결정: 기획서는 "요청 취소"만 요구).
+- 계산 시도마다 새 `requestId`를 만든다(SPEC 결정). 키오스크 안에서만 쓰는 값이며 `crypto.randomUUID()`로 만들고 메모리에만 둔다. 계산 요청의 본문·헤더·URL(경로·쿼리·해시)에 싣지 않고 서버로 보내지 않으며, 브라우저 저장소(localStorage·sessionStorage·IndexedDB·쿠키·Cache Storage)·서버 저장소(데이터베이스·저장소 구현과 키를 이 값으로 쓰는 서버 메모리 캐시·맵)·클라이언트와 서버의 로그·분석 이벤트에 남기지 않는다(서버는 요청 본문의 다른 필드를 읽지 않는다, REQ-API-002). 메모리에 두는 것, 곧 아래 `activeRequest`가 들고 있는 것은 허용된다. 이 식별자는 관리자 쪽 검토 요청 기록(`CoverageReviewRequest`)의 id(관리자 API 경로의 `{reviewRequestId}`, DD-17·DD-18·DD-19)와 다른 것이다. 둘은 만드는 쪽·쓰임·저장 여부가 다르며 같은 값이나 같은 필드로 쓰지 않는다. 시험은 발급기를 알려진 표지 값을 내는 것으로 바꿔 끼우고 요청 가로채기(fetch/XHR 감시), 로그 수집기, 분석 이벤트 수집기, 저장소 전후 덤프, 서버 저장소와 서버 메모리 캐시·맵 덤프를 뒤져 그 값이 나오지 않음을 보인다. 같은 구성에서 `activeRequest`에는 그 값이 있음을 대조군으로 확인해 '없음'이 빈 검사가 되지 않게 한다(AC-016k~n). catalog·options 갱신 시도의 `refreshId`(아래 "자료 갱신 생명주기")는 이 `requestId`와 다른 식별자이며 이 규칙을 바꾸지 않는다. 키오스크 상태는 `activeRequest: { requestId, sessionId, inputRevision, controller, timeoutHandle } | null`을 가지며, 취소 수단으로 `AbortController`를, 그 시도의 클라이언트 시간 제한(plan.md §E #21)을 재는 타이머 핸들(`timeoutHandle`)을 붙인다(SPEC 결정: 기획서는 "요청 취소"만 요구).
 - 보호 규칙: 200 결과, 4xx·5xx 오류, 409, `NO_TREATMENT_SELECTED`·`TREATMENT_NOT_PUBLISHED` 처리, 연결 실패, 클라이언트 시간 초과 등 모든 결말은 `activeRequest !== null`이고 `activeRequest.requestId`가 그 결말의 `requestId`와 같을 때만 반영한다(방어를 겹쳐 `sessionId`와 `inputRevision`이 지금 값과 같은지도 본다). 아니면 상태·결과·로딩 표시·화면을 건드리지 않고 버린다. 이 보호는 `AbortController`와 별개이며 그 위에 더하는 것이다. 취소가 이미 날아온 응답을 막지 못할 수 있기 때문이다.
 - `activeRequest`를 null로 하고 `controller`를 취소하는 경우(모두 아래 "요청 생명주기"의 `settleRequest`를 거친다): "처음으로"·"이용 완료"·무조작 초기화·새로고침(새 `sessionId`)으로 초기화할 때, 입력이 바뀔 때(`inputRevision` +1), 요청이 만료될 때(클라이언트 시간 초과 → 전송 상태 `FAILED` → `KXX_Error_Network`이며, 만료된 시도는 나중에 도착해도 반영되지 않는다), 새 시도가 이를 대체할 때("다시 시도"나 새 "예상 부담액 확인"은 새 `requestId`를 만들고 이전 시도를 취소한다).
 - 로딩 상태는 활성 요청에만 속한다. 이전 시도의 늦은 결과는 로딩 표시를 끄거나, 오류 화면을 띄우거나, 새 시도의 결과 화면을 여는 일을 할 수 없다.
@@ -673,11 +689,33 @@ type DocumentsResult =
 - 새 시도 B가 시작된 뒤 이전 시도 A의 늦은 추가 호출(늦은 응답·늦은 오류·A의 타이머 콜백·`settleRequest(A의 requestId, …)` 직접 호출)이 오더라도 `activeRequest`는 B의 `requestId`를 가리키므로 1단계에서 모두 버려진다. B의 대기 타이머, 로딩 표시, 화면(`Calculating`), `activeRequest`는 호출 전후로 같고, B가 제때 만료되거나 응답을 받는 것도 바뀌지 않는다(AC-016j).
 - `ResetConfirm`·`TimeoutDialog`가 열려 있는 동안 도착한 결말도 같은 `settleRequest`를 거친다. 그 결말을 밑 화면에 반영하는 방식과 초기화가 확정된 뒤 이전 시도의 결말을 버리는 방식은 DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"이 정한다.
 - 무조작 타이머(DD-10)는 별개다. `settleRequest`는 무조작 타이머를 시작하지도 멈추지도 않는다.
-- 409 `VERSION_MISMATCH`와 422 `TREATMENT_NOT_PUBLISHED`의 후속 조치(catalog·options를 다시 받는 일, DD-14·DD-19)는 요청을 정리한 뒤에 시작하며, 다시 받은 결과는 후속 조치를 시작할 때 잡아 둔 `sessionId`와 `inputRevision`이 지금 값과 같을 때만 반영한다. 그 사이에 초기화나 입력 변경이 있었으면 결과를 버린다(요청 보호와 같은 계열의 보호).
+- 409 `VERSION_MISMATCH`와 422 `TREATMENT_NOT_PUBLISHED`의 후속 조치(catalog·options를 다시 받는 일, DD-14·DD-19)는 요청을 정리한 뒤에 시작한다. 이 갱신의 전체 계약(진행 중 확인 버튼 비활성, 두 응답을 한 단계로 반영, 실패 처리, 갱신 시도 식별자, 초기화·입력 변경과의 경합)은 아래 "자료 갱신 생명주기"가 정한다. 요청 보호와 같은 계열의 보호로, 다시 받은 결과는 시작할 때 잡아 둔 `sessionId`와 `inputRevision`이 지금 값과 같을 때만 반영한다.
 - 환자 데이터를 localStorage·IndexedDB·서비스워커 캐시(기획서 §8)와 sessionStorage·Cache Storage(SPEC 결정으로 금지 목록에 추가)에 쓰지 않는다. 정적 검사(금지 API 사용 탐지)와 실행 중 저장소 감시 시험으로 확인한다.
 - 조건을 URL 쿼리나 분석 이벤트에 넣지 않는다. 분석은 단계별 익명 집계만 둔다(기획서 §8).
 - 키오스크는 단계마다 history 항목을 만들지 않는 단일 경로(`/kiosk/{clinicSlug}`)다. 뒤로·앞으로 이동과 `pageshow`의 `persisted = true`(bfcache 복원)는 `K00_Start` 초기화로 처리한다(SPEC 결정: 기획서는 "복원 금지"만 요구). 키오스크 문서와 계산 응답은 `Cache-Control: no-store`로 내려보낸다(SPEC 결정). 새로고침은 빈 세션으로 시작한다.
 - 관리자 인증 상태를 키오스크에 남기지 않고, 환자 화면에 `/admin` 링크와 숨은 터치 진입을 두지 않는다(기획서 §8, §13.3).
+
+### 자료 갱신 생명주기 (409·422 뒤 catalog·options 다시 받기)
+
+활성 요청의 결말이 409 `VERSION_MISMATCH`이거나 422 `TREATMENT_NOT_PUBLISHED`이면(DD-19 처리 표) 키오스크는 그 병원의 catalog와 options를 다시 받는다. 이 갱신은 기존 치료 선택 화면 `K03_Treatments` 안에서 일어나며 새 프레임도 새 입력 단계도 만들지 않는다. 출처 표기: 규칙 1·2·3의 본문, 규칙 5의 가드와 겹침창에 관한 본문, 규칙 6은 사용자 지시 (2026-10-15 개정 6 요청)다. "SPEC 제안 (승인 전)"이라고 적은 부분은 사용자 지시가 정하지 않은 점을 이 SPEC이 최소로 정한 것이며 소유자 승인이 아니다. plan.md §E #21(요청 시간 제한 값)과 #36은 열린 채 그대로다.
+
+```ts
+refreshState: 'NONE' | 'RUNNING' | 'FAILED'      // 세션 메모리의 값 하나. 초기화마다 NONE으로 돌아간다
+activeRefresh: { refreshId, sessionId, inputRevision, reason, controllers, timeoutHandle } | null   // RUNNING일 때만 있다
+// reason: 'VERSION_MISMATCH' | 'TREATMENT_NOT_PUBLISHED' | 'RETRY'
+```
+
+"갱신이 필요한 상태"는 `RUNNING` 또는 `FAILED`다. 갱신이 필요한 동안 화면에 있는 catalog·options·선택·합계는 이전에 받은 값 그대로이며, 새 값은 규칙 2의 한 단계로만 들어온다.
+
+1. 갱신이 필요한 동안 "예상 부담액 확인"은 비활성이다. 상태 기계도 같은 규칙을 지킨다: 이 상태에서 "예상 부담액 확인" 사건이 강제로 들어와도(버튼이 눌렸는지와 상관없이) `Calculating`으로 가지 않고 계산 요청(`fetch`)을 보내지 않으며, `KXX_Error_Network`의 "다시 시도"도 갱신이 필요한 동안에는 계산 요청을 보내지 않는다.
+2. 갱신은 catalog와 options를 모두 받은 뒤에만 한 단계로 반영한다. 한 단계에 들어가는 것: ① 선택 유지·제거(게시 중인 치료만 유지하고 내려간 치료는 기존 안내와 함께 뺀다) ② 새 합계(엔진의 합산 함수) ③ 보관하는 catalog·options 자료와 두 버전(`catalogVersion`, `ruleBundleVersion`)의 교체 ④ `refreshState = NONE`과 로딩 표시 끔 ⑤ 치료가 1개 이상 남으면 "예상 부담액 확인" 활성화(모두 빠졌으면 기존 규칙대로 비활성). 둘 중 하나만 반영하는 경우는 없고, 한쪽만 도착한 동안 화면은 바뀌지 않는다. 선택이 하나라도 제거되면 치료 묶음이 바뀐 것이므로 DD-08 규칙대로 파생 데이터와 복귀 정보를 지우고 `inputRevision`을 한 번 올린다(가드는 이 반영 직전에 평가하므로 이 증가가 가드를 깨지 않는다). SPEC 제안 (승인 전): catalog 응답에 든 `idlePolicy`도 같은 단계에서 바뀌고, 무조작 경과 시간은 이어서 센다.
+3. 둘 중 하나라도 실패하거나(연결 실패, 5xx, 그 밖의 4xx) 갱신의 시간 제한(규칙 7)에 닿으면 도착한 다른 쪽을 포함해 어느 것도 쓰지 않고, 계산 요청도 보내지 않으며, 보관 중이던 자료·선택·합계는 그대로 둔다. `refreshState = FAILED`가 되고 확인 버튼은 비활성으로 남는다. SPEC 제안 (승인 전): 화면은 `K03_Treatments`에 머물며 인라인 안내 한 줄(초안 "최신 정보를 불러오지 못했어요. 다시 시도해 주세요", 새 프레임을 요청하지 않으며 문구는 초안)과 인라인 "다시 시도"를 보이고, 오류 화면 `KXX_Error_Network`는 계산 요청의 실패에만 쓴다. 인라인 "다시 시도"(환자 조작)는 계산이 아니라 갱신을 먼저 실행한다(`reason = RETRY`로 새 `refreshId`). 확인 버튼은 갱신이 완전히 성공해 규칙 2가 적용되기 전에는 비활성이다.
+4. 갱신 시도마다 자기 식별자 `refreshId`를 가진다. 이것은 계산 시도의 `requestId`(위), 관리자 검토 요청 기록의 `{reviewRequestId}`(DD-19)와 서로 다른 식별자다. SPEC 제안 (승인 전): `refreshId`는 키오스크 메모리에서만 만들고 쓰며(두 GET 요청에도 싣지 않고) 저장·로그·URL·분석 이벤트에 남기지 않는다. 계산 `requestId`의 "보내지 않고 저장하지 않는다" 규칙은 그대로이며 이 절이 바꾸지 않는다. 갱신의 모든 결말은 `settleRefresh(refreshId, outcome)` 하나를 거친다(`SUCCEEDED`, `FAILED`, `EXPIRED`, `CANCELLED`). `settleRequest`와 같은 한 번만 처리하는 구조다: ① `activeRefresh`가 null이거나 `refreshId`가 다르면 버리고 아무것도 바꾸지 않는다 ② 아니면 `activeRefresh = null`, 타이머를 치우고 컨트롤러를 정리하고 로딩 표시를 끈다 ③ 그다음 결말을 반영한다(`SUCCEEDED`이면 규칙 5의 가드를 평가한 뒤 규칙 2를, 실패·만료·취소이면 규칙 3의 상태를). 같은 갱신에 대한 이후의 호출과 이전 갱신 A의 늦은 성공·실패는 1단계에서 끝나 새 갱신 B의 결과, 확인 버튼 상태, 로딩 표시를 바꾸지 못한다. 두 GET은 한 갱신의 일부이므로 둘 중 하나가 실패하면 갱신 전체가 `FAILED`로 한 번 끝나고 나머지 하나의 응답은 버려진다.
+5. 갱신 결과는 시작할 때 잡은 `sessionId`와 `inputRevision`이 반영 직전의 값과 같을 때만 반영한다(DD-14의 기존 규칙). 초기화가 확정되는 세 경로(`ResetConfirm`의 확인, `TimeoutDialog` 안의 "처음으로", 무조작 초기화)는 요청과 함께 진행 중인 갱신도 먼저 `settleRefresh(…, CANCELLED)`로 풀고 새 세션을 열어 `refreshState = NONE`이 되므로, 그 뒤 도착한 갱신 결과는 버려진다. `inputRevision`은 DD-08의 입력 변경(세대·보험사 형태·치료 원인 값 변경, 치료 추가·해제)이 올리고, 갱신 반영 때 치료가 제거되는 경우에도 한 번 오른다. SPEC 제안 (승인 전): 갱신이 진행 중인 동안 `K03_Treatments`의 치료 카드와 "이전"을 비활성(잠금)으로 두어 입력이 바뀔 수 없게 하고, "처음으로"·목록 페이지 이동·큰 글자 전환은 입력 변경이 아니므로 그대로 둔다. 그럼에도 입력 변경이 일어나면(잠금을 거치지 않는 경로) 진행 중인 갱신을 `CANCELLED`로 풀고 결과를 쓰지 않으며 `refreshState = FAILED`로 두어 확인 버튼이 비활성인 채 규칙 3의 인라인 안내와 "다시 시도"가 보이게 한다.
+6. `ResetConfirm`·`TimeoutDialog`가 열려 있는 동안 갱신 결과가 도착하면 밑 화면 `K03_Treatments`에 곧바로 반영하고(성공이면 규칙 2, 실패·시간 초과이면 규칙 3), 환자가 취소하거나 "계속 사용할게요"를 누르면 갱신 전의 상태가 아니라 최신 갱신 상태를 본다. 갱신이 아직 진행 중이면 닫은 뒤에도 확인 버튼은 비활성이다. 확정된 초기화 뒤의 결과는 규칙 5로 버려진다. 갱신의 시작·성공·실패·시간 초과는 무조작 시간을 다시 시작하거나 연장하지 않는다(환자의 인라인 "다시 시도" 터치는 환자 조작이므로 다시 센다). 겹침창 표는 DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"이다.
+7. SPEC 제안 (승인 전): 갱신의 시간 제한은 갱신 하나(두 요청 전체)에 타이머 하나이며, 계산 요청의 시간 제한(plan.md §E #21, 값 미정, 시험은 주입값)과 같은 값을 쓰는 것을 기본으로 한다. #21을 닫지 않으며 값이 정해지면 같은 값이 갱신에도 적용된다는 뜻일 뿐이다. 이 타이머는 무조작 타이머와 별개다.
+
+시험: AC-020c(갱신 중 계산 차단), AC-020d(두 응답을 한 단계로 반영), AC-020e(부분 실패·시간 초과·재시도), AC-020f(이전 갱신의 늦은 결과), AC-020g(초기화·입력 변경과 갱신 결과의 경합), AC-020h(겹침창이 열린 동안의 갱신 결과), AC-020i(`K03_Treatments` 화면의 표시), AC-016o(`refreshId`의 비노출).
 
 ## DD-10 무조작 정책
 
@@ -755,7 +793,7 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 }
 ```
 
-- 클라이언트는 그 병원의 catalog·options를 다시 받고, 아직 게시된 선택은 유지하고, 내려간 치료는 안내와 함께 빼고, 새 합계를 보인 뒤 환자가 다시 확인하게 한다. 옛 값으로 결과를 확정하지 않는다(기획서 §7). 이 처리는 활성 요청(DD-09)의 409에만 한다. 활성 요청이 아닌 이전 시도의 409는 버린다. 다시 받은 catalog·options는 다시 받기를 시작할 때의 `sessionId`와 `inputRevision`이 지금 값과 같을 때만 반영하고, 그 사이에 초기화나 입력 변경이 있었으면 버린다(DD-09 "요청 생명주기").
+- 클라이언트는 그 병원의 catalog·options를 다시 받고, 두 응답이 모두 도착한 뒤에 한 단계로 아직 게시된 선택은 유지하고, 내려간 치료는 안내와 함께 빼고, 새 합계를 보이고, 환자가 다시 확인할 수 있게 "예상 부담액 확인"을 활성화한다. 옛 값으로 결과를 확정하지 않는다(기획서 §7). 갱신이 끝나기 전, 한쪽만 받은 때, 갱신이 실패한 때에는 확인 버튼이 비활성이고 계산 요청을 보내지 않는다. 이 처리는 활성 요청(DD-09)의 409에만 한다. 활성 요청이 아닌 이전 시도의 409는 버린다. 다시 받은 catalog·options는 다시 받기를 시작할 때의 `sessionId`와 `inputRevision`이 지금 값과 같을 때만 반영하고, 그 사이에 초기화나 입력 변경이 있었으면 버린다. 갱신 시도의 식별, 한 번만 처리하는 결말, 실패 처리, 겹침창과의 관계 전체는 DD-09 "자료 갱신 생명주기"가 정한다.
 - `changes.treatmentsUnpublished`의 내용(SPEC 제안, 승인 전. 기존 계약이 이 배열의 계산 근거를 적지 않아 정한 최소 동작이다): 요청의 `treatmentIds` 가운데 병원의 현재 게시 카탈로그에 없는 치료 ID를 요청에 적힌 순서대로 중복 없이 담고, 모두 현재 카탈로그에 있으면 빈 배열이다. 409는 위 처리 순서의 ④에서 나가고 치료 ID 대조(⑤)보다 앞서므로, 옛 카탈로그를 본 클라이언트가 이미 내려간 치료를 보낸 요청은 422가 아니라 이 배열을 담은 409가 된다. 현재 카탈로그에 없던 ID(다른 병원의 ID 포함)가 옛 버전의 요청에 섞여 있어도 같은 배열에 담긴다.
 - 결과는 실제로 쓴 버전, 묶음 가용성(`ruleBundleStatus`), 프로필 id·버전을 되돌려 준다.
 
@@ -1063,14 +1101,14 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 
 ### 키오스크의 응답 처리 (SPEC 결정)
 
-아래 처리는 모두 활성 `requestId`와 일치하는 결말에만 적용한다(DD-09). 활성 요청이 아닌 시도의 응답·오류·시간 초과는 어느 종류든(409와 `NO_TREATMENT_SELECTED`·`TREATMENT_NOT_PUBLISHED` 포함) 상태·결과·로딩 표시·화면을 건드리지 않고 버린다. 일치하는 결말은 모두 `settleRequest`(DD-09 "요청 생명주기")가 활성 요청과 시간 제한 타이머를 먼저 풀고 나서 아래 화면 처리를 한다. 409와 `TREATMENT_NOT_PUBLISHED` 뒤의 catalog·options 다시 받기는 시작할 때의 `sessionId`·`inputRevision`이 지금과 같을 때만 반영한다.
+아래 처리는 모두 활성 `requestId`와 일치하는 결말에만 적용한다(DD-09). 활성 요청이 아닌 시도의 응답·오류·시간 초과는 어느 종류든(409와 `NO_TREATMENT_SELECTED`·`TREATMENT_NOT_PUBLISHED` 포함) 상태·결과·로딩 표시·화면을 건드리지 않고 버린다. 일치하는 결말은 모두 `settleRequest`(DD-09 "요청 생명주기")가 활성 요청과 시간 제한 타이머를 먼저 풀고 나서 아래 화면 처리를 한다. 409와 `TREATMENT_NOT_PUBLISHED` 뒤의 catalog·options 다시 받기는 `K03_Treatments` 안의 갱신이며, 두 응답이 모두 도착한 뒤에만 한 단계로 반영하고 시작할 때의 `sessionId`·`inputRevision`이 지금과 같을 때만 반영한다. 갱신이 필요한 동안 "예상 부담액 확인"은 비활성이다(DD-09 "자료 갱신 생명주기").
 
 | 응답 (활성 `requestId`와 일치할 때) | 키오스크 처리 |
 |------|---------------|
 | 200 | 결과 상태에 따라 결과 3종 (DD-07) |
-| 409 `VERSION_MISMATCH` | 버전 불일치 흐름(DD-14): 갱신 뒤 `K03_Treatments`에서 다시 확인 |
+| 409 `VERSION_MISMATCH` | 버전 불일치 흐름(DD-14): 곧바로 `K03_Treatments`로 가서 갱신(DD-09 "자료 갱신 생명주기")을 시작하고, 갱신이 끝날 때까지 확인 버튼은 비활성이다. 갱신이 성공하면 한 단계로 반영한 뒤 환자가 다시 확인한다 |
 | 422 `NO_TREATMENT_SELECTED` | `K03_Treatments`로 돌아가 "예상 부담액 확인" 비활성 상태를 보인다 (정상 흐름에서는 버튼이 비활성이라 생기지 않음) |
-| 422 `TREATMENT_NOT_PUBLISHED` | 버전 불일치 흐름과 같게 catalog·options를 다시 받고 내려간 치료를 안내와 함께 뺀 뒤 `K03_Treatments` |
+| 422 `TREATMENT_NOT_PUBLISHED` | 버전 불일치 흐름과 같다: 곧바로 `K03_Treatments`로 가서 catalog·options 갱신을 시작하고, 두 응답이 모두 도착한 뒤 한 단계로 내려간 치료를 안내와 함께 뺀다 |
 | 그 밖의 4xx (400, 404, 422 `UNSUPPORTED_GENERATION`) | 클라이언트·계약 결함으로 보고 `FAILED` → `KXX_Error_Network` |
 | 5xx, 시간 초과, 연결 실패 | `FAILED` → `KXX_Error_Network` |
 
