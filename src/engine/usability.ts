@@ -1,5 +1,6 @@
 import type {
   ApproverRecord,
+  DocumentRuleSet,
   HoldReasonCode,
   LifecycleState,
   Origin,
@@ -243,6 +244,109 @@ export function profileToRuleItem(profile: StandardAssumptionProfile): RuleItem 
     approver: profile.approver,
     contentHash: profile.contentHash,
     content: profileContent(profile),
+  };
+}
+
+/** 배열이 아닌 객체(null 제외)인지. 서류 규칙 항목의 모양을 읽기 전에 가려내는 데 쓴다. */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** 문자열이면 그 문자열, 아니면 빈 문자열. 정렬 키가 던지거나 비교가 흔들리지 않게 하려는 것이며 값을 고치지 않는다. */
+function textKey(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/** 비교할 수 있는 숫자(NaN 제외)인지. Infinity 는 비교가 되므로 포함한다. */
+function isRankable(value: unknown): value is number {
+  return typeof value === 'number' && !Number.isNaN(value);
+}
+
+/** 숫자 우선순위는 오름차순, 숫자가 아닌 값은 모든 숫자 뒤에 두며 그들끼리는 동률이다(다음 키가 가른다). */
+function comparePriority(a: unknown, b: unknown): number {
+  if (isRankable(a) && isRankable(b)) {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  if (isRankable(a)) {
+    return -1;
+  }
+  return isRankable(b) ? 1 : 0;
+}
+
+/**
+ * `when` 을 비교 키 문자열로 만든다: 키를 코드 포인트 순으로 정렬해 `키=종류:값` 을 이어 붙인다. 던지지 않는다.
+ * 유효한 `when` 의 값은 문자열이거나 `true` 뿐이라 이 키로 충분하다. 객체가 아닌 `when` 은 빈 문자열이다.
+ * 객체·배열 값은 내용을 보지 않고 종류만 쓴다(그런 값은 구조 검사가 거절한다).
+ */
+function whenSortKey(when: unknown): string {
+  if (!isPlainRecord(when)) {
+    return '';
+  }
+  return Object.keys(when)
+    .sort(compareCodePoints)
+    .map((key) => {
+      const value = when[key];
+      return `${key}=${typeof value}:${typeof value === 'object' ? '' : String(value)}`;
+    })
+    .join(';');
+}
+
+/** 서류 규칙 한 쌍의 총순서: documentCode → priority → reason → when 키. 모두 같으면 0(안정 정렬이 입력 순서를 유지한다). */
+function compareDocumentRules(x: Record<string, unknown>, y: Record<string, unknown>): number {
+  return (
+    compareCodePoints(textKey(x.documentCode), textKey(y.documentCode)) ||
+    comparePriority(x.priority, y.priority) ||
+    compareCodePoints(textKey(x.reason), textKey(y.reason)) ||
+    compareCodePoints(whenSortKey(x.when), whenSortKey(y.when))
+  );
+}
+
+/**
+ * 규칙이 배열이고 모든 항목이 배열이 아닌 객체이면 총순서로 정렬한 사본을, 아니면 받은 값 그대로 돌려준다.
+ * 원본 배열과 항목은 바꾸지 않는다. 배열이 아니거나 null·원시값·배열 항목이 섞여 있으면 정렬하지 않는다:
+ * 구조 결함을 정렬로 유효해 보이게 고치지 않으며, 그런 서류 규칙 묶음은 구조 검사(documents.ts)가 거절한다. 던지지 않는다.
+ */
+function sortedDocumentRules(rules: unknown): unknown {
+  // Array.from 은 희소 배열의 빈 칸을 undefined 항목으로 바꿔 every 가 건너뛰지 못하게 한다(빈 칸이 있으면 정렬하지 않는다).
+  if (!Array.isArray(rules) || !Array.from(rules).every(isPlainRecord)) {
+    return rules;
+  }
+  return [...rules].sort(compareDocumentRules);
+}
+
+/**
+ * 서류 규칙 묶음 내용 해시의 입력. 이 함수 하나가 정규화의 전부이며 다음 두 쪽이 똑같이 쓴다.
+ *  (a) 해시를 만드는 쪽(M3 게시·봉인)과 (b) 해시를 검사하는 쪽(엔진의 isIntegral / documentRuleSetToRuleItem).
+ *  두 번째 구현을 만들지 않는다: 정규화가 어긋나면 같은 규칙인데 INTEGRITY_MISMATCH 가 나 서류가 RULES_UNAVAILABLE 이 된다.
+ *
+ * 해시 입력에 드는 필드: id, version, rules. 머리 정보(state, origin, validity, policySources, approver)와
+ * contentHash 자신은 뺀다.
+ *
+ * 정규화: rules 는 documentCode → priority(오름차순, 숫자가 아닌 값은 뒤) → reason → when 키 순의 총순서(문자열은 유니코드
+ * 코드 포인트 순)로 정렬한 사본이다. 같은 규칙을 다른 배열 순서로 저장해도 같은 해시 입력이 된다(규칙의 위치는 의미가 없다,
+ * DD-06 "규칙 평가" 8번). 배열이 아니거나 배열이 아닌 객체가 아닌 항목이 있으면 고치지 않고 받은 그대로 둔다(구조 검사가 거절한다).
+ *
+ * 해시 함수(ctx.digest)의 책임: 이 내용은 객체이므로 digest 는 객체 키 삽입 순서에 영향을 받지 않아야 한다(키 순서 정규화된
+ * 직렬화). 운영 해시 구현은 M3 의 일이며, 시험의 testDigest 는 그 성질을 흉내 낸 대역일 뿐이다.
+ */
+export function documentRuleSetContent(ruleSet: DocumentRuleSet): unknown {
+  return {
+    id: ruleSet.id,
+    version: ruleSet.version,
+    rules: sortedDocumentRules(ruleSet.rules),
+  };
+}
+
+export function documentRuleSetToRuleItem(ruleSet: DocumentRuleSet): RuleItem {
+  return {
+    kind: 'DOCUMENT_RULE_SET',
+    state: ruleSet.state,
+    origin: ruleSet.origin,
+    validity: ruleSet.validity,
+    policySources: ruleSet.policySources,
+    approver: ruleSet.approver,
+    contentHash: ruleSet.contentHash,
+    content: documentRuleSetContent(ruleSet),
   };
 }
 
