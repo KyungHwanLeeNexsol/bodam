@@ -9,6 +9,7 @@ import type {
   StandardAssumptionProfile,
   TreatmentCoverageMapping,
 } from './types';
+import { compareCodePoints } from './validate';
 
 // 단일 사용 가능 판정 (design.md DD-04).
 // 책임이 다른 두 함수로 나뉜다. isBundleUsable 은 묶음의 가용성만 보고 묶음 안의 항목을 읽지 않는다.
@@ -190,8 +191,35 @@ export function isUsable(
 // ───────────────────────── 항목 만들기 ─────────────────────────
 
 /**
- * 프로필 내용 해시의 대상: 머리 정보(상태·출처·유효 기간·약관 출처·승인자)와 contentHash 자신을 뺀 계산 내용.
- * 해시를 만드는 쪽(M3)과 검사하는 쪽(엔진)이 같은 대상을 써야 하므로 여기서 한 번만 정한다.
+ * 배열 항목이 모두 문자열 키(keyName)를 가진 객체이면 키의 유니코드 코드 포인트 순으로 정렬한 사본을, 아니면 받은 값 그대로 돌려준다.
+ * 원본 배열과 항목은 바꾸지 않는다. 같은 키(중복)는 안정 정렬로 입력 순서를 유지하며 하나로 합치지 않는다.
+ * 배열이 아니거나 키가 문자열이 아닌 항목(null, 키 없음, 숫자 키)이 섞여 있으면 정렬하지 않는다: 구조 결함을 정렬로
+ * 유효해 보이게 고치지 않으며, 그런 프로필은 구조 검사(profile-structure.ts)가 PROFILE_INVALID 로 거절한다. 던지지 않는다.
+ */
+function sortedByKey(items: unknown, keyName: 'groupKey' | 'poolKey'): unknown {
+  const keyed = (entry: unknown): entry is Record<typeof keyName, string> =>
+    typeof entry === 'object' && entry !== null && typeof (entry as Record<string, unknown>)[keyName] === 'string';
+  if (!Array.isArray(items) || !items.every(keyed)) {
+    return items;
+  }
+  return [...items].sort((x: Record<typeof keyName, string>, y: Record<typeof keyName, string>) => compareCodePoints(x[keyName], y[keyName]));
+}
+
+/**
+ * 프로필 내용 해시의 입력. 이 함수 하나가 정규화의 전부이며 다음 두 쪽이 똑같이 쓴다.
+ *  (a) 해시를 만드는 쪽(M3 게시·봉인)과 (b) 해시를 검사하는 쪽(엔진의 isIntegral / profileToRuleItem).
+ *  두 번째 구현을 만들지 않는다: 정규화가 어긋나면 같은 규칙인데 INTEGRITY_MISMATCH → PROFILE_INVALID 가 난다.
+ *
+ * 해시 입력에 드는 필드: id, version, generation, insurerType, groups, groupOrder, sharedLimitPools.
+ * 머리 정보(state, origin, validity, policySources, approver)와 contentHash 자신은 뺀다.
+ *
+ * 정규화: groups 는 groupKey 순, sharedLimitPools 는 poolKey 순(코드 포인트 순)으로 정렬한 사본이다.
+ * 같은 규칙을 다른 배열 순서로 저장해도 같은 해시 입력이 된다. groupOrder 는 공유 한도 배분 순서를 정하는 데이터이므로
+ * 정렬하지 않고 저장된 순서 그대로 넣는다(순서가 바뀌면 해시 입력도 바뀐다). 구조 결함은 고치지 않는다(sortedByKey 참조).
+ *
+ * 해시 함수(ctx.digest)의 책임: 이 내용은 객체이므로 digest 는 객체 키 삽입 순서에 영향을 받지 않아야 한다(키 순서 정규화된 직렬화).
+ * 배열 요소 순서는 의미로 보고 그대로 해시한다 — 배열 정규화는 이 함수가 이미 끝냈다.
+ * 운영 해시 구현은 M3 의 일이며, 시험의 testDigest 는 그 성질을 흉내 낸 대역일 뿐이다.
  */
 export function profileContent(profile: StandardAssumptionProfile): unknown {
   return {
@@ -199,9 +227,9 @@ export function profileContent(profile: StandardAssumptionProfile): unknown {
     version: profile.version,
     generation: profile.generation,
     insurerType: profile.insurerType,
-    groups: profile.groups,
+    groups: sortedByKey(profile.groups, 'groupKey'),
     groupOrder: profile.groupOrder,
-    sharedLimitPools: profile.sharedLimitPools,
+    sharedLimitPools: sortedByKey(profile.sharedLimitPools, 'poolKey'),
   };
 }
 
