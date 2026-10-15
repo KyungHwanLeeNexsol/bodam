@@ -1013,6 +1013,126 @@ spec.md, spec-compact.md and design.md were not edited; their wording will be al
 
 **Status (nothing here is resolved).** NOT IMPLEMENTED and NOT VERIFIED: (1) M3 publish rejection of malformed bundle containers and entries (AC-011i). (2) M4 read-path structure validation -> HTTP 500 for `ACTIVE` bundles (AC-006i). (3) The precedence integration tests (iv) and (v). M1.6 OPEN item 1 remains OPEN. All earlier OPEN items of M1.5, M1.6 and M1.7 remain open; M2+ is not started. Formal lint and `moai verify` remain UNVERIFIED.
 
+### M2 서류 산출 엔진 (M2.A~M2.C), 2026-10-15
+
+**Scope and branch.** Milestone M2 (documents engine) only. Branch `feature/SPEC-REIMBURSEMENT-001-m2-documents` was created from the M1 tip `b27bf38`; the M1 branch `feature/SPEC-REIMBURSEMENT-001-m1-engine` and Draft PR #1 are untouched. M2 is a separate stacked branch; its pull request is separate, with the M1 branch as its base, so only M2 changes show. The owner approved M2 only: no M3+ work, no merge, no deploy, no push from the implementer, no new audit. The audit result (iteration-5 FAIL 0.89, MP-7, plan_status) and the `spec.md` status (`in-progress`) are untouched. All data is `TEST_FIXTURE`; no real insurer document requirement, clause text or approval record exists anywhere in `src/` or `tests/`.
+
+| Step | Commit | Content |
+|------|--------|---------|
+| base | `b27bf38` | M1 tip (28 files / 1142 tests, coverage 497/409/117/456) |
+| M2.A | `89b9fef` | `feat(SPEC-REIMBURSEMENT-001): M2.A 서류 규칙 형식·구조 검사·사용 가능 판정 연결` (types, hash input, structure check, rule-set selection, fixture) |
+| M2.B | `1708bfa` | `feat(SPEC-REIMBURSEMENT-001): M2.B deriveDocuments 서류 산출 (AC-007a·b·c·d·e·h·j·k·l)` |
+| M2.C | (this commit) | this progress record (progress.md only; no src, no tests, no other SPEC file) |
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/engine/types.ts` | Additive (+65 lines, 0 deletions): `Cause`, `DocumentWhen`, `DocumentFlags`, `DocumentScope`, `DocumentLine`, `DocumentsResult`, `DOCUMENT_LINE_KEYS` (the fixed 9 keys in the design order), `DOCUMENT_CODE_LINE` (10 codes to 9 lines; only `RECEIPT` and `ITEMIZED_STATEMENT` share `RECEIPT_AND_ITEMIZED`) |
+| `src/engine/usability.ts` | Additive (+104 lines, 0 deletions): `documentRuleSetContent` (THE single hash-input function for a document rule set, used by both the M3 sealing side and the engine verifying side) and `documentRuleSetToRuleItem`; `isUsable` and `isBundleUsable` are reused unchanged |
+| `src/engine/documents.ts` | New in M2.A, extended in M2.B: `checkDocumentRuleSetStructure` (pure, non-throwing, shared with M3 publish validation), `selectDocumentRuleSet` (`isBundleUsable` first, then `isUsable`, then structure; any failure -> null), `deriveDocuments` and `DeriveDocumentsInput` |
+| `tests/fixtures/engine/document-rules.fixture.ts` | New, `TEST_FIXTURE` only; every reason sentence ends with the mark "(검증 필요 · 시험 자료)"; reproduces the planning-document §4 conditional-mapping example; three variants for AC-007h (2 injury-only + 3 illness-only, 0 + 4, 0 + 0) with expected scope outcomes; builders `rule`, `plainRule`, `ruleSetOf`, `documentInput`, `treatmentWith` |
+
+Existing M1 source files changed additively only. `estimate()` and its result are untouched: there is no `documents` field in the estimate result (documents are not part of `estimate()`, DD-01). No existing test was modified.
+
+| New test file | Tests | Step |
+|---------------|-------|------|
+| `tests/engine/document-line-keys.test.ts` | 7 | M2.A |
+| `tests/engine/document-rule-set-content.test.ts` | 38 | M2.A |
+| `tests/engine/document-rule-set-structure.test.ts` | 92 | M2.A |
+| `tests/engine/document-rule-set-select.test.ts` | 38 | M2.A |
+| `tests/engine/documents.test.ts` | 50 | M2.B |
+| `tests/engine/documents-when.test.ts` | 35 | M2.B |
+| `tests/engine/documents-order.test.ts` | 18 | M2.B |
+
+Total 278 new tests (175 in M2.A, 103 in M2.B): 1142 + 278 = 1420.
+
+#### Evidence (measured on `1708bfa`; the orchestrator independently verified these numbers, and the implementer measured the same)
+
+```
+$ npx vitest run tests/engine tests/boundary   -> exit 0
+ Test Files  35 passed (35)
+      Tests  1420 passed (1420)
+$ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine        -> exit 0
+ Test Files  32 passed (32)
+      Tests  1214 passed (1214)
+15 files fully covered.
+Statements   : 100% ( 643/643 )
+Branches     : 100% ( 551/551 )
+Functions    : 100% ( 145/145 )
+Lines        : 100% ( 598/598 )
+```
+Baseline `b27bf38`: 28 files / 1142 tests; `tests/engine` 25 files / 936; coverage 497/409/117/456. Now: 35 files / 1420 tests; `tests/engine` 32 files / 1214; coverage 643/551/145/598, every `src/engine` file at 100% with no exclusions (`documents.ts` included). The `tests/boundary` import and literal scans pass with the new source file (no fixture import; no business-named numeric literal).
+
+**RED before GREEN.** M2.A: the new tests were run with the new src additions taken out -> `Tests  5 failed | 2 passed (7)` plus three files failing to load (missing exports / `Cannot find module .../documents`); the implementation had been drafted first in M2.A, so RED was obtained by removing it, and it was restored afterwards. M2.B: tests written before the implementation -> `Tests  34 failed | 1 passed (35)`, every failure `TypeError: deriveDocuments is not a function` (34 rather than 103 because parameterised `it.each` cases are counted as one entry when the function is missing); then GREEN `Tests  103 passed (103)` for the three new files.
+
+**Mutation checks (each RED, then restored and confirmed identical to its backup).**
+
+| Step | Mutation | Result |
+|------|----------|--------|
+| M2.A | remove the `rules` sort in `documentRuleSetContent` | `12 failed \| 64 passed (76)` (reorder-with-original-hash and content tests) |
+| M2.A | `selectDocumentRuleSet` reads the rule-set item before `isBundleUsable` | `1 failed \| 37 passed (38)` (the no-item-read test) |
+| M2.B | break priority ties by array position (first match) | `7 failed \| 96 passed (103)` |
+| M2.B | COMMON reasons keep only the injury reason | `6 failed \| 97 passed (103)` |
+| M2.B | aggregate the document flags with AND instead of OR | `9 failed \| 94 passed (103)` |
+| M2.B | remove the hold (overall state) check | `7 failed \| 96 passed (103)` |
+| M2.B | UNKNOWN cause evaluates only INJURY | `14 failed \| 89 passed (103)` |
+| M2.B | compare reasons with plain `<` instead of code points | `1 failed \| 102 passed (103)` (only the U+FF5E vs U+1F600 test, as intended) |
+| orchestrator | independent mutation: reason tie-break disabled | `7 failed \| 96 passed (103)`, restored, tree clean |
+
+#### AC table
+
+Status of the rows below: `CLOSED at unit level (M2)`.
+
+| AC | Test file and describe name | What is checked |
+|----|-----------------------------|-----------------|
+| AC-007a | `documents.test.ts` "AC-007a ..." | planning-example set x cause (3) x insurerType (3) x flag combinations (8) = 72 inputs: nine distinct keys in the fixed order, `RECEIPT_AND_ITEMIZED` required; empty `rules: []` -> only the receipt line required, no reasons |
+| AC-007b | `documents.test.ts` "AC-007b ..." | INJURY -> `INITIAL_EXAM_RECORD` with its reason, ILLNESS -> `DIAGNOSIS_CERT`; a line demanded by several rules shows exactly the single highest-priority reason |
+| AC-007c | `documents.test.ts` "AC-007c ..." | planning-example set, UNKNOWN, no flags, outpatient: the full nine-line list (required, scope, reasons), 7 COMMON + `INITIAL_EXAM_RECORD` INJURY_ONLY + `DIAGNOSIS_CERT` ILLNESS_ONLY; one extra INJURY rule gives 6 + 2 + 1, showing 7+1+1 is only this example outcome, not a cap |
+| AC-007d | `documents.test.ts` "AC-007d ..." | null set with each non-hold state; `OPERATING`-only accepted origins with a `TEST_FIXTURE` bundle; no scope, SUSPENDED, each `isUsable` failure, sealed-but-defective set; malformed sets passed straight in -> `RULES_UNAVAILABLE` without throwing |
+| AC-007e | `documents.test.ts` "AC-007e ..." | ON_HOLD -> null for a valid, a null and a defective set; unknown state values -> null; feeding the real `estimate()` state: ESTIMATED and ESTIMATED_WITH_EXCLUSIONS -> AVAILABLE, SUSPENDED bundle / profile absent / no scope -> null |
+| AC-007h | `documents.test.ts` "AC-007h ..." | the three fixture variants: nine keys once each, scopes equal the expected outcomes, every required line (receipt included) has a reason; COMMON reasons (3 vs 5, 5 vs 3, tie -> injury first, identical text -> one); cause never collapsed |
+| AC-007j | `documents-when.test.ts` "AC-007j (1)/(3)/(4)/(5)" | `when` key matrix for cause, setting, insurerType; non-matching input is `JSON.stringify`-identical to the baseline; every key pair and key+flag pair has an effect only when both match; missing keys are wildcards; `when: {}` matches all 72 inputs |
+| AC-007k | `documents-when.test.ts` "AC-007k ..." | per flag: one/two/three flagged treatments in every permutation give identical results (OR), none flagged is baseline-identical; several rules for one line; `RECEIPT` and `ITEMIZED_STATEMENT` rules landing on one line; type-level check that treatment elements carry no line state; every element counted |
+| AC-007l | `documents-order.test.ts` "AC-007l (1)-(5)" | priority 0 / 1 / `MAX_SAFE_INTEGER`; U+FF5E vs U+1F600 (a naive `<` picks the other winner); full ties; all 720 permutations of 6 rules x 3 causes; fixed-seed shuffles (seed 20261015, 200 trials, recorded in the test name and a `console.info` line); all 24 treatment permutations; mixed UNKNOWN set |
+
+**NOT closed, and why.**
+
+- AC-007f (publish validation, integration): the pure structure function `checkDocumentRuleSetStructure` exists and M3 must reuse it, but the publish path and repository are NOT implemented.
+- AC-007g (e2e-app) and AC-007i (render + e2e-app): the kiosk screens belong to M6.
+- AC-008g: only the "documents = null on a held result" half is evidenced, by the AC-007e tests fed with real `estimate()` states. AC-008g itself is NOT claimed closed.
+- AC-011o (documents `RULES_UNAVAILABLE` integration with a suspended / under-re-review rule set): M3 / M4, NOT done.
+
+#### Decisions and assumptions
+
+Items marked **[not in docs]** are implementer decisions that design.md / acceptance.md do not state; the others follow the documents.
+
+1. **[not in docs]** The hold check is a whitelist: only `ESTIMATED` and `ESTIMATED_WITH_EXCLUSIONS` pass; `ON_HOLD` (spec), any other state value and a non-object input return null.
+2. **[not in docs]** `deriveDocuments` also runs `checkDocumentRuleSetStructure` and returns `RULES_UNAVAILABLE` for a null or malformed set (a last safety net). It does no header checks (state, origin, approver): `selectDocumentRuleSet` owns usability, so a structurally valid DRAFT set passed straight to `deriveDocuments` yields AVAILABLE (pinned by a test).
+3. **[not in docs]** A `cause` value that is none of INJURY / ILLNESS / UNKNOWN is evaluated as UNKNOWN (two evaluations); no cause is ever picked.
+4. **[not in docs]** Malformed `treatments` (not an array, a non-object element, a non-object `documentFlags`, flag values that are not strictly `true`) add no flag and never throw. This is a soft spot until M4 builds `treatments` from validated lines (AC-019d).
+5. **[not in docs]** A garbage `insurerType` or `clinicSetting` matches no `insurerType` / `setting` rule and does not throw. `setting: OUTPATIENT` matches only when `clinicSetting` is `OUTPATIENT_ONLY`; `INPATIENT` never matches (design.md DD-06 rule 5).
+6. **[not in docs]** Output lines always use the `DOCUMENT_LINE_KEYS` order for all nine lines regardless of scope (DD-03 is silent about document-line order).
+7. **[not in docs]** A line object has the fixed property order `line, required, scope, reasons` and omits absent properties (no `undefined` keys), so serialised comparison is meaningful. SINGLE_CAUSE lines carry no `scope`; `reasons` is a one-element array only for a required line with a winner.
+8. COMMON reason ordering is priority ascending, a tie puts the INJURY winner first (design.md:508, SPEC proposal). **[not in docs]** Identical reason text collapses to one entry even when the priorities differ (the earlier one is kept).
+9. Only `RECEIPT_AND_ITEMIZED` can be required without a reason. **[not in docs]** If only one of the two evaluations has a winner for it, that one reason is shown.
+10. **[not in docs] OWNER DECISION NEEDED:** an empty `rules: []` is a VALID set (the result is the receipt line only). design.md:509 and AC-007f list no such rejection and say the number of rules is never a reason to reject. Whether publish validation should reject an empty set is for the owner.
+11. **[not in docs]** `reason` only has to be a non-empty string (a whitespace-only reason passes); `priority` -0 is accepted as 0.
+12. **[not in docs]** `deriveDocuments` copies `id`, `version` and `origin` of the rule set through unchecked; origin acceptance is vetted by `selectDocumentRuleSet` through `isUsable`.
+13. **[not in docs]** The hash input of `documentRuleSetContent` sorts a copy of `rules` by `documentCode` (code-point order), `priority` (ascending; non-numbers after all numbers), `reason` (code-point order), then a hand-built `when` key (keys sorted, `key=type:value` joined with `;`). A malformed `rules` (not an array, or an entry that is not a non-null non-array object, holes included) is left exactly as given. Header fields and `contentHash` are excluded. A rule set sealed under any other scheme would not verify: M3 MUST seal with this same function and MUST test both reorder-with-original-hash and change detection (same contract as `profileContent`); the production digest must be canonical with respect to object key order.
+14. **[not in docs]** The structure check defect codes `RULE_SET_NOT_OBJECT`, `RULES_NOT_ARRAY`, `RULE_ENTRY_INVALID`, `DOCUMENT_CODE_INVALID`, `REASON_INVALID`, `PRIORITY_INVALID`, `WHEN_NOT_OBJECT`, `WHEN_UNKNOWN_KEY`, `WHEN_VALUE_INVALID` and their paths (for example `rules[3].when.imaging`, root `ruleSet`) are implementer choices, not owner-confirmed. The check does not look at `id`, `version` or header fields.
+15. **[not in docs]** The planning-document example fixture maps "통원" to BOTH `OUTPATIENT_CONFIRMATION` and `TREATMENT_CONFIRMATION`, and adds two `when: {}` rules (`RECEIPT`, `ITEMIZED_STATEMENT`) so the always-required line has a reason. These are fixture choices marked "검증 필요"; the four expected-outcome constants written in M2.A matched the real implementation (a `required` list was added to each).
+
+#### OPEN items (not done, not covered)
+
+1. **M3:** publish validation of document rule sets using `checkDocumentRuleSetStructure`, and sealing with `documentRuleSetContent` (AC-007f; hash tests in the AC-011a style: reorder with the original hash, change detection) - NOT IMPLEMENTED.
+2. **M4:** the server builds `treatments` from validated lines and passes confirmed-excluded treatments but not base-fee lines (AC-019d), calls `selectDocumentRuleSet` and then `deriveDocuments` with the `estimate()` overall state, and returns `documents` - NOT IMPLEMENTED. The M1.8 bundle-structure 500 rule does not cover `documentRuleSet` entries (out of scope there); `selectDocumentRuleSet` and `deriveDocuments` fail closed to `RULES_UNAVAILABLE`.
+3. **M6:** the kiosk document screens (AC-007g, AC-007i).
+4. design.md / acceptance.md wording is not yet aligned with the decisions in items 1-15 above (a statement of fact, not a claim it is done).
+5. Design ambiguities met in M2 (file:line as reported): design.md:508 (cardinality of COMMON reasons beyond "distinct, in priority order"); design.md:342-353 (silent about the order of document lines); design.md:500 vs acceptance.md:110 (order of the hold check and the unavailable check); design.md:509 (header items "출처·약관 출처·승인자·내용 해시" are listed with the rule structure but are item-level checks); design.md:509 and :524 (no path convention for a `when` that is not an object or a rule set that is not an object).
+6. All earlier OPEN items of M1.5 to M1.8 remain open: the M4 mandatory validations (a)-(d), the HTTP 500 mappings, the M3 production digest and publish path, bundle null entries (M3 rejection / M4 500), the `referenceGroups` owner decision, the 11 operational-data holds and the deferred owner decisions. Formal SPEC lint and `moai verify` remain UNVERIFIED (no tool). Only Windows 11 and Node 24.19.0 were run, with no CI. M3+ is not started; PR #1 is not merged. No real insurance values or insurer document requirements are registered anywhere.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
