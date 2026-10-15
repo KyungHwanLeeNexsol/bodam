@@ -622,6 +622,177 @@ The binding rule implemented: the common base cost is part of the expected hospi
 - Treating every `limitBasis` other than `PAYOUT` as unsupported could hold a future legitimate basis until the engine learns it.
 - Large inputs (4,504 lines in the AC-003h rows) make the suite take a few seconds; the mapping lookup is O(lines x mappings).
 
+### M1.4 — determinism, profile sensitivity, import and literal boundary (cycle_type = tdd), 2026-10-15
+
+**Attribution.** All results below were observed in this run, on Windows 11, Node v24.19.0, npm 11.6.2, against HEAD `2de1f01` (the M1.3 commit) plus the uncommitted M1.4 working tree; the M1.4 commit SHA is reported by the commit itself. No dependency was added and **no file under `src/` changed** (`git diff --stat -- src` was empty after every mutation spot check; no production defect was found). The `moai` CLI and the moai MCP server are unavailable: the formal SPEC lint and `moai verify` were NOT run and no linter/formatter is configured, so formal lint is UNVERIFIED. Bounded outputs went to `.moai/state/verify/m1-4/` (local, gitignored); the quoted excerpts are copied verbatim from those files. `spec.md` (status stays `in-progress`) and every SPEC file other than this progress file are untouched. Every fixture value is `TEST_FIXTURE` made-up test data; a grep of `src/` and `tests/` for insurer names (Korean and English) and clause-number patterns found no match.
+
+**Files (M1.4).** New tests: `tests/engine/determinism.test.ts` (14 tests), `tests/engine/profile-sensitivity.test.ts` (19), `tests/boundary/engine-imports.test.ts` (129), `tests/boundary/engine-literals.test.ts` (55), `tests/boundary/fixture-import-checker.test.ts` (22). New test helpers: `tests/boundary/source-scan.ts` (lexer, module-reference extractor, module classifier, hazard scanner, literal rule), `tests/boundary/fixture-reach.ts` (AC-010b reach checker). New fixtures: `tests/fixtures/engine/corpus.fixture.ts` (15 inputs: cases A-E, base fee, shared-limit pool, ROUND_HALF_UP split, hold with reference groups, suspended bundle, expired profile, 2 rejections, CALC_RANGE_EXCEEDED, code-point-order ids), `child-run.ts`, `ts-resolve-hooks.mjs`, `ts-resolve-register.mjs` (the child-process runner). Nothing from M2+ was started.
+
+**How each check works.**
+- *AC-001a.* (1) 25 repeated in-process runs of every corpus input, forward, reverse and seeded-shuffled call order; (2) deep-frozen and `structuredClone`d inputs give identical bytes and the input is unchanged afterwards; (3) `Date.now`, `Math.random`, `performance.now` replaced by throwing spies are never called, and the bytes are identical; (4) fake system time at three instants gives identical bytes; (5) time enters only through the input `at` (inside the validity window -> `ESTIMATED`, outside -> `ON_HOLD`, each stable); (6) seeded shuffles (seed 20261015, 20 trials per input) of lines, base-fee lines, treatment ids and mappings give identical bytes (full permutations stay in `order-independence.test.ts`, AC-008k); (7) **new process:** 4 child `node` processes (`spawnSync`, 90 s timeout, `SIGKILL` on timeout, `windowsHide`, no background process, nothing left running) with `TZ` = UTC, Asia/Seoul, America/Los_Angeles, Pacific/Auckland run the same corpus; the test asserts the child pid differs from the parent's and that the time-zone offsets really took effect (`[0,0]`, `[-540,-540]`, `[480,420]`, `[-780,-720]`), then compares every serialized outcome with the parent's string for byte equality. The child needs no new dependency: Node's built-in type stripping runs the `.ts` sources and a 10-line resolve hook (`ts-resolve-hooks.mjs`) appends `.ts` to extensionless relative specifiers.
+- *AC-001c, main evidence.* The profile has 4 groups (all four deduction kinds, all four limit kinds incl. `COUNT`) and one shared-limit pool. Every numeric leaf of the profile (13 fields: 4 fixed floors, 4 rates, 4 limit amounts, 1 pool limit; enumerated generically, so a new numeric field is picked up automatically) is changed one at a time to 5-6 boundary values; the engine's `P`, `P_pooled`, `D`, `D_applied`, payout and out-of-pocket must equal the independent BigInt oracle exactly, and at least one variant per field must move the result. Also: unrelated groups do not change when a non-pooled group's field changes; deleting any of the 13 fields gives `ON_HOLD` with only `PROFILE_VALUE_MISSING` and null payout (no 0/default fill); two different `TEST_FIXTURE` profiles in the same cell give different results, each equal to the oracle.
+- *AC-001b.* `tests/boundary/source-scan.ts` is a purpose-built lexer (comments, strings, template literals with nested `${}`, regex literals, numeric literal forms) and fails closed (`SCAN_ERROR`) on anything it cannot read. It extracts `import`, `import type`, `export ... from`, side-effect imports, dynamic `import()` and `require()`; every specifier must be a relative path that resolves to an existing file inside `src/engine`, otherwise the rule reports a category (`MODULE_REACT`, `_NEXT`, `_DB_DRIVER`, `_NETWORK`, `_FILE_SYSTEM`, `_AI_SDK`, `_NODE_BUILTIN`, `_FIXTURE`, `_OUTSIDE_ENGINE`, `_BARE_PACKAGE`, plus `DYNAMIC_SPECIFIER`, `COMMONJS_REQUIRE`, `UNRESOLVED_IMPORT`). It also flags un-injected `Date.now()`, `new Date()`, `Date()`, `performance`, `Math.random`, `crypto`, `process`/`globalThis`/`import.meta`, `fetch`/`XMLHttpRequest`/`WebSocket`, timers, `Intl`/`localeCompare`/`toLocale*` and local-time `Date` getters or multi-argument `new Date(...)` (beyond the SPEC's `Date.now`/`Math.random` wording, the timer, `Intl`/locale, local-time and environment items are my conservative extension). `deps.now()` style injected clocks, `Date.UTC`, `new Date(0)` and `new Date(Date.UTC(...))` pass. TypeScript 7.0.2 ships no JS compiler API (its `typescript` package is a native-binary launcher; only "unstable" process-based API paths exist), so the plan.md §G option "read imports with the TypeScript compiler API" was not available and no parser dependency was added.
+- *AC-001c, narrow static check.* Rule (my choice, as acceptance.md allows): split an identifier into camelCase/snake words; if any word starts with `deduct`, `limit`, `rate`, `payout`, `copay`, `fixed`, `floor`, `cap` or `ratio`, a numeric literal directly bound to it (`=`, `:`, compound assignment, default parameter, type-annotated declaration), compared with it, used as an arithmetic operand with it, or used as a `??`/`||` default for it is a violation, **including 0 and 1**; numbers inside `interface`/`type` declarations are skipped; `10000` and `5000` (the scale and half, read from `constants.ts`) are a violation anywhere outside `constants.ts` and `limits.ts`. One allowlist entry (file + name + literal, with its reason) covers `payout: 0` in `estimate.ts` (the `ExcludedItem.payout` field is typed as the constant 0, DD-03); the test requires that entry to match exactly once and, with the allowlist emptied, exactly that one violation to appear (a stale entry is detected).
+
+#### RED evidence (verbatim, captured before the helpers existed)
+
+`tests/boundary/source-scan.ts` and `fixture-reach.ts` were first created as stubs throwing `Error: 미구현`, the three boundary test files were written against them, and `npx vitest run tests/boundary` was run (exit 1):
+```
+ FAIL  tests/boundary/engine-imports.test.ts [ tests/boundary/engine-imports.test.ts ]
+Error: 미구현
+ FAIL  tests/boundary/engine-literals.test.ts [ tests/boundary/engine-literals.test.ts ]
+Error: 미구현
+ FAIL  tests/boundary/fixture-import-checker.test.ts > isFixturePath > tests/fixtures/engine/profiles.fixture.ts -> true
+ ...
+ Test Files  3 failed (3)
+      Tests  22 failed (22)
+```
+(The two files that call `readSourceFiles` at module level fail at collection, which is why only 22 tests are counted.) `determinism.test.ts` and `profile-sensitivity.test.ts` assert behaviour that already exists, so there is no missing-implementation RED for them; their falsifiability is shown by the mutation spot checks below (gap 2).
+
+#### GREEN evidence and mutation spot checks
+
+First green run of the helpers: `npx vitest run tests/boundary` -> `Test Files  3 passed (3)`, `Tests  206 passed (206)`. `npx vitest run tests/engine/determinism.test.ts tests/engine/profile-sensitivity.test.ts` -> `Tests  33 passed (33)`. Three repeated runs of the five new files: `Tests  239 passed (239)` each time, 2.07-2.13 s. Each child process took about 215-235 ms.
+
+Real `src/engine` facts (`scan-facts.txt`): 14 source files, 37 import edges (all relative `import`), 0 boundary violations, 30 value-level numeric literals scanned outside the two exempt files and type regions, 0 violations, 1 allowlisted (`estimate.ts` `payout: 0`).
+
+Mutation spot checks (each temporary and reverted; `src/` was byte-identical afterwards):
+
+| Mutation | What failed |
+|----------|-------------|
+| `void Math.random();` in `sum.ts` | `Tests  8 failed | 231 passed (239)`: "경계 위반이 하나도 없다" (RANDOM) and determinism "Date.now·Math.random·performance.now 를 한 번도 부르지 않는다"; the other 6 are the add-one-violation tests that now see two |
+| `FIXED` returns `D: 3000` instead of `rule.fixed` | `Tests  2 failed | 237 passed (239)`: only `profile-sensitivity` (`groups.3.deduction.fixed`, profile B). The static literal rule does **not** catch it (`D` is not a business name) - this is why the behaviour test is the main evidence |
+| `const deductible = 10000;` added to `deduction.ts` | `Tests  2 failed | 204 passed (206)` (boundary): `BUSINESS_LITERAL` and `SCALE_LITERAL` |
+| `floorDivide(value, 10000)` in `rounding.ts` | `Tests  2 failed | 252 passed (254)`: `SCALE_LITERAL` |
+| `import { readFileSync } from 'node:fs'` + `new Date().getTime()` + `process.env.TZ` in `limit.ts` | `Tests  8 failed | 121 passed (129)`: `MODULE_FILE_SYSTEM`, `CLOCK`, `ENVIRONMENT` |
+| the calendar-date check in `usability.ts` using local getters (`getFullYear`...) instead of `getUTC*` | `Tests  8 failed | 135 passed (143)`: static `LOCAL_TIME`, and **only the cross-process test** `America/Los_Angeles` catches the runtime effect (the parent runs in Asia/Seoul, where the in-process tests cannot see it) |
+
+#### Final verification (this tree, HEAD `2de1f01` + M1.4 files)
+
+```
+$ npx vitest run tests/engine tests/boundary   -> exit 0
+ Test Files  25 passed (25)
+      Tests  959 passed (959)
+   Duration  3.68s (tests 81%, import 13%, transform 4%, worker 1%)
+$ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine        -> exit 0
+ Test Files  22 passed (22)
+      Tests  753 passed (753)
+   Duration  7.03s
+Statements   : 100% ( 450/450 )
+Branches     : 100% ( 370/370 )
+Functions    : 100% ( 109/109 )
+Lines        : 100% ( 417/417 )
+```
+Per file (`coverage-summary.json`, cumulative `src/engine/**`): `constants.ts`, `deduction.ts`, `estimate.ts`, `group-values.ts`, `limit.ts`, `limits.ts`, `numeric.ts`, `profile-structure.ts`, `resolve.ts`, `rounding.ts`, `sum.ts`, `types.ts`, `usability.ts`, `validate.ts` each 100 / 100 / 100 / 100 (statements / branches / functions / lines). `tests/boundary` code is outside the coverage `include` (`src/engine/**`).
+
+#### AC matrix (M1.4 scope)
+
+| AC | Status | Proving test | Notes |
+|----|--------|--------------|-------|
+| AC-001a | CLOSED | `determinism.test.ts` (all 14), `order-independence.test.ts` (AC-008k permutations) | repeats, frozen/cloned input, spies, fake clock, input-only time, seeded shuffles, 4 child processes x 4 time zones |
+| AC-001b | CLOSED | `engine-imports.test.ts` ("AC-001b 실제 src/engine 소스" + negative tables + "실제 파일에 금지 항목을 일부러 더한 변형" + "디렉터리 검사"), `determinism.test.ts` (spies/fake clock as behaviour evidence) | negatives: 30 import forms across React, Next, DB drivers, network, fs, AI SDKs, Node built-ins, fixtures, outside-engine, dynamic, `require`; 26 clock/random/env/network/timer/locale forms; adding each forbidden item to every real engine file fails exactly that file |
+| AC-001c | CLOSED | `profile-sensitivity.test.ts` (main), `engine-literals.test.ts` (narrow static) | the AC example `const deductible = 10000` fails; index/counter/loop/array-length numbers pass (18 positive cases) |
+| AC-010b | EVIDENCE ONLY (closes in M4) | `fixture-import-checker.test.ts` | see below |
+
+**AC-010b: what M1.4 observed and what it cannot.** Observed: the checker follows relative imports (including `index.ts`, `.js`->`.ts` specifiers, `export * from`, `import type`, string `import()`, side-effect imports, cycles) from an entry and reports a path to any fixture module (`fixtures` folder, `.fixture.` file name, or a package name containing `fixture`), plus unresolved/dynamic/unreadable imports as closed failures; the negative synthetic-entry cases (direct, two levels deep, through `index.ts`, four import forms, a `.js` specifier, three package names, dynamic/unresolved/unreadable imports, a cycle, several entries) fail as required, the clean synthetic entry passes, the on-disk (temp directory) variant agrees, and the real engine entry `src/engine/estimate.ts` reaches only `src/engine` files (no fixture). Not observable in M1: the real production composition entry (`src/server/composition.*`, first created in M4); the test globs for it and runs the same checker if it exists, but in M1 the target list is empty, so that one test is vacuous by construction; the "build fails" half of AC-010b (no build exists), and the configured `acceptedOrigins` of a real composition (AC-010a covers origin acceptance at engine level, M1.2).
+
+#### Assumptions (non-blocking)
+
+1. The exempt files for the literal rule are `constants.ts` and `limits.ts` only (design.md:47 and AC-001c). plan.md:72 also lists `numeric.ts` as a place where declarations are allowed; I did not exempt it (the stricter reading) and `numeric.ts` has no hit anyway.
+2. The business-name stems come from the AC text; matching is per identifier word, so `operate`/`separate`/`generated` do not match but `capacity`/`capture` would.
+3. `0` and `1` are not exempt from the literal rule, and `x ?? 0` / `x || 5` on a business name is a violation (the hazard the rule exists for is "fill a missing value"). The only allowlisted site is `payout: 0` (typed constant).
+4. The fixture reach checker treats type-only imports as edges (strict), and any package name containing `fixture` as a fixture package.
+5. The child-process test needs Node with built-in type stripping (22.18+/24 here, Node 24.19.0 observed) and sets `TZ` inside the child before the engine runs; `NODE_OPTIONS` and an inherited `TZ` are removed from the child environment.
+6. A scan failure (unterminated string/comment/template/regex) is a violation, never a pass.
+7. Extra hazards beyond the SPEC wording (timers, `Intl`, locale and local-time APIs, `process`/`globalThis`/`import.meta`, `crypto`) are flagged; the real engine has none.
+
+#### SPEC ambiguities / contradictions met
+
+- plan.md:72 (declarations allowed in `constants.ts`, `limits.ts`, `numeric.ts`) vs design.md:47 and AC-001c (`constants.ts`, `limits.ts`): assumption 1.
+- plan.md §G "TypeScript compiler API" is not available with TypeScript 7.0.2; "or a lint rule" would need a linter dependency (none configured). I used a self-contained lexer.
+- acceptance.md AC-001c says the narrow check covers literals "bound to or compared with" a business name; it does not say whether `0`/`1`, arithmetic operands or `??` defaults count (assumption 3).
+- `payout: 0` in `estimate.ts` is a business-named numeric binding required by the DD-03 type (`payout: 0`); the AC text does not mention it, so the allowlist entry is my reading.
+- AC-010b (acceptance.md:198) says M1.4 gives "only the checker and negative tests on a synthetic entry"; whether the glob-for-real-entry test that is vacuous in M1 counts as evidence is unspecified (I label it vacuous).
+
+#### Gaps (not observed)
+
+1. No formal SPEC lint, no `moai verify`, no linter or formatter. Only Windows 11 and Node 24.19.0 were run; the cross-process test was never run on another OS, another Node major or in CI.
+2. `determinism.test.ts` and `profile-sensitivity.test.ts` have no missing-implementation RED (they assert behaviour the engine already has); their only falsifiability evidence is the six mutation spot checks, which are not a mutation-testing run.
+3. The lexical scan cannot see aliasing (`const D = Date; D.now()`), `Reflect.get(Date, 'now')`, `eval`, or a name built at run time; the behavioural spies and the fake clock cover the common cases but not a clock read through a path they do not patch (for example `Intl.DateTimeFormat().format()`).
+4. The literal rule is narrow by design: a hard-coded business value held under a non-business name (`D: 3000`) is only caught by the behaviour test (mutation 2).
+5. The cross-process comparison uses the injected test digest, not a production hash; real hash determinism across processes (M3) is untested.
+6. The real AC-010b target (M4) and the build-failure half do not exist yet.
+7. 4 time zones and one locale-free Node ICU build were exercised; locale environment variables (`LANG`, `LC_ALL`) were not varied.
+
+#### Residual risk
+
+- The lexer is hand-written; an unusual syntax form (a regex literal after `}`, or `<`-generic ambiguity in a future file) could make it throw `ScanError`, which fails closed (a false failure, never a false pass). A later switch to a real parser would be cheap because only `tokenize` changes.
+- Node's type-stripping and module-hook APIs are marked experimental in some releases; a Node upgrade may require changing `ts-resolve-register.mjs`.
+- `tests/boundary/source-scan.ts` is shared infrastructure for M4/M7 (`AC-021d` widens the scope to all of `src/`); its rules are tuned for the engine and will need a configurable scope.
+
+### M1 summary - cumulative M1.1 to M1.4, 2026-10-15
+
+**Final cumulative commands (this tree, HEAD `2de1f01` + M1.4 files; verbatim excerpts, full files in `.moai/state/verify/m1-4/`).**
+```
+$ npx vitest run tests/engine tests/boundary   -> exit 0
+ Test Files  25 passed (25)
+      Tests  959 passed (959)
+   Duration  3.68s
+$ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine        -> exit 0
+      Tests  753 passed (753)
+Statements   : 100% ( 450/450 )   Branches : 100% ( 370/370 )
+Functions    : 100% ( 109/109 )   Lines    : 100% ( 417/417 )
+```
+Test counts: `tests/engine` 753 (M1.1 157, M1.2 237, M1.3 326, M1.4 33) plus `tests/boundary` 206 = 959; the whole suite ran in about 3.7 s wall time (25 test files, one worker each), coverage run about 7 s. Coverage is 100% for each of the 14 `src/engine` files, above the 85% M1 exit threshold. Formal lint: UNVERIFIED (no linter configured, `moai` unavailable).
+
+**AC matrix, AC-001 to AC-010 families, across M1.1-M1.4** (plan.md §B: M1 closes 51 = M1.1 3 + M1.2 11 + M1.3 34 + M1.4 3; the per-AC sub-step results are in the M1.1-M1.4 blocks above).
+
+| AC | Status | Closed in | Proven in (tests/...) |
+|----|--------|-----------|-----------------------|
+| AC-006b, AC-006c, AC-006h | closed | M1.1 | `engine/validate.test.ts`, `engine/numeric.test.ts`; AC-006c repeated at result level in `engine/examples.test.ts` (M1.3) |
+| AC-006a | closed | M1.2 (rejection half evidence in M1.1) | `engine/hold-matrix.test.ts`, `engine/validate.test.ts` |
+| AC-008a, AC-008b, AC-008c, AC-008f | closed | M1.2 (front level), result level repeated in M1.3 | `engine/hold-matrix.test.ts`, `engine/bundle-gate.test.ts`, `engine/states.test.ts` |
+| AC-008d, AC-008h, AC-008i, AC-008l | closed | M1.2 | `engine/hold-matrix.test.ts`, `engine/mapping-resolve.test.ts`, `engine/bundle-gate.test.ts`, `engine/usability.test.ts` |
+| AC-009b, AC-010a | closed | M1.2 | `engine/origins.test.ts` |
+| AC-002a to AC-002j | closed | M1.3 | `engine/examples.test.ts` |
+| AC-003a to AC-003h | closed (AC-003h row 10 with an injected summation double) | M1.3 | `engine/rules.test.ts`, `engine/group-values.test.ts`, `engine/pooled-limit.test.ts`, `engine/numeric-groups.test.ts`, `engine/numeric.test.ts` |
+| AC-004a to AC-004h | closed | M1.3 | `engine/states.test.ts`, `engine/pooled-limit.test.ts` |
+| AC-005a | closed | M1.3 | `engine/invariants.test.ts` |
+| AC-006d, AC-006e | closed | M1.3 | `engine/examples.test.ts`, `engine/types.test.ts` |
+| AC-008e, AC-008g, AC-008j, AC-008k, AC-008m | closed (AC-008g `documents = null` half belongs to M2) | M1.3 | `engine/states.test.ts`, `engine/mapping-coverage.test.ts`, `engine/order-independence.test.ts`, `engine/pool-structure.test.ts` |
+| AC-001a, AC-001b, AC-001c | closed | M1.4 | `engine/determinism.test.ts`, `engine/profile-sensitivity.test.ts`, `boundary/engine-imports.test.ts`, `boundary/engine-literals.test.ts` |
+| AC-010b | **evidence only** | M1.4 evidence, closes in **M4** | `boundary/fixture-import-checker.test.ts` |
+| AC-006f, AC-006g, AC-006i | not in M1 | M4 | - |
+| AC-007a-e, AC-007h, AC-007j-l | not in M1 | M2 | - |
+| AC-007f | not in M1 | M3 | - |
+| AC-007g, AC-007i | not in M1 | M6 | - |
+| AC-009a, AC-009c, AC-010c | not in M1 | M3 | - |
+| AC-010d | not in M1 | M4 | - |
+| AC-010e | not in M1 | M6 | - |
+| AC-011 and later | not in M1 | M3-M8 | - |
+
+M1 closes all 51 assigned details. What M1 could not observe even for closed ACs: the AC-008g `documents = null` half and any document output (M2 `deriveDocuments`), the real 9,007,200-line T overflow (AC-003h row 10; function-level pair and the injected double exist), production hash determinism (M3), HTTP/persistence behaviour (M3/M4).
+
+**Consolidated assumptions** (details in each sub-step block; all take the hold-leaning side).
+- Numbers: `-0` is rejected for `Won` and `BasisPoints`; operands of checked arithmetic are non-negative safe integers; `MAX_AMOUNT_WON = 1,000,000,000` (accepted technical limit, not an insurance value); overflow rejects or holds, never truncates or clamps; `floorDivide` uses BigInt.
+- Validation: duplicate treatment ids and lines collapse first-wins and output is code-point ordered; T sums deduplicated treatment lines plus base-fee lines; no treatment line -> `NO_TREATMENT_SELECTED`; a selected id without a line is not detected by the engine (server guarantee); unknown `benefitType` -> `CLASSIFICATION_NEEDS_REVIEW`.
+- Rule data: dates are real calendar `YYYY-MM-DD`, validity includes both ends; six policy-source items and an approver are required; a non-`ACTIVE` bundle status is suspended; an empty fingerprint/hash is an integrity mismatch; the profile content-hash target is `profileContent()`; the digest is injected through `deps.digest`; `PolicySourceRef`, `ApproverRecord`, `Basis` shapes are placeholders for M3.
+- Calculation: unsupported formula or `limitBasis` other than `PAYOUT` -> `PROFILE_FORMULA_UNSUPPORTED`; shared limits are allocated in `groupOrder`; `UNLIMITED_DECLARED` needs a clause reference; groups without ESTIMATED lines are omitted; held groups report exact G/N/E and null D/P; the base fee is always in the hospital payment `T` and follows the treatment coverage-mapping decision for the payout (plan.md §E.9 #8, corrected wording).
+- M1.4: literal-rule vocabulary and allowlist (assumptions 1-7 above).
+
+**SPEC ambiguities / tensions for the owner.**
+1. **`referenceGroups` vs "a hold result carries no payout number".** design.md DD-03 and AC-004d require `referenceGroups[].P` (flagged `isReference: true`) in an `ON_HOLD` result while `expectedInsurancePayout` and `expectedOutOfPocketAfterPayout` are null; the engine follows the SPEC. If the owner wants no payout-like number at all in a hold result, `referenceGroups` and AC-004d must change; M4/M6 must not show reference values to a patient. The orchestrator is surfacing this as an open decision; it was not changed.
+2. **Stale labels (not edited, SPEC files are outside the run-phase write scope):** `spec.md:146` (C5) and `spec-compact.md:69` still label the base-fee mapping rule "SPEC 제안 (승인 전, §E #8)" although plan.md §E.9 records #8 as accepted with corrected wording; `plan.md:308` (§E.2 row for #8, "공통 기본비용도 보장 매핑이 필요하다 ... 기본값: 필요") can be read as "a mapping is required for the cost to count at all"; `plan.md:400` (§E.8 B3 (3)) is true only for the payout side. `design.md:155` and `acceptance.md:85` agree with the implemented rule.
+3. Digest delivery (`EstimateInput` has no digest field), the unspecified outcomes in M1.3's list (all-excluded assumption codes, selected id without a line), and the plan.md:72 vs design.md:47 file list for literal declarations.
+4. plan.md §G assumes a TypeScript compiler API that TypeScript 7 does not provide.
+
+**Remaining constraints.**
+- The 11 operational-data holds (plan.md §E.1, 보류-01 to 보류-11) remain open: no real insurance values, insurer names, clause texts, prices or approval records exist anywhere in `src/` or `tests/`; all data is `TEST_FIXTURE`.
+- Deferred owner decisions not decided and not assumed by M1: #1 (database product), #2 (admin authentication), #3 (hosting), #5 (kiosk device specification), #30 (rule-management role split), #31 (author self-approval in operation), #32 (counselling number: display accepted, operator and hours still to be supplied), #34 (mapping author), #35 (2009.08-09 boundary-contract help text). M1 did not need them; M3-M8 do.
+- Formal lint is UNVERIFIED (no linter configured, `moai` CLI/MCP absent). `spec.md` status remains `in-progress` (set in M1.1; the `implemented`/`completed` transitions belong to manager-docs).
+- M2 and later milestones are not started; the owner's M1-limited approval (plan.md §E.9) does not cover M2+, production deployment, registering real insurance values, or merging to `main`.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
