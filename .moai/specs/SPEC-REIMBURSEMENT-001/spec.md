@@ -2,7 +2,7 @@
 id: SPEC-REIMBURSEMENT-001
 title: "보담 실손보험 예상 부담액 계산기 (키오스크·관리자·결정적 계산 엔진)"
 version: "0.1.0"
-status: draft
+status: in-progress
 created: 2026-10-14
 updated: 2026-10-15
 author: Nexsol

@@ -232,7 +232,136 @@ The remaining optional findings and observations below were NOT fixed, to keep t
 
 ## §E.2 Run-phase Evidence
 
-_<pending run-phase>_
+### M1.1 — types, validation, numeric helpers (cycle_type = tdd), 2026-10-15
+
+**Attribution.** All results below were observed in this run, on Windows 11, Node v24.19.0, npm 11.6.2, against HEAD `d0607a7` plus the uncommitted M1.1 working tree (the M1.1 commit SHA is reported by the commit itself, not written here). Installed devDependencies, exact: `typescript` 7.0.2, `vitest` 5.0.4, `@vitest/coverage-v8` 5.0.4, `@types/node` 24.19.2 (`package-lock.json` committed). The `moai` CLI and the moai MCP server are unavailable, so no formal SPEC lint and no `moai verify` was run; neither is claimed. Bounded tails of long outputs were redirected to `.moai/state/verify/m1-1/` (a local, gitignored path) and the quoted excerpts below are copied verbatim from those files.
+
+**Spec status.** `spec.md` frontmatter `status: draft -> in-progress` (`updated` was already 2026-10-15). `plan_status`, audit results and all other SPEC text untouched.
+
+**Files (M1.1).** `package.json`, `package-lock.json`, `tsconfig.json`, `vitest.config.ts`, `src/engine/types.ts`, `src/engine/validate.ts`, `src/engine/numeric.ts`, `src/engine/limits.ts`, `tests/engine/validate.test.ts`, `tests/engine/numeric.test.ts`, `tests/engine/types.test.ts`; `.gitignore` gained one line `coverage/` (it was not ignored: `git check-ignore -v coverage/coverage-summary.json` exited 1).
+
+#### RED evidence (verbatim, captured before the implementation existed)
+
+1. numeric, step 1 (`limits`, `isWon`, `isBasisPoints`) — `npx vitest run tests/engine/numeric.test.ts`, exit 1:
+```
+ FAIL  tests/engine/numeric.test.ts [ tests/engine/numeric.test.ts ]
+Error: Cannot find module '../../src/engine/limits' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/numeric.test.ts
+ Test Files  1 failed (1)
+      Tests  no tests
+```
+2. numeric, step 2 (`checkedAdd`, `checkedMulBp`, `sumLineAmounts`), exit 1, after step 1 was GREEN:
+```
+ FAIL  tests/engine/numeric.test.ts > checkedAdd — 정확한 결과가 S 이하일 때만 통과 (DD-24 검사 덧셈) > 경계 쌍: checkedAdd(S − 1, 1) 은 S 로 통과하고 checkedAdd(S, 1) 은 거절한다 (AC-003h 10행, 함수 수준)
+TypeError: checkedAdd is not a function
+ Test Files  1 failed (1)
+      Tests  40 failed | 47 passed (87)
+```
+3. types (`tests/engine/types.test.ts`) — `npx vitest run`, exit 1, and `npx tsc --noEmit`, exit 1:
+```
+Error: Cannot find module '../../src/engine/types' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/types.test.ts
+tests/engine/types.test.ts(7,8): error TS2307: Cannot find module '../../src/engine/types' or its corresponding type declarations.
+tests/engine/types.test.ts(13,8): error TS2307: Cannot find module '../../src/engine/types' or its corresponding type declarations.
+tests/engine/types.test.ts(93,5): error TS2578: Unused '@ts-expect-error' directive.
+tests/engine/types.test.ts(143,5): error TS2578: Unused '@ts-expect-error' directive.
+```
+4. validate (`tests/engine/validate.test.ts`), exit 1:
+```
+ FAIL  tests/engine/validate.test.ts [ tests/engine/validate.test.ts ]
+Error: Cannot find module '../../src/engine/validate' imported from C:/Users/Nexsol/Documents/bodam-wt-m1/tests/engine/validate.test.ts
+```
+5. validate, behaviour added after the first GREEN (an invalid amount on a line that deduplication would drop must still be rejected), exit 1, `Tests  1 failed | 60 passed (61)`:
+```
+ FAIL  tests/engine/validate.test.ts > validateEstimateInput — 줄 금액 범위 (AC-006h, DD-24) > 중복으로 걸러질 줄의 금액이 무효여도 조용히 버리지 않고 거절한다 (치료 줄·기본비용 줄 모두)
+AssertionError: expected { ok: true, value: { …(5) } } to deeply equal { ok: false, rejection: { …(2) } }
+```
+The first implementation checked amounts after deduplication, so the invalid duplicate was silently dropped; the fix checks the raw arrays first.
+
+#### GREEN evidence
+
+| Step | Command | Exit | Result |
+|------|---------|------|--------|
+| numeric 1 | `npx vitest run tests/engine/numeric.test.ts` | 0 | `Tests  47 passed (47)` |
+| numeric 2 | same | 0 | `Tests  87 passed (87)` |
+| types | `npx vitest run tests/engine/types.test.ts` / `npx tsc --noEmit` | 0 / 0 | `Tests  9 passed (9)` / no output |
+| validate 1 | `npx vitest run tests/engine/validate.test.ts` | 0 | `Tests  60 passed (60)` |
+| validate 2 | same, after the duplicate-invalid fix | 0 | included in the final run below |
+
+Final runs (this tree):
+```
+$ npx vitest run tests/engine            -> exit 0
+ Test Files  3 passed (3)
+      Tests  157 passed (157)
+$ npx tsc --noEmit                       -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine -> exit 0
+ Test Files  3 passed (3)
+      Tests  157 passed (157)
+Coverage summary (v8, include src/engine/**):
+Statements   : 100% ( 66/66 )
+Branches     : 100% ( 51/51 )
+Functions    : 100% ( 14/14 )
+Lines        : 100% ( 63/63 )
+```
+Per-file coverage (from `coverage/coverage-summary.json`; the text reporter collapses fully covered files):
+
+| File | Stmts | Branch | Funcs | Lines |
+|------|-------|--------|-------|-------|
+| `src/engine/limits.ts` | 100 | 100 | 100 | 100 |
+| `src/engine/numeric.ts` | 100 | 100 | 100 | 100 |
+| `src/engine/types.ts` | 100 | 100 | 100 | 100 |
+| `src/engine/validate.ts` | 100 | 100 | 100 | 100 |
+
+One earlier coverage run showed `validate.ts` at 97.05% lines (uncovered line 47, the `compareCodePoints` branch where the left string is longer); an assertion for that case was added afterwards. The 100% above is the final tree. `types.ts` has little runtime code, so its 100% says little. The M1-end gate (85% over all of `src/engine`) is not evaluated yet.
+
+Coverage `include` check: a temporary unimported file `src/engine/zz-probe.ts` appeared in the coverage table at 0% (`zz-probe.ts | 0 | 0 | 0 | 0 | 3-6`, overall dropped to 95.65%). It was deleted afterwards, so unimported files do count (`coverage.all` no longer exists in vitest 5; `coverage.include` does the job).
+
+#### AC matrix (M1.1 scope)
+
+| AC | M1.1 status | Proving test (file : describe > name) | Notes |
+|----|-------------|----------------------------------------|-------|
+| AC-006b | CLOSED | `validate.test.ts` : "치료 0개 (AC-006b)" > "treatmentIds 가 빈 배열이면 NO_TREATMENT_SELECTED 로 거절하고 0원 결과가 없다" | rejection result carries no `value` key |
+| AC-006c | CLOSED at validation level | `validate.test.ts` : "중복 제거 (AC-006c)" > "같은 치료 ID 가 중복돼도 한 번만 계산되어 병원 결제액이 124,000 이다" | duplicate IDs/lines collapse and the validated hospital payment T is 124,000. `estimate().amounts.hospitalPayment` itself does not exist until M1.3, so the result-level repeat of this check belongs there |
+| AC-006h | CLOSED (see gap 1) | `validate.test.ts` : "줄 금액 범위 (AC-006h, DD-24)", "병원 결제액 T 의 검사 합산", "거절 판정 순서"; `numeric.test.ts` : "checkedAdd", "sumLineAmounts" | amount range pair (0 and `MAX_AMOUNT_WON` valid, `MAX_AMOUNT_WON + 1` rejected, using the imported constant); negative, -0, fractional, NaN, +-Infinity, string, null, undefined, bigint, 2^53; T overflow rejected as `INVALID_NUMERIC_INPUT`, not a hold; judgement order UNSUPPORTED_GENERATION, NO_TREATMENT_SELECTED, INVALID_NUMERIC_INPUT |
+| AC-006a | EVIDENCE ONLY (rejection part; closes in M1.2) | `validate.test.ts` : "세대 열거 (AC-006a 거절 부분, 증거만; 닫는 곳 M1.2)" | "no 4th-generation profile lookup" cannot be shown until M1.2 has a lookup |
+| AC-003h | EVIDENCE ONLY (function-level T pair; closes in M1.3) | `numeric.test.ts` : "checkedAdd(S − 1, 1) passes / checkedAdd(S, 1) rejected", "sumLineAmounts([S−1,1]) passes / ([S,1]) rejected", DD-24 boundary values for `RATE_PRODUCT` (rate 10000 and 2000) and `ROUND_ADD` | also a 200-case fixed-seed BigInt oracle comparison for `checkedMulBp` |
+| AC-006d | EVIDENCE ONLY (format level; closes in M1.3) | `types.test.ts` : "형식 수준: estimate() 입력에 치료 원인 인자가 없다" | `satisfies Record<keyof EstimateInput, true>` plus a `@ts-expect-error` on a `cause` field, both checked by `npx tsc --noEmit` (exit 0) |
+| AC-002j (format part) | EVIDENCE ONLY (closes in M1.3) | `types.test.ts` : "형식 수준: 줄 단위 지급액 필드가 없다" | `LineResult` keys fixed, no payout field; `GroupResult` has `P` and `P_pooled`; `excludedItems[].payout` is the literal `0` |
+
+`MAX_AMOUNT_WON` invariants asserted in `numeric.test.ts` : "limits": `BigInt(MAX_AMOUNT_WON) * 10000n <= BigInt(Number.MAX_SAFE_INTEGER)`; the largest rate times amount (10000 x 1,000,000,000 = 10^13) and that plus 5000 are safe integers; the value equals 1,000,000,000 (plan.md §E.9 acceptance).
+
+#### Assumptions (non-blocking; each takes the conservative, hold-leaning side)
+
+1. `isBasisPoints(-0)` is false. DD-24 excludes -0 for `Won` but is silent for `BasisPoints` (design.md:1258-1259); -0 is treated as the trace of a rewritten value.
+2. `validateEstimateInput` deduplicates `treatmentIds`, `lines` and `baseFeeLines` by treatment ID (first in input order is kept) and returns them sorted by Unicode code point. Every amount in the raw arrays, including lines deduplication would drop, is checked first. Two lines with the same ID but different content are not detected (the catalog guarantees unique IDs).
+3. T is summed over the deduplicated `lines` plus `baseFeeLines`, not filtered by `treatmentIds`. A selected ID with no matching line is not rejected here: DD-19 returns 422 `TREATMENT_NOT_PUBLISHED` before the engine runs, and no engine rejection code exists for it.
+4. A non-array `treatmentIds` counts as "no treatment selected". No other structural checks are made on `treatmentIds` elements or line objects (TypeScript contract; structure belongs to the M4 request layer).
+5. `validate.ts` checks only what DD-03 lists (generation, zero treatments, amounts, T). `insurerType`, `at`, `acceptedOrigins`, `bundle` are not validated; an unknown `insurerType` is for M1.2 to turn into a hold (`PROFILE_ABSENT`).
+6. `INVALID_NUMERIC_INPUT` carries a diagnostic `reason` (`LINE_AMOUNT_INVALID` or `HOSPITAL_PAYMENT_OVERFLOW`). It must not reach API responses (AC-006i).
+7. `checkedAdd` / `checkedMulBp` / `sumLineAmounts` return `{ok:false, reason: 'OVERFLOW' | 'INVALID_OPERAND', step}`; the step name is an optional argument chosen by the caller (default `null`); `sumLineAmounts` uses `HOSPITAL_PAYMENT_SUM`. Operands may be any non-negative safe integer (sums exceed `MAX_AMOUNT_WON`).
+8. `limits.ts` holds `MAX_AMOUNT_WON`, `MAX_BASIS_POINTS` (10000) and `SAFE_INTEGER_MAX` (S). The scale `B = 10000` and `H = 5000` are left to `constants.ts` in M1.3 (design.md:1262 does not say which file holds S).
+9. `types.ts` also defines provisional shapes the SPEC never spells out: `PolicySourceRef`, `ApproverRecord`, `RuleItemHeader`, `StandardAssumptionProfile`, `TreatmentCoverageMapping`, `DocumentRuleSet`, `FormulaStep`, `Basis`. Field names beyond design.md:375-379 and :913-917 are placeholders for M1.2/M1.3/M3 to settle.
+10. `validateEstimateInput(input, sum = sumLineAmounts)` has a second parameter for a test double of the summation function (acceptance.md AC-003h row 10 permits this).
+
+#### SPEC ambiguities / contradictions met
+
+- design.md:137 comments `treatmentIds` as "after deduplication, 1 or more", while acceptance.md:97 (AC-006c) says duplicated IDs are computed once; resolved by deduplicating inside the engine.
+- acceptance.md:97 (AC-006c) ties "124,000" to the hospital payment of the calculation result, which exists only after M1.3; plan.md:69 nevertheless assigns AC-006c to M1.1.
+- design.md:1258 vs :1259: `-0` is excluded for `Won` but not mentioned for `BasisPoints` (assumption 1).
+- design.md:137-138 and :156 do not say what happens when a selected treatment has no line (assumption 3).
+- design.md:375-379 and :913-917 give no field-level shapes for profile, mapping and approver records (assumption 9).
+
+#### Gaps (not observed)
+
+1. The engine-level T overflow was exercised with an injected summation double, not with a real input of 9,007,200 lines (acceptance.md AC-003h row 10 allows this). The real `sumLineAmounts` boundary pair is tested at function level.
+2. No formal SPEC lint, no `moai verify`, no linter or formatter (none is configured in the package); only `tsc --noEmit` and Vitest were run.
+3. AC-006a "no 4th-generation profile lookup" is not observable before M1.2.
+4. Only Windows 11 and one Node version were run. `moduleResolution: "Bundler"` is chosen for compatibility with the later Next.js app but was not exercised with Next.js (M4).
+5. `types.ts` is mostly type declarations, so its coverage figure is not informative.
+
+#### Residual risk
+
+- The provisional shapes in `types.ts` (assumption 9) may need renaming when M1.2/M1.3/M3 consume them.
+- Silent first-wins deduplication hides conflicting duplicate lines if the catalog ever produced them.
+- TypeScript 7.0.2 and Vitest 5.0.4 were the latest releases at install time; later majors may change `tsconfig` or coverage options.
 
 ## §E.3 Run-phase Audit-Ready Signal
 
