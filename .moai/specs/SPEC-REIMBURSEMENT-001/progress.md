@@ -331,7 +331,7 @@ Coverage `include` check: a temporary unimported file `src/engine/zz-probe.ts` a
 #### Assumptions (non-blocking; each takes the conservative, hold-leaning side)
 
 1. `isBasisPoints(-0)` is false. DD-24 excludes -0 for `Won` but is silent for `BasisPoints` (design.md:1258-1259); -0 is treated as the trace of a rewritten value.
-2. `validateEstimateInput` deduplicates `treatmentIds`, `lines` and `baseFeeLines` by treatment ID (first in input order is kept) and returns them sorted by Unicode code point. Every amount in the raw arrays, including lines deduplication would drop, is checked first. Two lines with the same ID but different content are not detected (the catalog guarantees unique IDs).
+2. `validateEstimateInput` deduplicates `treatmentIds`, `lines` and `baseFeeLines` by treatment ID (first in input order is kept) and returns them sorted by Unicode code point. Every amount in the raw arrays, including lines deduplication would drop, is checked first. Two lines with the same ID but different content are not detected (the catalog guarantees unique IDs). [SUPERSEDED by M1.5 (R1, e6a9658): lines with the same ID and different content are now rejected as `INPUT_INTEGRITY_VIOLATION`; only fully identical duplicates collapse to one]
 3. T is summed over the deduplicated `lines` plus `baseFeeLines`, not filtered by `treatmentIds`. A selected ID with no matching line is not rejected here: DD-19 returns 422 `TREATMENT_NOT_PUBLISHED` before the engine runs, and no engine rejection code exists for it.
 4. A non-array `treatmentIds` counts as "no treatment selected". No other structural checks are made on `treatmentIds` elements or line objects (TypeScript contract; structure belongs to the M4 request layer).
 5. `validate.ts` checks only what DD-03 lists (generation, zero treatments, amounts, T). `insurerType`, `at`, `acceptedOrigins`, `bundle` are not validated; an unknown `insurerType` is for M1.2 to turn into a hold (`PROFILE_ABSENT`).
@@ -360,7 +360,7 @@ Coverage `include` check: a temporary unimported file `src/engine/zz-probe.ts` a
 #### Residual risk
 
 - The provisional shapes in `types.ts` (assumption 9) may need renaming when M1.2/M1.3/M3 consume them.
-- Silent first-wins deduplication hides conflicting duplicate lines if the catalog ever produced them.
+- Silent first-wins deduplication hides conflicting duplicate lines if the catalog ever produced them. [SUPERSEDED by M1.5 (R1, e6a9658): conflicting duplicates are no longer hidden; they are rejected, order-independently]
 - TypeScript 7.0.2 and Vitest 5.0.4 were the latest releases at install time; later majors may change `tsconfig` or coverage options.
 
 ### M1.2 — usability, resolve, profile structure, estimate front end, fixtures (cycle_type = tdd), 2026-10-15
@@ -487,7 +487,7 @@ M1.2 follows the corrected wording: the common base cost is part of the expected
 
 - `PolicySourceRef` / `ApproverRecord` / validity shapes may change when M3 defines the entities; the six-item and approver checks would need the same change.
 - The assumption that a non-`ACTIVE` bundle status is suspended could hide a future third status value (for example a draft bundle) behind `RULE_BUNDLE_SUSPENDED`.
-- First-wins semantics for duplicate lines (from M1.1) still hide conflicting duplicates.
+- First-wins semantics for duplicate lines (from M1.1) still hide conflicting duplicates. [SUPERSEDED by M1.5 (R1, e6a9658): conflicting duplicates are rejected; first-wins now applies only to fully identical duplicates]
 
 ### M1.3 — groups, deduction, limits, rounding, result assembly (cycle_type = tdd), 2026-10-15
 
@@ -732,19 +732,20 @@ Per file (`coverage-summary.json`, cumulative `src/engine/**`): `constants.ts`, 
 
 ### M1 summary - cumulative M1.1 to M1.4, 2026-10-15
 
-**Final cumulative commands (this tree, HEAD `2de1f01` + M1.4 files; verbatim excerpts, full files in `.moai/state/verify/m1-4/`).**
+**Final cumulative commands (updated by M1.5 on 2026-10-15: HEAD `eac034f` + the R3 documentation commit; verbatim excerpts, raw files in `.moai/state/verify/r1/` and `r2/`). Before M1.5 these were 25 files / 959 tests and coverage 450/370/109/417.**
 ```
 $ npx vitest run tests/engine tests/boundary   -> exit 0
- Test Files  25 passed (25)
-      Tests  959 passed (959)
-   Duration  3.68s
+ Test Files  27 passed (27)
+      Tests  1063 passed (1063)
+   Duration  4.04s
 $ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
 $ npx vitest run --coverage tests/engine        -> exit 0
-      Tests  753 passed (753)
-Statements   : 100% ( 450/450 )   Branches : 100% ( 370/370 )
-Functions    : 100% ( 109/109 )   Lines    : 100% ( 417/417 )
+ Test Files  24 passed (24)
+      Tests  857 passed (857)
+Statements   : 100% ( 480/480 )   Branches : 100% ( 400/400 )
+Functions    : 100% ( 119/119 )   Lines    : 100% ( 443/443 )
 ```
-Test counts: `tests/engine` 753 (M1.1 157, M1.2 237, M1.3 326, M1.4 33) plus `tests/boundary` 206 = 959; the whole suite ran in about 3.7 s wall time (25 test files, one worker each), coverage run about 7 s. Coverage is 100% for each of the 14 `src/engine` files, above the 85% M1 exit threshold. Formal lint: UNVERIFIED (no linter configured, `moai` unavailable).
+Test counts: `tests/engine` 857 (M1.1 157, M1.2 237, M1.3 326, M1.4 33, M1.5 104: R1 +61, R2 +43) plus `tests/boundary` 206 = 1063 in 27 test files; the whole suite ran in about 4 s wall time (one worker per file), the coverage run about 7 s. Coverage is 100% for each of the 14 `src/engine` files, above the 85% M1 exit threshold. Formal lint: UNVERIFIED (no linter configured, `moai` unavailable).
 
 **AC matrix, AC-001 to AC-010 families, across M1.1-M1.4** (plan.md §B: M1 closes 51 = M1.1 3 + M1.2 11 + M1.3 34 + M1.4 3; the per-AC sub-step results are in the M1.1-M1.4 blocks above).
 
@@ -776,14 +777,14 @@ M1 closes all 51 assigned details. What M1 could not observe even for closed ACs
 
 **Consolidated assumptions** (details in each sub-step block; all take the hold-leaning side).
 - Numbers: `-0` is rejected for `Won` and `BasisPoints`; operands of checked arithmetic are non-negative safe integers; `MAX_AMOUNT_WON = 1,000,000,000` (accepted technical limit, not an insurance value); overflow rejects or holds, never truncates or clamps; `floorDivide` uses BigInt.
-- Validation: duplicate treatment ids and lines collapse first-wins and output is code-point ordered; T sums deduplicated treatment lines plus base-fee lines; no treatment line -> `NO_TREATMENT_SELECTED`; a selected id without a line is not detected by the engine (server guarantee); unknown `benefitType` -> `CLASSIFICATION_NEEDS_REVIEW`.
+- Validation: duplicate treatment ids and lines collapse first-wins and output is code-point ordered; [SUPERSEDED by M1.5 (R1, e6a9658): only fully identical duplicates collapse; same id with any differing field is rejected as `INPUT_INTEGRITY_VIOLATION`, checked before the amount check and the T sum] T sums deduplicated treatment lines plus base-fee lines; no treatment line -> `NO_TREATMENT_SELECTED`; a selected id without a line is not detected by the engine (server guarantee); unknown `benefitType` -> `CLASSIFICATION_NEEDS_REVIEW`.
 - Rule data: dates are real calendar `YYYY-MM-DD`, validity includes both ends; six policy-source items and an approver are required; a non-`ACTIVE` bundle status is suspended; an empty fingerprint/hash is an integrity mismatch; the profile content-hash target is `profileContent()`; the digest is injected through `deps.digest`; `PolicySourceRef`, `ApproverRecord`, `Basis` shapes are placeholders for M3.
 - Calculation: unsupported formula or `limitBasis` other than `PAYOUT` -> `PROFILE_FORMULA_UNSUPPORTED`; shared limits are allocated in `groupOrder`; `UNLIMITED_DECLARED` needs a clause reference; groups without ESTIMATED lines are omitted; held groups report exact G/N/E and null D/P; the base fee is always in the hospital payment `T` and follows the treatment coverage-mapping decision for the payout (plan.md §E.9 #8, corrected wording).
 - M1.4: literal-rule vocabulary and allowlist (assumptions 1-7 above).
 
 **SPEC ambiguities / tensions for the owner.**
 1. **`referenceGroups` vs "a hold result carries no payout number".** design.md DD-03 and AC-004d require `referenceGroups[].P` (flagged `isReference: true`) in an `ON_HOLD` result while `expectedInsurancePayout` and `expectedOutOfPocketAfterPayout` are null; the engine follows the SPEC. If the owner wants no payout-like number at all in a hold result, `referenceGroups` and AC-004d must change; M4/M6 must not show reference values to a patient. The orchestrator is surfacing this as an open decision; it was not changed.
-2. **Stale labels (not edited, SPEC files are outside the run-phase write scope):** `spec.md:146` (C5) and `spec-compact.md:69` still label the base-fee mapping rule "SPEC 제안 (승인 전, §E #8)" although plan.md §E.9 records #8 as accepted with corrected wording; `plan.md:308` (§E.2 row for #8, "공통 기본비용도 보장 매핑이 필요하다 ... 기본값: 필요") can be read as "a mapping is required for the cost to count at all"; `plan.md:400` (§E.8 B3 (3)) is true only for the payout side. `design.md:155` and `acceptance.md:85` agree with the implemented rule.
+2. **Stale labels (not edited, SPEC files are outside the run-phase write scope):** `spec.md:146` (C5) and `spec-compact.md:69` still label the base-fee mapping rule "SPEC 제안 (승인 전, §E #8)" although plan.md §E.9 records #8 as accepted with corrected wording; `plan.md:308` (§E.2 row for #8, "공통 기본비용도 보장 매핑이 필요하다 ... 기본값: 필요") can be read as "a mapping is required for the cost to count at all"; `plan.md:400` (§E.8 B3 (3)) is true only for the payout side. `design.md:155` and `acceptance.md:85` agree with the implemented rule. [RESOLVED in M1.5 (R3, this commit): the C5 labels in spec.md/spec-compact.md now read "SPEC 제안 · 소유자 수용 (2026-10-15, §E #8, 정정 수용)", and plan.md §E.3 row 8, §E.8 B3 (3) and design.md DD-03 state that the mapping decision applies to the payout only while the base fee is always in T; see block M1.5.]
 3. Digest delivery (`EstimateInput` has no digest field), the unspecified outcomes in M1.3's list (all-excluded assumption codes, selected id without a line), and the plan.md:72 vs design.md:47 file list for literal declarations.
 4. plan.md §G assumes a TypeScript compiler API that TypeScript 7 does not provide.
 
@@ -792,6 +793,95 @@ M1 closes all 51 assigned details. What M1 could not observe even for closed ACs
 - Deferred owner decisions not decided and not assumed by M1: #1 (database product), #2 (admin authentication), #3 (hosting), #5 (kiosk device specification), #30 (rule-management role split), #31 (author self-approval in operation), #32 (counselling number: display accepted, operator and hours still to be supplied), #34 (mapping author), #35 (2009.08-09 boundary-contract help text). M1 did not need them; M3-M8 do.
 - Formal lint is UNVERIFIED (no linter configured, `moai` CLI/MCP absent). `spec.md` status remains `in-progress` (set in M1.1; the `implemented`/`completed` transitions belong to manager-docs).
 - M2 and later milestones are not started; the owner's M1-limited approval (plan.md §E.9) does not cover M2+, production deployment, registering real insurance values, or merging to `main`.
+
+### M1.5 외부 검토 보완 (R1~R3), 2026-10-15
+
+**Scope.** Draft PR #1 received an external review. Three follow-ups were done on top of the M1.4 commit `cbba586`, same worktree and branch, one commit each: R1 (engine: conflicting duplicate treatment lines), R2 (engine: profile content-hash input independent of array order), R3 (documentation only, this block). No M2+ work, no real insurance value, no merge, no push, no new full audit. The audit result (iteration-5 FAIL 0.89, MP-7), `plan_status` and `spec.md` status (`in-progress`) are unchanged.
+
+| Step | Commit | Content |
+|------|--------|---------|
+| base | `cbba586` | M1.4 (determinism, profile sensitivity, import/literal boundary) |
+| R1 | `e6a9658` | `fix(SPEC-REIMBURSEMENT-001): M1 충돌하는 중복 치료 줄을 결정적으로 거절` |
+| R2 | `eac034f` | `fix(SPEC-REIMBURSEMENT-001): M1 프로필 해시 입력의 배열 순서 의존 제거` |
+| R3 | (this commit) | documentation alignment (spec, spec-compact, plan, design, acceptance, progress) |
+
+#### R1: conflicting duplicate treatment lines
+
+- **Problem.** `dedupeByTreatmentId()` kept the first line per `treatmentId` and silently dropped the rest, so two lines with the same id but different content gave an input-order-dependent result in a money calculation.
+- **Behaviour now.** Same id with fully identical content (all `PublishedLine` fields, `documentFlags` included; object identity and key order ignored) is counted once. Any difference is rejected with `INPUT_INTEGRITY_VIOLATION` (reason `CONFLICTING_DUPLICATE_TREATMENT_LINE` or `CONFLICTING_DUPLICATE_BASE_FEE_LINE`; both arrays conflicting reports the treatment-line reason). No line is picked or summed; the result is identical for any order and any position of the duplicates; `estimate()` returns the rejection and no result object. The rejection carries no treatment id, amount or internal detail. Decision order: `UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED` → `INPUT_INTEGRITY_VIOLATION` → `INVALID_NUMERIC_INPUT` (conflict check before the per-line amount check and the T sum).
+- **Files.** `src/engine/types.ts`, `src/engine/validate.ts`, `tests/engine/duplicate-conflict.test.ts` (new, 60 tests), `tests/engine/types.test.ts` (rejection-code list), `tests/engine/validate.test.ts` (one expectation changed, below).
+- **RED (before the fix).** `npx vitest run tests/engine/duplicate-conflict.test.ts` -> `Tests  46 failed | 14 passed (60)`: conflicting duplicates were accepted (`expected { ok: true, value: … } to deeply equal { ok: false, rejection: … }`), `estimate()` returned a result, and malformed entries threw `TypeError: Cannot read properties of null` / `a[Symbol.iterator] is not a function`.
+- **Existing test changed.** `validate.test.ts` "중복으로 걸러질 줄의 금액이 무효여도 조용히 버리지 않고 거절한다": it used pairs whose members differ (10,000 vs NaN; 5,000 vs -1) and expected `INVALID_NUMERIC_INPUT`; such pairs are now conflicts. Split into an identical-invalid-pair case (still `INVALID_NUMERIC_INPUT`) and a differing-pair case (`INPUT_INTEGRITY_VIOLATION`).
+- **Mutation checks (reverted).** Comparing only `patientAmount` -> `27 failed | 33 passed (60)`; disabling the conflict check -> `43 failed | 771 passed (814)`.
+- **Assumptions.** Equality is `Object.is` over the known `PublishedLine` fields and the three `documentFlags` booleans (NaN equals NaN, so identical NaN duplicates stay `INVALID_NUMERIC_INPUT`; `-0` differs from `0`, so such a pair is a conflict); properties outside the type are ignored. Malformed entries (null, non-object, no string `treatmentId`) are skipped by the conflict check and rejected as `INVALID_NUMERIC_INPUT`/`LINE_AMOUNT_INVALID` without throwing (previously a `TypeError`). Non-array `lines`/`baseFeeLines` still throw (TypeScript contract), unchanged.
+
+#### R2: profile content-hash input independent of array order
+
+- **Problem.** `profileContent()` passed `groups` and `sharedLimitPools` in stored order, so the same rules in another array order hashed differently (false `INTEGRITY_MISMATCH` → `PROFILE_INVALID`), and the M3 hash-generating side and the engine verifying side need one normalization.
+- **Behaviour now.** `profileContent` (`src/engine/usability.ts`) is the single normalization: `groups` sorted by `groupKey` and `sharedLimitPools` by `poolKey` in Unicode code-point order on a copy (stable; input never mutated); `groupOrder` kept as stored (it decides shared-limit allocation); header fields and `contentHash` excluded. Arrays that are not arrays or contain null / key-less / non-string-key entries are left exactly as given (no repair, no throw); duplicate keys keep input order and are still rejected by the structure check. `compareCodePoints` is reused from `validate.ts` (no import cycle). The injected digest must be canonical with respect to object key order; the test stand-in `testDigest` already is (sorted keys), so it was not changed.
+- **Files.** `src/engine/usability.ts`, `tests/engine/profile-content-order.test.ts` (new, 43 tests). `profile-structure.ts` semantics unchanged.
+- **RED.** `Tests  7 failed | 36 passed (43)`: reordered profiles with the original hash failed integrity, the hash input was not sorted, estimate() of a reordered profile went `ON_HOLD`.
+- **GREEN checks.** 24 group permutations x 6 pool permutations (144) keep the original hash and stay usable and give byte-identical `estimate()` results on a shared pool; 13 real rule changes and all 23 other `groupOrder` permutations with the old hash give `INTEGRITY_MISMATCH` → `PROFILE_INVALID` through `isUsable`, `resolveProfile` and `estimate()`; a deep-frozen profile is untouched; 13 malformed shapes do not throw; duplicate `groupKey`/`poolKey` profiles are `PROFILE_INVALID` via the structure check.
+- **Mutation checks (reverted).** Removing the groups sort -> `7 failed | 850 passed (857)`; also sorting `groupOrder` (wrong) -> `5 failed | 852 passed (857)`.
+- **Assumptions.** Sorting applies only when every element is an object with a string key; an empty-string key sorts first (still caught by the structure check); code-point order, no Unicode normalization (NFC and NFD forms of a key are different keys); hashes made under the old un-normalized scheme would not verify unless their stored order is key-sorted, so M3 must hash with this function and must not rely on old-scheme hashes (none exist in M1: fixtures only).
+
+#### R3: documentation alignment (this commit; no src or tests change)
+
+- **A. #8 base fee.** Aligned the current normative statements to the accepted record (plan.md §E.9): the base fee is always in the expected hospital payment T regardless of coverage; for the payout the base-fee line gets the same coverage-mapping decision as treatments; no or unusable mapping -> the existing hold contract (payout side only). Touched spec.md C5, spec-compact.md C5, design.md DD-03 (two sentences), plan.md §E.3 row 8 (default) and §E.8 B3 (recommendation and difference). acceptance.md AC-004f already says it (T includes the base fee even when unmapped or held; `baseFeeIncluded` semantics unchanged) and was not edited. plan.md §E.9's own "확인 필요" list is a record and was kept; one resolution note was appended after it. Other `#8` occurrences in plan.md (list of M1 items, milestone table, §E.9 record, research.md reference) are history or unrelated and were left.
+- **B. Stale "승인 전" markers.** Only markers that cite an accepted §E number were changed to `SPEC 제안 · 소유자 수용 (2026-10-15, §E #N)` (or the equivalent inline form): 25 markers (spec.md 8, spec-compact.md 8, design.md 6, acceptance.md 3, plan.md 0; numbers #7, #8, #23, #24, #33, #36). The legend in spec.md §3 now defines the new marker and states that acceptance of a technical recommendation is not approval of real insurance values, production deployment or the full SPEC audit, and that the §E rows stay open. Left untouched: deferred numbers (#30, #34), revision-history rows (spec.md:27), the plan.md §E.9 record, and every marker without an explicit §E number (list below).
+- **C. Input-integrity contract.** design.md DD-03 validation sentence, DD-04 call order, DD-19 (500 mapping sentence, layer 5 row, error table 500 row), DD-24 (new row and order line); spec.md/spec-compact.md C4 (duplicates) and C6 (500 mapping); spec-compact AC-006 summary row; acceptance.md AC-006c, AC-006h, AC-006i; plan.md M4 scope. `INPUT_INTEGRITY_VIOLATION` is treated like `INVALID_NUMERIC_INPUT`: a server data-integrity defect -> HTTP 500 `INTERNAL_ERROR` with no amounts or detail and no result object. **This API mapping is a contract requirement that is NOT implemented until M4.** No new AC id was added; every AC count and summary is unchanged.
+- **D. Verification responsibility.** design.md DD-03 has a compact engine-versus-server table. Engine checks (implemented in M1): generation, no treatment, conflicting duplicates (both arrays), per-line amount range, T safe integer. Not checked by the engine, server guarantee, **NOT IMPLEMENTED, mandatory M4 validation and tests:** (a) a selected `treatmentId` without a published line, (b) a line whose `treatmentId` was not selected, (c) the same `treatmentId` in both `lines` and `baseFeeLines`, (d) an `isBaseFee` flag inconsistent with its array. Recorded as `M4 · 미구현` in plan.md M4, acceptance.md AC-006i and spec-compact.md; nothing is marked done or covered. The M1 characterization test only records current behaviour ("검사하지 않음").
+- **E. Profile-hash contract.** design.md DD-04 (new bullet), plan.md M3 (new mandatory-test bullet), acceptance.md AC-008a (extended, covers M1) and AC-011a (M3 test requirement, `M3 · 미구현`).
+- **F. referenceGroups.** No change. DD-03 (design.md:208) and the kiosk hold-result text (DD-07, design.md:531) and AC-013c already say the reference values are response-only and not shown on the hold-result screen; AC-004d keeps `referenceGroups[].P` with `isReference: true` while the overall payout and out-of-pocket stay null. The tension (a hold result carrying reference numbers) is still an owner decision.
+
+#### Verification of the whole M1.5 range (verbatim tails, this session, HEAD `eac034f` + R3 documentation)
+
+```
+$ npx vitest run tests/engine tests/boundary   -> exit 0
+ Test Files  27 passed (27)
+      Tests  1063 passed (1063)
+   Start at  15:40:57
+   Duration  4.04s (tests 82%, import 12%, transform 4%, worker 2%)
+$ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine        -> exit 0
+ Test Files  24 passed (24)
+      Tests  857 passed (857)
+Statements   : 100% ( 480/480 )
+Branches     : 100% ( 400/400 )
+Functions    : 100% ( 119/119 )
+Lines        : 100% ( 443/443 )
+```
+Counts: base `cbba586` 25 files / 959 tests (753 under `tests/engine`); R1 -> 26 / 1020 (814); R2 -> 27 / 1063 (857). Raw outputs of R1 and R2 are in the gitignored `.moai/state/verify/r1/` and `r2/`. For R3, `git diff --check` was clean and every SPEC file kept all lines CRLF (line and CR counts recorded in the commit report). Formal lint and `moai verify` are UNVERIFIED (no linter configured, `moai` CLI absent).
+
+#### AC mapping for the changed and extended sub-criteria
+
+| AC | Change | Where proven |
+|----|--------|--------------|
+| AC-006c | extended: identical duplicates counted once, differing duplicates rejected, order independent | `engine/duplicate-conflict.test.ts`, `engine/validate.test.ts` (M1, closed) |
+| AC-006h | extended: new rejection order and the NaN / -0 / malformed-entry rules | `engine/duplicate-conflict.test.ts`, `engine/types.test.ts` (M1, closed) |
+| AC-006i | extended: `INPUT_INTEGRITY_VIOLATION` -> HTTP 500; mandatory server checks (a)-(d) | M4 · 미구현 (OPEN) |
+| AC-008a | extended: hash input normalization, real-change and `groupOrder` detection | `engine/profile-content-order.test.ts` (M1, closed) |
+| AC-011a | extended: M3 must use the same function and test reorder / change detection | M3 · 미구현 (OPEN) |
+| AC-004d, AC-004f | confirmed, not edited | unchanged |
+
+#### OPEN items (not done, not covered)
+
+1. **M4 mandatory validation and tests (D):** (a) selected `treatmentId` without a published line, (b) line whose `treatmentId` was not selected, (c) same `treatmentId` in both `lines` and `baseFeeLines`, (d) `isBaseFee` inconsistent with the array. Not implemented, not tested in M4 yet; whether a violation is a request rejection or a 500 is for the M4 design.
+2. **API mapping** of `INPUT_INTEGRITY_VIOLATION` to HTTP 500 `INTERNAL_ERROR` (contract requirement, not implemented until M4).
+3. **M3:** the production digest function (canonical with respect to object key order) and the publish/seal path using `profileContent`; reorder / change / `groupOrder` tests (AC-011a).
+4. **Owner decision:** the `referenceGroups` tension (reference numbers inside an `ON_HOLD` result) is unchanged.
+5. **UNVERIFIED:** formal SPEC lint and `moai verify` (no linter, no `moai` CLI/MCP). Only Windows 11 and Node 24.19.0 were run.
+6. The 11 operational-data holds and the deferred decisions (#1, #2, #3, #5, #30, #31, #32 operator/hours, #34, #35) remain open; M2+ is not started.
+
+#### 정리하지 않은 승인 전 표시(매핑 불명확)
+
+These "승인 전" markers have no explicit §E number (or cite a deferred number), so they were left as they are. They may correspond to accepted items (S1, S2, S6-S8, S10, #21 ...), but the SPEC files do not say which, and S1-S15 are not defined anywhere (plan.md §E.9). Line numbers refer to the files as committed by R3.
+
+- Number-less `SPEC 제안 (승인 전)` / `제안, 승인 전` markers: spec.md 189, 203, 204, 274, 327, 397, 398, 399, 400 (327 and 397 sit next to the separate label `잠정 (§E #21)`); spec-compact.md 107, 121, 122, 185, 232, 293, 294, 295, 296; design.md 439, 586, 621, 622, 637, 728, 729, 730, 731, 733, 814, 828, 912 (line 622 still says plan.md §E #21 is open although §E.9 records #21 as accepted); acceptance.md 222, 277, 279, 297, 331, 333, 334, 335, 349; plan.md 348 (the §E.4 row for #36), 403 (§E.8 B4 row, mentions #36 without "§E").
+- Deferred numbers, intentionally unchanged: spec.md 424, 430, 444 and spec-compact.md 316, 320, 333 (#30, #34).
+- Revision-history row, intentionally unchanged: spec.md 27 (#36).
+- Explanatory sentences about the marker vocabulary (not markers): spec.md 77, plan.md 49, 118, 462, design.md 614, 717.
+- The plan.md §E.9 "확인 필요" record (plan.md 494-503) still quotes the old wording, by design.
 
 ## §E.3 Run-phase Audit-Ready Signal
 

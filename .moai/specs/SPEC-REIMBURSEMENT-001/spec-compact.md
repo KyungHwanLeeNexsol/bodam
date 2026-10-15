@@ -32,7 +32,7 @@
 | C8 | `P = min(max(E − D, 0), L)`로 공유 한도를 적용하기 전의 그룹 지급액 P를 정한다. | 확정 근거: 기획서 §6.2 | DD-02, AC-002f, AC-002g, AC-002h, AC-005a |
 | C9 | 명목 공제 D와 실제 적용 공제 `D_applied`를 따로 기록한다. | 확정 근거: 기획서 §6.2 | DD-02, AC-002h |
 | C10 | 그룹 사이 공유 한도는 풀마다 한 번만 적용한다. | 확정 근거: 기획서 §6.2·§9 | DD-02, AC-003f |
-| C11 | 공유 한도의 그룹 몫은 프로필의 `groupOrder` 순서로 정하고, 적용 뒤의 그룹 지급액 `P_pooled`(풀이 없으면 P와 같음)를 P와 함께 기록한다. | SPEC 제안 (승인 전, §E #7) | DD-02, AC-003f, AC-005a |
+| C11 | 공유 한도의 그룹 몫은 프로필의 `groupOrder` 순서로 정하고, 적용 뒤의 그룹 지급액 `P_pooled`(풀이 없으면 P와 같음)를 P와 함께 기록한다. | SPEC 제안 · 소유자 수용 (2026-10-15, §E #7) | DD-02, AC-003f, AC-005a |
 | C12 | `PER_ACCIDENT`·`ANNUAL`·`COUNT` 한도를 적용하면 `REMAINING_LIMIT_ASSUMED` 가정을 낸다. | 확정 근거: 기획서 §9 (한도·기간: 모르면 가정을 표시) | DD-03, AC-003d |
 | C13 | 비율 규칙의 원 단위 처리(`TRUNCATE` 또는 `ROUND_HALF_UP`)가 빠지면 기본값 없이 그 그룹의 줄을 `PROFILE_VALUE_MISSING`으로 보류한다. | 확정 근거: 기획서 §6.3 (원 단위 처리는 규칙마다 명시. 규칙별 처리 값은 보류-10) | DD-02, DD-03, AC-003a |
 | C14 | 프로필 값이 DD-24 범위 밖이면 그 그룹의 줄을 `PROFILE_VALUE_INVALID`로 보류한다. | SPEC 결정 | DD-24, AC-003g |
@@ -65,8 +65,8 @@
 | C1 | 세대가 지원 목록(`GEN1_AS`, `GEN2_C1`, `GEN2_5_C2`, `GEN3_C3`, `GEN4_C4`) 밖이면 `UNSUPPORTED_GENERATION`으로 거절한다. | 확정 근거: 기획서 §9 (범위 밖 입력은 UNSUPPORTED) | DD-03, AC-006a |
 | C2 | 치료가 하나도 없으면 `NO_TREATMENT_SELECTED`로 거절한다. | 확정 근거: 기획서 §4 (치료 미선택 때 0원 표시 금지) | DD-03, AC-006b |
 | C3 | 줄 금액이 DD-24의 범위(0 이상 `MAX_AMOUNT_WON` 이하의 정수) 밖이거나 예상 병원 결제액의 합이 안전 정수 범위를 넘으면, 값을 0이나 기본값으로 고치지 않고 `INVALID_NUMERIC_INPUT`으로 계산 없이 거절한다. | SPEC 결정 | DD-24, AC-006h |
-| C4 | 같은 치료 ID는 한 번으로 친다. | 확정 근거: 기획서 §4 화면 4 | DD-03, AC-006c |
-| C5 | 등록된 공통 기본비용을 자동 포함 줄로 넣어 예상 병원 결제액에 더한다. | 확정 근거: 기획서 §5 · 기본비용 줄도 매핑 판정을 거치는 부분은 SPEC 제안 (승인 전, §E #8) | DD-03, AC-004f |
+| C4 | 같은 치료 ID는 한 번으로 친다(줄의 내용이 완전히 같을 때). 같은 치료 ID의 줄이 둘 이상인데 내용이 하나라도 다르면 어느 줄도 고르거나 합하지 않고 입력 순서와 상관없이 `INPUT_INTEGRITY_VIOLATION`으로 거절하며, 이 검사는 줄 금액 검사보다 먼저다. 치료 줄과 공통 기본비용 줄은 각각 따로 본다. | 확정 근거: 기획서 §4 화면 4 · 내용이 다른 중복 줄의 거절은 SPEC 결정(외부 검토 수정 M1.5, 2026-10-15) | DD-03, AC-006c |
+| C5 | 등록된 공통 기본비용을 자동 포함 줄로 넣어 예상 병원 결제액에 더한다. | 확정 근거: 기획서 §5 · 기본비용은 보장 여부와 관계없이 병원 결제액에 항상 포함하고, 보험금 계산에서 기본비용 줄이 치료와 같은 매핑 판정을 거치는 부분은 SPEC 제안 · 소유자 수용 (2026-10-15, §E #8, 정정 수용) | DD-03, AC-004f |
 | C6 | 공통 기본비용의 등록 여부를 `baseFeeIncluded`(`INCLUDED` 또는 `NOT_REGISTERED`)로 표시한다. | 확정 근거: 기획서 §5 | DD-03, AC-004f |
 | C7 | 지원 범위 밖 계약을 C4로 대신 계산하지 않는다(shall not). | 확정 근거: 기획서 §1·§3 | DD-03, AC-006a |
 | C8 | 지원 범위 밖 계약을 엔진이 스스로 판별하지 않는다(shall not). 가려내는 방법은 열려 있다. | 잠정 (§E #11) | DD-03, plan.md §C R-11 |
@@ -193,8 +193,8 @@
 | C3 | 정상·보장 제외 결과에 예시 계산임을 표시한다. | 확정 근거: 기획서 §4 | DD-22, AC-013a |
 | C4 | 정상·보장 제외 결과에 여섯 동작을 모두 둔다. | 확정 근거: 기획서 §4 | DD-07, AC-013e |
 | C5 | 보류 결과에는 예상 병원 결제액만 숫자로, 나머지 두 금액은 "확인 필요"로 보인다. | 확정 근거: 기획서 §4·§6.1 | DD-07, AC-013c |
-| C6 | 보류 결과의 보류 줄은 환자용 사유 분류(DD-21)로 보인다. | SPEC 제안 (승인 전, §E #23) | DD-21, AC-013c |
-| C7 | 보류 결과는 결과 문구 원칙을 쓰지 않고 공통 안내 가운데 개인 계약 조건 문장만 쓴다. | SPEC 제안 (승인 전, §E #24) | DD-07, AC-013c |
+| C6 | 보류 결과의 보류 줄은 환자용 사유 분류(DD-21)로 보인다. | SPEC 제안 · 소유자 수용 (2026-10-15, §E #23) | DD-21, AC-013c |
+| C7 | 보류 결과는 결과 문구 원칙을 쓰지 않고 공통 안내 가운데 개인 계약 조건 문장만 쓴다. | SPEC 제안 · 소유자 수용 (2026-10-15, §E #24) | DD-07, AC-013c |
 | C8 | 보류 결과의 동작은 "치료 다시 선택 / 보험 조건 수정 / 처음으로 / 이용 완료" 넷만 둔다. | SPEC 결정 (보류 결과 화면은 기획서 §4가 구현 설계에 맡김) | DD-07, AC-013c |
 | C9 | 보류·통신 오류 화면에서 보험금을 0원으로 표시하거나 내부 코드를 보여 주지 않는다(shall not). | 확정 근거: 기획서 §4·§9 | DD-07, DD-21, AC-013c, AC-013d |
 
@@ -226,8 +226,8 @@
 | C7 | 환자의 터치·키 입력만 무조작 시간을 다시 시작하게 한다. | 확정 근거: 기획서 §13.2 | DD-10, AC-015d |
 | C8 | "이용 완료"는 먼저 세션을 지운 뒤 `K06_Complete`를 거쳐 `completionHoldSeconds` 뒤 `K00_Start`로 보낸다. | 확정 근거: 기획서 §4·§13.2 · `completionHoldSeconds` 값은 잠정 (§E #12) | DD-13, AC-015f |
 | C9 | 통신 오류 화면의 "이용 종료"도 먼저 세션을 지운 뒤 `K06_Complete`를 거쳐 `completionHoldSeconds` 뒤 `K00_Start`로 보낸다. | 잠정 (§E #20) | DD-13, AC-015f |
-| C10 | "처음으로"는 일반 환자 화면에서 세션에 환자 입력이 하나라도 있으면 ResetConfirm 확인 뒤에, 없으면 바로 `K00_Start`로 보낸다(`K06_Complete`를 거치지 않는다). | SPEC 제안 (승인 전, §E #36) · "진행 중"을 입력이 있는 상태로 읽은 SPEC 해석 | DD-07, DD-13, AC-015g, AC-015j |
-| C11 | TimeoutDialog 안의 "처음으로"는 ResetConfirm 없이 바로 `K00_Start`로 보낸다(`K06_Complete`를 거치지 않는다). 겹침창은 동시에 하나만 열린다. | SPEC 제안 (승인 전, §E #36) | DD-07, DD-10, AC-015e, AC-015k |
+| C10 | "처음으로"는 일반 환자 화면에서 세션에 환자 입력이 하나라도 있으면 ResetConfirm 확인 뒤에, 없으면 바로 `K00_Start`로 보낸다(`K06_Complete`를 거치지 않는다). | SPEC 제안 · 소유자 수용 (2026-10-15, §E #36) · "진행 중"을 입력이 있는 상태로 읽은 SPEC 해석 | DD-07, DD-13, AC-015g, AC-015j |
+| C11 | TimeoutDialog 안의 "처음으로"는 ResetConfirm 없이 바로 `K00_Start`로 보낸다(`K06_Complete`를 거치지 않는다). 겹침창은 동시에 하나만 열린다. | SPEC 제안 · 소유자 수용 (2026-10-15, §E #36) | DD-07, DD-10, AC-015e, AC-015k |
 | C12 | 무조작 초기화는 경고 뒤 연장이 없을 때 `K06_Complete` 없이 `K00_Start`로 보낸다. | 확정 근거: 기획서 §13.2 | DD-10, DD-13, AC-015a, AC-015b |
 | C13 | 겹침창(`ResetConfirm`·`TimeoutDialog`)이 열려 있는 동안 도착한 활성 요청의 응답·오류·시간 초과는 밑 화면에 곧바로 반영하고, 환자가 `ResetConfirm`을 취소하거나 "계속 사용할게요"를 누르면 응답 전의 `Calculating`이 아니라 반영된 최신 화면을 보인다. 초기화가 확정된 뒤에는 이전 시도의 결말을 버리고, 서버 결말은 무조작 시간을 다시 시작하지 않는다. | 사용자 지시 (2026-10-15 개정 5 요청) · 열린 `TimeoutDialog`의 초기화 시점 유지와 요청 시간 제한·경고 시간의 관계는 SPEC 제안 (승인 전) · 요청 시간 제한의 값은 잠정 (§E #21) | DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말", DD-09, DD-10, DD-13, AC-015l, AC-015m, AC-015n, AC-015o, AC-015p |
 
@@ -266,7 +266,7 @@
 
 | 조건 | 내용 | 상태 | 정의 |
 |------|------|------|------|
-| C1 | `GET /api/clinics/{slug}/catalog`와 `GET /api/clinics/{slug}/insurance/options`로 제공한다. 기획서의 `/api/insurance/options`에 병원 slug를 넣은 경로다. | SPEC 제안 (승인 전, §E #33) | DD-19, AC-018a, AC-018b |
+| C1 | `GET /api/clinics/{slug}/catalog`와 `GET /api/clinics/{slug}/insurance/options`로 제공한다. 기획서의 `/api/insurance/options`에 병원 slug를 넣은 경로다. | SPEC 제안 · 소유자 수용 (2026-10-15, §E #33) | DD-19, AC-018a, AC-018b |
 | C2 | catalog에는 보장 검토 내부 정보를 넣지 않는다(shall not). | SPEC 결정 | DD-19, AC-018a |
 | C3 | catalog에 키오스크가 병원별 무조작 정책을 읽는 `idlePolicy`(화면 종류별 경고·초기화 시간과 `completionHoldSeconds`)를 담는다. | SPEC 결정 | DD-10, DD-19, AC-018a |
 | C4 | 저장된 정책이 없는 병원의 `idlePolicy`는 DD-10 표의 값이고 `completionHoldSeconds`는 null이다. | 잠정 (§E #12, #13, #14) | DD-10, DD-19, AC-018a |
@@ -275,7 +275,7 @@
 | C7 | options를 `Cache-Control: no-store`로 제공한다. | SPEC 결정 | DD-14, DD-19, AC-018b |
 | C8 | 없는 slug에는 404 `CLINIC_NOT_FOUND`를 반환한다. | SPEC 결정 | DD-19, AC-018a, AC-018b |
 
-**REQ-API-002** — **When** `POST /api/clinics/{slug}/estimate`(SPEC 제안, 승인 전, plan.md §E #33: 기획서의 `/api/estimate`에 병원 slug를 넣음)를 받으면, 서버는 경로의 slug로 병원을 정하고 모든 치료 ID가 그 병원의 현재 게시 카탈로그에 속하는지 확인한 뒤(아니면 422 `TREATMENT_NOT_PUBLISHED`) 그 병원의 게시 가격·공통 기본비용·규칙 묶음으로 키오스크 미리보기와 같은 엔진 모듈로 다시 계산해야 하며, 요청 본문의 가격·비율·병원 ID 같은 다른 필드는 읽지 않아야 한다(shall not). → AC-019
+**REQ-API-002** — **When** `POST /api/clinics/{slug}/estimate`(SPEC 제안 · 소유자 수용 2026-10-15, plan.md §E #33: 기획서의 `/api/estimate`에 병원 slug를 넣음)를 받으면, 서버는 경로의 slug로 병원을 정하고 모든 치료 ID가 그 병원의 현재 게시 카탈로그에 속하는지 확인한 뒤(아니면 422 `TREATMENT_NOT_PUBLISHED`) 그 병원의 게시 가격·공통 기본비용·규칙 묶음으로 키오스크 미리보기와 같은 엔진 모듈로 다시 계산해야 하며, 요청 본문의 가격·비율·병원 ID 같은 다른 필드는 읽지 않아야 한다(shall not). → AC-019
 
 **REQ-API-003** — **When** 계산 요청의 `catalogVersion`이나 `ruleBundleVersion`이 그 병원의 현재 버전과 다르면, 서버는 결과 없이 거절하고 키오스크는 최신 자료로 갱신한 뒤 환자가 다시 확인하게 해야 하며, 갱신이 끝나기 전에는 계산을 막고 두 응답을 한 단계로 반영해야 한다(조건표 C1~C13). → AC-020
 
@@ -304,7 +304,7 @@
 | C3 | 관리자 경로의 오류는 401 `UNAUTHENTICATED`와 403 `FORBIDDEN`으로 반환한다. | SPEC 결정 | DD-19, AC-021f |
 | C4 | 서버 실패는 500 `INTERNAL_ERROR`와 그 밖의 5xx로 반환한다. | SPEC 결정 | DD-19, AC-021a |
 | C5 | 관리자 입력의 수치 범위 위반은 400 `INVALID_REQUEST`로 반환한다. | SPEC 결정 | DD-19, DD-24, AC-021f |
-| C6 | 엔진의 `INVALID_NUMERIC_INPUT` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`로 반환한다. | SPEC 결정 | DD-19, DD-24, AC-006i |
+| C6 | 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`로 반환한다(이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다: M4 · 미구현). | SPEC 결정 | DD-19, DD-24, AC-006i |
 | C7 | 성공 응답에 계산에 실제로 쓴 버전·규칙 묶음 가용성(`ruleBundleStatus`)·프로필 id·버전·`origin` 요약을 담는다. | 확정 근거: 기획서 §8 (결과와 근거 반환) | DD-04, DD-14, DD-19, AC-021c |
 | C8 | 키오스크는 활성 요청의 409를 버전 불일치 흐름으로 처리한다. | SPEC 결정 | DD-07, DD-19 |
 | C9 | 키오스크는 활성 요청의 `NO_TREATMENT_SELECTED`와 `TREATMENT_NOT_PUBLISHED`를 DD-19 클라이언트 처리 표의 해당 행으로 처리한다. | SPEC 결정 | DD-07, DD-19, AC-013d |
@@ -343,7 +343,7 @@
 | AC-003 | a 원 단위 처리 누락 보류 · b 버림·반올림·선택형Ⅱ 1회 처리 · c 미지원 공식·COVERED_COST 보류 · d 잔여 한도 가정 · e 조항 누락 보류 · f 공유 한도 1회(P·P_pooled 기록) · g 프로필 값 무효 보류(없음은 `PROFILE_VALUE_MISSING`) · h 계산 범위 초과 보류(공제 방식·원 단위 처리별 경계표)와 합계 넘침 | unit |
 | AC-004 | a 정상 0원 · b 전부 제외 · c 보류 null(병원 결제액 124,000) · d 매핑 없는 줄의 그룹 제외와 참고 그룹(P 4,000 / 40,000) · e 가정 코드(보류에도 PERSONAL_CONTRACT_NOT_CONFIRMED) · f 기본비용 세 경우 · g 계산 근거(P·P_pooled) · h 공유 한도 뒤 출력 일관성 | unit |
 | AC-005 | a 속성 기반 불변 조건(고정 시드; 합계 일치, `P_pooled ≤ P ≤ E`, `NaN`·비안전 정수 없음 포함) | unit |
-| AC-006 | a 지원 밖 세대 거절 · b 치료 0개 거절 · c 중복 ID 1회 · d 원인 독립(엔진) · e 원인 모름은 보류 아님 · f API 400/422 층 구분과 422 두 종 · g API 결과 블록 동일 · h 수치 범위 밖 줄 금액·합계 넘침 거절(`INVALID_NUMERIC_INPUT`) · i 저장된 줄 금액 무효 → API 500 | unit (a·b·c·d·e·h), integration (f·g·i) |
+| AC-006 | a 지원 밖 세대 거절 · b 치료 0개 거절 · c 중복 ID 1회(내용이 다른 중복은 `INPUT_INTEGRITY_VIOLATION` 거절) · d 원인 독립(엔진) · e 원인 모름은 보류 아님 · f API 400/422 층 구분과 422 두 종 · g API 결과 블록 동일 · h 수치 범위 밖 줄 금액·합계 넘침 거절(`INVALID_NUMERIC_INPUT`) · i 저장된 줄 금액 무효·충돌하는 중복 줄 → API 500 (M4 · 미구현, 서버 줄 조립 검증 (a)~(d)도 M4 필수 · 미구현) | unit (a·b·c·d·e·h), integration (f·g·i) |
 | AC-007 | a 9줄·영수증 줄 항상 · b 원인별 서류와 우선 사유 · c 원인 모름 예시 묶음의 7+1+1(일반 규칙 아님) · d RULES_UNAVAILABLE · e 보류 시 null · f 서류 규칙 게시는 구조·`when` 계약 검사만(전용 줄 수는 거절 사유 아님) · g 규칙 없음일 때 서류 화면(안내 문구, "결과로 돌아가기"·"이용 완료" 유지)과 보류 시 진입 없음 · h 전용 줄이 여럿인 규칙에서 9줄 한 번씩·사유 병합 · i 그 경우의 화면(세로·가로·큰 글자, 이전/다음 목록) · j `when` 키(`cause`·`setting`·`insurerType`)별 평가(AND·빠진 키·`when: {}`) · k 치료 서류 표시의 OR 집계와 치료 순열 불변 · l 우선순위·사유 코드 포인트 동률 규칙과 규칙 순열 불변 | unit (a·b·c·d·e·h·j·k·l), integration (f), e2e-app (g), render + e2e-app (i) |
 | AC-008 | a 프로필 상태별 코드(구조 결함·같은 칸 프로필 둘·묶음 중지 포함) · b 매핑 상태별 코드(승인자·출처 누락 포함) · c 분류 확인 필요 · d 칸 대체 금지 · e 판정 순서 · f 규칙 사용 범위 없음 · g 규칙 묶음 중지(버전·해시가 같아도 보류, 판정 순서) · h 매핑 후보 구성 행렬(사용 가능한 후보 개수·지문) · i 사용 불가 후보들의 고정 우선순위 코드 · j 매핑 `decision`·제외 지름길 없음·필드 규칙 방어 · k 배열 순서 독립과 출력 순서 · l 묶음 선행 판정과 항목 판정의 호출 순서(묶음 중지 때 `isUsable` 호출 0) · m 프로필 구조 결함과 공유 한도 풀 값 결함의 영향 범위 | unit |
 | AC-009 | a 보장 판단 필드 변경 → 재검토 · b 지문 불일치 보류 · c 가격만 변경 시 매핑 유지 | integration (a·c), unit (b) |
