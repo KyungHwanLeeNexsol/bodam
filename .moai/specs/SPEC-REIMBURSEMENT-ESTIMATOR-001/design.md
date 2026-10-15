@@ -150,7 +150,7 @@ interface RuleBundleSnapshot {
 }
 ```
 
-- `bundle.status`는 서버가 채워 넘기는 값이다. 엔진은 이 값을 추정하거나 바꾸지 않고 받은 대로 판정한다. 버전 id와 내용 해시가 같아도 `SUSPENDED`이면 묶음을 쓰지 않는다(`RULE_BUNDLE_SUSPENDED`, 아래 보류 사유 표).
+- `bundle.status`는 서버가 채워 넘기는 값이다. 엔진은 이 값을 추정하거나 바꾸지 않고 받은 대로 판정한다. 버전 id와 내용 해시가 같아도 `SUSPENDED`이면 묶음을 쓰지 않는다(`RULE_BUNDLE_SUSPENDED`, 아래 보류 사유 표). 묶음 안의 항목(`profiles`·`mappings`·`documentRuleSet`)이 가진 생명주기 `state`도 서버가 요청 시점에 저장소에서 새로 읽어 채운 값이며 캐시된 묶음 내용의 값이 아니다(SPEC 제안, DD-14 "항목 생명주기 상태와 캐시 계약").
 
 - 공통 기본비용(`CommonBaseFee`, SPEC 결정)은 자동 포함 줄로 계산하며 치료와 같은 매핑 판정을 거친다. 매핑이 없으면 그 줄이 보류된다. 기본비용이 하나라도 등록되어 있으면 `baseFeeIncluded = 'INCLUDED'`(그 줄이 보류되어도 금액은 병원 결제액에 들어간다), 하나도 없으면 `'NOT_REGISTERED'`이고 화면은 기본 진료비 포함 여부를 안내한다(기획서 §5). 기본비용에도 매핑이 필요하다는 결정은 plan.md §E #8.
 - 엔진 입력 검증: 세대가 열거값 밖이면 `UNSUPPORTED_GENERATION`, 치료가 없으면 `NO_TREATMENT_SELECTED`, 줄(치료·공통 기본비용)의 금액이 `Won` 범위 밖이거나 예상 병원 결제액 T의 검사 합산이 안전 정수를 넘으면 `INVALID_NUMERIC_INPUT`으로 거절한다(판정 순서는 이 순서이며, 수치 검사의 정의와 처리는 DD-24). 이 셋은 계산 결과가 아니라 거절이다. `INVALID_NUMERIC_INPUT`은 보류 코드가 아니다. 병원 결제액이 믿을 수 있는 숫자여야 하므로 잘못된 줄을 보류로 돌리거나 합계에서 빼지 않는다. 엔진은 지원 범위 밖 계약(노후·유병력자·단체 실손 등)을 판별하지 않는다. 그런 입력이 없고, 가려내는 방법은 미정이다(plan.md §E #11).
@@ -419,6 +419,7 @@ type RuleItem =
 | `BUNDLE_SUSPENDED` (`bundle.status = SUSPENDED`) | `RULE_BUNDLE_SUSPENDED` | 모든 줄. 전체가 `ON_HOLD`이므로 서류는 null |
 
 - 묶음 단위 선행 판정: 규칙 묶음의 가용성(`RuleBundleSnapshot.status`)은 묶음에 든 항목을 보기 전에 먼저 본다. `SUSPENDED`이면 `BUNDLE_SUSPENDED`이고 보류 코드는 `RULE_BUNDLE_SUSPENDED`다. 이 판정은 항목의 상태를 읽지도 바꾸지도 않으며 항목 판정을 호출하지도 않는다(DD-14, DD-17). 버전 id와 내용 해시가 같아도 사용 가능으로 보지 않는다.
+- 항목 단위 판정이 읽는 `state`(`RuleItemHeader.state`)는 계산 요청마다 새로 읽은 현재 생명주기 상태다. 항목 버전의 내용은 캐시할 수 있어도 `state`는 캐시하지 않으므로, 묶음 내용을 캐시한 뒤 항목을 중지하거나 재검토로 돌리면 다음 요청의 `isUsable`이 그 상태를 본다(SPEC 제안, 승인 전. DD-14 "항목 생명주기 상태와 캐시 계약").
 - 줄(치료·공통 기본비용)은 카탈로그 게시로만 들어오므로 출처만 본다. 출처가 줄 허용 출처 밖이면 `LINE_ORIGIN_NOT_ACCEPTED`다.
 - 구성별 허용 출처:
 
@@ -586,6 +587,34 @@ type DocumentsResult =
 | 모든 상태 | 화면 방향 변경 | — | 같은 상태 | 유지. 표시 변형만 바뀌며 계산 요청을 보내지 않는다 |
 | 모든 상태 | 새로고침, 뒤로·앞으로, 페이지 캐시 복원 | — | `K00_Start` | 전체 삭제 |
 
+### 겹침창이 열려 있는 동안 도착하는 요청 결말
+
+출처 표기: 규칙 1~4의 본문은 사용자 지시 (2026-10-15 개정 5 요청)다. "SPEC 제안 (승인 전)"이라고 적은 문장과 규칙 5는 이 SPEC이 덧붙인 제안이며 소유자 승인이 아니다. 이 절은 위 전이표와 DD-09의 요청 보호를 바꾸지 않고 둘이 만나는 곳을 정한다. `ResetConfirm`·`TimeoutDialog`가 열리는 조건(plan.md §E #36의 제안)도 바꾸지 않으며, §E #21과 #36은 열린 채 그대로다.
+
+화면 상태(`Calculating`, 결과 3종, `KXX_Error_Network`, `K03_Treatments` 등)와 겹침창 상태(없음 / `ResetConfirm` / `TimeoutDialog`, 동시에 하나)는 따로 가진다. 겹침창은 화면 위에 그려질 뿐 요청의 결말을 막지 않고, 요청 보호(DD-09)는 겹침창과 상관없이 활성 `requestId`·`sessionId`·`inputRevision`만 본다.
+
+1. 활성 요청과 일치하는 결말은 겹침창이 열려 있어도 `settleRequest` 규칙대로 곧바로 밑 화면 상태에 반영한다. 겹침창 때문에 결말을 미루거나 따로 쌓아 두지 않는다.
+2. 환자가 `ResetConfirm`을 취소하거나 `TimeoutDialog`에서 "계속 사용할게요"를 누르면 응답 전의 `Calculating`으로 돌아가지 않고 이미 결말이 반영된 최신 화면을 보인다. 결과로 바뀌었으면 결과 화면이고 오류로 바뀌었으면 그 오류 화면이다.
+3. 초기화가 확정된 뒤에는 이전 시도의 응답·오류·시간 초과를 버린다. 확정은 `ResetConfirm`의 확인, `TimeoutDialog` 안의 "처음으로", 무조작 초기화이며, 모두 먼저 `settleRequest(…, CANCELLED)`로 활성 요청을 풀고 새 `sessionId`로 `K00_Start`를 연다. 그래서 늦게 온 결말은 `activeRequest`가 null이거나 다른 시도라서 DD-09 1단계에서 버려지고, 409·`TREATMENT_NOT_PUBLISHED` 뒤의 catalog·options 다시 받기도 시작되지 않는다. `K06_Complete`를 거치지 않는다.
+4. 서버 응답·오류·요청 시간 제한 만료는 무조작 시간을 다시 시작하거나 연장하지 않는다. 환자의 터치·키 입력만 그렇게 한다(DD-10, 아래 표의 모든 행). SPEC 제안 (승인 전): 화면 종류가 바뀌어도 경과 시간은 마지막 환자 조작부터 계속 세고, 아직 경고 전이면 임계값만 새 화면 종류의 값(DD-10 표)을 쓴다. 이미 열린 `TimeoutDialog`의 초기화 시점은 열릴 때 정해진 그대로이며 응답이 도착해도 바뀌지 않는다.
+5. SPEC 제안 (승인 전): 요청 시간 제한과 무조작 경고 시간의 관계. plan.md §E #21은 열려 있고 값을 정하지 않는다. 이 SPEC의 어느 요구사항도 요청 시간 제한이 `Calculating`의 경고 시간(DD-10 표, 100초)보다 짧아야 한다고 요구하지 않으며, 현재 수치가 뜻하는 관계는 다음과 같다. (가) 제한이 경고 시간보다 짧으면 환자 조작이 없는 한 `TimeoutDialog`가 `Calculating` 위에 뜨기 전에 요청이 `EXPIRED`로 끝난다(plan.md §E.8 B4가 권하는 15초가 이 경우다). 그래도 `ResetConfirm`은 환자 조작으로 열리므로(조작이 무조작 시간을 다시 센다) 제한이 경고 시간보다 짧아도 `ResetConfirm` 위에서 만료가 일어날 수 있다. (나) 제한이 경고 시간 이상이면 `TimeoutDialog`가 `Calculating` 위에 뜬 채로 요청이 끝날 수 있고 아래 표가 그 경우를 정한다. (다) 제한이 초기화 시간(120초) 이상이면 만료 전에 무조작 초기화가 먼저 와서 요청이 취소되므로 제한이 쓰이지 않는다. 표는 (가)~(다)에 같은 규칙을 적용한다.
+
+아래 표는 두 겹침창이 `Calculating` 위에 열려 있을 때(요청이 진행 중인 화면은 `Calculating`뿐이다) 활성 요청의 결말이 도착하는 경우다. `ResetConfirm`은 `Calculating`에서 "처음으로"를 눌러 연다(위 전이표의 `Calculating` 초기화 행이 이 동작을 이미 전제한다. 제안, §E #36).
+
+| 열린 겹침창 | 도착한 결말 | 밑 화면에 적용되는 것 | 겹침창의 동작 | 닫은 뒤 환자가 보는 것 |
+|-------------|-------------|------------------------|---------------|------------------------|
+| `ResetConfirm` | 200 (`ESTIMATED`·`ESTIMATED_WITH_EXCLUSIONS`·`ON_HOLD`) | `settleRequest(SUCCEEDED)`가 활성 요청·타이머·로딩 표시를 풀고 밑 화면이 `K04_Result`·`K04_Result_NotCovered`·`K04_Result_Hold` 가운데 해당 화면이 되어 결과가 저장된다 | `ResetConfirm`이 그대로 열려 있다(자동으로 닫히거나 확인되지 않는다). 무조작 시간은 그대로다 | 취소: 결과가 반영된 결과 화면(`Calculating`이 아니다). 확인: 세션을 지우고 `K00_Start`, 방금 반영된 결과는 세션 삭제로 지워진다 |
+| `ResetConfirm` | 409 `VERSION_MISMATCH` | `settleRequest(VERSION_MISMATCH)`가 요청을 풀고 DD-14 갱신 흐름(catalog·options 다시 받기, 시작 때의 `sessionId`·`inputRevision`이 같을 때만 반영)이 시작되어 밑 화면이 `K03_Treatments`가 된다. 다시 받는 동안의 표시는 DD-14·DD-19의 기존 규칙을 따른다 | 그대로 열려 있다 | 취소: 갱신된 `K03_Treatments`(내려간 치료 안내, 환자가 다시 확인해야 결과가 나옴). 확인: `K00_Start`, 갱신 결과는 버려진다 |
+| `ResetConfirm` | 그 밖의 오류 (422 두 종, 그 밖의 4xx, 5xx, 연결 실패) | `settleRequest`가 요청을 푼 뒤 DD-19 처리 표대로 밑 화면이 `K03_Treatments`(`NO_TREATMENT_SELECTED`. `TREATMENT_NOT_PUBLISHED`는 갱신 흐름 뒤) 또는 `KXX_Error_Network`가 된다 | 그대로 열려 있다 | 취소: 그 화면. 확인: `K00_Start` |
+| `ResetConfirm` | 요청 시간 제한 도달 (`EXPIRED`) | `settleRequest(EXPIRED)`가 요청을 풀고 컨트롤러를 `abort()`하며 밑 화면이 `KXX_Error_Network`가 된다. 만료 뒤 늦게 온 응답은 버려진다 | 그대로 열려 있다. 만료는 무조작 시간을 다시 시작하지 않는다 | 취소: `KXX_Error_Network`("다시 시도"·"이용 종료"). 확인: `K00_Start` |
+| `TimeoutDialog` | 200 | 위 `ResetConfirm` 200 행과 같다 | `TimeoutDialog`가 그대로 열려 있고 남은 시간은 계속 준다. 초기화 시점은 응답과 상관없이 열릴 때 정해진 그대로다(규칙 4) | "계속 사용할게요": 결과가 반영된 결과 화면이고 무조작 시간을 그 화면 종류의 임계값으로 다시 센다. "처음으로"나 초기화 시점 도달: `K00_Start`(반영된 결과는 지워진다) |
+| `TimeoutDialog` | 409 | 위 `ResetConfirm` 409 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": 갱신된 `K03_Treatments`. "처음으로"·초기화 시점: `K00_Start`, 갱신 결과는 버려진다 |
+| `TimeoutDialog` | 그 밖의 오류 | 위 `ResetConfirm`의 같은 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": 그 화면(`K03_Treatments` 또는 `KXX_Error_Network`). "처음으로"·초기화 시점: `K00_Start` |
+| `TimeoutDialog` | `EXPIRED` | 위 `ResetConfirm` `EXPIRED` 행과 같다 | 위 `TimeoutDialog` 200 행과 같다 | "계속 사용할게요": `KXX_Error_Network`. "처음으로"·초기화 시점: `K00_Start` |
+
+- 표의 모든 행에서 결말이 겹침창 뒤에 도착해도 환자의 선택·`inputRevision`·`sessionId`는 바뀌지 않는다. 확정된 초기화가 먼저면 규칙 3에 따라 어느 행의 결말도 반영되지 않는다.
+- 시험: AC-015l(`ResetConfirm` 취소와 응답), AC-015m(초기화 확정과 응답), AC-015n(무조작 초기화와 응답), AC-015o(`TimeoutDialog` "계속 사용할게요"와 응답), AC-015p(겹침창이 열린 동안의 요청 만료).
+
 ## DD-08 입력 변경과 파생 데이터 무효화
 
 규칙: 확정된 입력값(세대, 보험사 형태, 치료 원인, 치료 묶음) 가운데 하나라도 다른 값으로 바뀌면 파생 데이터(`EstimateResult`, `Documents`, `BasisView`, `ReturnContext`) 전부를 즉시 지우고 `inputRevision`을 1 올린다. 같은 값을 다시 고르면 아무 일도 없다. 페이지 이동, 이전·다음 이동, 큰 글자 전환, 화면 방향 변경은 입력 변경이 아니다. 표시 설정(큰 글자 보기, 관찰한 화면 방향)은 파생 데이터가 아니다. 바뀌어도 선택·`EstimateResult`·`Documents`·`BasisView`·`ReturnContext`·`inputRevision`·금액은 그대로이고 계산 요청도 보내지 않는다. 새 결과는 "예상 부담액 확인"을 다시 눌러야 나온다. 치료 원인만 바꾼 뒤 다시 확인하면 금액은 같고(DD-01) 서류 목록만 새로 산출된다.
@@ -610,7 +639,7 @@ type DocumentsResult =
 ## DD-09 세션 보호와 복원 금지
 
 - 세션은 메모리 저장소에만 둔다(기획서 §8). 초기화마다 `sessionId`를 새로 만든다(기획서 §13.2 "세션 식별자 교체").
-- 계산 시도마다 새 `requestId`를 만든다(SPEC 결정). 키오스크 안에서만 쓰는 값이며 `crypto.randomUUID()`로 만들고 메모리에만 두며 저장·로그·URL·분석 이벤트에 남기지 않고 서버로도 보내지 않는다(서버는 요청 본문의 다른 필드를 읽지 않는다, REQ-API-002). 키오스크 상태는 `activeRequest: { requestId, sessionId, inputRevision, controller, timeoutHandle } | null`을 가지며, 취소 수단으로 `AbortController`를, 그 시도의 클라이언트 시간 제한(plan.md §E #21)을 재는 타이머 핸들(`timeoutHandle`)을 붙인다(SPEC 결정: 기획서는 "요청 취소"만 요구).
+- 계산 시도마다 새 `requestId`를 만든다(SPEC 결정). 키오스크 안에서만 쓰는 값이며 `crypto.randomUUID()`로 만들고 메모리에만 둔다. 계산 요청의 본문·헤더·URL(경로·쿼리·해시)에 싣지 않고 서버로 보내지 않으며, 브라우저 저장소(localStorage·sessionStorage·IndexedDB·쿠키·Cache Storage)·서버 저장소(데이터베이스·저장소 구현과 키를 이 값으로 쓰는 서버 메모리 캐시·맵)·클라이언트와 서버의 로그·분석 이벤트에 남기지 않는다(서버는 요청 본문의 다른 필드를 읽지 않는다, REQ-API-002). 메모리에 두는 것, 곧 아래 `activeRequest`가 들고 있는 것은 허용된다. 이 식별자는 관리자 쪽 검토 요청 기록(`CoverageReviewRequest`)의 id(관리자 API 경로의 `{reviewRequestId}`, DD-17·DD-18·DD-19)와 다른 것이다. 둘은 만드는 쪽·쓰임·저장 여부가 다르며 같은 값이나 같은 필드로 쓰지 않는다. 시험은 발급기를 알려진 표지 값을 내는 것으로 바꿔 끼우고 요청 가로채기(fetch/XHR 감시), 로그 수집기, 분석 이벤트 수집기, 저장소 전후 덤프, 서버 저장소와 서버 메모리 캐시·맵 덤프를 뒤져 그 값이 나오지 않음을 보인다. 같은 구성에서 `activeRequest`에는 그 값이 있음을 대조군으로 확인해 '없음'이 빈 검사가 되지 않게 한다(AC-016k~n). 키오스크 상태는 `activeRequest: { requestId, sessionId, inputRevision, controller, timeoutHandle } | null`을 가지며, 취소 수단으로 `AbortController`를, 그 시도의 클라이언트 시간 제한(plan.md §E #21)을 재는 타이머 핸들(`timeoutHandle`)을 붙인다(SPEC 결정: 기획서는 "요청 취소"만 요구).
 - 보호 규칙: 200 결과, 4xx·5xx 오류, 409, `NO_TREATMENT_SELECTED`·`TREATMENT_NOT_PUBLISHED` 처리, 연결 실패, 클라이언트 시간 초과 등 모든 결말은 `activeRequest !== null`이고 `activeRequest.requestId`가 그 결말의 `requestId`와 같을 때만 반영한다(방어를 겹쳐 `sessionId`와 `inputRevision`이 지금 값과 같은지도 본다). 아니면 상태·결과·로딩 표시·화면을 건드리지 않고 버린다. 이 보호는 `AbortController`와 별개이며 그 위에 더하는 것이다. 취소가 이미 날아온 응답을 막지 못할 수 있기 때문이다.
 - `activeRequest`를 null로 하고 `controller`를 취소하는 경우(모두 아래 "요청 생명주기"의 `settleRequest`를 거친다): "처음으로"·"이용 완료"·무조작 초기화·새로고침(새 `sessionId`)으로 초기화할 때, 입력이 바뀔 때(`inputRevision` +1), 요청이 만료될 때(클라이언트 시간 초과 → 전송 상태 `FAILED` → `KXX_Error_Network`이며, 만료된 시도는 나중에 도착해도 반영되지 않는다), 새 시도가 이를 대체할 때("다시 시도"나 새 "예상 부담액 확인"은 새 `requestId`를 만들고 이전 시도를 취소한다).
 - 로딩 상태는 활성 요청에만 속한다. 이전 시도의 늦은 결과는 로딩 표시를 끄거나, 오류 화면을 띄우거나, 새 시도의 결과 화면을 여는 일을 할 수 없다.
@@ -618,7 +647,7 @@ type DocumentsResult =
 
 ### 요청 생명주기 (SPEC 결정)
 
-계산 시도 하나는 정확히 하나의 결말로 끝난다.
+계산 시도 하나는 정확히 하나의 결말로 끝나고, 그 결말의 처리(정리와 결과 반영)는 한 번만 일어난다.
 
 | 결말 | 어떤 일 | 화면 처리 |
 |------|---------|-----------|
@@ -631,7 +660,9 @@ type DocumentsResult =
 
 모든 결말은 **함수 하나** `settleRequest(requestId, outcome)`를 거친다. 다른 경로로 `activeRequest`를 null로 하거나 화면을 바꾸거나 로딩 표시를 끄지 않는다.
 
-1. `activeRequest`가 null이거나 `activeRequest.requestId !== requestId`이면 버리고 아무것도 바꾸지 않는다(위 보호 규칙).
+`settleRequest`는 한 시도에 대해 여러 번 불릴 수 있다(SPEC 결정, 개정 5). 늦게 온 응답, 늦게 온 오류, 시간 제한 타이머 콜백이 같은 시도의 `requestId`로 다시 부르기 때문이다. 한 시도의 유효한 결말 처리(2·3단계)와 자원 정리(타이머·컨트롤러·로딩 표시)와 결과 반영은 첫 유효 호출에서만 한 번 일어나고, 그 시도에 대한 이후의 모든 호출은 1단계에서 끝나 어떤 상태도 바꾸지 않는다.
+
+1. `activeRequest`가 null이거나 `activeRequest.requestId !== requestId`이면 버리고 아무것도 바꾸지 않는다(위 보호 규칙). 같은 시도의 늦은 호출(이미 풀려 `activeRequest`가 null이거나 새 시도의 것을 가리키는 경우)과 이전 시도의 호출은 모두 여기서 끝난다. 이 단계는 타이머, 로딩 표시, 컨트롤러(`abort()`), 화면, 결과, 무조작 타이머 어느 것도 건드리지 않는다.
 2. 아니면 다음을 한 번에 풀고 나서 3으로 간다: `activeRequest = null`, 그 시도의 `timeoutHandle`을 `clearTimeout`으로 치움, 로딩 표시를 끔, 컨트롤러를 버림. 컨트롤러는 `EXPIRED`와 `CANCELLED`에서만 `abort()`한다. 이미 끝난 요청(`SUCCEEDED`·`VERSION_MISMATCH`·`REJECTED`·`FAILED`)은 취소할 것이 없다.
 3. 그다음에 결말에 따른 화면 전이(위 표)를 실행한다. 어느 결말도 2를 건너뛰지 않는다.
 
@@ -639,6 +670,8 @@ type DocumentsResult =
 
 - 어떤 결말 뒤에도 그 시도의 시간 제한 타이머가 대기 중으로 남아서는 안 된다. 성공한 시도의 타이머가 나중에 돌아 결과 화면을 `KXX_Error_Network`로 바꾸는 일은 결함이다. 타이머 콜백이 어떤 이유로 뒤늦게 실행되더라도 콜백은 자기 `requestId`가 `activeRequest.requestId`와 같은지 먼저 확인하고 다르면 아무것도 하지 않는다(1단계와 같은 확인).
 - 새 시도는 이전 활성 요청이 있으면 `settleRequest(이전 requestId, CANCELLED)`를 먼저 부른 뒤에 새 `activeRequest`와 새 타이머를 만든다. 그래서 대기 중인 요청 타이머는 활성 요청의 것 하나뿐이거나 없다.
+- 새 시도 B가 시작된 뒤 이전 시도 A의 늦은 추가 호출(늦은 응답·늦은 오류·A의 타이머 콜백·`settleRequest(A의 requestId, …)` 직접 호출)이 오더라도 `activeRequest`는 B의 `requestId`를 가리키므로 1단계에서 모두 버려진다. B의 대기 타이머, 로딩 표시, 화면(`Calculating`), `activeRequest`는 호출 전후로 같고, B가 제때 만료되거나 응답을 받는 것도 바뀌지 않는다(AC-016j).
+- `ResetConfirm`·`TimeoutDialog`가 열려 있는 동안 도착한 결말도 같은 `settleRequest`를 거친다. 그 결말을 밑 화면에 반영하는 방식과 초기화가 확정된 뒤 이전 시도의 결말을 버리는 방식은 DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"이 정한다.
 - 무조작 타이머(DD-10)는 별개다. `settleRequest`는 무조작 타이머를 시작하지도 멈추지도 않는다.
 - 409 `VERSION_MISMATCH`와 422 `TREATMENT_NOT_PUBLISHED`의 후속 조치(catalog·options를 다시 받는 일, DD-14·DD-19)는 요청을 정리한 뒤에 시작하며, 다시 받은 결과는 후속 조치를 시작할 때 잡아 둔 `sessionId`와 `inputRevision`이 지금 값과 같을 때만 반영한다. 그 사이에 초기화나 입력 변경이 있었으면 결과를 버린다(요청 보호와 같은 계열의 보호).
 - 환자 데이터를 localStorage·IndexedDB·서비스워커 캐시(기획서 §8)와 sessionStorage·Cache Storage(SPEC 결정으로 금지 목록에 추가)에 쓰지 않는다. 정적 검사(금지 API 사용 탐지)와 실행 중 저장소 감시 시험으로 확인한다.
@@ -657,7 +690,7 @@ type DocumentsResult =
 | 세대 확인 안내, 계산 중, 통신 오류 | 100초 | 120초 | 잠정 (기획서 §13.2가 구현 설계에 맡김, plan.md §E #13) |
 | `K00_Start`, `K06_Complete` | 없음 | 없음 | 지울 환자 데이터 없음 |
 
-- 환자의 터치·키 입력마다(결과·근거·서류 사이 이동 포함) 무조작 시간을 0초부터 다시 센다. 서버 응답과 내부 갱신은 시간을 연장하지 않는다. 무조작 타이머는 계산 요청의 시간 제한 타이머(DD-09)와 별개이며, 요청을 정리(`settleRequest`)해도 무조작 타이머를 다시 시작하거나 멈추지 않는다.
+- 환자의 터치·키 입력마다(결과·근거·서류 사이 이동 포함) 무조작 시간을 0초부터 다시 센다. 서버 응답과 내부 갱신은 시간을 연장하지 않는다. 무조작 타이머는 계산 요청의 시간 제한 타이머(DD-09)와 별개이며, 요청을 정리(`settleRequest`)해도 무조작 타이머를 다시 시작하거나 멈추지 않는다. 응답·오류·요청 만료가 `ResetConfirm`·`TimeoutDialog`가 열려 있는 동안 도착해도 같다. 이때 밑 화면에 결말을 반영하는 방식, 열린 `TimeoutDialog`의 초기화 시점 유지, 요청 시간 제한과 경고 시간의 관계는 DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"이 정한다.
 - 경고는 같은 `TimeoutDialog`를 현재 화면 위에 띄우며 남은 시간, "계속 사용할게요", "처음으로"를 보인다. `TimeoutDialog` 안의 "처음으로"는 `ResetConfirm` 없이 바로 지우고 `K00_Start`로 간다(제안, 승인 전, plan.md §E #36. 일반 화면의 "처음으로"는 DD-07). 겹침창은 동시에 하나만 열려, `ResetConfirm`이 열린 채 경고 시점이 되면 `ResetConfirm`을 닫고 `TimeoutDialog`를 연다. "계속 사용할게요"는 반복할 수 있고 누를 때마다 시간을 다시 센다. 배경은 실제 화면 그대로이므로 결과 화면이면 여섯 동작이 모두 남아 있다(디자인 차이 13-2 해결).
 - 초기화 도착지는 `K00_Start`다. 결과 화면으로 돌아가지 않고 `K06_Complete`를 거치지 않는다.
 - 병원 관리자가 병원별로 바꿀 수 있다(기획서 §7). 저장 검증(잠정, SPEC 결정): 경고 < 초기화, 초기화 − 경고 ≥ 20초. 20초는 기획서 §13.2와 tech.md §5의 기본값 "초기화 20초 전에 경고"에서 왔고, 이를 저장 하한으로 삼은 것은 이 SPEC의 결정이다(plan.md §E #16). 이 하한은 무조작 정책에만 적용하며 `completionHoldSeconds`에는 적용하지 않는다.
@@ -698,6 +731,8 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 | 무조작 초기화 | 경고 → 연장 없음 → 전체 삭제 → `K00_Start` | 아니요 |
 | 통신 오류의 "이용 종료" | 전체 삭제 → `K06_Complete` (잠정) | 예 |
 
+초기화가 확정되는 세 경로(`ResetConfirm`의 확인, `TimeoutDialog` 안의 "처음으로", 무조작 초기화)는 모두 먼저 `settleRequest(…, CANCELLED)`로 활성 요청을 풀고 지운다. 그 뒤 늦게 도착한 이전 시도의 응답·오류·시간 초과는 반영되지 않는다(DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말" 규칙 3).
+
 `completionHoldSeconds`는 병원별 설정값(양의 정수)이다. 원문 문서가 길이를 정하지 않았으므로("잠시 후", 기획서 §13.2) 기본값은 열린 확인 항목이다(plan.md §E #12, 구현 착수 승인 전에 정함). 키오스크는 이 값을 catalog 응답의 `idlePolicy.completionHoldSeconds`에서 읽으며(DD-19), 저장된 값이 없어 null이면 자동 복귀 없이 "처음 화면으로" 버튼으로만 `K00_Start`에 간다.
 
 ## DD-14 버전
@@ -721,6 +756,7 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 ```
 
 - 클라이언트는 그 병원의 catalog·options를 다시 받고, 아직 게시된 선택은 유지하고, 내려간 치료는 안내와 함께 빼고, 새 합계를 보인 뒤 환자가 다시 확인하게 한다. 옛 값으로 결과를 확정하지 않는다(기획서 §7). 이 처리는 활성 요청(DD-09)의 409에만 한다. 활성 요청이 아닌 이전 시도의 409는 버린다. 다시 받은 catalog·options는 다시 받기를 시작할 때의 `sessionId`와 `inputRevision`이 지금 값과 같을 때만 반영하고, 그 사이에 초기화나 입력 변경이 있었으면 버린다(DD-09 "요청 생명주기").
+- `changes.treatmentsUnpublished`의 내용(SPEC 제안, 승인 전. 기존 계약이 이 배열의 계산 근거를 적지 않아 정한 최소 동작이다): 요청의 `treatmentIds` 가운데 병원의 현재 게시 카탈로그에 없는 치료 ID를 요청에 적힌 순서대로 중복 없이 담고, 모두 현재 카탈로그에 있으면 빈 배열이다. 409는 위 처리 순서의 ④에서 나가고 치료 ID 대조(⑤)보다 앞서므로, 옛 카탈로그를 본 클라이언트가 이미 내려간 치료를 보낸 요청은 422가 아니라 이 배열을 담은 409가 된다. 현재 카탈로그에 없던 ID(다른 병원의 ID 포함)가 옛 버전의 요청에 섞여 있어도 같은 배열에 담긴다.
 - 결과는 실제로 쓴 버전, 묶음 가용성(`ruleBundleStatus`), 프로필 id·버전을 되돌려 준다.
 
 ### 규칙 묶음 가용성과 중지 (SPEC 결정)
@@ -728,11 +764,22 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 - 내용과 가용성을 나눈다. `RuleBundleVersion`은 바꿀 수 없다(id, 포함한 항목 버전 목록, 내용 해시, 게시자, 게시일). 사용 가능 여부는 별도의 추가 전용 기록 `RuleBundleStatusEvent { bundleId, status: 'ACTIVE' | 'SUSPENDED', actorId, role, at, reason, previousStatus }`로 남긴다. 게시 트랜잭션이 첫 `ACTIVE` 사건을 함께 쓰고, 현재 상태는 가장 마지막 사건이다.
 - 중지는 그 묶음 id에서 끝이다. 다시 활성으로 돌리는 동작은 없다(`ACTIVE` 사건을 다시 쓰려는 시도는 거절). 복구는 새 `RuleBundleVersion`을 게시(이전 버전의 사본이거나 고친 판, 위 복구 규칙)하고 플랫폼 운영자가 영향을 받는 병원마다 규칙 사용 범위를 다시 지정(기존 REQ-ADM-004 권한)하는 것이다. 새 권한도 병원별 긴급 중지도 두지 않는다.
 - 중지는 묶음 기록만 바꾼다. 묶음에 든 프로필·매핑·서류 규칙 버전의 상태는 그대로이므로, 같은 버전을 담은 다른 묶음은 영향을 받지 않는다. 개별 항목을 중지하는 동작(DD-17 생명주기의 `PUBLISHED → SUSPENDED`)은 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 이 SPEC은 항목 중지를 묶음 중지의 수단으로 쓰지 않는다.
-- 계산 요청(`POST …/estimate`) 처리 순서: ① 병원 확인 ② 현재 `ClinicRuleScope`와 묶음 스냅샷, 그리고 묶음 상태를 새로 읽음(상태는 캐시하지 않음) ③ `catalogVersion`·`ruleBundleVersion`(묶음 id)을 병원의 현재 값과 비교해 다르면 409(본문 `latest`에 `ruleBundleStatus` 포함) ④ 같으면 계산. 버전이 같아도 묶음이 `SUSPENDED`이면 HTTP 200 `ON_HOLD`다. 모든 줄이 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금은 null, `documents`는 null, `versions.ruleBundleStatus = 'SUSPENDED'`이며 409도 4xx도 아니다. 버전이 같다는 사실은 묶음을 쓸 수 있다는 뜻이 아니다.
+- 계산 요청(`POST …/estimate`) 처리 순서(SPEC 결정, 개정 5. 정본은 DD-19 "요청 검증의 층"의 표이고 여기에는 같은 순서를 옮겨 적는다): ① 병원 확인(없으면 404) → ② 요청 구조 검증(400 `INVALID_REQUEST`) → ③ 지원 세대·치료 비어 있음 검증(422 `UNSUPPORTED_GENERATION`, `NO_TREATMENT_SELECTED`) → ④ 현재 `ClinicRuleScope`와 묶음 스냅샷, 묶음 상태, 묶음에 든 항목의 현재 생명주기 상태를 새로 읽고(상태는 캐시하지 않음, 아래 "항목 생명주기 상태와 캐시 계약") `catalogVersion`·`ruleBundleVersion`(묶음 id)을 병원의 현재 값과 비교해 다르면 409(본문 `latest`에 `ruleBundleStatus` 포함) → ⑤ 요청한 치료 ID를 병원의 현재 게시 카탈로그와 대조해 없는 것이 있으면 422 `TREATMENT_NOT_PUBLISHED`(다른 병원의 치료 ID 포함) → ⑥ 계산. ②·③은 요청 본문만 보고 정해지므로 ④의 읽기보다 먼저 거절한다. 한 요청에 여러 조건이 겹치면 앞선 단계의 응답 하나만 나온다. 버전이 같아도 묶음이 `SUSPENDED`이면 HTTP 200 `ON_HOLD`다. 모든 줄이 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금은 null, `documents`는 null, `versions.ruleBundleStatus = 'SUSPENDED'`이며 409도 4xx도 아니다. 버전이 같다는 사실은 묶음을 쓸 수 있다는 뜻이 아니다.
 - `GET …/insurance/options`: `ruleBundleVersion`은 범위의 묶음 id(중지 중에도 같음), `ruleBundleStatus`는 `ACTIVE` | `SUSPENDED` | null(범위 없음)이다. 카드는 5 / 3 / 3 그대로다(DD-05). 응답에 `Cache-Control: no-store`를 붙여(SPEC 결정) 중지가 다음 요청에서 보이게 한다. `ClinicRuleScope`는 중지로 바뀌지 않고 중지된 묶음을 계속 가리킨다.
-- 캐시 계약: 가용성은 계산 요청과 options 요청마다 읽는다. 캐시해도 되는 것은 (id, 내용 해시)로 찾는 바뀌지 않는 묶음 내용뿐이다. 구현이 범위→묶음이나 상태의 캐시를 추가하면 중지 사건 기록과 캐시 무효화를 같은 트랜잭션에서 한다. 이미 키오스크 화면에 나온 결과는 소급해서 바꾸지 않는다(환자 세션은 메모리뿐이다). "예상 부담액 확인"을 다시 누르면 보류가 나온다.
+- 캐시 계약: 가용성은 계산 요청과 options 요청마다 읽는다. 캐시해도 되는 것은 (id, 내용 해시)로 찾는 바뀌지 않는 묶음 내용뿐이다(항목 버전의 내용·해시·지문·출처·약관 출처·승인자·유효 기간까지이며, 항목의 현재 생명주기 상태 `state`는 포함하지 않는다. 아래 "항목 생명주기 상태와 캐시 계약"). 구현이 범위→묶음이나 상태의 캐시를 추가하면 중지 사건 기록과 캐시 무효화를 같은 트랜잭션에서 한다. 이미 키오스크 화면에 나온 결과는 소급해서 바꾸지 않는다(환자 세션은 메모리뿐이다). "예상 부담액 확인"을 다시 누르면 보류가 나온다.
 - 영향을 받는 병원 = 현재 `ClinicRuleScope`가 중지된 묶음 id를 가리키는 병원이다. 다른 묶음을 쓰는 병원과 지난 범위 이력은 해당하지 않는다. 중지 API(`POST /api/admin/rule-bundles/{id}/suspend`)는 비어 있지 않은 `reason`을 요구하고(없으면 400 `INVALID_REQUEST`), 검토 담당자만 할 수 있으며(병원 관리자·플랫폼 운영자는 403, 인증이 없으면 401), 응답에 `affectedClinics: [{ clinicId, slug }]`를 담는다. 감사 기록에는 수행자·역할·일시·사유·이전/이후 상태·영향을 받는 병원 수를 남긴다.
 - 복구 경로: 검토 담당자가 새 묶음 버전을 게시 → 플랫폼 운영자가 영향을 받는 병원마다 범위를 다시 지정 → 옛 버전을 든 클라이언트는 409 `VERSION_MISMATCH`(`ruleChanged: true`)를 받고 새 버전은 정상 계산한다. 중지부터 재지정까지 영향을 받는 병원은 계산 보류를 보인다.
+
+### 항목 생명주기 상태와 캐시 계약 (SPEC 제안, 승인 전)
+
+개정 5의 사용자 검토에서 나온 새 발견(progress.md R6-1)에 대한 이 SPEC의 최소 해법이다. 소유자 승인이 아니며 plan.md §E의 열린 행을 닫거나 바꾸지 않는다.
+
+- 두 가지를 구분한다. ① **내용**: 프로필·매핑·서류 규칙 묶음 항목 버전의 내용(`content`와 `contentHash`, 매핑의 `approvedFingerprint`, 출처, 약관 출처, 승인자, 유효 기간)과 규칙 묶음 버전의 구성(어느 항목 버전을 담는지)은 게시된 뒤 바뀌지 않는다(위 `RuleBundleVersion`, DD-18). ② **생명주기 상태**: 항목 버전 하나의 현재 `state`(DD-17: `PUBLISHED`에서 `SUSPENDED`·`UNDER_REREVIEW`·`SUPERSEDED`·`EXPIRED`로 가는 전이)는 검토 담당자의 명시 동작(항목 중지, 재검토 전환)이나 보장 판단 필드가 바뀐 치료 버전의 게시(DD-16)로 바뀐다. 상태가 바뀌어도 항목 버전의 내용은 바뀌지 않으며 전이는 감사 기록에 남는다(DD-17). 사용자 표현의 "중지"와 "검토 필요"는 각각 `SUSPENDED`와 `UNDER_REREVIEW`다.
+- 경로: 계산 요청마다 서버는 묶음 상태(위)와 함께 묶음에 든 항목 버전들의 현재 `state`를 저장소에서 새로 읽고(항목 버전 id 목록으로 한 번에 조회), 캐시된 묶음 내용에 방금 읽은 `state`를 채워 `RuleBundleSnapshot`(DD-03)을 조립한다. `state`는 캐시하지 않으므로 무효화 경로가 필요 없다. 이것은 묶음 가용성의 읽기 규칙(위 캐시 계약)을 항목 상태까지 넓힌 최소 해법이며 새 이벤트나 캐시 무효화 메커니즘을 만들지 않는다. 구현이 항목 상태 캐시를 더하려면 상태 전이와 캐시 무효화를 같은 트랜잭션에서 해야 한다.
+- 버전: 항목 하나의 상태 변경은 `RuleBundleVersion`(id, 내용 해시), `CatalogVersion`, `ClinicRuleScope`를 바꾸지 않는다. 그래서 클라이언트가 가진 두 버전은 계속 현재 값과 같고, 다음 요청은 409가 아니라 200으로 계산하며 쓸 수 없게 된 항목은 기존 보류 계약의 코드로 나온다(묶음 중지가 버전을 바꾸지 않는 것과 같은 모양). 상태 변경은 게시가 아니므로 새 버전을 내지 않는다.
+- 효과(모두 기존 계약 그대로이며 새 보류 코드가 없다): 프로필이 `SUSPENDED`이면 `STATE_INVALID`로 그 칸의 모든 줄이 `PROFILE_INVALID`, `UNDER_REREVIEW`이면 `PROFILE_UNDER_REREVIEW`다(DD-04 표). 매핑이 `SUSPENDED`이면 그 후보가 `MAPPING_INVALID`, `UNDER_REREVIEW`이면 `MAPPING_UNDER_REREVIEW`이며 줄의 최종 코드는 `resolveMapping`이 정한다(사용 가능한 다른 후보가 있으면 그것으로 확정, DD-03). 서류 규칙 묶음이 `isUsable`을 통과하지 못하면 `deriveDocuments`가 null 규칙 묶음을 받으므로, 계산이 가능한 입력에서는 응답이 200이고 `documents`가 `RULES_UNAVAILABLE`이며 금액은 영향을 받지 않는다(DD-06. 전체가 `ON_HOLD`이면 `documents`는 null). 같은 항목 버전을 담은 다른 묶음(다른 병원 포함)도 같은 저장소 값을 읽으므로 다음 요청에 똑같이 반영된다. 묶음 중지는 항목 상태를 바꾸지 않는다(위, DD-17).
+- 운영 준비 상태(DD-23)는 이미 저장소 스냅샷을 읽는 순수 함수이므로 같은 저장소 상태를 보고하며 이 경로로 달라지는 것이 없다.
+- 시험이 보는 곳: 메모리 저장소 구현의 읽기 호출 감시로 묶음 내용 조회는 캐시 적중일 수 있어도 `state` 조회는 요청마다 일어남을 확인하고, "묶음 내용을 먼저 읽어 캐시한 뒤 항목을 중지하고 다음 요청을 보낸다"는 순서로 응답을 확인한다(AC-011m~p).
 
 ## DD-15 지문 방어
 
@@ -807,7 +854,7 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 
 - 규칙은 덮어쓰거나 지우지 않고 새 버전을 낸다. 수정자·일시·사유를 남긴다. 게시 전 미리보기를 제공한다. 복구는 이전 버전의 사본을 새 버전으로 게시하는 방식으로 한다(기획서 §7).
 - 작성자와 승인자를 모두 기록한다. 같은 사람의 승인은 처음에는 허용하되 감사 기록에 `selfApproval: true`를 남긴다(SPEC 결정; 금지할지는 plan.md §E #31).
-- 규칙 묶음 단위의 가용성(`ACTIVE` | `SUSPENDED`, DD-14)은 위 표의 항목 생명주기와 따로 움직인다. 묶음을 중지해도 묶음에 든 프로필·매핑·서류 규칙 버전의 상태(위 표)는 바뀌지 않으며, 같은 버전을 담은 다른 묶음은 계속 쓸 수 있다. 항목 자체의 `PUBLISHED → SUSPENDED`는 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 묶음 중지는 검토 담당자만 한다(권한 표의 "규칙 묶음 게시·중지" 칸).
+- 규칙 묶음 단위의 가용성(`ACTIVE` | `SUSPENDED`, DD-14)은 위 표의 항목 생명주기와 따로 움직인다. 묶음을 중지해도 묶음에 든 프로필·매핑·서류 규칙 버전의 상태(위 표)는 바뀌지 않으며, 같은 버전을 담은 다른 묶음은 계속 쓸 수 있다. 항목 자체의 `PUBLISHED → SUSPENDED`는 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 그 영향은 묶음 내용을 캐시한 뒤에도 다음 요청부터 나타난다: 항목의 현재 `state`는 요청마다 새로 읽고 묶음 버전은 바뀌지 않는다(SPEC 제안, 승인 전. DD-14 "항목 생명주기 상태와 캐시 계약"). 묶음 중지는 검토 담당자만 한다(권한 표의 "규칙 묶음 게시·중지" 칸).
 - 플랫폼 운영자의 병원별 긴급 중지는 이 SPEC에 두지 않는다. 기획서 §7 6번이 플랫폼 운영자에게 준 권한은 관리자 소속·역할 관리와 규칙 사용 범위 지정 둘뿐이고 긴급 중지는 원문에 없다. 계획 감사 1회차 뒤 요구사항에서 뺐으며 그 제거를 승인한 기록은 없다. 개정 4 요청에서 사용자가 이 범위에 넣지 않도록 지시했다(plan.md §A.5, §F 선택 후속 항목). 플랫폼 운영자의 권한은 위 두 가지에서 늘지 않는다.
 
 ## DD-18 데이터 모델
@@ -935,16 +982,16 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 ```
 
 - 서버는 경로의 slug로 병원을 정한다. 요청 본문의 가격·비율·병원 ID 같은 다른 필드는 무시하며 읽지 않는다.
-- 모든 치료 ID가 그 병원의 현재 게시 카탈로그에 있는지 확인한다. 하나라도 없으면 422 `TREATMENT_NOT_PUBLISHED`(다른 병원의 치료 ID 포함).
+- 버전 비교(층 3) 뒤에, 모든 치료 ID가 그 병원의 현재 게시 카탈로그에 있는지 확인한다(층 4). 하나라도 없으면 422 `TREATMENT_NOT_PUBLISHED`(다른 병원의 치료 ID 포함). 요청의 버전이 옛 값이면 이 확인에 닿기 전에 409가 나간다(아래 "요청 검증의 층").
 - 서버는 키오스크 미리보기와 같은 엔진 모듈로 다시 계산한다.
-- 서버는 규칙 사용 범위의 묶음과 그 묶음의 상태를 이 요청 안에서 새로 읽고(캐시하지 않음) 버전을 비교한 뒤 계산한다. 순서와 중지된 묶음의 응답(HTTP 200 `ON_HOLD`)은 DD-14에 있다.
+- 서버는 규칙 사용 범위의 묶음과 그 묶음의 상태를 이 요청 안에서 새로 읽고(캐시하지 않음) 버전을 비교한 뒤 계산한다. 거절 조건이 겹칠 때의 순서는 아래 "요청 검증의 층"(정본)과 DD-14에 있고, 중지된 묶음의 응답(HTTP 200 `ON_HOLD`)은 DD-14에 있다.
 - 키오스크가 계산 시도마다 만드는 `requestId`(DD-09)는 요청 본문에 없으며 서버는 이 값을 알지 못한다.
 - 요청 본문은 금액·비율 필드를 담지 않으므로(위 규칙) 요청 검증은 아래 "요청 검증의 층"의 구조와 열거값만 본다. 수치 검증은 DD-24에 따라 게시 단계와 계산 단계에서 한다.
 - 엔진이 `INVALID_NUMERIC_INPUT`으로 거절하면(저장된 줄 금액이 게시 검증을 통과하고도 범위 밖인 서버 데이터 무결성 결함) 서버는 금액도 내부 상세도 담지 않고 HTTP 500 `INTERNAL_ERROR`를 낸다. 결과 객체도 0도 `NaN`도 만들지 않는다.
 
 #### 요청 검증의 층 (SPEC 결정)
 
-계산 요청의 거절은 층으로 나뉜다. 한 요청에 여러 조건이 겹치면 아래 순서의 앞선 층이 이긴다. 층 구분의 기준은 "요청 본문이 계약의 형식을 지켰는가(400)"와 "형식은 지켰으나 내용이 지원 범위 밖이거나 비었는가(422)"다.
+계산 요청의 거절은 층으로 나뉜다. 한 요청에 여러 조건이 겹치면 아래 순서의 앞선 층이 이기고 그 층의 응답 하나만 나온다. 이 표가 처리 순서의 정본이며(SPEC 결정, 개정 5) DD-14의 "계산 요청 처리 순서"가 같은 순서를 옮겨 적는다. 순서는 병원 확인(0) → 요청 구조(1) → 지원 세대·치료 비어 있음(2) → 현재 버전 비교(3) → 현재 카탈로그 기준 치료 ID 대조(4) → 계산(5)이다. 층 구분의 기준은 "요청 본문이 계약의 형식을 지켰는가(400)"와 "형식은 지켰으나 내용이 지원 범위 밖이거나 비었는가(422)"다.
 
 | 층 | 조건 | 응답 |
 |----|------|------|
@@ -952,11 +999,24 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 1 구조 | 본문이 JSON이 아님. 필수 필드 누락(`catalogVersion`, `ruleBundleVersion`, `generation`, `insurerType`, `cause`, `treatmentIds`. `ruleBundleVersion`은 null 값이 허용되며 키가 없을 때만 누락). JSON 형식이 틀림(`catalogVersion`이 문자열이 아님, `ruleBundleVersion`이 문자열도 null도 아님, `generation`·`insurerType`·`cause`가 문자열이 아님, `treatmentIds`가 배열이 아니거나 문자열이 아닌 요소를 가짐). `insurerType` 또는 `cause`가 열거값 밖의 문자열 | 400 `INVALID_REQUEST` |
 | 2 내용 | `generation`이 문자열이지만 다섯 값(`GEN1_AS`, `GEN2_C1`, `GEN2_5_C2`, `GEN3_C3`, `GEN4_C4`) 밖(5세대 등) | 422 `UNSUPPORTED_GENERATION` |
 | 2 내용 | `treatmentIds`가 빈 배열 | 422 `NO_TREATMENT_SELECTED` |
-| 3 병원 데이터 | 선택한 치료 ID 가운데 그 병원의 현재 게시 카탈로그에 없는 것이 있음(다른 병원의 치료 ID 포함) | 422 `TREATMENT_NOT_PUBLISHED` |
+| 3 버전 | `catalogVersion` 또는 `ruleBundleVersion`이 그 병원의 현재 값과 다름(층 0~2를 통과한 요청에서만 비교한다) | 409 `VERSION_MISMATCH`(DD-14, 본문 `changes.treatmentsUnpublished[]` 포함) |
+| 4 병원 데이터 | 버전이 현재 값과 같은데 선택한 치료 ID 가운데 그 병원의 현재 게시 카탈로그에 없는 것이 있음(다른 병원의 치료 ID, 비활성·미게시 치료 ID 포함) | 422 `TREATMENT_NOT_PUBLISHED` |
+| 5 계산 | 위 층을 모두 통과 | HTTP 200(계산 보류와 묶음 중지의 `ON_HOLD` 포함, DD-14). 엔진의 `INVALID_NUMERIC_INPUT` 거절만 500 `INTERNAL_ERROR` |
 
-- 층 2의 두 코드는 엔진의 입력 검증 순서(`UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED`, DD-03)와 같다. 서버가 같은 확인을 엔진 호출 전에 하는 것은 요청 거절을 엔진 거절과 같은 코드로 내기 위해서다.
-- 층 3과 버전 불일치(409, DD-14)의 선후는 이 구분이 바꾸지 않는다. 요청 본문의 다른 필드(가격·비율·병원 ID 등)는 어느 층에서도 읽거나 검사하지 않는다(REQ-API-002).
-- 시험: AC-006f(층 구분과 422 두 코드), AC-021a(공개 오류 표 전체).
+- 층 2의 두 코드는 엔진의 입력 검증 순서(`UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED`, DD-03)와 같다. 서버가 같은 확인을 엔진 호출 전에 하는 것은 요청 거절을 엔진 거절과 같은 코드로 내기 위해서다. 한 요청에 두 코드가 겹치면 `UNSUPPORTED_GENERATION`이 먼저다.
+- 순서의 이유(SPEC 결정): 층 1·2는 요청 본문만 보고 정해지므로 서버 데이터를 읽기 전에 거절한다. 층 3이 층 4보다 앞서는 것은 옛 카탈로그를 본 클라이언트가 이미 내려간 치료를 보낸 요청을 422로 막지 않고 409(`treatmentsUnpublished[]`)로 알려 키오스크가 갱신 흐름(DD-14)을 타게 하려는 것이다. 층 4는 버전이 현재 값과 같은데도 현재 카탈로그에 없는 치료 ID(잘못 보낸 값, 다른 병원의 ID)를 가려낸다. 규칙 묶음의 중지는 거절 층이 아니라 층 5(계산)의 결과이므로 버전이 같으면 200 `ON_HOLD`다. 요청 본문의 다른 필드(가격·비율·병원 ID 등)는 어느 층에서도 읽거나 검사하지 않는다(REQ-API-002).
+- 겹치는 거절 조건의 응답(SPEC 결정. 아래 여섯 사례는 모두 위 순서에서 도출된 값이며 AC-021h~m이 시험한다):
+
+| 겹침 | 응답 |
+|------|------|
+| (a) 열거 밖의 `cause` + 옛 버전 | 400 `INVALID_REQUEST`(층 1이 층 3보다 앞선다). `latest`·`changes`가 없다 |
+| (b) 지원 밖 세대 + 옛 버전 | 422 `UNSUPPORTED_GENERATION`(층 2) |
+| (c) 빈 `treatmentIds` + 옛 버전 | 422 `NO_TREATMENT_SELECTED`(층 2) |
+| (d) 옛 `catalogVersion` + 그 사이 내려간 치료 | 409 `VERSION_MISMATCH`. `changes.treatmentsUnpublished`에 내려간 치료 ID가 있고(DD-14), 422가 아니다 |
+| (e) 최신 버전 + 미게시 치료 ID 또는 다른 병원의 치료 ID | 422 `TREATMENT_NOT_PUBLISHED`(층 4) |
+| (f) 최신 버전 + 중지된 규칙 묶음 | 200 `ON_HOLD`, 모든 줄 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금 두 값과 `documents`는 null, `versions.ruleBundleStatus = "SUSPENDED"`(DD-14) |
+
+- 시험: AC-006f(층 구분과 422 두 코드), AC-021a(공개 오류 표 전체), AC-021h~m(겹침 여섯 사례).
 
 성공 응답(보류 포함, HTTP 200). 아래는 `TEST_FIXTURE` 예시 4종(합계 124,000원)으로 보류된 경우의 형식 예시다:
 
@@ -992,10 +1052,10 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 401 | `UNAUTHENTICATED` | 인증되지 않은 관리자 요청 | 관리자 |
 | 403 | `FORBIDDEN` | 역할 권한 밖, 다른 병원 자원 | 관리자 |
 | 404 | `CLINIC_NOT_FOUND` | slug에 해당하는 병원 없음 | 공개 |
-| 409 | `VERSION_MISMATCH` | 버전 불일치 (DD-14) | 공개 |
+| 409 | `VERSION_MISMATCH` | 버전 불일치 (DD-14). 요청 검증의 층 3: 층 0~2의 거절이 없을 때만, 층 4보다 먼저 | 공개 |
 | 422 | `UNSUPPORTED_GENERATION` | `generation`이 문자열이지만 세대 열거 밖(5세대 등). 문자열이 아니거나 필드가 없으면 400. C4로 계산하지 않음 | 공개 |
 | 422 | `NO_TREATMENT_SELECTED` | `treatmentIds`가 빈 배열(필드가 없거나 배열이 아니면 400) | 공개 |
-| 422 | `TREATMENT_NOT_PUBLISHED` | 그 병원 게시 카탈로그에 없는 치료 ID | 공개 |
+| 422 | `TREATMENT_NOT_PUBLISHED` | 버전이 현재 값과 같은데 그 병원 게시 카탈로그에 없는 치료 ID(요청 검증의 층 4. 옛 버전이면 409가 먼저 나간다) | 공개 |
 | 500 | `INTERNAL_ERROR` | 서버 실패. 계산 때 저장된 줄 금액이 범위 밖이거나 병원 결제액 T가 안전 정수가 아닌 데이터 무결성 결함(엔진의 `INVALID_NUMERIC_INPUT` 거절, DD-24)도 여기로 낸다. 금액·스택·필드 내용을 담지 않음 | 공개·관리자 |
 | 5xx | — | 그 밖의 서버 실패 | 공개·관리자 |
 
@@ -1014,7 +1074,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 그 밖의 4xx (400, 404, 422 `UNSUPPORTED_GENERATION`) | 클라이언트·계약 결함으로 보고 `FAILED` → `KXX_Error_Network` |
 | 5xx, 시간 초과, 연결 실패 | `FAILED` → `KXX_Error_Network` |
 
-계산 요청의 시간 제한 값은 plan.md §E #21이다.
+계산 요청의 시간 제한 값은 plan.md §E #21이다. 위 처리가 `ResetConfirm`·`TimeoutDialog`가 열려 있는 동안 일어나면 아래 화면에 곧바로 적용하는 규칙과 표는 DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"이 정한다.
 
 ### 관리자 API (제안)
 
@@ -1028,7 +1088,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | `POST /api/admin/clinics/{clinicId}/catalog/publish`, `GET …/catalog/versions` | 카탈로그 게시·이력 | HA |
 | `POST /api/admin/clinics/{clinicId}/treatments/{treatmentId}/review-requests` | 검토 요청 기록 생성 | HA |
 | `GET /api/admin/review-queue` | 검토 대기열 | RV |
-| `POST /api/admin/review-requests/{requestId}/mappings` | 요청으로 매핑 초안 작성 | RV |
+| `POST /api/admin/review-requests/{reviewRequestId}/mappings` | 요청으로 매핑 초안 작성 | RV |
 | `POST /api/admin/mappings/{mappingId}/versions/{version}/approve` · `/reject` | 승인·반려(반려 사유 필수) | RV |
 | `/api/admin/profiles`, `/api/admin/document-rule-sets`, `/api/admin/policy-sources`, `/api/admin/insurers` | 규칙 데이터 관리 | RV |
 | `POST /api/admin/rule-bundles` | 묶음 게시(첫 `ACTIVE` 가용성 기록을 같은 트랜잭션에 씀) | RV |
@@ -1038,6 +1098,8 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | `GET /api/admin/audit-log` | 감사 기록 | 권한 표 기준 |
 
 모든 관리자 요청은 인증과 병원 권한 확인을 거친다(REQ-ADM-001).
+
+표의 `{reviewRequestId}`는 검토 요청 기록(`CoverageReviewRequest`, DD-17·DD-18)의 id이며, 키오스크가 계산 시도마다 메모리에서만 만드는 `requestId`(DD-09)와 서로 다른 식별자다. 둘은 만드는 쪽, 쓰임, 저장 여부가 모두 다르고 같은 값이나 같은 필드로 쓰지 않는다.
 
 ## DD-20 기술 스택
 
