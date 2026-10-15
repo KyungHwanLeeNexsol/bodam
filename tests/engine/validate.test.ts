@@ -178,6 +178,15 @@ describe('validateEstimateInput — 치료 0개 (AC-006b)', () => {
     });
   });
 
+  it('치료 줄이 하나도 없으면(공통 기본비용 줄만 있어도) 0원 결과를 만들지 않고 NO_TREATMENT_SELECTED 로 거절한다', () => {
+    const baseFee = line('B-BASE', 5_000, { isBaseFee: true });
+    for (const overrides of [{ lines: [] }, { lines: [], baseFeeLines: [baseFee] }]) {
+      const result = validateEstimateInput(input(overrides));
+      expect(result).toEqual({ ok: false, rejection: { code: 'NO_TREATMENT_SELECTED' } });
+      expect('value' in result).toBe(false);
+    }
+  });
+
   it('경계 쌍: 치료 1개는 통과하고 0개는 거절한다', () => {
     expect(validateEstimateInput(input({ treatmentIds: ['T-XRAY'], lines: [xray] })).ok).toBe(true);
     expect(validateEstimateInput(input({ treatmentIds: [], lines: [xray] })).ok).toBe(false);

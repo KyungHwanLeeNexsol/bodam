@@ -489,6 +489,139 @@ M1.2 follows the corrected wording: the common base cost is part of the expected
 - The assumption that a non-`ACTIVE` bundle status is suspended could hide a future third status value (for example a draft bundle) behind `RULE_BUNDLE_SUSPENDED`.
 - First-wins semantics for duplicate lines (from M1.1) still hide conflicting duplicates.
 
+### M1.3 — groups, deduction, limits, rounding, result assembly (cycle_type = tdd), 2026-10-15
+
+**Attribution.** All results below were observed in this run, on Windows 11, Node v24.19.0, npm 11.6.2, against HEAD `d64a075` (the M1.2 commit) plus the uncommitted M1.3 working tree; the M1.3 commit SHA is reported by the commit itself. No dependency was added. The `moai` CLI and the moai MCP server are unavailable: the formal SPEC lint and `moai verify` were NOT run and no linter/formatter is configured, so formal lint is UNVERIFIED. Bounded tails of long outputs went to `.moai/state/verify/m1-3/` (local, gitignored); the quoted excerpts are copied verbatim from those files. `spec.md` and every SPEC file other than this progress block are untouched.
+
+**Files (M1.3).** New source: `src/engine/constants.ts` (B = 10000, H = 5000), `rounding.ts`, `deduction.ts`, `limit.ts`, `group-values.ts`, `sum.ts`. Changed source: `src/engine/estimate.ts` (`estimate()` and the result assembly added to the M1.2 front end, which is unchanged), `resolve.ts` (unknown `benefitType` hold), `validate.ts` (no treatment line -> rejection), `types.ts` (`Basis` also carries `policySources`). New tests: `arithmetic-units`, `group-values`, `examples`, `rules`, `pooled-limit`, `pool-structure`, `numeric-groups`, `states`, `mapping-coverage`, `order-independence`, `invariants` (`.test.ts`); one case each added to `validate.test.ts` and `mapping-resolve.test.ts`. Fixtures: `tests/fixtures/engine/cases.fixture.ts`, `oracle.fixture.ts` (BigInt oracle of the DD-02 formulas; it imports nothing from `src/engine`). No M1.4 file exists and nothing from M2+ was started. Every fixture value is `TEST_FIXTURE` made-up test data (deduction/limit numbers are copies of the SPEC's calculation examples, the clause reference is the label `TEST_FIXTURE_CLAUSE_REF`, the approver is `TEST_FIXTURE_APPROVER_NOT_A_REAL_APPROVAL`); none is a real insurance formula, deductible, limit, clause, price or approval record. A grep of `src/` and `tests/` for insurer and product names (Korean and English) and clause-number patterns found no match; `src/engine` contains no digit literal outside `constants.ts`, `limits.ts` and comments.
+
+**Result shape.** `estimate(input, { digest })` returns `{ ok: false, rejection }` or `{ ok: true, result }`. `result` is the DD-03 `EstimateResult`: `state`, `amounts` (`hospitalPayment`, `baseFeeIncluded`, `expectedInsurancePayout`, `expectedOutOfPocketAfterPayout`), `lines`, `groups`, `referenceGroups`, `assumptions`, `holdReasons`, `excludedItems`, `basis`. A rejected input never yields a result object (so never a 0-won result), and a result with `state = ON_HOLD` has `null` in both payout fields.
+
+#### RED evidence (verbatim, captured before the implementation existed)
+
+1. Arithmetic units (`rounding`, `sum`, `deduction`, `limit` as throwing stubs `미구현`), `npx vitest run tests/engine/arithmetic-units.test.ts`, exit 1:
+```
+ Test Files  1 failed (1)
+      Tests  47 failed | 1 passed (48)
+```
+(`1 passed` is the constants test; the failures are `Error: 미구현` from the stubs.)
+2. `group-values` (stub), exit 1: `Tests  67 failed (67)`.
+3. `estimate()` skeleton (front end only, payouts null), `examples.test.ts`, exit 1 — a wrong-value failure, not a missing-module failure:
+```
+      Tests  12 failed | 2 passed (14)
+ FAIL  tests/engine/examples.test.ts > AC-002a~e ... > AC-002a 사례 A: FIXED 10,000, PER_VISIT_PAYOUT 250,000 -> 보험금 114,000, 본인 부담 10,000
+AssertionError: expected { hospitalPayment: 124000, …(3) } to deeply equal { hospitalPayment: 124000, …(3) }
+-   "expectedInsurancePayout": 114000,
+-   "expectedOutOfPocketAfterPayout": 10000,
+```
+4. No treatment line -> `NO_TREATMENT_SELECTED` (new behaviour in `validate.ts`), exit 1: `Tests  1 failed | 61 passed (62)`, `AssertionError: expected { ok: true, value: { …(5) } } to deeply equal { ok: false, …(1) }`.
+5. Unknown `benefitType` -> `CLASSIFICATION_NEEDS_REVIEW` (new behaviour in `resolve.ts`), exit 1: `Tests  1 failed | 56 passed (57)`.
+The remaining test files (`rules`, `pooled-limit`, `pool-structure`, `numeric-groups`, `states`, `mapping-coverage`, `order-independence`, `invariants`) exercise code paths that earlier steps had already implemented; they were green on first run and their RED is not captured (see Gaps). Mutation spot checks against `src/` (each reverted afterwards; the final runs below are on the unmutated tree): `Math.max` -> `Math.min` in the RATE deduction: `26 failed | 694 passed (720)`; `Math.max(E - D, 0)` -> `E - D`: `5 failed`; pool allocation ignoring the remaining limit: `15 failed`; reference groups including pool-tainted groups: `1 failed`; unchecked `ROUND_ADD`: `8 failed`; swapped missing/invalid priority: `3 failed`.
+
+#### GREEN evidence
+
+| Step | Command | Exit | Result |
+|------|---------|------|--------|
+| arithmetic units | `npx vitest run tests/engine/arithmetic-units.test.ts` | 0 | `Tests  48 passed (48)` |
+| group-values | same file | 0 | `Tests  67 passed (67)`; 69 after two defensive cases |
+| examples | `npx vitest run tests/engine/examples.test.ts` (after the real `estimate()`) | 0 | all green with the whole suite: `Tests  523 passed (523)` at that point |
+| numeric-groups | AC-003h table | 0 | `Tests  34 passed (34)`, about 2.8 s |
+
+Final runs (this tree):
+```
+$ npx vitest run tests/engine tests/boundary   -> exit 0   (tests/boundary does not exist yet; only tests/engine runs)
+ Test Files  20 passed (20)
+      Tests  720 passed (720)
+$ npx tsc --noEmit                             -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine       -> exit 0
+ Test Files  20 passed (20)
+      Tests  720 passed (720)
+Statements   : 100% ( 450/450 )
+Branches     : 100% ( 370/370 )
+Functions    : 100% ( 109/109 )
+Lines        : 100% ( 417/417 )
+```
+Per file (cumulative `src/engine/**`, from `coverage/coverage-summary.json`; the text reporter collapses fully covered files): `constants.ts`, `deduction.ts`, `estimate.ts`, `group-values.ts`, `limit.ts`, `limits.ts`, `numeric.ts`, `profile-structure.ts`, `resolve.ts`, `rounding.ts`, `sum.ts`, `types.ts`, `usability.ts`, `validate.ts` are each 100 / 100 / 100 / 100 (statements / branches / functions / lines). Mid-step, `group-values.ts` was at 94.11% branches (lines 56, 78, 111: non-object rules and a non-array pool list); two defensive cases closed it. Coverage measures execution, not correctness; the M1-end 85% gate is met on the cumulative figure.
+
+#### AC matrix (M1.3 scope)
+
+| AC | M1.3 status | Proving test (file : describe) | Notes |
+|----|-------------|--------------------------------|-------|
+| AC-002a~e | CLOSED | `examples.test.ts` : "AC-002a~e" | cases A-E reproduce 114,000/10,000, 99,200/24,800, 100,600/23,400, 81,000 (4,000 + 77,000)/43,000, 74,000/50,000 with hospital payment 124,000; E-case group E = 84,000, `ESTIMATED_WITH_EXCLUSIONS`, `payout` constant 0 and reason, no `ALL_COVERED_AND_LIMIT_REMAINS` |
+| AC-002f~j | CLOSED | `examples.test.ts` : "AC-002f~j" | one deduction per group (74,000 not 60,000); `LineResult` has no payout key (runtime key set here, type level in `types.test.ts`) |
+| AC-003a | CLOSED | `rules.test.ts`, `group-values.test.ts` | missing `rounding` -> `PROFILE_VALUE_MISSING`, no default |
+| AC-003b | CLOSED | `rules.test.ts`, `arithmetic-units.test.ts` | TRUNCATE vs ROUND_HALF_UP differ at 250.5; SPLIT rounds the sum once |
+| AC-003c | CLOSED | `rules.test.ts`, `group-values.test.ts` | unknown deduction kind and `COVERED_COST` (all four limit kinds) -> `PROFILE_FORMULA_UNSUPPORTED` |
+| AC-003d | CLOSED | `rules.test.ts` | PER_ACCIDENT/ANNUAL/COUNT applied + `REMAINING_LIMIT_ASSUMED` |
+| AC-003e | CLOSED | `rules.test.ts` | `UNLIMITED_DECLARED` without clause -> `PROFILE_SOURCE_INCOMPLETE` |
+| AC-003f | CLOSED | `pooled-limit.test.ts` | pool total applied once, shares in `groupOrder`, `P` and `P_pooled` both recorded, BigInt oracle for 9 limits x 2 orders |
+| AC-003g | CLOSED | `rules.test.ts`, `group-values.test.ts` | 6 invalid kinds + missing/null; other groups unaffected; boundaries `MAX_AMOUNT_WON`, 10000, 0 valid; profile object not modified |
+| AC-003h | CLOSED at engine level except row 10's real input | `numeric-groups.test.ts` | rows 1a-9c (28 cases), row 11 (no truncation, rate-9999 variant); every normal row equals the BigInt oracle and the table's own `D`/`D_applied`/`P`; failures carry the table's step name in `trace`/`basis.steps`; lines are built from `ceil(E / MAX_AMOUNT_WON)` lines (901 or 4,504), none hard-coded. Row 10: engine level only through the injected summation double (a real input needs 9,007,200 lines); the function-level pair `checkedAdd(S-1,1)`/`(S,1)` and `sumLineAmounts` are in `numeric.test.ts` (M1.1) |
+| AC-004a~c, e, f, g | CLOSED | `states.test.ts` | 0-won with basis; all excluded; hold without payout (no zero, nulls); assumption codes; base-fee three cases; basis contents |
+| AC-004d | CLOSED | `states.test.ts`, `pooled-limit.test.ts` | reference groups 4,000 and 40,000; pool-mates of a held group are excluded from `referenceGroups` |
+| AC-004h | CLOSED | `pooled-limit.test.ts` | `sum P_pooled` = payout, payment - payout = out-of-pocket, `P_pooled <= P <= E`, JSON round trip |
+| AC-005a | CLOSED | `invariants.test.ts` | 400 trials, seed 20261015 (recorded in the test title); 8 boundary-near cases (E at the AC-003h limits +-1); every trial checks the invariants and every non-hold result is compared to the oracle; the generator is asserted to cover held, estimated, with-exclusions and pooled cases |
+| AC-006c | CLOSED (result level) | `examples.test.ts` : "AC-006c 결과 수준" | duplicate IDs and lines: `amounts.hospitalPayment` = 124,000 and group E = 124,000 |
+| AC-006d | CLOSED | `examples.test.ts` : "AC-006d", `types.test.ts` | three "cause" values pushed in at runtime leave the serialized outcome byte-identical; the input type has no cause field |
+| AC-006e | CLOSED | `examples.test.ts` : "AC-006e" | |
+| AC-008e | CLOSED | `states.test.ts` : "AC-008e 결과 수준", `hold-matrix.test.ts` | a line-level mapping reason beats the group-level `PROFILE_SOURCE_INCOMPLETE` of the same group on that line only; value check precedes arithmetic |
+| AC-008g | CLOSED (result level) | `states.test.ts` : "AC-008f/g" | suspended bundle: all lines `RULE_BUNDLE_SUSPENDED`, hospital payment a number, both payouts null; documents = null belongs to M2 (`deriveDocuments` does not exist yet) |
+| AC-008j | CLOSED | `mapping-coverage.test.ts` | covered/group-missing/excluded, no group lookup for excluded lines, no exclusion shortcut (13 unusable states, `NEEDS_REVIEW`, absent, ambiguous), field-rule defense (7 cases) |
+| AC-008k | CLOSED | `order-independence.test.ts` | seed 20261015 x 60 shuffles of mappings (9), lines/ids; all 6 x 2 permutations of groups and pools; output order rules (code point order with upper/lower case, "10" < "2", Korean ids); `groupOrder` is data |
+| AC-008m | CLOSED | `pool-structure.test.ts` | 9 structure defects -> all lines `PROFILE_INVALID`, `groups` has no estimated entry, `referenceGroups` empty; pool value defects hit members only; memberless defective pool changes nothing (byte-identical result); code-priority examples |
+| AC-008a, b, f | result-level repeat of M1.2's front-level closure | `states.test.ts` | |
+| AC-001a/b/c, AC-010b | NOT M1.3 (M1.4 / M4) | - | cross-process determinism, import boundary and literal checks are not started |
+
+#### plan.md §E.9 #8 (corrected wording): how each conflict candidate was resolved
+
+The binding rule implemented: the common base cost is part of the expected hospital payment `T` regardless of coverage (`validateEstimateInput` sums `baseFeeLines` into `T` before any mapping lookup, and `baseFeeIncluded = INCLUDED` whenever one is registered); in the payout computation the base-fee line goes through the same `decideLine` as a treatment (same coverage-mapping decision); no or unusable mapping -> the existing hold contract (`MAPPING_ABSENT` etc., the whole result is `ON_HOLD`, the amount stays in `T`); a confirmed `EXCLUDED` mapping keeps the amount in `T` and leaves it out of every group `E`. Tests: `states.test.ts` "AC-004f 공통 기본비용". Per candidate (no stale text was edited):
+- `design.md:155`: agrees with the corrected wording (same mapping decision; the amount counts in the payment even when the line is held). Followed as written.
+- `plan.md:308` (the §E.2 row for #8, "공통 기본비용도 보장 매핑이 필요하다는 SPEC 결정", default "필요"): read as applying to the payout side only. Implemented so that a missing mapping holds the payout and does not remove the amount from the payment. The row's sentence can be read the other way; the corrected wording overrides it.
+- `plan.md:400` (§E.8 B3 (3), "기본비용을 매핑 없이 계산하면 보장 여부가 정해지지 않은 금액이 들어간다"): read as describing the payout side (an unmapped amount must not be treated as covered); implemented as the hold contract. It does not say the amount leaves the payment.
+- `spec.md:146` (C5) and `spec-compact.md:69`: the behaviour matches; the "SPEC 제안 (승인 전, §E #8)" label is stale because §E.9 records #8 as accepted with corrected wording. Behaviour unchanged by the label.
+- `acceptance.md:85` (AC-004f): agrees; tested verbatim (three cases).
+
+#### Assumptions (non-blocking; each takes the hold-leaning side)
+
+1. `validateEstimateInput` now rejects with `NO_TREATMENT_SELECTED` when the raw `lines` list is empty (a base-fee-only input included). Without it, `treatmentIds` with no lines would produce a 0-won "ESTIMATED" result. Partial cases (some selected IDs without a line) are still not detected (server guarantee, DD-19). The M1.1 tests stay green; one case was added.
+2. A line whose `benefitType` is neither `BENEFIT` nor `NON_BENEFIT` is held as `CLASSIFICATION_NEEDS_REVIEW` before the mapping lookup, because it cannot be placed in the benefit share `G` or the non-benefit share `N`.
+3. `groups[]` contains only groups that have at least one line that passed the line stage, in `groupOrder`; profile groups without lines are omitted.
+4. A group held at group level reports the exact sums `G`, `N`, `E` of its lines and `null` for `D`, `D_applied`, `L`, `P`, `P_pooled`; its lines become `ON_HOLD` with the group's code and no `groupKey`; `holdReasons` lists those lines.
+5. If one member of a shared-limit pool is held, the other members keep `P` but get `P_pooled = null` and are not reference groups (their share depends on the held member).
+6. Assumption codes: `STANDARD_PROFILE_APPLIED` whenever the result is not `ON_HOLD` (also when every line is excluded); `ALL_COVERED_AND_LIMIT_REMAINS` only when no line is excluded and none held; `REMAINING_COVERED_AND_LIMIT_REMAINS` only when at least one line is excluded AND at least one is estimated; `REMAINING_LIMIT_ASSUMED` only in non-hold results and only when a group limit or the applied pool limit is `PER_ACCIDENT`/`ANNUAL`/`COUNT`; an `ON_HOLD` result carries only `PERSONAL_CONTRACT_NOT_CONFIRMED`.
+7. Value checks: `deduction`/`limit` absent or null -> `PROFILE_VALUE_MISSING`; present but not an object, or an unknown `kind` -> `PROFILE_FORMULA_UNSUPPORTED`; `rounding` outside the two values -> `PROFILE_VALUE_INVALID`; `limitBasis` absent -> `PROFILE_VALUE_MISSING`, any value other than `PAYOUT` (not only `COVERED_COST`) -> `PROFILE_FORMULA_UNSUPPORTED`; a blank or whitespace `policyClauseRef` -> `PROFILE_SOURCE_INCOMPLETE`; a non-selected `rounding` on `FIXED` is ignored.
+8. `Basis` = `{ ruleBundleId, profile: { id, version, origin, policySources }, steps }`; `trace` of a group is a one-element list; a result blocked at bundle or profile stage has `profile: null` and `steps: []`. The catalog version is not an engine input and is left to the server.
+9. `sum.ts` holds the group-share sums (`G`, `N`, `E`) with plain addition: every part is bounded by `T`, which `validate` already checked (DD-24 "한도·지급 단계"); `sumLineAmounts` stays in `numeric.ts`. The payout total `sum P_pooled` is also a plain sum for the same reason.
+10. `floorDivide` uses `BigInt` division because a float quotient of a large safe integer can round up (for example `.9999`).
+11. `estimate(input, { digest })` has the same dependency object as the front end (`sum`, `functions` for tests); the result for rejected input is `{ ok: false, rejection }`.
+12. **Tension with the hand-off wording "hold results must not carry a payout number":** `referenceGroups` in an `ON_HOLD` result carries `P` values, because design.md DD-03 and AC-004d require it (flagged `isReference: true`, "응답에만 담고 보류 결과 화면에는 보이지 않는다"). `expectedInsurancePayout` and `expectedOutOfPocketAfterPayout` are `null` and held groups' `D`/`P`/`P_pooled` are `null`. If the owner wants no payout-like number at all in a hold result, `referenceGroups` would have to be dropped and AC-004d changed; that is a SPEC decision. M4/M6 must not show it to the patient.
+
+#### SPEC ambiguities / contradictions met
+
+- The hand-off line "hold results must not carry a payout number" vs design.md DD-03 "참고 그룹" and AC-004d (assumption 12).
+- acceptance.md:31 (case E) lists `ALL_COVERED_AND_LIMIT_REMAINS` as absent and the DD-03 table says `REMAINING_COVERED_AND_LIMIT_REMAINS` needs "나머지 항목" — what to emit when every line is excluded is unspecified (assumption 6).
+- design.md:216 `STANDARD_PROFILE_APPLIED` "프로필을 써서 계산했을 때": whether an all-excluded result "used" the profile is unspecified (assumption 6).
+- design.md:134-143 / DD-03: a selected treatment ID without a line has no defined outcome (assumption 1).
+- The DD-24 text lists no rejection or hold for a `rounding` value outside the enum or a `limitBasis` outside `PAYOUT`/`COVERED_COST` (assumption 7).
+- plan.md:71 names `sum.ts` as an M1.3 file but `sumLineAmounts` is already listed under `numeric.ts` in DD-24 (assumption 9).
+- The #8 candidate wording (see above).
+
+#### Gaps (not observed)
+
+1. AC-003h row 10: no real 9,007,200-line input was run; the engine-level overflow path uses the injected summation double, the function-level pair is in M1.1's `numeric.test.ts`.
+2. RED was captured at behaviour level only for the arithmetic units, `group-values`, `examples`, the no-line rejection and the unknown-`benefitType` hold. The other new test files were written against code that already existed and were green on first run; the six mutation spot checks are the only evidence that they can fail on wrong behaviour, and they are not a mutation-testing run.
+3. The property test (400 trials) is a sample, not a proof; its oracle shares the DD-02 reading with the implementation (both written from the same text).
+4. `documents = null` for held results and `deriveDocuments` are M2; cross-process byte determinism, import-boundary and literal checks are M1.4; HTTP, persistence and the real hash are M3/M4.
+5. `testDigest` is not a real hash.
+6. No formal SPEC lint, no `moai verify`, no linter or formatter. Only Windows 11 and Node 24.19.0 were run.
+
+#### Residual risk
+
+- `referenceGroups` (assumption 12) may be rejected by the owner; the result shape would change.
+- The placeholder shapes from M1.1/M1.2 (`PolicySourceRef`, `ApproverRecord`, validity) and `Basis` may be refined by M3/M4.
+- Treating every `limitBasis` other than `PAYOUT` as unsupported could hold a future legitimate basis until the engine learns it.
+- Large inputs (4,504 lines in the AC-003h rows) make the suite take a few seconds; the mapping lookup is O(lines x mappings).
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

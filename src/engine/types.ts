@@ -344,10 +344,14 @@ export interface GroupResult {
   trace: FormulaStep[];
 }
 
-/** 계산 근거. 세부 모양은 M1.3 이 확정한다 (AC-004g). */
+/**
+ * 계산 근거 (AC-004g). 사용한 규칙 묶음 버전, 프로필 id·버전·출처·약관 출처 참조, 그룹별 단계.
+ * 카탈로그 버전은 엔진 입력에 없으므로 서버(M4)가 응답에 따로 싣는다.
+ * 프로필을 쓰지 못한 결과(묶음·프로필 단계 보류)에서는 profile 이 null 이고 steps 가 비어 있다.
+ */
 export interface Basis {
   ruleBundleId: string | null;
-  profile: { id: string; version: string; origin: Origin } | null;
+  profile: { id: string; version: string; origin: Origin; policySources: PolicySourceRef[] } | null;
   steps: FormulaStep[];
 }
 

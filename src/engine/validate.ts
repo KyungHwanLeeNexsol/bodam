@@ -85,7 +85,9 @@ export function validateEstimateInput(
   const treatmentIds = Array.isArray(input.treatmentIds)
     ? [...new Set(input.treatmentIds)].sort(compareCodePoints)
     : [];
-  if (treatmentIds.length === 0) {
+  // 치료 ID 가 없거나, 치료 줄(공통 기본비용 줄이 아닌 줄)이 하나도 없으면 계산할 치료가 없는 것이다.
+  // 치료 줄 없이 통과시키면 병원 결제액과 보험금이 0원인 결과가 나오므로 0원 결과를 만들지 않고 거절한다.
+  if (treatmentIds.length === 0 || input.lines.length === 0) {
     return { ok: false, rejection: { code: 'NO_TREATMENT_SELECTED' } };
   }
 

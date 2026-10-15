@@ -208,7 +208,8 @@ export function decideLine(args: DecideLineArgs, deps: DecideDeps = DEFAULT_DECI
   if (!acceptedLineOrigins.includes(line.origin)) {
     return { line, state: 'ON_HOLD', holdReason: 'LINE_ORIGIN_NOT_ACCEPTED' };
   }
-  if (line.calcClass === 'NEEDS_REVIEW') {
+  // 분류 확인 필요, 그리고 급여 구분을 알 수 없는 줄(급여 몫 G 와 비급여 몫 N 어느 쪽에도 넣을 수 없다)은 분류가 끝나지 않은 줄이다.
+  if (line.calcClass === 'NEEDS_REVIEW' || (line.benefitType !== 'BENEFIT' && line.benefitType !== 'NON_BENEFIT')) {
     return { line, state: 'ON_HOLD', holdReason: 'CLASSIFICATION_NEEDS_REVIEW' };
   }
 

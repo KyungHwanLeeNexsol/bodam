@@ -293,6 +293,16 @@ describe('decideLine — 줄 판정 순서와 상태 (줄 출처 → 분류 → 
     }
   });
 
+  it('급여 구분(benefitType)이 BENEFIT/NON_BENEFIT 밖이면 어느 몫(G, N)에도 넣을 수 없으므로 CLASSIFICATION_NEEDS_REVIEW 로 보류한다', () => {
+    for (const benefitType of ['SELF_PAY', undefined, null, 1]) {
+      const odd = makeLine(ID, 40_000, { benefitType: benefitType as unknown as 'BENEFIT' });
+      const resolveSpy = vi.fn(resolveMapping);
+      const result = decideLine(baseArgs([makeMapping(ID)], { line: odd }), { resolveMapping: resolveSpy, lookupGroup: () => true });
+      expect(result).toEqual({ line: odd, state: 'ON_HOLD', holdReason: 'CLASSIFICATION_NEEDS_REVIEW' });
+      expect(resolveSpy).not.toHaveBeenCalled();
+    }
+  });
+
   it('판정 순서: 줄 출처가 분류보다, 분류가 매핑 사유보다 먼저다', () => {
     const demo = makeLine(ID, 40_000, { origin: 'DEMO', calcClass: 'NEEDS_REVIEW' });
     const draft = makeMapping(ID, { state: 'DRAFT' });
