@@ -461,7 +461,7 @@ M1.2 follows the corrected wording: the common base cost is part of the expected
 7. `estimateFront` is the pre-arithmetic front end; its return shape (`validated`, `blocked`, `profile`, `lines`, `hasHold`) is mine. It does not build `excludedItems`, `baseFeeIncluded`, `amounts` or `groups`; those stay with M1.3. `decideLine` already yields `EXCLUDED_CONFIRMED` because the hold matrix needs it.
 8. Field-rule defense treats any defined `exclusionReason` on a `COVERED` mapping (including `null` or `''`) and any defined `groupKey` on an `EXCLUDED` mapping as a violation -> `MAPPING_INVALID`.
 9. Non-array `bundle.profiles`/`bundle.mappings`/`mapping.scope` count as empty; a missing accepted-origin list accepts nothing.
-10. Structure check: an empty profile reports only `EMPTY_PROFILE`; duplicate empty group keys are reported as empty keys (not duplicates); non-string group keys count as empty and are left out of the `groupOrder` comparison; a non-array `groupOrder` counts as missing every key.
+10. Structure check: an empty profile reports only `EMPTY_PROFILE`; duplicate empty group keys are reported as empty keys (not duplicates); non-string group keys count as empty and are left out of the `groupOrder` comparison; a non-array `groupOrder` counts as missing every key. [EXTENDED by M1.6 (b7244eb): a non-object `groups` entry is `GROUP_ENTRY_INVALID`, a non-object pool entry is `POOL_ENTRY_INVALID`, and a non-array `sharedLimitPools` is `POOLS_NOT_ARRAY` (it is no longer treated as an empty list); primitive group entries are no longer reported as `EMPTY_GROUP_KEY`]
 11. Treatment lines and base-fee lines are merged and sorted by treatment ID; an ID present in both lists is not collapsed across the lists (the SPEC says the id spaces do not overlap).
 12. The call-order evidence spies `isBundleUsable`, `resolveProfile`, `isUsable`, `checkProfileStructure`, `resolveMapping` (through `FrontDeps.functions`). Line-origin and classification checks are inline, so their position is shown by `resolveMapping` not being called for such lines, not by a spy.
 13. `tests/boundary` does not exist (M1.4), so `npx vitest run tests/engine tests/boundary` ran only `tests/engine` and exited 0.
@@ -732,20 +732,20 @@ Per file (`coverage-summary.json`, cumulative `src/engine/**`): `constants.ts`, 
 
 ### M1 summary - cumulative M1.1 to M1.4, 2026-10-15
 
-**Final cumulative commands (updated by M1.5 on 2026-10-15: HEAD `eac034f` + the R3 documentation commit; verbatim excerpts, raw files in `.moai/state/verify/r1/` and `r2/`). Before M1.5 these were 25 files / 959 tests and coverage 450/370/109/417.**
+**Final cumulative commands (updated by M1.6 on 2026-10-15: HEAD `b7244eb` + the M1.6 documentation commit; verbatim excerpts, raw files in `.moai/state/verify/s1/`). Before M1.6 these were 27 files / 1063 tests and coverage 480/400/119/443; before M1.5, 25 files / 959 tests and coverage 450/370/109/417.**
 ```
 $ npx vitest run tests/engine tests/boundary   -> exit 0
- Test Files  27 passed (27)
-      Tests  1063 passed (1063)
-   Duration  4.04s
+ Test Files  28 passed (28)
+      Tests  1142 passed (1142)
+   Duration  3.80s
 $ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
 $ npx vitest run --coverage tests/engine        -> exit 0
- Test Files  24 passed (24)
-      Tests  857 passed (857)
-Statements   : 100% ( 480/480 )   Branches : 100% ( 400/400 )
-Functions    : 100% ( 119/119 )   Lines    : 100% ( 443/443 )
+ Test Files  25 passed (25)
+      Tests  936 passed (936)
+Statements   : 100% ( 497/497 )   Branches : 100% ( 409/409 )
+Functions    : 100% ( 117/117 )   Lines    : 100% ( 456/456 )
 ```
-Test counts: `tests/engine` 857 (M1.1 157, M1.2 237, M1.3 326, M1.4 33, M1.5 104: R1 +61, R2 +43) plus `tests/boundary` 206 = 1063 in 27 test files; the whole suite ran in about 4 s wall time (one worker per file), the coverage run about 7 s. Coverage is 100% for each of the 14 `src/engine` files, above the 85% M1 exit threshold. Formal lint: UNVERIFIED (no linter configured, `moai` unavailable).
+Test counts: `tests/engine` 936 (M1.1 157, M1.2 237, M1.3 326, M1.4 33, M1.5 104: R1 +61, R2 +43, M1.6 79) plus `tests/boundary` 206 = 1142 in 28 test files; the whole suite ran in about 4 s wall time (one worker per file), the coverage run about 7 s. Coverage is 100% for each of the 14 `src/engine` files, above the 85% M1 exit threshold. Formal lint: UNVERIFIED (no linter configured, `moai` unavailable).
 
 **AC matrix, AC-001 to AC-010 families, across M1.1-M1.4** (plan.md §B: M1 closes 51 = M1.1 3 + M1.2 11 + M1.3 34 + M1.4 3; the per-AC sub-step results are in the M1.1-M1.4 blocks above).
 
@@ -821,7 +821,7 @@ M1 closes all 51 assigned details. What M1 could not observe even for closed ACs
 - **Behaviour now.** `profileContent` (`src/engine/usability.ts`) is the single normalization: `groups` sorted by `groupKey` and `sharedLimitPools` by `poolKey` in Unicode code-point order on a copy (stable; input never mutated); `groupOrder` kept as stored (it decides shared-limit allocation); header fields and `contentHash` excluded. Arrays that are not arrays or contain null / key-less / non-string-key entries are left exactly as given (no repair, no throw); duplicate keys keep input order and are still rejected by the structure check. `compareCodePoints` is reused from `validate.ts` (no import cycle). The injected digest must be canonical with respect to object key order; the test stand-in `testDigest` already is (sorted keys), so it was not changed.
 - **Files.** `src/engine/usability.ts`, `tests/engine/profile-content-order.test.ts` (new, 43 tests). `profile-structure.ts` semantics unchanged.
 - **RED.** `Tests  7 failed | 36 passed (43)`: reordered profiles with the original hash failed integrity, the hash input was not sorted, estimate() of a reordered profile went `ON_HOLD`.
-- **GREEN checks.** 24 group permutations x 6 pool permutations (144) keep the original hash and stay usable and give byte-identical `estimate()` results on a shared pool; 13 real rule changes and all 23 other `groupOrder` permutations with the old hash give `INTEGRITY_MISMATCH` → `PROFILE_INVALID` through `isUsable`, `resolveProfile` and `estimate()`; a deep-frozen profile is untouched; 13 malformed shapes do not throw; duplicate `groupKey`/`poolKey` profiles are `PROFILE_INVALID` via the structure check.
+- **GREEN checks.** 24 group permutations x 6 pool permutations (144) keep the original hash and stay usable and give byte-identical `estimate()` results on a shared pool; 13 real rule changes and all 23 other `groupOrder` permutations with the old hash give `INTEGRITY_MISMATCH` → `PROFILE_INVALID` through `isUsable`, `resolveProfile` and `estimate()`; a deep-frozen profile is untouched; 13 malformed shapes do not throw; duplicate `groupKey`/`poolKey` profiles are `PROFILE_INVALID` via the structure check. [CORRECTED by M1.6 (b7244eb): "do not throw" was verified only for `profileContent` / `profileToRuleItem` tolerance, and the duplicate-key claim only through the structure check; the full path structure check -> `resolveProfile` -> `estimate()` was NOT exercised for null / non-object `groups` and `sharedLimitPools` entries or a non-array `sharedLimitPools`, and those still threw there until M1.6]
 - **Mutation checks (reverted).** Removing the groups sort -> `7 failed | 850 passed (857)`; also sorting `groupOrder` (wrong) -> `5 failed | 852 passed (857)`.
 - **Assumptions.** Sorting applies only when every element is an object with a string key; an empty-string key sorts first (still caught by the structure check); code-point order, no Unicode normalization (NFC and NFD forms of a key are different keys); hashes made under the old un-normalized scheme would not verify unless their stored order is key-sorted, so M3 must hash with this function and must not rely on old-scheme hashes (none exist in M1: fixtures only).
 
@@ -882,6 +882,74 @@ These "승인 전" markers have no explicit §E number (or cite a deferred numbe
 - Revision-history row, intentionally unchanged: spec.md 27 (#36).
 - Explanatory sentences about the marker vocabulary (not markers): spec.md 77, plan.md 49, 118, 462, design.md 614, 717.
 - The plan.md §E.9 "확인 필요" record (plan.md 494-503) still quotes the old wording, by design.
+
+### M1.6 잘못된 프로필 구조 보완 (S1~S2), 2026-10-15
+
+**Scope.** A second external review finding on Draft PR #1: a malformed profile structure should reach the existing `PROFILE_INVALID` hold but threw instead. Two commits on top of the M1.5 documentation commit `b92cb16`, same worktree and branch: S1 (engine fix and tests) and S2 (this documentation commit). No M2+ work, no real insurance value, no merge, no push, no new full audit. The audit result (iteration-5 FAIL 0.89, MP-7, plan_status) and the `spec.md` status (`in-progress`) are untouched.
+
+| Step | Commit | Content |
+|------|--------|---------|
+| base | `b92cb16` | M1.5 R3 documentation |
+| S1 | `b7244eb` | `fix(SPEC-REIMBURSEMENT-001): M1 잘못된 프로필 구조를 예외 없이 PROFILE_INVALID 보류로 처리` (src/engine/profile-structure.ts, tests/engine/profile-structure.test.ts, tests/engine/profile-structure-malformed.test.ts) |
+| S2 | (this commit) | documentation alignment (design.md, acceptance.md, progress.md) |
+
+#### S1: malformed profile structure
+
+- **Problem (three defects, one class).** (1) A `groups` entry that is `null` / `undefined` made `checkProfileStructure` throw (`group.groupKey`). (2) A `sharedLimitPools` entry that is `null` / `undefined` threw the same way (`pool.poolKey`). (3) A `sharedLimitPools` that is not an array (`null`, `undefined`, `{}`, a number, `true`, a string) with no group referencing a pool was replaced by `[]`, so the structure check returned ok and `allocatePools` in `estimate()` then threw (`profile.sharedLimitPools is not iterable`; for a string, `reading 'kind'`). Preconditions: the profile carries a `contentHash` that matches the malformed content (tests build it with `withValidHash({ ...makeProfile(), ...overrides })`), so the hash check passes and the structure check is reached.
+- **Trace.** On the real path `estimateFront` -> `validateEstimateInput` -> `isBundleUsable` -> `resolveProfile` (`profileToRuleItem` -> `isUsable` -> `checkProfileStructure`) nothing reads `profile.groups` / `sharedLimitPools` entries before the structure check except the tolerant `profileContent` / `sortedByKey`. After a passing structure check the readers are `profileHasGroup` (resolve.ts), `checkGroupValues`, `profile.sharedLimitPools.find`, `allocatePools` and the `groupOrder` walk (estimate.ts). `group-values.ts` substitutes `[]` for a non-array `sharedLimitPools` but is reachable only after the structure check and is exported for M3 readiness; after the fix it is unreachable through `estimate()` for non-array pools and was left unchanged. No bypass route was found.
+- **Behaviour now (`src/engine/profile-structure.ts` only).** Before any property is read, each `groups` / `sharedLimitPools` entry must be a non-null, non-array object. Otherwise one defect is reported for that entry and it is not read further: `GROUP_ENTRY_INVALID` (path `groups[i]`) or `POOL_ENTRY_INVALID` (path `sharedLimitPools[i]`); holes of a sparse array count as `undefined` entries. A non-array `sharedLimitPools` is the defect `POOLS_NOT_ARRAY` (path `sharedLimitPools`) instead of being replaced by an empty list; a real `[]` stays valid. The pool-reference check then treats a non-array as "no pools" so other defects are still reported, and it skips non-object groups. Defect order: group shape/keys -> pool array-ness/shape/keys -> pool references -> `groupOrder`; `groups` that is not an array or is empty still returns only `EMPTY_PROFILE`. `resolve.ts`, `estimate.ts`, `group-values.ts`, `usability.ts` are unchanged; there is no try/catch and the input is never mutated.
+- **RED (before the fix).** `npx vitest run tests/engine/profile-structure-malformed.test.ts` -> `Tests  41 failed | 38 passed (79)` with `TypeError: Cannot read properties of null / undefined (reading 'groupKey' / 'poolKey')` (raw: `.moai/state/verify/s1/red.txt`).
+- **GREEN.** The new file has 79 tests (`TEST_FIXTURE` only): 21 variants = 7 group-entry shapes (`null`, `undefined`, `7`, `"x"`, `[]`, `[1]`, `true`) at `groups[1]`, 7 pool-entry shapes at `sharedLimitPools[1]`, 7 non-array pool shapes (`null`, `undefined`, `{}`, `{length:0}`, `"abc"`, `7`, `true`), each checked for `checkProfileStructure` (no throw, expected defects), `profileContent` / `profileToRuleItem` / `isUsable`, `resolveProfile` (`PROFILE_INVALID`), hash-mismatch variants (`INTEGRITY_MISMATCH`, structure check never called), and `estimate()` end to end (every line `ON_HOLD` / `PROFILE_INVALID`, payout and out-of-pocket null, same result as the existing duplicate-`groupKey` hold, deep-frozen input untouched); plus null mixed with valid groups at index 0 / 2, no follow-on noise, defect order, `EMPTY_PROFILE` early return, `[]` pools stays ok, and a guard test that pins the pre-change `profileContent` string, `contentHash`, structure result and three `estimate()` digests of normal profiles (`TEST_DIGEST_3cec813b`, `TEST_DIGEST_ec1de793`, `TEST_DIGEST_78a047d8`).
+- **Existing test changed (the only one).** `tests/engine/profile-structure.test.ts` "sharedLimitPools 가 배열이 아니면 ...": it asserted the old substitution (only `UNKNOWN_POOL_REFERENCE`). It now expects `[POOLS_NOT_ARRAY sharedLimitPools, UNKNOWN_POOL_REFERENCE groups[0].sharedLimitPoolKey]` and its title says so. The reason is the intended behaviour change: a non-array is a defect in itself, not an empty list.
+- **Mutation checks (reverted, `git diff` confirmed only the intended change).** (a) Restore the old behaviour for a non-array `sharedLimitPools` (no defect reported) -> `Tests  21 failed | 77 passed (98)`. (b) Make the entry-objectness check always true -> `Tests  26 failed | 72 passed (98)` with `TypeError: Cannot read properties of null / undefined (reading 'groupKey' / 'poolKey')` (raw: `mutation-a.txt`, `mutation-b.txt`).
+- **Probe, before -> after (temporary probe test, not committed; raw `probe-before.txt`, `probe-after.txt`).** Columns checked: `profileContent`/`profileToRuleItem`, `checkProfileStructure`, `resolveProfile`, `estimate()`. Rows that threw: 12 before, 2 after (both out of scope, below).
+
+| Malformed shape (hash matches the malformed content) | Before | After |
+|---|---|---|
+| `groups[1]` = `null` / `undefined` | structure, resolve, estimate THROW `TypeError` (reading `groupKey`) | `GROUP_ENTRY_INVALID groups[1]`, `PROFILE_INVALID`, estimate `ON_HOLD`, payout null |
+| `groups[1]` = `7` / `"x"` / `[]` / `true` | `EMPTY_GROUP_KEY` hold | `GROUP_ENTRY_INVALID` hold |
+| `groups[1]` = `{}` | `EMPTY_GROUP_KEY` hold | unchanged |
+| `sharedLimitPools[0]` = `null` / `undefined` | structure, resolve, estimate THROW `TypeError` (reading `poolKey`) | `POOL_ENTRY_INVALID sharedLimitPools[0]`, hold |
+| `sharedLimitPools[0]` = `7` / `"x"` / `[]` / `true` | `EMPTY_POOL_KEY` hold | `POOL_ENTRY_INVALID` hold |
+| `sharedLimitPools[0]` = `{}` | `EMPTY_POOL_KEY` hold | unchanged |
+| `sharedLimitPools` = `null` / `undefined` / `{}` / `7` / `true` / `"abc"` | structure ok, resolve resolved, **estimate THROWS** | `POOLS_NOT_ARRAY sharedLimitPools`, `PROFILE_INVALID`, estimate `ON_HOLD` |
+| `sharedLimitPools` = `[]` | ok, `ESTIMATED` payout 100,000 | unchanged |
+| `groupOrder` non-array, `groups` non-array or empty, group / pool value defects | hold (no throw) | unchanged |
+
+- **Assumptions (all hold-leaning).** (1) The three new defect-code names (`GROUP_ENTRY_INVALID`, `POOLS_NOT_ARRAY`, `POOL_ENTRY_INVALID`) are the implementer choice; the hold code stays `PROFILE_INVALID`, no new hold code. (2) An array entry counts as an invalid entry (it is an object in JS but not a group / pool record). (3) Holes in a sparse array are reported as invalid entries. (4) Primitive group / pool entries are now `*_ENTRY_INVALID` instead of `EMPTY_*_KEY`; an object without a usable key stays `EMPTY_GROUP_KEY` / `EMPTY_POOL_KEY`. (5) After `POOLS_NOT_ARRAY` the reference check still runs and treats pools as absent, so a referencing group also reports `UNKNOWN_POOL_REFERENCE`. (6) Only the hash-matches-malformed-content case reaches the structure check; with a non-matching hash the result is `INTEGRITY_MISMATCH` -> `PROFILE_INVALID` before it.
+- **Correction of earlier wording.** The R2 note in M1.5 said malformed shapes do not throw and that duplicate-key structure rejection was covered. Precisely: R2 verified the tolerance of `profileContent` / `profileToRuleItem` and that duplicate `groupKey` / `poolKey` give `PROFILE_INVALID` through the structure check. It did not exercise the full path structure check -> `resolveProfile` -> `estimate()` for null / non-object entries or a non-array `sharedLimitPools`; those threw until S1. The R2 line is annotated in place, not deleted.
+
+#### Verification (verbatim tails, this session, HEAD `b7244eb`; raw files in the gitignored `.moai/state/verify/s1/`)
+
+```
+$ npx vitest run tests/engine tests/boundary   -> exit 0
+ Test Files  28 passed (28)
+      Tests  1142 passed (1142)
+$ npx tsc --noEmit                              -> exit 0, empty output (0 bytes)
+$ npx vitest run --coverage tests/engine        -> exit 0
+ Test Files  25 passed (25)
+      Tests  936 passed (936)
+14 files fully covered.
+Statements   : 100% ( 497/497 )
+Branches     : 100% ( 409/409 )
+Functions    : 100% ( 117/117 )
+Lines        : 100% ( 456/456 )
+```
+Counts: base `b92cb16` 27 files / 1063 tests (857 under `tests/engine`); S1 +1 file / +79 tests -> 28 / 1142 (936). Coverage is 100% in all 14 `src/engine` files with no exclusions. S2 changed only SPEC documents; `git diff --check` was clean and every SPEC file kept all lines CRLF (counts in the commit report). Formal lint and `moai verify` are UNVERIFIED (no linter configured, `moai` CLI/MCP absent).
+
+#### AC mapping for the extended sub-criteria
+
+| AC | Change | Where proven |
+|----|--------|--------------|
+| AC-008a | extended: the structure-defect row now also lists non-object `groups` / `sharedLimitPools` entries and a non-array `sharedLimitPools`; a malformed profile reaches `PROFILE_INVALID` without an exception | `engine/profile-structure-malformed.test.ts`, `engine/profile-structure.test.ts` (M1, closed) |
+| AC-008m | covered by the AC-008a row it references; no wording change | same |
+| other AC | none; no new AC id, so no AC count changes | - |
+
+#### OPEN items (not done, not covered)
+
+1. **Bundle container entries, not fixed (different class, out of this review point).** `bundle.profiles = [null, validProfile]` throws `TypeError: Cannot read properties of null (reading 'generation')` in `resolveProfile` (the `bundle.profiles` filter, resolve.ts) and in `estimate()`; `bundle.mappings = [null, ...]` makes `resolveProfile` resolve but `estimate()` throws `TypeError: Cannot read properties of null (reading 'treatmentId')` (the mapping candidate filter). `bundle.profiles = null` is a `PROFILE_ABSENT` hold and is fine. These are entry-objectness defects of the bundle containers; whether to reject, skip or hold them is for the owner / M3 publish validation.
+2. M1.5 OPEN items 1-6 remain open (M4 mandatory validation, HTTP 500 mapping, M3 digest and publish path, `referenceGroups` tension, formal lint UNVERIFIED, 11 operational-data holds and deferred decisions); M2+ is not started.
+3. **Publish validation (M3):** the same `checkProfileStructure` is the publish-time check (DD-02), so a non-object entry or a non-array pool list is now rejected at publish with its field path; M3 tests should include these shapes.
 
 ## §E.3 Run-phase Audit-Ready Signal
 

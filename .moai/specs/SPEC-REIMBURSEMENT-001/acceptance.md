@@ -132,7 +132,7 @@
 | `UNDER_REREVIEW` | `PROFILE_UNDER_REREVIEW` |
 | `SUPERSEDED`, `EXPIRED`, `SUSPENDED`, 유효 기간 밖, 내용 해시 불일치 | `PROFILE_INVALID` |
 | 약관 출처 6항목 중 하나 누락, 승인자 누락 | `PROFILE_SOURCE_INCOMPLETE` |
-| 구조 결함(각각 따로 시험): 빈 `groupKey`, 중복 `groupKey`, 빈 `poolKey`, 중복 `poolKey`, 없는 풀을 가리키는 `sharedLimitPoolKey`, `groupOrder`에서 빠진 키, `groupOrder`의 중복 키, `groupOrder`의 없는 키, 그룹이 하나도 없는 빈 프로필 | `PROFILE_INVALID` (모든 줄. 나머지 값은 모두 유효하고 프로필은 그 밖의 검사를 통과한 상태) |
+| 구조 결함(각각 따로 시험): 빈 `groupKey`, 중복 `groupKey`, 빈 `poolKey`, 중복 `poolKey`, 없는 풀을 가리키는 `sharedLimitPoolKey`, `groupOrder`에서 빠진 키, `groupOrder`의 중복 키, `groupOrder`의 없는 키, 그룹이 하나도 없는 빈 프로필, 객체가 아닌 `groups` 항목(`null`·`undefined`·숫자·문자열·불리언·배열), 객체가 아닌 `sharedLimitPools` 항목(같은 모양들), 배열이 아닌 `sharedLimitPools`(`null`·`undefined`·`{}`·유사 배열·문자열·숫자·불리언; 빈 배열 `[]`은 유효) | `PROFILE_INVALID` (모든 줄. 나머지 값은 모두 유효하고 프로필은 그 밖의 검사를 통과한 상태. 모양이 잘못된 프로필도 구조 검사·칸 조회·계산 어느 단계에서도 예외 없이 이 보류에 닿는다) |
 | 같은 (세대, 보험사 형태) 칸에 프로필이 둘 이상(둘 다 다른 면에서는 사용 가능) | `PROFILE_INVALID` (모든 줄. 하나를 골라 쓰지 않는다) |
 | (묶음 단위) 규칙 묶음 상태 `SUSPENDED`, 버전·내용 해시·규칙 사용 범위는 그대로, 프로필은 사용 가능 | `RULE_BUNDLE_SUSPENDED` |
 

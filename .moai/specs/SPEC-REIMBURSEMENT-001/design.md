@@ -91,6 +91,8 @@ interface SharedLimitPool { poolKey: string; limit: LimitRule }   // poolKey는 
 
 `groupOrder`는 데이터이므로 순서 독립 규칙(DD-03 "출력 순서와 순서 독립")의 예외다. 그 순서를 바꾼 프로필은 다른 입력이다.
 
+구조 검사는 어떤 속성도 읽기 전에 모양부터 본다(위 1~4번의 일부이며 새 번호는 아니다). `groups`나 `sharedLimitPools`의 항목이 객체가 아니면(`null`·`undefined`·숫자·문자열·불리언·배열, 희소 배열의 빈 칸 포함) 각각 `GROUP_ENTRY_INVALID`·`POOL_ENTRY_INVALID` 결함이고, 그 항목은 더 읽지 않는다. 예외로 번지지 않고, 그 항목에서 따라오는 키 결함도 만들지 않는다. `sharedLimitPools` 자체가 배열이 아니면(`null`·`undefined`·객체·문자열·숫자·불리언) 빈 목록으로 대신하지 않고 `POOLS_NOT_ARRAY` 결함이다. 진짜 빈 배열 `[]`은 풀이 없는 유효한 프로필이다. 이어지는 풀 참조 검사만 풀이 없는 것으로 보고 계속하므로 다른 결함도 함께 보고된다. `groups`가 배열이 아니거나 비어 있으면 `EMPTY_PROFILE` 하나만 보고한다. 결함 보고 순서는 그룹(항목 모양·키) → 풀(배열 여부·항목 모양·키) → 풀 참조 → `groupOrder`로 고정이다. 그래서 모양이 잘못된 프로필도 (내용 해시가 그 내용과 맞든 안 맞든) 예외 없이 `PROFILE_INVALID` 보류에 닿는다.
+
 풀의 값 결함은 구조 결함이 아니다. 풀 `limit`으로 허용하는 것은 `PER_VISIT_PAYOUT`·`PER_ACCIDENT`·`ANNUAL`·`COUNT`(모두 `limitBasis = PAYOUT`)와 `UNLIMITED_DECLARED`(`policyClauseRef` 필수, `P_pooled = P`는 기존 동작 그대로)이다. `limitBasis = COVERED_COST`이거나 종류·`limitBasis`가 이 닫힌 목록 밖이면 지원하지 않는 풀이다. 적용한 풀 한도가 `PER_ACCIDENT`·`ANNUAL`·`COUNT`이면 그룹 한도와 같이 `REMAINING_LIMIT_ASSUMED`를 낸다.
 
 계산할 때의 영향 범위:
@@ -246,7 +248,7 @@ interface EstimateResult {
 | `PROFILE_DRAFT` | 프로필 상태가 `DRAFT` | 모든 줄 |
 | `PROFILE_UNAPPROVED` | `REVIEW_REQUESTED`, `REJECTED`, 또는 `APPROVED`이나 아직 `PUBLISHED`가 아님 | 모든 줄 |
 | `PROFILE_UNDER_REREVIEW` | `UNDER_REREVIEW` | 모든 줄 |
-| `PROFILE_INVALID` | `SUPERSEDED`·`EXPIRED`·`SUSPENDED`, 유효 기간 밖, 내용 해시 불일치. 또는 프로필 구조 결함: 빈 프로필, 빈·중복 `groupKey`·`poolKey`, 없는 풀을 가리키는 `sharedLimitPoolKey`, `groupOrder`의 빠진·중복·없는 키, 같은 칸에 프로필 둘 이상(DD-02 "프로필 구조 검사와 영향 범위") | 모든 줄 |
+| `PROFILE_INVALID` | `SUPERSEDED`·`EXPIRED`·`SUSPENDED`, 유효 기간 밖, 내용 해시 불일치. 또는 프로필 구조 결함: 빈 프로필, 객체가 아닌 `groups`·`sharedLimitPools` 항목, 배열이 아닌 `sharedLimitPools`, 빈·중복 `groupKey`·`poolKey`, 없는 풀을 가리키는 `sharedLimitPoolKey`, `groupOrder`의 빠진·중복·없는 키, 같은 칸에 프로필 둘 이상(DD-02 "프로필 구조 검사와 영향 범위") | 모든 줄 |
 | `PROFILE_SOURCE_INCOMPLETE` | (기록 단위) 약관 출처 6항목 중 누락, 승인자 기록 누락. (그룹 단위) `UNLIMITED_DECLARED`의 조항 참조 누락. 그룹 자신의 한도뿐 아니라 공유 한도 풀의 한도도 해당한다 | 기록 단위: 모든 줄 / 그룹 단위: 그 그룹(풀 한도 결함이면 그 풀의 멤버 그룹) |
 | `PROFILE_FORMULA_UNSUPPORTED` | 닫힌 공제 방식 밖, `limitBasis = COVERED_COST`. 공유 한도 풀의 한도가 지원 밖 종류·`limitBasis`(`COVERED_COST` 포함)인 경우도 해당한다 | 그 그룹(풀 한도 결함이면 그 풀의 멤버 그룹) |
 | `PROFILE_VALUE_MISSING` | 공제·한도 값, 또는 비율 규칙의 `rounding` 누락(없음·null). 공유 한도 풀의 한도 값 누락도 해당한다 | 그 그룹(풀 한도 결함이면 그 풀의 멤버 그룹) |
