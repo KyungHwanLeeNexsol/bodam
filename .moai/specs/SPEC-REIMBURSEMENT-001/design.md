@@ -1,4 +1,4 @@
-# SPEC-REIMBURSEMENT-ESTIMATOR-001 — 기술 설계 (design.md)
+# SPEC-REIMBURSEMENT-001 — 기술 설계 (design.md)
 
 > 이 문서는 spec.md의 요구사항을 만족시키는 설계 결정(DD-01~DD-24)을 정리한다. 아래의 형식 정의는 TypeScript 형태의 스케치이며 최종 코드가 아니다. 이름은 구현 단계에서 바뀔 수 있으나, 상태 코드·보류 사유 코드·오류 코드·열거값은 SPEC 전체에서 같은 문자열을 쓴다. "(잠정)"은 원문 문서가 정하지 않아 이 SPEC이 기본값을 둔 항목이며 plan.md §E에 확인 항목(§E.2~§E.5) 또는 보류 확정 자료(§E.1)로 올라 있다. "SPEC 결정"은 원문 문서가 열어 두었거나 말하지 않은 점을 이 SPEC이 정한 것이다.
 
@@ -91,6 +91,8 @@ interface SharedLimitPool { poolKey: string; limit: LimitRule }   // poolKey는 
 
 `groupOrder`는 데이터이므로 순서 독립 규칙(DD-03 "출력 순서와 순서 독립")의 예외다. 그 순서를 바꾼 프로필은 다른 입력이다.
 
+구조 검사는 어떤 속성도 읽기 전에 모양부터 본다(위 1~4번의 일부이며 새 번호는 아니다). `groups`나 `sharedLimitPools`의 항목이 객체가 아니면(`null`·`undefined`·숫자·문자열·불리언·배열, 희소 배열의 빈 칸 포함) 각각 `GROUP_ENTRY_INVALID`·`POOL_ENTRY_INVALID` 결함이고, 그 항목은 더 읽지 않는다. 예외로 번지지 않고, 그 항목에서 따라오는 키 결함도 만들지 않는다. `sharedLimitPools` 자체가 배열이 아니면(`null`·`undefined`·객체·문자열·숫자·불리언) 빈 목록으로 대신하지 않고 `POOLS_NOT_ARRAY` 결함이다. 진짜 빈 배열 `[]`은 풀이 없는 유효한 프로필이다. 이어지는 풀 참조 검사만 풀이 없는 것으로 보고 계속하므로 다른 결함도 함께 보고된다. `groups`가 배열이 아니거나 비어 있으면 `EMPTY_PROFILE` 하나만 보고한다. 결함 보고 순서는 그룹(항목 모양·키) → 풀(배열 여부·항목 모양·키) → 풀 참조 → `groupOrder`로 고정이다. 그래서 모양이 잘못된 프로필도 (내용 해시가 그 내용과 맞든 안 맞든) 예외 없이 `PROFILE_INVALID` 보류에 닿는다.
+
 풀의 값 결함은 구조 결함이 아니다. 풀 `limit`으로 허용하는 것은 `PER_VISIT_PAYOUT`·`PER_ACCIDENT`·`ANNUAL`·`COUNT`(모두 `limitBasis = PAYOUT`)와 `UNLIMITED_DECLARED`(`policyClauseRef` 필수, `P_pooled = P`는 기존 동작 그대로)이다. `limitBasis = COVERED_COST`이거나 종류·`limitBasis`가 이 닫힌 목록 밖이면 지원하지 않는 풀이다. 적용한 풀 한도가 `PER_ACCIDENT`·`ANNUAL`·`COUNT`이면 그룹 한도와 같이 `REMAINING_LIMIT_ASSUMED`를 낸다.
 
 계산할 때의 영향 범위:
@@ -152,8 +154,24 @@ interface RuleBundleSnapshot {
 
 - `bundle.status`는 서버가 채워 넘기는 값이다. 엔진은 이 값을 추정하거나 바꾸지 않고 받은 대로 판정한다. 버전 id와 내용 해시가 같아도 `SUSPENDED`이면 묶음을 쓰지 않는다(`RULE_BUNDLE_SUSPENDED`, 아래 보류 사유 표). 묶음 안의 항목(`profiles`·`mappings`·`documentRuleSet`)이 가진 생명주기 `state`도 서버가 요청 시점에 저장소에서 새로 읽어 채운 값이며 캐시된 묶음 내용의 값이 아니다(SPEC 제안, DD-14 "항목 생명주기 상태와 캐시 계약").
 
-- 공통 기본비용(`CommonBaseFee`, SPEC 결정)은 자동 포함 줄로 계산하며 치료와 같은 매핑 판정을 거친다. 매핑이 없으면 그 줄이 보류된다. 기본비용이 하나라도 등록되어 있으면 `baseFeeIncluded = 'INCLUDED'`(그 줄이 보류되어도 금액은 병원 결제액에 들어간다), 하나도 없으면 `'NOT_REGISTERED'`이고 화면은 기본 진료비 포함 여부를 안내한다(기획서 §5). 기본비용에도 매핑이 필요하다는 결정은 plan.md §E #8.
-- 엔진 입력 검증: 세대가 열거값 밖이면 `UNSUPPORTED_GENERATION`, 치료가 없으면 `NO_TREATMENT_SELECTED`, 줄(치료·공통 기본비용)의 금액이 `Won` 범위 밖이거나 예상 병원 결제액 T의 검사 합산이 안전 정수를 넘으면 `INVALID_NUMERIC_INPUT`으로 거절한다(판정 순서는 이 순서이며, 수치 검사의 정의와 처리는 DD-24). 이 셋은 계산 결과가 아니라 거절이다. `INVALID_NUMERIC_INPUT`은 보류 코드가 아니다. 병원 결제액이 믿을 수 있는 숫자여야 하므로 잘못된 줄을 보류로 돌리거나 합계에서 빼지 않는다. 엔진은 지원 범위 밖 계약(노후·유병력자·단체 실손 등)을 판별하지 않는다. 그런 입력이 없고, 가려내는 방법은 미정이다(plan.md §E #11).
+- 공통 기본비용(`CommonBaseFee`, SPEC 결정)은 자동 포함 줄로 계산하며, 보험금 계산에서는 치료와 같은 매핑 판정을 거친다. 매핑이 없거나 쓸 수 없으면 그 줄이 보류된다(보험금 쪽만 해당하며 예상 병원 결제액 T에는 영향이 없다). 기본비용이 하나라도 등록되어 있으면 `baseFeeIncluded = 'INCLUDED'`(그 줄이 보류되어도 금액은 병원 결제액에 들어간다), 하나도 없으면 `'NOT_REGISTERED'`이고 화면은 기본 진료비 포함 여부를 안내한다(기획서 §5). 기본비용 줄의 매핑 판정은 보험금 계산에만 적용하고 예상 병원 결제액 T에는 보장 여부와 관계없이 항상 포함한다는 결정은 plan.md §E #8(SPEC 제안 · 소유자 수용 2026-10-15, 정정 수용, plan.md §E.9)이다.
+- 엔진 입력 검증: 세대가 열거값 밖이면 `UNSUPPORTED_GENERATION`, 치료가 없으면 `NO_TREATMENT_SELECTED`, 같은 `treatmentId`의 줄이 둘 이상인데 내용이 다르면(치료 줄과 공통 기본비용 줄을 각각 따로 본다) `INPUT_INTEGRITY_VIOLATION`(사유 `CONFLICTING_DUPLICATE_TREATMENT_LINE` 또는 `CONFLICTING_DUPLICATE_BASE_FEE_LINE`이며 둘 다 충돌하면 치료 줄 사유), 줄(치료·공통 기본비용)의 금액이 `Won` 범위 밖이거나 예상 병원 결제액 T의 검사 합산이 안전 정수를 넘으면 `INVALID_NUMERIC_INPUT`으로 거절한다(판정 순서는 이 순서이며, 수치 검사의 정의와 처리는 DD-24). 이 넷은 계산 결과가 아니라 거절이다. `INPUT_INTEGRITY_VIOLATION`과 `INVALID_NUMERIC_INPUT`은 보류 코드가 아니다. 충돌 검사는 줄 금액 검사와 T의 합산보다 먼저다. 내용이 완전히 같은 중복 줄(`PublishedLine`의 모든 필드가 같음)은 한 번으로 세고, 하나라도 다르면 어느 줄도 고르거나 합하지 않고 입력 순서와 줄 위치에 상관없이 같은 거절을 낸다(값 비교는 `Object.is` 의미: `NaN`은 같고 `-0`은 `0`과 다르다. 형식이 깨진 항목은 던지지 않고 `INVALID_NUMERIC_INPUT`으로 거절한다). 두 거절 모두 치료 ID·금액·내부 상세를 싣지 않는다(AC-006i와 같은 진단 전용 방침). 병원 결제액이 믿을 수 있는 숫자여야 하므로 잘못된 줄을 보류로 돌리거나 합계에서 빼지 않는다. 엔진은 지원 범위 밖 계약(노후·유병력자·단체 실손 등)을 판별하지 않는다. 그런 입력이 없고, 가려내는 방법은 미정이다(plan.md §E #11).
+
+- 입력 검증의 책임 분담 (엔진 대 서버, 외부 검토 수정 M1.5):
+
+| 구분 | 항목 | 상태 |
+|------|------|------|
+| 엔진이 검사함 | 세대 열거 밖 → `UNSUPPORTED_GENERATION` | 구현·시험됨 (M1) |
+| 엔진이 검사함 | 치료 없음 → `NO_TREATMENT_SELECTED` | 구현·시험됨 (M1) |
+| 엔진이 검사함 | 같은 `treatmentId`의 줄(치료 줄, 공통 기본비용 줄 각각)이 내용이 달라 충돌 → `INPUT_INTEGRITY_VIOLATION` | 구현·시험됨 (M1) |
+| 엔진이 검사함 | 줄 금액이 `Won` 범위 밖 → `INVALID_NUMERIC_INPUT` | 구현·시험됨 (M1) |
+| 엔진이 검사함 | 예상 병원 결제액 T의 검사 합산이 안전 정수 밖 → `INVALID_NUMERIC_INPUT` | 구현·시험됨 (M1) |
+| 엔진이 검사하지 않음 (서버 보장) | (a) 선택한 `treatmentId`에 게시된 줄이 없음 | 구현 안 됨 — M4 필수 검증·시험 |
+| 엔진이 검사하지 않음 (서버 보장) | (b) 선택하지 않은 `treatmentId`의 줄이 들어옴 | 구현 안 됨 — M4 필수 검증·시험 |
+| 엔진이 검사하지 않음 (서버 보장) | (c) 같은 `treatmentId`가 `lines`와 `baseFeeLines` 양쪽에 있음 | 구현 안 됨 — M4 필수 검증·시험 |
+| 엔진이 검사하지 않음 (서버 보장) | (d) `isBaseFee` 표시가 줄이 든 배열과 어긋남 | 구현 안 됨 — M4 필수 검증·시험 |
+
+  표의 (a)~(d)는 엔진의 보장이 아니다. M1 엔진은 이 넷을 거절하지도 보정하지도 않으며(현재 동작은 `tests/engine/duplicate-conflict.test.ts`가 "검사하지 않음"으로만 기록한다), 서버가 엔진을 부르기 전에 줄을 올바르게 조립해야 한다. 이 넷은 아직 구현도 시험도 되지 않았고 M4의 필수 검증·시험 항목이다(plan.md M4, AC-006i).
 
 ### 출력
 
@@ -230,7 +248,7 @@ interface EstimateResult {
 | `PROFILE_DRAFT` | 프로필 상태가 `DRAFT` | 모든 줄 |
 | `PROFILE_UNAPPROVED` | `REVIEW_REQUESTED`, `REJECTED`, 또는 `APPROVED`이나 아직 `PUBLISHED`가 아님 | 모든 줄 |
 | `PROFILE_UNDER_REREVIEW` | `UNDER_REREVIEW` | 모든 줄 |
-| `PROFILE_INVALID` | `SUPERSEDED`·`EXPIRED`·`SUSPENDED`, 유효 기간 밖, 내용 해시 불일치. 또는 프로필 구조 결함: 빈 프로필, 빈·중복 `groupKey`·`poolKey`, 없는 풀을 가리키는 `sharedLimitPoolKey`, `groupOrder`의 빠진·중복·없는 키, 같은 칸에 프로필 둘 이상(DD-02 "프로필 구조 검사와 영향 범위") | 모든 줄 |
+| `PROFILE_INVALID` | `SUPERSEDED`·`EXPIRED`·`SUSPENDED`, 유효 기간 밖, 내용 해시 불일치. 또는 프로필 구조 결함: 빈 프로필, 객체가 아닌 `groups`·`sharedLimitPools` 항목, 배열이 아닌 `sharedLimitPools`, 빈·중복 `groupKey`·`poolKey`, 없는 풀을 가리키는 `sharedLimitPoolKey`, `groupOrder`의 빠진·중복·없는 키, 같은 칸에 프로필 둘 이상(DD-02 "프로필 구조 검사와 영향 범위") | 모든 줄 |
 | `PROFILE_SOURCE_INCOMPLETE` | (기록 단위) 약관 출처 6항목 중 누락, 승인자 기록 누락. (그룹 단위) `UNLIMITED_DECLARED`의 조항 참조 누락. 그룹 자신의 한도뿐 아니라 공유 한도 풀의 한도도 해당한다 | 기록 단위: 모든 줄 / 그룹 단위: 그 그룹(풀 한도 결함이면 그 풀의 멤버 그룹) |
 | `PROFILE_FORMULA_UNSUPPORTED` | 닫힌 공제 방식 밖, `limitBasis = COVERED_COST`. 공유 한도 풀의 한도가 지원 밖 종류·`limitBasis`(`COVERED_COST` 포함)인 경우도 해당한다 | 그 그룹(풀 한도 결함이면 그 풀의 멤버 그룹) |
 | `PROFILE_VALUE_MISSING` | 공제·한도 값, 또는 비율 규칙의 `rounding` 누락(없음·null). 공유 한도 풀의 한도 값 누락도 해당한다 | 그 그룹(풀 한도 결함이면 그 풀의 멤버 그룹) |
@@ -385,7 +403,7 @@ type RuleItem =
 
 - `isBundleUsable`/`isUsable`의 한 문장씩: `isBundleUsable`은 규칙 사용 범위가 없는지(`null`)와 묶음이 중지(`SUSPENDED`)인지만 판정하고, `isUsable`은 항목 하나의 출처·상태·유효 기간·약관 출처·승인자·무결성만 판정한다. 매핑의 `currentFingerprint`는 항목 안의 값이 아니라 호출하는 쪽(`resolveMapping`)이 줄의 `coverageFingerprint`에서 채워 넘긴다. `isUsable`은 줄도 묶음도 읽지 않는다.
 - `estimate()` 안의 호출 순서(DD-03 판정 순서와 같다):
-  1. 입력 검증(`UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED` → `INVALID_NUMERIC_INPUT`, 거절)
+  1. 입력 검증(`UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED` → `INPUT_INTEGRITY_VIOLATION` → `INVALID_NUMERIC_INPUT`, 거절)
   2. `isBundleUsable(input.bundle)`. 사용 불가이면 모든 줄이 그 묶음 코드로 `ON_HOLD`이고 3 이하는 실행하지 않는다. 이때 `isUsable`은 한 번도 부르지 않고 서류는 null이다
   3. 프로필 칸 조회: 0개 `PROFILE_ABSENT`, 2개 이상 `PROFILE_INVALID`(구조 결함), 1개이면 계속 (3~5를 묶은 것이 `resolveProfile`, DD-03)
   4. `isUsable(profile)`
@@ -395,6 +413,7 @@ type RuleItem =
   8. 산술(DD-24의 검사 연산 순서)
 - 서류는 `estimate()`의 일부가 아니다. `deriveDocuments`는 전체가 `ON_HOLD`이면 null을 받고, 그렇지 않으면 사용 가능한 묶음 안에서 `isUsable(documentRuleSet)`이 통과한 서류 규칙 묶음만 받는다. 통과하지 못하면 null을 받아 `RULES_UNAVAILABLE`이 된다. 묶음 중지는 전체가 `ON_HOLD`이므로 서류 규칙 판정에 닿지 않는다.
 - 항목의 사용 가능 조건(모두 만족): 출처 ∈ `acceptedOrigins`, `state = PUBLISHED`, `at`이 유효 기간 안, 약관 출처 완비(보험사 원문 식별, 개정일, 조항·페이지, 효력일, 확인자, 확인일), 승인자 기록, 무결성 일치(프로필·서류 규칙은 내용 해시, 매핑은 지문 DD-15). 검사 순서도 이 순서이며(무결성이 마지막), 처음 걸린 사유 하나를 돌려준다. 묶음의 가용성은 이 목록에 없다.
+- 프로필 내용 해시의 입력(정규화 계약, 외부 검토 수정 M1.5): 해시 입력은 함수 `profileContent`(`src/engine/usability.ts`) 하나가 만든다. 해시를 만드는 쪽(M3 게시·봉인)과 검사하는 쪽(엔진의 `isUsable`)이 모두 이 함수를 쓰고 두 번째 구현을 두지 않는다. 입력 필드는 `id`, `version`, `generation`, `insurerType`, `groups`, `groupOrder`, `sharedLimitPools`이며 머리 정보(`state`, `origin`, `validity`, `policySources`, `approver`)와 `contentHash` 자신은 뺀다. `groups`는 `groupKey` 순, `sharedLimitPools`는 `poolKey` 순(유니코드 코드 포인트 순, 같은 키는 입력 순서 유지)으로 정렬한 사본을 쓰고 입력 프로필은 바꾸지 않으므로, 같은 규칙을 다른 배열 순서로 저장해도 해시는 같다. `groupOrder`는 공유 한도 배분 순서를 정하는 의미 있는 데이터라서 정렬하지 않고 저장된 순서 그대로 넣는다(순서가 바뀌면 해시도 바뀐다). 구조가 잘못된 배열(배열이 아님, null 항목·키 없음·문자열이 아닌 키)은 정렬하지 않고 고쳐 쓰지도 않으며, 그런 프로필은 프로필 구조 검사(DD-02)가 거절한다. 주입하는 해시 함수 `digest`는 객체 키 삽입 순서에 영향을 받지 않아야 한다(키 순서 정규화된 직렬화). 운영 해시 구현은 M3의 일이다. 유니코드 정규화(NFC/NFD)는 하지 않는다.
 - 상태별 사유: `DRAFT` → `STATE_DRAFT`; `REVIEW_REQUESTED`·`APPROVED`(미게시) → `STATE_UNAPPROVED`; `REJECTED` → `STATE_REJECTED`; `UNDER_REREVIEW` → `STATE_UNDER_REREVIEW`; `SUPERSEDED`·`EXPIRED`·`SUSPENDED` → `STATE_INVALID`.
 - 항목 사유 → 보류 코드:
 
@@ -530,11 +549,11 @@ type DocumentsResult =
 - 화면 방향(세로 1080×1920 / 가로 1920×1080, 임시 검토 크기)과 큰 글자 보기는 같은 상태의 표시 변형이며 별도 상태가 아니다. 둘은 표시 설정이라 복귀 정보에 들어가지 않고(DD-11), 바뀌어도 계산 요청을 보내지 않는다.
 - `K04_Result_Hold`의 내용(SPEC 결정): 예상 병원 결제액만 숫자로 보이고, 예상 보험금과 수령 후 부담 자리에는 "확인 필요"를 보인다. 보류 줄은 환자용 사유 분류(DD-21)로 묶어 보이고 내부 코드는 보이지 않는다. 참고 그룹 값은 보이지 않는다. 기획서 §4의 결과 문구 원칙("표준 공제·한도 가정으로 계산한 예상 금액입니다. …")은 계산하지 않았으므로 쓰지 않는다. 공통 안내 가운데 개인 계약 조건 문장 "개인별 부담보, 면책·보장기간, 잔여 한도·횟수, 치료 목적 및 심사 결과에 따라 실제 지급액이 달라질 수 있습니다."만 쓰고, 보류 안내 문구의 최종 표현과 이 문장 선택은 plan.md §E #23, #24의 확인 대상이다. 동작은 "치료 다시 선택 / 보험 조건 수정 / 처음으로 / 이용 완료" 넷이며, 서류 확인과 계산 근거 버튼은 없다. 공통 컴포넌트로 구성하며 새 Pencil 프레임을 요청하지 않는다.
 - "다음"은 1-3단계에서 선택이 있을 때만, "예상 부담액 확인"은 치료가 1개 이상일 때만 활성이다.
-- "처음으로"(제안, 승인 전, plan.md §E #36. SPEC 해석이며 소유자가 확인한 결정이 아니다). 기획서 §13.2의 "진행 중에는 종료 확인"에서 "진행 중" = 환자 입력이 하나 이상으로 읽는다. 눌린 자리에 따라 둘로 나눈다.
+- "처음으로"(제안 · 소유자 수용 2026-10-15, plan.md §E #36. SPEC 해석이며 소유자가 권장안대로 수용했다). 기획서 §13.2의 "진행 중에는 종료 확인"에서 "진행 중" = 환자 입력이 하나 이상으로 읽는다. 눌린 자리에 따라 둘로 나눈다.
   - 일반 환자 화면(겹침창이 없을 때): 세션에 환자 입력(세대·형태·원인·치료 가운데 하나라도)이 있으면 `ResetConfirm`을 먼저 띄우고(확인 ⇒ 지움 ⇒ `K00_Start`, 취소 ⇒ 그대로), 하나도 없으면 바로 `K00_Start`로 간다.
   - `TimeoutDialog` 안: `ResetConfirm` 없이 바로 지우고 `K00_Start`로 간다. 경고창 자체가 확인 단계이고 초기화 시점은 어차피 다가오므로, 그 위에 두 번째 겹침창을 쌓으면 확인창 밑에서 무조작 초기화 시점이 지나갈 수 있다. 환자 입력이 있어도 같다.
   - 디자인 인계표의 `K04_Result_Dialog_Timeout` 행(셀 `tNbyp`: "처음으로 · 무응답 시 180초에 초기화")은 이 구분과 어긋나지 않는다. 그 셀은 확인창을 말하지 않는다.
-- 겹침창 규칙(제안, 승인 전, §E #36과 같은 확인 대상): 겹침창은 동시에 하나만 열린다. `ResetConfirm`이 열린 채 경고 시점이 되면 `ResetConfirm`을 닫고 `TimeoutDialog`를 연다(선택값은 그대로, "계속 사용할게요"는 `ResetConfirm` 아래의 화면으로 돌아간다). `ResetConfirm`을 열어 둔 시간은 초기화 시점을 늦추지 않는다. 환자의 터치는 다른 화면과 같이 무조작 시간을 다시 세게 한다(DD-10).
+- 겹침창 규칙(제안 · 소유자 수용 2026-10-15, §E #36과 같은 확인 대상): 겹침창은 동시에 하나만 열린다. `ResetConfirm`이 열린 채 경고 시점이 되면 `ResetConfirm`을 닫고 `TimeoutDialog`를 연다(선택값은 그대로, "계속 사용할게요"는 `ResetConfirm` 아래의 화면으로 돌아간다). `ResetConfirm`을 열어 둔 시간은 초기화 시점을 늦추지 않는다. 환자의 터치는 다른 화면과 같이 무조작 시간을 다시 세게 한다(DD-10).
 - 세대는 환자가 카드로 직접 고른다. 어느 화면에도 날짜(가입일) 입력이 없고, 키오스크는 가입일로 세대를 정하거나 특정 카드를 제안·미리 선택하지 않는다. 기획서 §3의 2009.08~09 경계 계약 별도 도움말은 현재 디자인에 프레임이 없으며, 기존 프레임으로 구현된 것으로 보지 않는다(plan.md §E #35).
 
 ### 전이표
@@ -574,11 +593,11 @@ type DocumentsResult =
 | `K04_Result`, `K04_Result_NotCovered` | "계산 근거 보기" | — | `K04_Basis_Calculation` | 복귀 정보(결과 종류) 기록 |
 | 결과 3종(`Hold` 포함) | "치료 다시 선택" | — | `K03_Treatments` | 유지 |
 | 결과 3종 | "보험 조건 수정" | — | `K01_Generation` | 유지 |
-| 일반 환자 화면(겹침창 없음) | "처음으로" | 환자 입력이 있음 | `ResetConfirm` 겹침창 (제안, 승인 전, §E #36) | 유지 |
+| 일반 환자 화면(겹침창 없음) | "처음으로" | 환자 입력이 있음 | `ResetConfirm` 겹침창 (제안 · 소유자 수용 2026-10-15, §E #36) | 유지 |
 | 일반 환자 화면(겹침창 없음) | "처음으로" | 환자 입력이 없음 | `K00_Start` | 전체 삭제 |
 | `ResetConfirm` | 확인 | — | `K00_Start` | 전체 삭제 |
 | `ResetConfirm` | 취소 | — | 직전 화면 | 유지 |
-| `ResetConfirm` | 무조작 경고 시점 | — | `TimeoutDialog` (`ResetConfirm`은 닫음. 제안, 승인 전, §E #36) | 유지. 초기화 시점은 `ResetConfirm`을 열어 두었다고 늦춰지지 않음 |
+| `ResetConfirm` | 무조작 경고 시점 | — | `TimeoutDialog` (`ResetConfirm`은 닫음. 제안 · 소유자 수용 2026-10-15, §E #36) | 유지. 초기화 시점은 `ResetConfirm`을 열어 두었다고 늦춰지지 않음 |
 | 결과 3종, 근거, 서류 | "이용 완료" | — | `K06_Complete` | 먼저 전체 삭제 |
 | `K04_Basis_Calculation`, `K07_*` | "결과로 돌아가기" | — | 복귀 정보의 결과 종류(`resultVariant`)의 결과 화면. 세로형·가로형 변형과 큰 글자 보기는 복귀 시점의 최신 표시 설정을 따름(DD-11) | 유지 |
 | `KXX_Error_Network` | "다시 시도" | 갱신이 필요하지 않음(`refreshState = NONE`). 갱신이 필요하면 계산 요청을 보내지 않는다 | `Calculating` | 같은 `inputRevision`로 새 `requestId`의 새 요청(이전 시도는 만료된 채로 남아 반영되지 않음) |
@@ -586,7 +605,7 @@ type DocumentsResult =
 | `K06_Complete` | "처음 화면으로" 또는 `completionHoldSeconds` 경과 | — | `K00_Start` | 없음(이미 비어 있음) |
 | 환자 데이터 화면 | 무조작 경고 시점 | — | `TimeoutDialog` 겹침창 (겹침창은 동시에 하나만, 위 `ResetConfirm` 행) | 유지 |
 | `TimeoutDialog` | "계속 사용할게요" | — | 직전 화면(겹침창 아래의 화면) | 유지, 무조작 시간 다시 시작 |
-| `TimeoutDialog` | "처음으로" | 환자 입력이 있든 없든 | `K00_Start` | 전체 삭제. `ResetConfirm` 없이 즉시(제안, 승인 전, §E #36) |
+| `TimeoutDialog` | "처음으로" | 환자 입력이 있든 없든 | `K00_Start` | 전체 삭제. `ResetConfirm` 없이 즉시(제안 · 소유자 수용 2026-10-15, §E #36) |
 | `TimeoutDialog` | 초기화 시점 | 경고 뒤 연장 없음 | `K00_Start` | 전체 삭제 |
 | 모든 상태 | 큰 글자 전환 | — | 같은 상태 | 유지. 표시 설정만 바뀌며 근거·서류 화면에서도 그 화면에 머문다 |
 | 모든 상태 | 화면 방향 변경 | — | 같은 상태 | 유지. 표시 변형만 바뀌며 계산 요청을 보내지 않는다 |
@@ -729,7 +748,7 @@ activeRefresh: { refreshId, sessionId, inputRevision, reason, controllers, timeo
 | `K00_Start`, `K06_Complete` | 없음 | 없음 | 지울 환자 데이터 없음 |
 
 - 환자의 터치·키 입력마다(결과·근거·서류 사이 이동 포함) 무조작 시간을 0초부터 다시 센다. 서버 응답과 내부 갱신은 시간을 연장하지 않는다. 무조작 타이머는 계산 요청의 시간 제한 타이머(DD-09)와 별개이며, 요청을 정리(`settleRequest`)해도 무조작 타이머를 다시 시작하거나 멈추지 않는다. 응답·오류·요청 만료가 `ResetConfirm`·`TimeoutDialog`가 열려 있는 동안 도착해도 같다. 이때 밑 화면에 결말을 반영하는 방식, 열린 `TimeoutDialog`의 초기화 시점 유지, 요청 시간 제한과 경고 시간의 관계는 DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"이 정한다.
-- 경고는 같은 `TimeoutDialog`를 현재 화면 위에 띄우며 남은 시간, "계속 사용할게요", "처음으로"를 보인다. `TimeoutDialog` 안의 "처음으로"는 `ResetConfirm` 없이 바로 지우고 `K00_Start`로 간다(제안, 승인 전, plan.md §E #36. 일반 화면의 "처음으로"는 DD-07). 겹침창은 동시에 하나만 열려, `ResetConfirm`이 열린 채 경고 시점이 되면 `ResetConfirm`을 닫고 `TimeoutDialog`를 연다. "계속 사용할게요"는 반복할 수 있고 누를 때마다 시간을 다시 센다. 배경은 실제 화면 그대로이므로 결과 화면이면 여섯 동작이 모두 남아 있다(디자인 차이 13-2 해결).
+- 경고는 같은 `TimeoutDialog`를 현재 화면 위에 띄우며 남은 시간, "계속 사용할게요", "처음으로"를 보인다. `TimeoutDialog` 안의 "처음으로"는 `ResetConfirm` 없이 바로 지우고 `K00_Start`로 간다(제안 · 소유자 수용 2026-10-15, plan.md §E #36. 일반 화면의 "처음으로"는 DD-07). 겹침창은 동시에 하나만 열려, `ResetConfirm`이 열린 채 경고 시점이 되면 `ResetConfirm`을 닫고 `TimeoutDialog`를 연다. "계속 사용할게요"는 반복할 수 있고 누를 때마다 시간을 다시 센다. 배경은 실제 화면 그대로이므로 결과 화면이면 여섯 동작이 모두 남아 있다(디자인 차이 13-2 해결).
 - 초기화 도착지는 `K00_Start`다. 결과 화면으로 돌아가지 않고 `K06_Complete`를 거치지 않는다.
 - 병원 관리자가 병원별로 바꿀 수 있다(기획서 §7). 저장 검증(잠정, SPEC 결정): 경고 < 초기화, 초기화 − 경고 ≥ 20초. 20초는 기획서 §13.2와 tech.md §5의 기본값 "초기화 20초 전에 경고"에서 왔고, 이를 저장 하한으로 삼은 것은 이 SPEC의 결정이다(plan.md §E #16). 이 하한은 무조작 정책에만 적용하며 `completionHoldSeconds`에는 적용하지 않는다.
 - 읽는 길(SPEC 결정): 키오스크는 화면 종류별 경고·초기화 시간과 `completionHoldSeconds`를 `GET /api/clinics/{slug}/catalog` 응답의 `idlePolicy`에서 읽는다(DD-19). 병원이 정책을 저장하지 않았으면 위 표의 값을 쓴다. 저장은 관리자 API(`PUT …/idle-policy`), 읽기 함수와 기본값은 M3의 `IdlePolicy` 저장소다(AC-015i).
@@ -1025,7 +1044,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 - 서버는 규칙 사용 범위의 묶음과 그 묶음의 상태를 이 요청 안에서 새로 읽고(캐시하지 않음) 버전을 비교한 뒤 계산한다. 거절 조건이 겹칠 때의 순서는 아래 "요청 검증의 층"(정본)과 DD-14에 있고, 중지된 묶음의 응답(HTTP 200 `ON_HOLD`)은 DD-14에 있다.
 - 키오스크가 계산 시도마다 만드는 `requestId`(DD-09)는 요청 본문에 없으며 서버는 이 값을 알지 못한다.
 - 요청 본문은 금액·비율 필드를 담지 않으므로(위 규칙) 요청 검증은 아래 "요청 검증의 층"의 구조와 열거값만 본다. 수치 검증은 DD-24에 따라 게시 단계와 계산 단계에서 한다.
-- 엔진이 `INVALID_NUMERIC_INPUT`으로 거절하면(저장된 줄 금액이 게시 검증을 통과하고도 범위 밖인 서버 데이터 무결성 결함) 서버는 금액도 내부 상세도 담지 않고 HTTP 500 `INTERNAL_ERROR`를 낸다. 결과 객체도 0도 `NaN`도 만들지 않는다.
+- 엔진이 `INVALID_NUMERIC_INPUT`으로 거절하거나 `INPUT_INTEGRITY_VIOLATION`(같은 `treatmentId`의 줄이 내용이 달라 충돌)으로 거절하면(저장된 줄 금액이 게시 검증을 통과하고도 범위 밖이거나, 서버가 충돌하는 중복 줄을 엔진에 넘긴 서버 데이터 무결성 결함) 서버는 금액도 치료 ID도 내부 상세도 담지 않고 HTTP 500 `INTERNAL_ERROR`를 낸다. 결과 객체도 0도 `NaN`도 만들지 않는다. 이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다(M4 · 미구현).
 
 #### 요청 검증의 층 (SPEC 결정)
 
@@ -1039,7 +1058,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 2 내용 | `treatmentIds`가 빈 배열 | 422 `NO_TREATMENT_SELECTED` |
 | 3 버전 | `catalogVersion` 또는 `ruleBundleVersion`이 그 병원의 현재 값과 다름(층 0~2를 통과한 요청에서만 비교한다) | 409 `VERSION_MISMATCH`(DD-14, 본문 `changes.treatmentsUnpublished[]` 포함) |
 | 4 병원 데이터 | 버전이 현재 값과 같은데 선택한 치료 ID 가운데 그 병원의 현재 게시 카탈로그에 없는 것이 있음(다른 병원의 치료 ID, 비활성·미게시 치료 ID 포함) | 422 `TREATMENT_NOT_PUBLISHED` |
-| 5 계산 | 위 층을 모두 통과 | HTTP 200(계산 보류와 묶음 중지의 `ON_HOLD` 포함, DD-14). 엔진의 `INVALID_NUMERIC_INPUT` 거절만 500 `INTERNAL_ERROR` |
+| 5 계산 | 위 층을 모두 통과 | HTTP 200(계산 보류와 묶음 중지의 `ON_HOLD` 포함, DD-14). 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절만 500 `INTERNAL_ERROR`(M4 · 미구현) |
 
 - 층 2의 두 코드는 엔진의 입력 검증 순서(`UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED`, DD-03)와 같다. 서버가 같은 확인을 엔진 호출 전에 하는 것은 요청 거절을 엔진 거절과 같은 코드로 내기 위해서다. 한 요청에 두 코드가 겹치면 `UNSUPPORTED_GENERATION`이 먼저다.
 - 순서의 이유(SPEC 결정): 층 1·2는 요청 본문만 보고 정해지므로 서버 데이터를 읽기 전에 거절한다. 층 3이 층 4보다 앞서는 것은 옛 카탈로그를 본 클라이언트가 이미 내려간 치료를 보낸 요청을 422로 막지 않고 409(`treatmentsUnpublished[]`)로 알려 키오스크가 갱신 흐름(DD-14)을 타게 하려는 것이다. 층 4는 버전이 현재 값과 같은데도 현재 카탈로그에 없는 치료 ID(잘못 보낸 값, 다른 병원의 ID)를 가려낸다. 규칙 묶음의 중지는 거절 층이 아니라 층 5(계산)의 결과이므로 버전이 같으면 200 `ON_HOLD`다. 요청 본문의 다른 필드(가격·비율·병원 ID 등)는 어느 층에서도 읽거나 검사하지 않는다(REQ-API-002).
@@ -1094,7 +1113,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 422 | `UNSUPPORTED_GENERATION` | `generation`이 문자열이지만 세대 열거 밖(5세대 등). 문자열이 아니거나 필드가 없으면 400. C4로 계산하지 않음 | 공개 |
 | 422 | `NO_TREATMENT_SELECTED` | `treatmentIds`가 빈 배열(필드가 없거나 배열이 아니면 400) | 공개 |
 | 422 | `TREATMENT_NOT_PUBLISHED` | 버전이 현재 값과 같은데 그 병원 게시 카탈로그에 없는 치료 ID(요청 검증의 층 4. 옛 버전이면 409가 먼저 나간다) | 공개 |
-| 500 | `INTERNAL_ERROR` | 서버 실패. 계산 때 저장된 줄 금액이 범위 밖이거나 병원 결제액 T가 안전 정수가 아닌 데이터 무결성 결함(엔진의 `INVALID_NUMERIC_INPUT` 거절, DD-24)도 여기로 낸다. 금액·스택·필드 내용을 담지 않음 | 공개·관리자 |
+| 500 | `INTERNAL_ERROR` | 서버 실패. 계산 때 저장된 줄 금액이 범위 밖이거나 병원 결제액 T가 안전 정수가 아닌 데이터 무결성 결함(엔진의 `INVALID_NUMERIC_INPUT` 거절, DD-24)와 같은 `treatmentId`의 줄이 내용이 달라 충돌하는 데이터 무결성 결함(엔진의 `INPUT_INTEGRITY_VIOLATION` 거절, DD-03)도 여기로 낸다(이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다). 금액·스택·필드 내용을 담지 않음 | 공개·관리자 |
 | 5xx | — | 그 밖의 서버 실패 | 공개·관리자 |
 
 계산 보류는 HTTP 200이다.
@@ -1324,11 +1343,12 @@ documentReady        = S == ACTIVE ∧ D == READY
 | 게시·관리자 입력 (카탈로그의 가격·기본비용, 규칙 묶음의 프로필·한도·비율 값) | 범위 밖 | **게시 거절**: 도메인 게시 검증이 거절하고, 관리자 API는 HTTP 400 `INVALID_REQUEST`와 어긋난 필드 경로를 낸다 | 아무것도 저장하지 않고 이전 게시 버전이 그대로 남는다. 경계값 0과 `MAX_AMOUNT_WON`은 허용 |
 | 계산 요청 구조 | JSON·필수 필드·JSON 형식 오류, `insurerType`·`cause`의 열거값 밖 문자열(`generation`이 문자열이지만 열거 밖이면 400이 아니라 422 `UNSUPPORTED_GENERATION`, DD-19 "요청 검증의 층") | **요청 거절**: HTTP 400 `INVALID_REQUEST` | 구조만 본다 |
 | 계산: 저장된 줄(치료·공통 기본비용) 금액이 무효이거나 T가 안전 정수가 아님 | 게시 검증을 통과한 뒤에는 생길 수 없어야 하는 서버 데이터 무결성 결함 | **계산 거절**: 엔진이 `INVALID_NUMERIC_INPUT`으로 거절(`UNSUPPORTED_GENERATION`처럼 결과가 아니라 거절)하고 API는 HTTP 500 `INTERNAL_ERROR`를 금액과 내부 상세 없이 낸다 | 키오스크는 `FAILED` → `KXX_Error_Network`로 처리한다. 병원 결제액은 믿을 수 있는 숫자여야 하므로 나쁜 줄을 보류로 돌리거나 합계에서 빼지 않는다 |
+| 계산: 같은 `treatmentId`의 저장된 줄(치료 줄, 공통 기본비용 줄 각각)이 둘 이상인데 내용이 다름 | 게시 검증을 통과한 카탈로그에서는 생길 수 없어야 하는 서버 데이터 무결성 결함 | **계산 거절**: 엔진이 `INPUT_INTEGRITY_VIOLATION`으로 거절하고(줄 금액 검사보다 먼저) API는 HTTP 500 `INTERNAL_ERROR`를 금액과 치료 ID와 내부 상세 없이 낸다(이 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다) | 키오스크는 `FAILED` → `KXX_Error_Network`로 처리한다. 어느 줄도 고르거나 합하지 않고 결과 객체도 없다 |
 | 계산: 프로필 그룹 값이 무효 | 범위 밖(없음·null은 `PROFILE_VALUE_MISSING`) | 그 그룹의 줄을 `PROFILE_VALUE_INVALID`로 보류 | 병원 결제액은 숫자, 보험금은 null |
 | 계산: "계산 단계의 검사 연산 순서" 표의 단계 하나에서 정확한 결과가 `S`를 넘음 | 범위 초과(값은 모두 유효) | 그 그룹의 줄을 `CALC_RANGE_EXCEEDED`로 보류. 금액·비율을 잘라 맞추지 않고 부분 `D`·`P`도 내지 않음 | 병원 결제액은 숫자, 보험금은 null |
 
 - 어느 단계에서도 무효 값이 `0`, `NaN`, 기본값, 정상처럼 보이는 숫자가 되지 않는다.
 - 응답을 직렬화하기 전에 모든 수치 필드에 `NaN`과 `Infinity`가 없음을 단언한다. JSON은 이 값을 `null`로 바꾸므로, 단언이 없으면 오류가 보류처럼 보일 수 있다.
-- 거절 판정 순서는 `UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED` → `INVALID_NUMERIC_INPUT`이다(DD-03).
+- 거절 판정 순서는 `UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED` → `INPUT_INTEGRITY_VIOLATION` → `INVALID_NUMERIC_INPUT`이다(DD-03).
 - 새 보류 코드 `PROFILE_VALUE_INVALID`, `CALC_RANGE_EXCEEDED`는 DD-03 표와 판정 순서, DD-21 첫 번째 분류에 들어 있다. 새 오류 코드 `INTERNAL_ERROR`는 DD-19 오류 표에 있다.
 - 시험: AC-006h(줄 금액·T 거절, T 경계 쌍은 AC-003h 10행), AC-003g(프로필 값), AC-003h(공제 방식×원 단위 처리별 계산 범위 경계 사례표, T 경계, 잘라 맞추지 않음), AC-008m(공유 한도 풀 값 결함의 영향 범위), AC-011h(도메인 게시 거절), AC-011i(매핑 필드 규칙·프로필 구조·묶음 교차 검사의 도메인 게시 거절), AC-021f(그 거절이 관리자 API의 400과 어긋난 필드 경로가 되는 변환), AC-006i(500), AC-005a(생성된 결과에 `NaN`·비안전 정수 없음), AC-006f·AC-021a(공개 오류 표와 400/422 층 구분).
