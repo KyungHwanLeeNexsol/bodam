@@ -959,11 +959,11 @@ Counts: base `b92cb16` 27 files / 1063 tests (857 under `tests/engine`); S1 +1 f
 
 | Responsibility | Where recorded | Stage | Status |
 |----------------|----------------|-------|--------|
-| Publish validation rejects a rule bundle whose `profiles` / `mappings` is not an array or has an entry that is not a non-null non-array object (null, undefined, primitive, array); rejection stores nothing, existing rejection path (AC-011h / AC-011i, 400 with field path via AC-021f); four test inputs | plan.md M3 section, new bullet "M3 필수 검증·시험: 규칙 묶음 항목의 데이터 무결성" (after the profile-content-hash bullet); acceptance.md AC-011i new sub-bullet "M3 · 미구현 (필수 하위 기준 — 묶음 항목의 형식)" (after the bundle cross-check sub-bullet) and a pointer sentence at the end of AC-011h | M3 | NOT IMPLEMENTED, NOT VERIFIED |
+| Publish validation rejects a rule bundle whose `profiles` / `mappings` is not an array or has an entry that is not a non-null non-array object (null, undefined, primitive, array); rejection stores nothing, existing rejection path (AC-011h / AC-011i, 400 with field path via AC-021f); test inputs (M1.8: `profiles = null` and `mappings = null` are named separately) | plan.md M3 section, new bullet "M3 필수 검증·시험: 규칙 묶음 항목의 데이터 무결성" (after the profile-content-hash bullet); acceptance.md AC-011i new sub-bullet "M3 · 미구현 (필수 하위 기준 — 묶음 항목의 형식)" (after the bundle cross-check sub-bullet) and a pointer sentence at the end of AC-011h | M3 | NOT IMPLEMENTED, NOT VERIFIED |
 | Server validates the bundle structure after reading it from the store and before calling the engine; a defect is a server data-integrity defect -> HTTP 500 `INTERNAL_ERROR` with no amounts, no treatmentId, no internal detail, no result object; applies only to a bundle that passed the existing bundle-level pre-judgment | plan.md M4 section, new bullet "M4 필수 검증·시험: 읽어 온 규칙 묶음의 구조" (after the existing M4 mandatory-validation bullet); acceptance.md AC-006i, new clause "M4 · 미구현 (필수 하위 기준 — 읽어 온 규칙 묶음의 구조)" | M4 | NOT IMPLEMENTED, NOT VERIFIED |
 | Precedence kept unchanged and made a completion condition with tests: no scope (`bundle = null`) -> `CLINIC_RULE_SCOPE_ABSENT`, then `SUSPENDED` -> 200 `ON_HOLD` `RULE_BUNDLE_SUSPENDED` without reading any bundle item (AC-008g, AC-008l); test (iv) SUSPENDED bundle with the same defects still returns the 200 `ON_HOLD`, test (v) no scope still `CLINIC_RULE_SCOPE_ABSENT` | plan.md M4 bullet and acceptance.md AC-006i clause (above) | M4 | NOT IMPLEMENTED, NOT VERIFIED |
 
-Out of scope of these items (stated in one clause in each place): `documentRuleSet` entries and other bundle fields. Not decided here and left to the M4 design: the meaning of a `null` `profiles` for an `ACTIVE` bundle (the current engine returns a `PROFILE_ABSENT` hold for it); test (vi) was therefore left out. The M1.6 OPEN item 1 above carries the annotation "관리 위치 지정 (M1.7)"; it is still OPEN.
+Out of scope of these items (stated in one clause in each place): `documentRuleSet` entries and other bundle fields. [SUPERSEDED by M1.8: decided — `profiles = null` / `mappings = null` on an `ACTIVE` bundle are structure defects (M3 publish rejection, M4 read-path HTTP 500); see the M1.8 block.] Not decided here and left to the M4 design: the meaning of a `null` `profiles` for an `ACTIVE` bundle (the current engine returns a `PROFILE_ABSENT` hold for it); test (vi) was therefore left out. The M1.6 OPEN item 1 above carries the annotation "관리 위치 지정 (M1.7)"; it is still OPEN.
 
 **Verification of this step (verbatim tails, HEAD `02c847a` before this commit, raw files in the gitignored `.moai/state/verify/s1/t1-*.txt`).**
 
@@ -984,7 +984,34 @@ $ git diff 02c847a HEAD --stat -- src tests     -> (empty)
 ```
 The totals equal the M1.6 totals (28 files / 1142 tests; `tests/engine` 25 files / 936 tests; coverage 497/409/117/456), so `src/` and `tests/` are unchanged. Formal lint and `moai verify` remain UNVERIFIED (no linter configured, `moai` CLI/MCP absent).
 
-**OPEN (unchanged status).** (1) M3: bundle item publish validation, four rejection tests (AC-011i, M3 · 미구현). (2) M4: read-path bundle structure check -> 500 plus the precedence tests (iv) / (v) (AC-006i, M4 · 미구현). (3) M4 design: the `profiles = null` case. (4) All earlier OPEN items of M1.5 and M1.6 remain open; M2+ is not started.
+**OPEN (unchanged status).** (1) M3: bundle item publish validation, rejection tests (AC-011i, M3 · 미구현; M1.8: `profiles = null` and `mappings = null` named separately). (2) M4: read-path bundle structure check -> 500 plus the precedence tests (iv) / (v) (AC-006i, M4 · 미구현). (3) M4 design: the `profiles = null` case. [SUPERSEDED by M1.8: the policy is decided (structure defect: M3 reject / M4 HTTP 500); the implementation is still NOT IMPLEMENTED and NOT VERIFIED under items (1) and (2).] (4) All earlier OPEN items of M1.5 and M1.6 remain open; M2+ is not started.
+
+### M1.8 bundle 내부 null 예외 정리 (문서만), 2026-10-15
+
+**Scope.** Documentation only; one commit on top of `75dc21c` (`(this commit)`). By user decision after reviewing `75dc21c`: the M1 close judgement stands and NO further M1 code change was made (`src/` and `tests/` are byte-identical to `75dc21c`). The user reported that the external re-review of the profile-structure fix passed; this is recorded as a user report, NOT as an audit result. The formal audit result stays as recorded (iteration-5 FAIL 0.89, MP-7, plan_status unchanged) and no new audit was run. No M2+ work, no merge, no deploy, no new AC ids, no AC count change. By user instruction the full test suite was NOT re-run for this commit because the code is identical to `75dc21c`; the last full run on `75dc21c` (28 files / 1142 tests, `tsc` exit 0, coverage 497/409/117/456) remains the only code evidence.
+
+**Decision recorded (user, M1.8).**
+
+- An `ACTIVE` bundle whose `profiles` or `mappings` is not an array (`null`, `undefined`, object, string, ...) is a structure defect: M4 structure validation returns HTTP 500 `INTERNAL_ERROR` (no amounts, no treatmentId, no internal detail, no result object). `profiles = null` and `mappings = null` are covered by the same rule and are named as separate tests. The earlier wording that left `profiles = null` to the M4 design is removed from plan.md and acceptance.md.
+- M3 publish validation rejects the same shapes (and `null` entries) with the existing rejection path; `profiles = null` and `mappings = null` are named as separate required tests.
+- A normal empty array `[]` is valid. The existing engine judgement for "no profile / no mapping" (hold codes such as `PROFILE_ABSENT`, `MAPPING_ABSENT`) is unchanged.
+- The bundle-level pre-judgment stays first and unchanged: no scope (`bundle = null`) -> `CLINIC_RULE_SCOPE_ABSENT`, then `SUSPENDED` -> 200 `ON_HOLD` `RULE_BUNDLE_SUSPENDED`. Neither path reads any bundle item, so a `SUSPENDED` bundle carrying `profiles = null` / `mappings = null` still returns the 200 `ON_HOLD`, not a 500.
+
+**What was changed, and where.**
+
+| File | Change |
+|------|--------|
+| plan.md M3 bullet | Test inputs now list `null` profile entry, `null` mapping entry, `profiles = null`, `mappings = null` (each separately) and other non-array values; `[]` is not a format defect. |
+| plan.md M4 bullet | Test (iii) covers every non-array `profiles` / `mappings` on an `ACTIVE` bundle with `null` named separately; (iv) `SUSPENDED` with the same defects (including `null`) stays 200 `ON_HOLD`; (v) no scope stays `CLINIC_RULE_SCOPE_ABSENT`; new (vi) `[]` is valid. The "left to the M4 design" sentence was replaced by the current engine behaviour and the M4 responsibility. |
+| acceptance.md AC-006i | Same changes in the `M4 · 미구현` read-path clause. |
+| acceptance.md AC-011i | Same changes in the `M3 · 미구현` sub-bullet. |
+| progress.md | M1.7 table row, the M1.7 "Not decided here" sentence and M1.7 OPEN items (1) and (3) carry `SUPERSEDED by M1.8` annotations; their original text is kept. |
+
+spec.md, spec-compact.md and design.md were not edited; their wording will be aligned when the M3 / M4 design is detailed (a statement of fact, not a claim it is done).
+
+**Unchanged on purpose.** The M1 engine is untouched: it still treats a non-array `bundle.profiles` / `bundle.mappings` as an empty list (M1.2 assumption 9) and still throws `TypeError` for `bundle.profiles = [null, ...]` and `bundle.mappings = [null, ...]`. There is no catch-all and no engine guard; the guarantee must come from the M3 and M4 layers.
+
+**Status (nothing here is resolved).** NOT IMPLEMENTED and NOT VERIFIED: (1) M3 publish rejection of malformed bundle containers and entries (AC-011i). (2) M4 read-path structure validation -> HTTP 500 for `ACTIVE` bundles (AC-006i). (3) The precedence integration tests (iv) and (v). M1.6 OPEN item 1 remains OPEN. All earlier OPEN items of M1.5, M1.6 and M1.7 remain open; M2+ is not started. Formal lint and `moai verify` remain UNVERIFIED.
 
 ## §E.3 Run-phase Audit-Ready Signal
 
