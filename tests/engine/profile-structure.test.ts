@@ -159,13 +159,19 @@ describe('checkProfileStructure — 방어와 결정성', () => {
     });
   });
 
-  it('sharedLimitPools 가 배열이 아니면 풀이 없는 것으로 보고 풀 참조는 모두 없는 풀 참조다', () => {
+  // S1 외부 검토 수정으로 기대값을 바꾼 시험이다. 이전에는 배열이 아닌 sharedLimitPools 를 조용히 빈 목록으로 대신해
+  // 풀 참조 결함 하나만 보고했다(참조가 없으면 ok 였고 이어지는 계산이 던졌다). 지금은 배열이 아닌 것 자체가
+  // POOLS_NOT_ARRAY 결함이고, 풀 참조 검사만 풀이 없는 것으로 보고 이어서 보고한다. 상세 시험은 profile-structure-malformed.test.ts.
+  it('sharedLimitPools 가 배열이 아니면 POOLS_NOT_ARRAY 결함이고 풀 참조는 풀이 없는 것으로 보고 이어서 보고한다', () => {
     const groups = testGroups();
     groups[0] = { ...groups[0]!, sharedLimitPoolKey: 'TEST_POOL_1' };
     const profile = { ...profileWith({ groups }), sharedLimitPools: undefined as unknown as never[] };
     expect(checkProfileStructure(profile)).toEqual({
       ok: false,
-      defects: [{ code: 'UNKNOWN_POOL_REFERENCE', path: 'groups[0].sharedLimitPoolKey' }],
+      defects: [
+        { code: 'POOLS_NOT_ARRAY', path: 'sharedLimitPools' },
+        { code: 'UNKNOWN_POOL_REFERENCE', path: 'groups[0].sharedLimitPoolKey' },
+      ],
     });
   });
 
