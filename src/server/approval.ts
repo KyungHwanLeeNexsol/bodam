@@ -9,6 +9,7 @@ import type { ItemStateRecord, ItemVersionRecord, ItemVersionRef } from './domai
 import { coverageFingerprintOf } from './fingerprint';
 import { assertTransition } from './lifecycle';
 import { closeReviewRequestForMapping } from './review-request';
+import { currentTreatmentVersion } from './treatment-current';
 
 // 제출·승인·반려·항목 중지와 시스템 전이 (design.md DD-17 생명주기 표, 소유자 결정 #31 본인 승인 금지).
 // 세 종류의 규칙 항목이 같은 서비스를 쓰고 같은 전이 표(lifecycle.ts)를 공유한다. 역할만 본다: 소유·인증은 M7.
@@ -84,12 +85,8 @@ export function submitForReview(deps: ServiceDeps, actor: Actor, ref: ItemVersio
  * 버전이고, 현재 카탈로그에 없으면 쓰기 순서상 가장 나중 버전이다. 버전이 하나도 없으면 TREATMENT_VERSION_ABSENT.
  */
 function pinnedFingerprint(deps: ServiceDeps, treatmentId: string): string {
-  const treatment = deps.repo.getTreatment(treatmentId);
-  const catalog = treatment === null ? null : deps.repo.getClinicCurrentCatalogVersion(treatment.clinicId);
-  const inCatalog = new Set(catalog?.treatmentVersionIds ?? []);
-  const versions = deps.repo.listTreatmentVersions(treatmentId);
-  const version = versions.find((candidate) => inCatalog.has(candidate.id)) ?? versions.at(-1);
-  if (version === undefined) {
+  const version = currentTreatmentVersion(deps.repo, treatmentId);
+  if (version === null) {
     throw new DomainError('TREATMENT_VERSION_ABSENT', `치료 '${treatmentId}' 의 버전이 없어 승인 지문을 고정할 수 없다`);
   }
   return coverageFingerprintOf(version);
