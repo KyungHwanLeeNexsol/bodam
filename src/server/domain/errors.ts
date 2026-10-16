@@ -20,6 +20,10 @@
  *  - TREATMENT_VERSION_ABSENT: 매핑 승인이 지문을 고정할 치료 버전이 하나도 없다 (DD-15).
  *  - NOT_ITEM_AUTHOR: 작성자가 아닌 주체가 검토 제출을 하려 했다 (DD-17 "작성자의 검토 제출").
  *  - INVALID_INPUT: 서비스 입력이 형식을 어겼다(예: 빈 id·버전 라벨). 결함 목록에 필드 경로가 담긴다.
+ *
+ * M3.C 가 더한 코드 (위 코드의 뜻은 그대로다):
+ *  - PUBLISH_VALIDATION_FAILED: 카탈로그 또는 규칙 묶음 게시 검증(publish-validate.ts)이 결함을 찾았다.
+ *    결함 목록에 `{ code, path }` 가 검증기가 정한 고정 순서로 담긴다. 이 오류가 던져지면 게시 서비스의 트랜잭션이 되돌려진다.
  */
 export const DOMAIN_ERROR_CODES = [
   'IMMUTABLE_VERSION',
@@ -33,6 +37,7 @@ export const DOMAIN_ERROR_CODES = [
   'TREATMENT_VERSION_ABSENT',
   'NOT_ITEM_AUTHOR',
   'INVALID_INPUT',
+  'PUBLISH_VALIDATION_FAILED',
 ] as const;
 export type DomainErrorCode = (typeof DOMAIN_ERROR_CODES)[number];
 

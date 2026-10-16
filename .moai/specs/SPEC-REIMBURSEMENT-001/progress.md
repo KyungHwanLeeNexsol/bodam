@@ -1460,6 +1460,161 @@ No coverage exclusions; no coverage-only tests beyond the two noted above (each 
 5. **Mapping approval requires at least one stored treatment version** (decision 8); until M3.D publishes catalogs, tests store treatment versions directly with the repository.
 6. NOT VERIFIED: clinic ownership / membership of requests and drafts, 401 / 403, HTTP mapping (M7); any DB behavior; asynchronous transactions.
 
+### M3.C 게시 검증기 (카탈로그·규칙 묶음), 2026-10-16
+
+**Scope.** M3.C only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.B (`6a6cace`), not committed by this step. It adds the PURE publish validators: `validateCatalogPublish` (treatment prices, common base fees, closed enumerations, accepted line origins, duplicates), `validateRuleBundlePublish` (item form, header and seal, mapping field rules, profile structure and value ranges, document rule set structure, bundle cross checks) and `assertNoDefects`. They take everything as arguments (no repository, clock or globals), return `{ code, path }` defects in a fixed order, never throw and never mutate. There is NO publish service, NO transaction, NO status event, NO rollback, NO version write (all M3.D), NO readiness (M3.E), NO HTTP, NO DB. **No AC is closed by M3.C** (the coverage of each AC by the validators and what remains for M3.D is in the AC table below).
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/publish-validate.ts` | NEW. Public facade: re-exports `validateCatalogPublish`, `validateRuleBundlePublish`, the request/config/resolver types, the closed `PUBLISH_DEFECT_CODES` list, and `assertNoDefects(defects)` (throws `DomainError('PUBLISH_VALIDATION_FAILED', ..., defects)`). The file header documents all defect codes and the path conventions |
+| `src/server/validate/shape.ts` | NEW. Guards (`isPlainObject`, `isAbsent`, `isNonEmptyString`), closed enumeration lists written as `Record<EngineType, true>` so an engine enum change breaks compilation, `expectValue` (VALUE_MISSING / VALUE_INVALID), `repeatedPositions` |
+| `src/server/validate/catalog.ts` | NEW. `validateCatalogPublish`, `CatalogPublishConfig`, `CatalogPublishRequest` |
+| `src/server/validate/bundle-form.ts` | NEW. Layer (a): container/item form, ref parsing, resolution through `BundleItemResolver`; `RuleBundlePublishRequest` |
+| `src/server/validate/bundle-header.ts` | NEW. Layer (b): origin, policy sources, approver, seal (`canonicalDigest(profileContent(p))` / `canonicalDigest(documentRuleSetContent(s))`), mapping pinned fingerprint |
+| `src/server/validate/bundle-mapping.ts` | NEW. Layer (c): DD-03 mapping field rules + `scope` shape |
+| `src/server/validate/bundle-profile.ts` | NEW. Layer (d): cell keys, engine `checkProfileStructure`, DD-24 value ranges (mirror of the value half of engine `checkGroupValues`) |
+| `src/server/validate/bundle-docrules.ts` | NEW. Layer (e): engine `checkDocumentRuleSetStructure` with bundle paths |
+| `src/server/validate/bundle-cross.ts` | NEW. Layer (f): group-in-profile, one profile per cell, one version per mapping id |
+| `src/server/validate/bundle.ts` | NEW. `validateRuleBundlePublish` (layer orchestration and order) |
+| `src/server/domain/errors.ts` | CHANGED (additive): code `PUBLISH_VALIDATION_FAILED` (union now 12 codes); no existing code changed |
+| `tests/server/domain.test.ts` | CHANGED: the closed error-code list test now expects the new code (this was the only existing test edited) |
+| `tests/fixtures/server/publish.fixture.ts`, `mutate.fixture.ts` | NEW fixtures: valid catalog request, valid bundle (profile, COVERED + EXCLUDED mapping, document rule set resealed with `canonicalDigest`), ref/resolver builders (the resolver records its calls), `setAt`/`unsetAt`, `deepFreeze`, `reverseKeys`, seeded PRNG. All `TEST_FIXTURE`; engine content is imported from `tests/fixtures/engine/*` |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched.
+
+| New test file | Tests |
+|---------------|-------|
+| `validate-catalog.test.ts` | 113 |
+| `validate-bundle-form.test.ts` | 80 |
+| `validate-bundle-header.test.ts` | 60 |
+| `validate-bundle-mapping.test.ts` | 42 |
+| `validate-bundle-profile.test.ts` | 265 |
+| `validate-bundle-docrules.test.ts` | 36 |
+| `validate-bundle-cross.test.ts` | 26 |
+| `validate-determinism.test.ts` | 14 |
+| `validate-reuse.test.ts` | 17 |
+| total (9 files) | 653 |
+
+#### Exported API (what M3.D calls)
+
+```ts
+// src/server/publish-validate.ts
+validateCatalogPublish(request: unknown, config: { acceptedLineOrigins: readonly Origin[] }): Defect[]
+//   request = { treatmentVersions: TreatmentVersion[]; commonBaseFees: CommonBaseFee[] } (typed loosely as unknown)
+validateRuleBundlePublish(request: unknown, resolver: BundleItemResolver): Defect[]
+//   request = { profiles: ItemVersionRef[]; mappings: ItemVersionRef[]; documentRuleSet: ItemVersionRef | null }
+interface BundleItemResolver {          // pure; the service builds it from repo reads + domain/projection.ts toEngine*
+  profile(ref): StandardAssumptionProfile | null
+  mapping(ref): TreatmentCoverageMapping | null
+  documentRuleSet(ref): DocumentRuleSet | null
+}
+assertNoDefects(defects: readonly Defect[]): void   // throws DomainError('PUBLISH_VALIDATION_FAILED')
+PUBLISH_DEFECT_CODES                                // closed list of this validator's own codes
+```
+
+Defect codes: form `NOT_OBJECT` `NOT_ARRAY` `VALUE_MISSING` (absent or null) `VALUE_INVALID` `REF_UNRESOLVABLE`; catalog `ORIGIN_NOT_ACCEPTED` `DUPLICATE_TREATMENT_ID` `DUPLICATE_ID`; header `POLICY_SOURCES_MISSING` `POLICY_SOURCE_INCOMPLETE` `APPROVER_MISSING` `APPROVER_INCOMPLETE` `INTEGRITY_MISMATCH` `FINGERPRINT_MISSING`; mapping `DECISION_INVALID` `GROUP_KEY_REQUIRED` `GROUP_KEY_FORBIDDEN` `EXCLUSION_REASON_REQUIRED` `EXCLUSION_REASON_FORBIDDEN` `SCOPE_INVALID`; cross `MAPPING_GROUP_NOT_IN_PROFILE` `CELL_PROFILE_DUPLICATE` `MAPPING_ID_DUPLICATE`. Engine structure codes pass through unchanged (12 profile codes such as `EMPTY_PROFILE`, `DUPLICATE_GROUP_KEY`, `UNKNOWN_POOL_REFERENCE`, `GROUP_ORDER_MISSING_KEY`; 8 document-rule codes such as `REASON_INVALID`, `PRIORITY_INVALID`, `WHEN_UNKNOWN_KEY`).
+
+Paths: catalog `treatmentVersions[2].patientAmount`, `commonBaseFees[0].amount`, request-level `catalog`; bundle always starts with `bundle.` (`bundle.profiles[2].groups[0].deduction.rate`, `bundle.profiles[0].sharedLimitPools[0].limit.amount`, `bundle.mappings[0].groupKey`, `bundle.documentRuleSet.rules[3].when.imaging`, `bundle.documentRuleSet.contentHash`, request-level `bundle`).
+
+Fixed order. Catalog: treatment versions (list form, then entries in order; inside an entry id, treatmentId, displayName, benefitType, patientAmount, treatmentCode, procedureCodes, calcClass, documentFlags, origin, accepted origin) -> base fees (same style: id, clinicId, displayName, benefitType, amount, code, origin, accepted origin) -> duplicates (treatmentId, treatment version id, base fee id). Bundle layers: (a) form (profiles, mappings, documentRuleSet) -> (b) header for profiles, mappings, document rule set (origin, policy sources, approver, seal or fingerprint) -> (c) mapping field rules (decision, groupKey, exclusionReason, scope) -> (d) profiles (cell keys, engine structure order, group values, pool values) -> (e) document rule set (engine order) -> (f) cross (group-in-profile by mapping order, cell duplicates by profile order, mapping id duplicates by mapping order). Items are visited in request order; the layers are NOT interleaved per item.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Style.** Validators return `Defect[]` (empty = valid) and are total; `assertNoDefects` is the thin throwing helper (`PUBLISH_VALIDATION_FAILED`, defects copied). Keeping "typed error thrown by the service inside the transaction" consistent with M3.A/B.
+2. **Catalog input.** `request` and every element are accepted as `unknown`. Request not an object -> `NOT_OBJECT @ catalog`; `treatmentVersions` / `commonBaseFees` not arrays (also `undefined`) -> `NOT_ARRAY`. Empty arrays are valid `[not in docs]`. Required (VALUE_MISSING when absent or null): treatment version `id treatmentId displayName benefitType patientAmount treatmentCode procedureCodes calcClass documentFlags origin`; base fee `id clinicId displayName benefitType amount code origin`. `description`, `amountCondition`, `effectiveDate` are not judged `[not in docs]` (the engine does not read them). `displayName` and base fee `code` are checked for being strings only, not for emptiness `[not in docs]`.
+3. **Amounts and flags.** Prices and base fees use the engine `isWon` (so `-0`, `NaN`, `Infinity`, decimals, strings, `MAX_AMOUNT_WON + 1` are `VALUE_INVALID`; `0` and `MAX_AMOUNT_WON` pass). `documentFlags` must be an object with three strict booleans (no coercion).
+4. **`procedureCodes`.** Array of non-empty strings; an empty array and repeated codes are allowed `[not in docs]` (DD-03/DD-15/DD-18 are silent; the fingerprint keeps duplicates).
+5. **Origins (AC-010c).** An `origin` outside the three-value enum is `VALUE_INVALID` and never reaches the acceptance check; an enum value not in `acceptedLineOrigins` is `ORIGIN_NOT_ACCEPTED`. An empty accepted list rejects every origin. Rule items (profile, mapping, document rule set) are only checked against the enum; the accepted-rules-origin policy is the calculation's `isUsable` job and the brief gave the validator no rule-origin configuration.
+6. **Duplicates.** Every member of a duplicate group is reported (not only the later ones) so the result does not depend on array order. Treatment version `id` duplicates (`DUPLICATE_ID`) are an addition beyond the brief's list (integrity, not a business rule) `[not in docs]`. Entries with a malformed key are not counted as duplicates.
+7. **Bundle request and resolver.** The three request fields are refs; the validator never reads a repository. A ref must be an object with `kind` equal to the slot's kind and non-empty string `id` and `version`; only well-formed refs reach the resolver, once each, in the order profiles, mappings, document rule set. A resolver result that is not a plain object is `REF_UNRESOLVABLE`. A resolver that throws is the caller's fault and is not caught. `documentRuleSet: null` means none; a missing or `undefined` field is `VALUE_MISSING` (not assumed to mean none) `[not in docs]`.
+8. **Malformed parts.** A malformed or unresolvable item is reported and read no further; the other items continue through layers (b) to (e). Layer (f) runs only when `profiles` and `mappings` are arrays and every item is well-formed and resolved, because "this cell has no profile" and "this group is missing" are wrong judgments on an incomplete list (tested with a bundle that has all three cross defects and one extra `null`).
+9. **Header (b)** mirrors engine `isUsable`'s criteria: `origin` enum; `policySources` an array with at least one entry and every entry an object with the six `PolicySourceRef` fields as non-empty strings (whitespace-only counts as non-empty, same as the engine); `approver` an object with non-empty `approverId` and `approvedAt`; profile and document rule set `contentHash === canonicalDigest(profileContent(p) | documentRuleSetContent(s))` (a missing, empty or non-string hash is a mismatch; the hash is never repaired); mapping `approvedFingerprint` a non-empty string. Lifecycle `state` and `validity` are not judged here: the service checks item states as a precondition and calculation checks both through `isUsable`. Whether a mapping fingerprint equals the CURRENT treatment version is not checked (no treatment data here). The seal check is tested against `isUsable`'s INTEGRITY verdict on the same variants (reordered groups/pools/rules keep the seal, a changed value, `groupOrder`, rule text, priority or version breaks it).
+10. **Mapping field rules (c).** `decision` outside `COVERED`/`EXCLUDED` -> `DECISION_INVALID` only (the group/reason rules are then skipped); "absent" means `undefined`, exactly as the engine's defensive check (`null` or `''` counts as present). `exclusionReason` / `groupKey` emptiness uses the engine's non-empty-string test (whitespace-only passes). `scope` must be an array of `{generation, insurerType}` from the closed lists (the engine's `resolveMapping` reads it) `[not in docs]`; an empty `scope` is allowed `[not in docs]`.
+11. **Profile values (d).** The value half of engine `checkGroupValues` is mirrored field by field: `fixed`, `amount`, `perUseAmount` (Won), `rate`, `rateBenefit`, `rateNonBenefit` (BasisPoints), plus `rounding` (`TRUNCATE` / `ROUND_HALF_UP`) and a missing `limitBasis`. `rounding` is not in the DD-24 field table but design.md:48 and :254 treat a missing `rounding` as `PROFILE_VALUE_MISSING`, so a profile that publishes must not hit that hold at calculation. Absent or null -> `VALUE_MISSING`; present but invalid -> `VALUE_INVALID`. Formula support is NOT a defect: unknown deduction/limit kinds (including non-objects), `limitBasis` other than `PAYOUT` and `UNLIMITED_DECLARED` without a clause pass publish (tests show the engine holds them with `PROFILE_FORMULA_UNSUPPORTED` / `PROFILE_SOURCE_INCOMPLETE`).
+12. **Pools `[interpretation]`.** Pool limit values are validated whether or not any group uses the pool. acceptance.md:217 says an out-of-range pool amount is rejected "like group values" and also that a pool without members is not rejected; I read the second as a structure statement (design.md:88 rule 3). The engine only sees a memberless pool's value if a group points at it, so publish is intentionally stricter here. The agreement test uses a probe group per pool so the engine itself judges every pool.
+13. **Agreement test.** `validate-bundle-profile.test.ts` generates 800 profiles with fixed seed 20261016 (printed with `console.info`; use `--reporter=verbose` to see it) and checks, per group, per pool and per pool member, that publish numeric verdicts equal the engine's `PROFILE_VALUE_MISSING | PROFILE_VALUE_INVALID` verdicts. The generator avoids unsupported kinds on purpose (the engine returns a single code by priority, so `PROFILE_FORMULA_UNSUPPORTED` would mask a value code); masking is covered by the separate unsupported table. The test asserts it saw more than 100 bad and 100 good groups and more than 30 bad and 30 good pools so it cannot pass vacuously.
+14. **Cross checks (f).** A COVERED mapping is checked against the profiles of its scope cells that passed the engine structure check (a profile with a structure defect has an unreliable group list and is already rejected); it is reported ONCE per mapping at `bundle.mappings[i].groupKey` if any such profile in any of its cells lacks the group; cells without a profile are skipped (not a defect). Cell and mapping-id duplicates report every member. The cell check ignores profiles whose cell keys are not in the closed lists (their `VALUE_INVALID` is already reported).
+15. **Reuse.** The validators import `checkProfileStructure`, `checkDocumentRuleSetStructure`, `profileContent`, `documentRuleSetContent`, `profileHasGroup`, `isWon`, `isBasisPoints` from the engine and `canonicalDigest` from `digest.ts`; `validate-reuse.test.ts` scans the sources to prove the imports are real, that no same-named function is defined anywhere in `src/server`, and that no validator imports `node:crypto`.
+16. **Determinism.** No clock, random or id source is used; the existing server boundary test (hazard rules, import rules) passes over the new files unchanged.
+
+#### AC coverage by the validators (no AC is closed in M3.C)
+
+| AC | Covered by the validators (test file : describe) | Remains for the publish service (M3.D) |
+|----|-----------------------------------------------|---------------------------------------|
+| AC-007f | `validate-bundle-docrules.test.ts` : `거절하지 않는 것`, `구조·when 계약 ...` (one case per engine defect code with `bundle.documentRuleSet.rules[i]...` paths, whitespace-only `reason`, `rules: []`, `when: {}`, priority 0 and `Number.MAX_SAFE_INTEGER`, many injury-only/illness-only lines), `머리 정보 배선`, `봉인` | the typed error out of the service, "nothing stored" (repository before/after equal), previous version intact, publishing the corrected bundle |
+| AC-010c | `validate-catalog.test.ts` : `허용 출처 (AC-010c)` (operating config rejects `DEMO` and `TEST_FIXTURE` treatment versions and base fees, test config accepts all three) | the service rejection with the repository unchanged; "no seed/migration path writes DEMO/TEST_FIXTURE as APPROVED/PUBLISHED" |
+| AC-011h | `validate-catalog.test.ts` : `금액 범위 (DD-24 ...)` (price and base fee, boundaries 0 and `MAX_AMOUNT_WON`, `MAX_AMOUNT_WON + 1`, negative, decimal, NaN, strings); `validate-bundle-profile.test.ts` : `$label 의 값 범위 (DD-24)` for group deduction, group limit and pool limit (rates 0 and 10000 pass, 10001 and -1 fail) with field paths | typed error from the service, nothing stored, previous version intact |
+| AC-011i | mapping field rules: `validate-bundle-mapping.test.ts`; profile structure and pool values: `validate-bundle-profile.test.ts` (12 engine codes, memberless pool allowed); cross checks: `validate-bundle-cross.test.ts`; the `M3 · 미구현` form sub-criterion: `validate-bundle-form.test.ts` (`profiles = null` and `mappings = null` separately, `undefined`, object, string, number, boolean; `null`/`undefined`/primitive/array items; empty arrays valid; no throw for any garbage) | typed error from the service, repository before/after equal, no bundle status event written, previous bundle intact, corrected bundle publishes |
+| AC-011a (seal part only) | `validate-bundle-profile.test.ts` : `봉인 ...`, `validate-bundle-docrules.test.ts` : `봉인 ...` (reorder with the original hash passes, changed values / `groupOrder` / rule content fail, agreement with `isUsable`) | bundle `contentHash`, immutability of published versions through the service, recovery |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixtures, the eight new `validate-*` test files and the `domain.test.ts` code-list edit were written first, with no file under `src/server/validate/`, no `publish-validate.ts` and no `PUBLISH_VALIDATION_FAILED` code; (2) the RED run; (3) the implementation. RED: `npx vitest run <the 8 new files + domain.test.ts> --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  9 failed (9)`, `Tests  1 failed | 24 passed (25)`. Eight files could not load (`Cannot find module '../../src/server/publish-validate'`) and `domain.test.ts` failed on the missing `PUBLISH_VALIDATION_FAILED` code. `npx tsc --noEmit` was exit 0 on the first try and the same command passed on the first run (9 files / 659 tests, exit 0, `first-run.txt`) — no failing iteration between RED and GREEN. Written AFTER the first GREEN (test-after, they passed immediately and are not RED evidence): the non-object-limit row of the unsupported table (the first coverage run showed that line uncovered), `validate-reuse.test.ts` (17 tests), the code-set assertion in the garbage-input test, and the cross-skip test in `validate-bundle-form.test.ts` (added because mutation (i) below survived; it fails under that mutation). Two source refactors followed the first coverage run: `repeatedPositions` replaced `Map.get(...) ?? 0` fallbacks that were unreachable branches (behavior unchanged, tests green before and after). A scratch script, not repo code, applied the mutations.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3c/`, gitignored; all vitest runs with `--maxWorkers=4`)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  25 passed (25)
+      Tests  1789 passed (1789)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged from M3.A/M3.B)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  21 passed (21)
+      Tests  1546 passed (1546)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Baseline before this step (same tree, `baseline-server-boundary.txt`): `tests/server tests/boundary` 16 files / 1136 tests. Now 25 files / 1789 tests = +9 files, +653 tests (the 9 new files; `domain.test.ts` count unchanged at 25). No `skip`, `only` or disabled test.
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 783/783  branches 410/410  functions 191/191  lines 747/747   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145  lines 606/606   = 100% each (unchanged)
+```
+
+No coverage exclusions. `docrules` has no unreachable defensive branch: the engine's `RULE_SET_NOT_OBJECT` cannot occur because only objects pass the form layer (documented in the file).
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4` against the final test set; every edit reverted by the script; `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`, `git status` shows only the intended files; outputs `mut-a.txt` ... `mut-p.txt`)
+
+| Mutation | Result |
+|----------|--------|
+| (a) catalog: accepted-origin check removed | `Test Files  1 failed \| 20 passed (21)`, `Tests  7 failed \| 1539 passed (1546)` |
+| (b) catalog: patient amount accepts any number | `2 failed \| 19 passed`, `12 failed \| 1534 passed` |
+| (c) form: non-object item silently skipped | `1 failed \| 20 passed`, `20 failed \| 1526 passed` |
+| (d) header: seal check disabled | `5 failed \| 16 passed`, `14 failed \| 1532 passed` |
+| (e) mapping: COVERED `exclusionReason` no longer forbidden | `1 failed \| 20 passed`, `5 failed \| 1541 passed` |
+| (f) profile: `rate` checked with `isWon` instead of `isBasisPoints` | `2 failed \| 19 passed`, `12 failed \| 1534 passed` |
+| (g) profile: pool limit values not checked | `1 failed \| 20 passed`, `45 failed \| 1501 passed` |
+| (h) cross: group-not-in-profile never reported | `3 failed \| 18 passed`, `8 failed \| 1538 passed` |
+| (i) bundle: cross checks run despite form defects | first run SURVIVED (`21 passed`, `1545 passed`); after the cross-skip test was added: `1 failed \| 20 passed`, `1 failed \| 1545 passed` |
+| (j) docrules: engine structure result ignored | `1 failed \| 20 passed`, `24 failed \| 1522 passed` |
+| (k) shape: `null` no longer counts as absent | `4 failed \| 17 passed`, `42 failed \| 1504 passed` |
+| (l) form: missing `documentRuleSet` field not flagged | `1 failed \| 20 passed`, `1 failed \| 1545 passed` |
+| (m) shape: duplicates need three occurrences | `3 failed \| 18 passed`, `12 failed \| 1534 passed` |
+| (n) `assertNoDefects` never throws | `1 failed \| 20 passed`, `3 failed \| 1543 passed` |
+| (o) a second `checkProfileStructure` defined in the validators | `1 failed \| 20 passed`, `1 failed \| 1545 passed` |
+| (p) profile seal hashed with `JSON.stringify` instead of `canonicalDigest` | `6 failed \| 15 passed`, `405 failed \| 1141 passed` |
+
+All 16 mutants end up killed with the final tests (one needed an added test, see (i)). The table counts come from the last full mutation run (1546 tests).
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Item lifecycle state is not judged by the validator.** Which states a bundle may include (`APPROVED` to be published by the bundle publish, or already `PUBLISHED`) is a service precondition for M3.D; the validator only sees assembled engine items. `validity` ranges are not judged either (calculation does, `OUTSIDE_VALIDITY`).
+2. **Resolver contract for M3.D.** The service must build resolver results from a fresh state read and the `toEngine*` projections (so `approver`, `state` and a mapping's `approvedFingerprint` come from the state record), and must ensure the resolved item's `id`/`version` equal the ref (the validator does not compare them; `toEngine*` already throws `REF_CONTENT_MISMATCH` for a state/content mismatch).
+3. **Clinic ownership** of base fees (`clinicId` equals the catalog's clinic) and treatment ownership are service concerns; the catalog validator takes no clinic id.
+4. **SPEC wording notes (not edited):** (a) design.md DD-24 field table (design.md:1292-1300) does not list `rounding` although design.md:48 and :254 make a missing `rounding` a value hold; the validator follows the engine. (b) acceptance.md:217 asks both that an out-of-range pool amount be rejected and that a memberless pool not be rejected; see decision 12. (c) acceptance.md:216 names `policySourceIds` while the engine/DD-18 item types carry `policySources` (the validator checks `policySources`).
+5. **Known limit of the agreement test:** it avoids unsupported formulas in the generator because the engine returns one code by priority; masking is covered by example rows, not by the generated set.
+6. NOT IMPLEMENTED: the publish services, transactions, bundle status events, rollback and recovery, scope assignment, DD-10 default reader (M3.D); readiness tables (M3.E). AC-007f, AC-010c, AC-011h, AC-011i (and AC-011a) stay open until M3.D.
+7. NOT VERIFIED: any service-level atomicity ("nothing stored"); any DB behavior; only Windows 11 and Node 24.19.0 were run, with no CI.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

@@ -37,7 +37,7 @@ describe('DomainError', () => {
   });
 
   it('오류 코드는 닫힌 목록이며 HTTP 개념(INVALID_REQUEST, 상태 코드)이 없다', () => {
-    // M3.A 의 여섯 코드에 M3.B 가 다섯 코드를 더했다 (이미 있는 코드의 뜻은 바꾸지 않는다).
+    // M3.A 의 여섯 코드에 M3.B 가 다섯 코드를, M3.C 가 PUBLISH_VALIDATION_FAILED 하나를 더했다 (이미 있는 코드의 뜻은 바꾸지 않는다).
     expect([...DOMAIN_ERROR_CODES].sort()).toEqual(
       [
         'DUPLICATE_KEY',
@@ -45,6 +45,7 @@ describe('DomainError', () => {
         'INVALID_INPUT',
         'NOT_FOUND',
         'NOT_ITEM_AUTHOR',
+        'PUBLISH_VALIDATION_FAILED',
         'REASON_REQUIRED',
         'REF_CONTENT_MISMATCH',
         'ROLE_NOT_PERMITTED',
