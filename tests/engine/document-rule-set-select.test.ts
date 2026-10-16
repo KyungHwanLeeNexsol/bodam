@@ -170,6 +170,28 @@ describe('구조 검사 — 봉인이 맞아도 구조 결함이 있으면 null 
     expect(selectDocumentRuleSet(bundleOf(ruleSetOf({ length: 0 } as unknown as DocumentRule[])), ctx)).toBeNull();
   });
 
+  it.each([
+    ['공백 하나', ' '],
+    ['탭', '\t'],
+    ['줄바꿈', '\n'],
+    ['공백·탭·줄바꿈 섞임', ' \t\n '],
+    ['NBSP (U+00A0)', ' '],
+    ['표의 공백 (U+3000)', '　'],
+  ])('공백뿐인 reason(%s)이 든 묶음은 봉인(ruleSetOf 로 해시를 다시 맞춤)이 맞아도 null 이다', (_label, reason) => {
+    const sealed = ruleSetOf([plainRule('RECEIPT', {}, '시험 사유', 1), plainRule('MEDICAL_OPINION', {}, reason, 1)]);
+    // 봉인이 맞는지 먼저 확인한다: 사용 가능 판정을 지나므로 null 의 원인이 구조 검사임을 보인다.
+    expect(selectDocumentRuleSet(bundleOf(ruleSetOf([plainRule('RECEIPT', {}, '시험 사유', 1)])), ctx)).not.toBeNull();
+    expect(sealed.contentHash).not.toBe('');
+    expect(selectDocumentRuleSet(bundleOf(sealed), ctx)).toBeNull();
+  });
+
+  it('앞뒤에 공백이 있어도 글자가 있는 reason 의 봉인된 묶음은 같은 객체로 선택되고 사유 원문이 그대로다', () => {
+    const padded = ruleSetOf([plainRule('RECEIPT', {}, ' 사유 ', 1)]);
+    const selected = selectDocumentRuleSet(bundleOf(padded), ctx);
+    expect(selected).toBe(padded);
+    expect(selected?.rules[0]?.reason).toBe(' 사유 ');
+  });
+
   it('결함이 있어도 일부만 골라 쓰지 않는다: 유효한 규칙이 섞여 있어도 묶음 전체가 null 이다', () => {
     const mixed = ruleSetOf([plainRule('RECEIPT', {}, '시험 사유', 1), plainRule('ITEMIZED_STATEMENT', {}, '시험 사유', Number.NaN)]);
     expect(selectDocumentRuleSet(bundleOf(mixed), ctx)).toBeNull();

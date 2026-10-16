@@ -89,9 +89,13 @@ function checkWhen(when: unknown, path: string, defects: DocumentRuleSetDefect[]
  * 규칙이 배열이 아니면 그 결함 하나만, 규칙 항목이 배열이 아닌 객체가 아니면(희소 배열의 빈 칸 포함) 그 항목 하나만 보고하고
  * 그 항목은 더 읽지 않는다.
  *
- * 규칙의 수와 상해·질병 전용 줄의 수는 결함이 아니다. 빈 `rules: []` 도 구조 결함이 아니다 — 게시 검증이 거절하는 목록
- * (DD-06 9번, AC-007f)에 없고, 이 경우의 산출은 항상 필요한 영수증·세부내역서 줄만 남는다. 출처·약관 출처·승인자·내용 해시는
- * 항목 판정(isUsable)이 보며 이 검사의 몫이 아니다.
+ * `reason` 은 문자열이어야 하고 앞뒤 공백(공백·탭·줄바꿈·NBSP·표의 공백 등 String.prototype.trim 이 지우는 문자)을 뺀 길이가 1 이상이어야
+ * 한다. 공백뿐인 사유는 빈 문자열과 같은 REASON_INVALID 다. 이는 판정일 뿐이다 — 사유 원문은 어디서도 다듬거나 바꾸지 않는다
+ * (결과의 reasons 와 내용 해시 입력에는 받은 문자열이 그대로 들어간다).
+ *
+ * 규칙의 수와 상해·질병 전용 줄의 수는 결함이 아니다. 빈 `rules: []` 는 현재 구조 계약에서 유효하다(구조 결함이 아니다) —
+ * 게시 검증이 거절하는 목록(DD-06 9번, AC-007f)에 없고, 이 경우의 산출은 항상 필요한 영수증·세부내역서 줄만 남는다.
+ * 출처·약관 출처·승인자·내용 해시는 항목 판정(isUsable)이 보며 이 검사의 몫이 아니다.
  */
 export function checkDocumentRuleSetStructure(ruleSet: unknown): DocumentRuleSetStructureResult {
   if (!isRecord(ruleSet)) {
@@ -113,7 +117,7 @@ export function checkDocumentRuleSetStructure(ruleSet: unknown): DocumentRuleSet
     if (typeof entry.documentCode !== 'string' || !Object.hasOwn(DOCUMENT_CODE_LINE, entry.documentCode)) {
       defects.push({ code: 'DOCUMENT_CODE_INVALID', path: `${path}.documentCode` });
     }
-    if (typeof entry.reason !== 'string' || entry.reason === '') {
+    if (typeof entry.reason !== 'string' || entry.reason.trim().length < 1) {
       defects.push({ code: 'REASON_INVALID', path: `${path}.reason` });
     }
     if (!isPriority(entry.priority)) {
@@ -184,22 +188,35 @@ interface Winner {
   reason: string;
 }
 
+/** 입력으로 받을 수 있는 열거값. 목록 밖의 값(대소문자·공백이 다른 값 포함)은 입력 결함이며 다른 값으로 바꿔 읽지 않는다. */
+const CAUSE_VALUES: readonly unknown[] = ['INJURY', 'ILLNESS', 'UNKNOWN'];
+const INSURER_TYPE_VALUES: readonly unknown[] = ['NON_LIFE', 'LIFE', 'MUTUAL_AID'];
+const CLINIC_SETTING_VALUES: readonly unknown[] = ['OUTPATIENT_ONLY'];
+
 /**
- * 선택한 치료의 서류 표시를 표시마다 OR 로 합친다(DD-06 "규칙 평가" 4번). 모든 요소를 센다.
- * 배열이 아니거나, 객체가 아닌 요소, 객체가 아닌 documentFlags, `true` 가 아닌 표시값은 표시를 더하지 않는다(던지지 않는다).
- * 서버가 검증된 줄로 치료를 만들기 전(M4)의 안전망이며, 잘못된 입력은 표시 없음으로 본다.
+ * 선택한 치료의 서류 표시를 표시마다 OR 로 합치면서(DD-06 "규칙 평가" 4번) 입력을 함께 검사한다. 모든 요소를 센다.
+ * 배열이 아니거나, 요소가 null·배열·원시값(희소 배열의 빈 칸 포함)이거나, documentFlags 가 객체가 아니거나, 세 표시값 가운데
+ * 하나라도 불리언(`typeof === 'boolean'`)이 아니면 null 이다 — 입력 결함이다. 강제 변환하지 않고(문자열 "true"·숫자 1 도 결함),
+ * 올바른 요소만 골라 세지도 않는다(결함이 하나라도 있으면 전체가 결함). 추가 속성은 허용하며 읽지 않는다. 던지지 않는다.
+ * 서버가 검증된 줄로 치료를 만들기 전(M4)의 안전망이다. `treatments: []` 는 결함이 아니며 표시가 모두 false 다.
  */
-function collectFlags(treatments: unknown): Record<FlagKey, boolean> {
-  const found: Record<FlagKey, boolean> = { imaging: false, biopsy: false, opinionRequired: false };
+function collectFlags(treatments: unknown): Record<FlagKey, boolean> | null {
   if (!Array.isArray(treatments)) {
-    return found;
+    return null;
   }
-  for (const treatment of treatments as unknown[]) {
+  const found: Record<FlagKey, boolean> = { imaging: false, biopsy: false, opinionRequired: false };
+  // 인덱스로 돌아 희소 배열의 빈 칸도 undefined 요소로 잡는다.
+  for (let index = 0; index < treatments.length; index += 1) {
+    const treatment: unknown = treatments[index];
     if (!isRecord(treatment) || !isRecord(treatment.documentFlags)) {
-      continue;
+      return null;
     }
     for (const key of FLAG_KEYS) {
-      if (treatment.documentFlags[key] === true) {
+      const flag: unknown = treatment.documentFlags[key];
+      if (typeof flag !== 'boolean') {
+        return null;
+      }
+      if (flag) {
         found[key] = true;
       }
     }
@@ -289,13 +306,21 @@ function buildLine(line: DocumentLineKey, required: boolean, scope: DocumentScop
  * 필요 서류를 산출한다. 순수 함수이며 던지지 않고 입력을 바꾸지 않는다. 반환:
  *  - 전체 결과가 ESTIMATED / ESTIMATED_WITH_EXCLUSIONS 가 아니면 null: ON_HOLD 는 물론 알 수 없는 상태 값도 null 이다
  *    (모르는 상태에서는 서류 목록을 보이지 않는다). 입력 자체가 객체가 아니어도 null 이다.
- *  - 서류 규칙 묶음이 없거나 구조가 틀리면 RULES_UNAVAILABLE. 호출하는 쪽이 이미 selectDocumentRuleSet 으로 항목 판정을 마쳤더라도
- *    구조 검사를 한 번 더 한다 — 틀린 묶음이 던지거나 고쳐진 채 쓰이지 않게 하는 최후의 안전망이다(머리 정보는 보지 않는다).
+ *  - 입력이 틀렸거나 서류 규칙 묶음이 없거나 구조가 틀리면 RULES_UNAVAILABLE(던지지 않고, 일부만 쓰지 않고, 입력을 바꾸지 않는다):
+ *    treatments 가 배열이 아니거나 요소·documentFlags·세 표시값(imaging·biopsy·opinionRequired, 불리언만) 가운데 하나라도 틀린 경우
+ *    (올바른 요소만 골라 세지 않는다), cause 가 정확히 INJURY / ILLNESS / UNKNOWN 이 아닌 경우(UNKNOWN 으로 바꿔 읽지 않는다),
+ *    insurerType 이 정확히 NON_LIFE / LIFE / MUTUAL_AID 가 아닌 경우, clinicSetting 이 정확히 OUTPATIENT_ONLY 가 아닌 경우.
+ *    이 입력 검사는 위의 null 판정(전체 결과·입력 객체)보다 뒤다 — 보류에서는 입력이 틀려도 null 이다.
+ *    서류 규칙 묶음은 호출하는 쪽이 이미 selectDocumentRuleSet 으로 항목 판정을 마쳤더라도 구조 검사를 한 번 더 한다 —
+ *    틀린 묶음이 던지거나 고쳐진 채 쓰이지 않게 하는 최후의 안전망이다(머리 정보는 보지 않는다).
  *  - 그 밖에는 AVAILABLE: 고정 9줄(DOCUMENT_LINE_KEYS 순서, 범위와 무관)을 한 번씩.
  *
- * 원인 INJURY / ILLNESS 는 그 원인으로 한 번(SINGLE_CAUSE, 줄에 scope 없음), 그 밖의 값은 모두 UNKNOWN 으로 보고 INJURY 와
+ * 치료 요소와 documentFlags 의 추가 속성은 허용한다. 빈 `treatments: []` 는 유효하며 표시가 모두 없는 것과 같다.
+ *
+ * 원인 INJURY / ILLNESS 는 그 원인으로 한 번(SINGLE_CAUSE, 줄에 scope 없음), 명시적 UNKNOWN 은 INJURY 와
  * ILLNESS 로 각각 평가한다(UNKNOWN_CAUSE) — 원인을 하나로 고르지 않는다. 줄은 두 평가에서 모두 필요하면 COMMON, 한쪽에서만
  * 필요하면 INJURY_ONLY / ILLNESS_ONLY, 둘 다 필요하지 않으면 필요 없는 COMMON 이다. 전용 줄의 수에는 상한이 없다.
+ * 사유는 받은 문자열 그대로 싣는다(공백을 다듬지 않는다).
  */
 export function deriveDocuments(input: DeriveDocumentsInput): DocumentsResult | null {
   if (!isRecord(input)) {
@@ -304,12 +329,19 @@ export function deriveDocuments(input: DeriveDocumentsInput): DocumentsResult | 
   if (input.overallState !== 'ESTIMATED' && input.overallState !== 'ESTIMATED_WITH_EXCLUSIONS') {
     return null;
   }
+  const flags = collectFlags(input.treatments);
   const candidate: unknown = input.ruleSet;
-  if (!checkDocumentRuleSetStructure(candidate).ok) {
+  if (
+    flags === null ||
+    !CAUSE_VALUES.includes(input.cause) ||
+    !INSURER_TYPE_VALUES.includes(input.insurerType) ||
+    !CLINIC_SETTING_VALUES.includes(input.clinicSetting) ||
+    !checkDocumentRuleSetStructure(candidate).ok
+  ) {
     return { state: 'RULES_UNAVAILABLE' };
   }
   const ruleSet = candidate as DocumentRuleSet;
-  const shared = { insurerType: input.insurerType, clinicSetting: input.clinicSetting, flags: collectFlags(input.treatments) };
+  const shared = { insurerType: input.insurerType, clinicSetting: input.clinicSetting, flags };
   const cause = input.cause;
 
   if (cause === 'INJURY' || cause === 'ILLNESS') {

@@ -61,7 +61,7 @@ describe('유효한 묶음', () => {
     for (const insurerType of ['NON_LIFE', 'LIFE', 'MUTUAL_AID']) expect(check(ruleSetOf([whenWith({ insurerType })])), insurerType).toEqual({ ok: true });
   });
 
-  it('규칙이 하나도 없는 rules: [] 는 구조 결함이 아니다 (결정: 게시 검증 목록에 없다)', () => {
+  it('규칙이 하나도 없는 rules: [] 는 현재 구조 계약에서 유효하다 (구조 결함이 아니다: 게시 검증 목록에 없다)', () => {
     expect(check(ruleSetOf([]))).toEqual({ ok: true });
   });
 
@@ -160,7 +160,7 @@ describe('documentCode — 닫힌 10종', () => {
   });
 });
 
-describe('reason — 비어 있지 않은 문자열', () => {
+describe('reason — 공백을 뺀 길이가 1 이상인 문자열', () => {
   it.each([
     ['빈 문자열', ''],
     ['undefined(빠짐)', undefined],
@@ -176,8 +176,35 @@ describe('reason — 비어 있지 않은 문자열', () => {
     expect(defectsOf(setWith(withoutReason))).toEqual([{ code: 'REASON_INVALID', path: 'rules[1].reason' }]);
   });
 
-  it('공백만 있는 문자열은 비어 있지 않으므로 이 검사가 거절하지 않는다 (결정: 문서가 말한 조건은 "비어 있지 않음"뿐이다)', () => {
-    expect(check(setWith(ruleWith({ reason: ' ' })))).toEqual({ ok: true });
+  it.each([
+    ['공백 하나', ' '],
+    ['탭', '\t'],
+    ['줄바꿈', '\n'],
+    ['CRLF', '\r\n'],
+    ['공백·탭·줄바꿈 섞임', ' \t\n '],
+    ['NBSP (U+00A0)', ' '],
+    ['표의 공백 (U+3000)', '　'],
+  ])('공백뿐인 문자열(%s)은 빈 문자열과 같은 REASON_INVALID 다 (M2.D: trim 한 길이가 1 이상이어야 한다)', (_label, reason) => {
+    expect(defectsOf(setWith(ruleWith({ reason })))).toEqual([{ code: 'REASON_INVALID', path: 'rules[1].reason' }]);
+    expect(check(setWith(ruleWith({ reason })))).toEqual({ ok: false, defects: [{ code: 'REASON_INVALID', path: 'rules[1].reason' }] });
+  });
+
+  it('앞뒤에 공백이 붙어도 글자가 있으면 유효하고, 검사는 원문을 바꾸지 않는다', () => {
+    const entry = ruleWith({ reason: ' 사유 ' });
+    expect(check(setWith(entry))).toEqual({ ok: true });
+    expect(entry.reason).toBe(' 사유 ');
+    for (const reason of ['\n사유', '사유\t', '\t 사유 \n', '　사유 ']) {
+      expect(check(setWith(ruleWith({ reason }))), JSON.stringify(reason)).toEqual({ ok: true });
+    }
+  });
+
+  it('공백뿐인 reason 은 같은 규칙의 다른 결함과 함께 documentCode → reason → priority 순서로 보고된다', () => {
+    const broken = ruleWith({ documentCode: 'NOPE', reason: ' \t', priority: -1 });
+    expect(defectsOf(ruleSetOf([broken]))).toEqual([
+      { code: 'DOCUMENT_CODE_INVALID', path: 'rules[0].documentCode' },
+      { code: 'REASON_INVALID', path: 'rules[0].reason' },
+      { code: 'PRIORITY_INVALID', path: 'rules[0].priority' },
+    ]);
   });
 });
 
