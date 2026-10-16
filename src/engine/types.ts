@@ -170,6 +170,71 @@ export interface DocumentRuleSet extends RuleItemHeader {
   contentHash: string;
 }
 
+// ───────────────────────── 서류 산출 형식 (DD-06) ─────────────────────────
+
+/** 치료 원인. UNKNOWN 은 명시적인 값이며 null 로 대신하지 않는다. 서류 안내에만 쓰고 금액에는 쓰지 않는다 (DD-01). */
+export type Cause = 'INJURY' | 'ILLNESS' | 'UNKNOWN';
+
+/** 서류 규칙의 `when` 조건. 키는 여섯이 전부다 (DD-06 "규칙 평가"). */
+export type DocumentWhen = DocumentRule['when'];
+
+/** 치료 줄의 서류 표시 (영상·조직검사·소견 필요). */
+export type DocumentFlags = PublishedLine['documentFlags'];
+
+/**
+ * 화면에 보이는 고정 9줄의 키, 화면 순서대로다. 영수증(RECEIPT)과 진료비 세부내역서(ITEMIZED_STATEMENT)만
+ * 한 줄 RECEIPT_AND_ITEMIZED 로 묶는다. 줄 수는 규칙이 아니라 이 목록이 정하며 줄이 빠지거나 더해지지 않는다.
+ */
+export const DOCUMENT_LINE_KEYS = [
+  'DIAGNOSIS_CERT',
+  'OUTPATIENT_CONFIRMATION',
+  'TREATMENT_CONFIRMATION',
+  'RECEIPT_AND_ITEMIZED',
+  'INITIAL_EXAM_RECORD',
+  'ADMISSION_DISCHARGE_CONFIRMATION',
+  'MEDICAL_OPINION',
+  'IMAGING_READING',
+  'BIOPSY_RESULT',
+] as const;
+export type DocumentLineKey = (typeof DOCUMENT_LINE_KEYS)[number];
+
+/** 문서 코드(닫힌 10종) → 표시 줄(고정 9줄). 규칙의 documentCode 는 이 표로 줄을 찾는다 (DD-06 "규칙 평가" 3번). */
+export const DOCUMENT_CODE_LINE: Readonly<Record<DocumentCode, DocumentLineKey>> = {
+  DIAGNOSIS_CERT: 'DIAGNOSIS_CERT',
+  OUTPATIENT_CONFIRMATION: 'OUTPATIENT_CONFIRMATION',
+  TREATMENT_CONFIRMATION: 'TREATMENT_CONFIRMATION',
+  RECEIPT: 'RECEIPT_AND_ITEMIZED',
+  ITEMIZED_STATEMENT: 'RECEIPT_AND_ITEMIZED',
+  INITIAL_EXAM_RECORD: 'INITIAL_EXAM_RECORD',
+  ADMISSION_DISCHARGE_CONFIRMATION: 'ADMISSION_DISCHARGE_CONFIRMATION',
+  MEDICAL_OPINION: 'MEDICAL_OPINION',
+  IMAGING_READING: 'IMAGING_READING',
+  BIOPSY_RESULT: 'BIOPSY_RESULT',
+};
+
+/** 원인 모름(UNKNOWN_CAUSE)에서 줄이 놓이는 범위. 줄은 세 범위 가운데 정확히 한 곳에 한 번만 나온다. */
+export type DocumentScope = 'COMMON' | 'INJURY_ONLY' | 'ILLNESS_ONLY';
+
+export interface DocumentLine {
+  line: DocumentLineKey;
+  required: boolean;
+  /** UNKNOWN_CAUSE 일 때만 있다. */
+  scope?: DocumentScope;
+  /** 사유는 우선순위 순이며 서로 다른 것만 담는다. 필요 없는 줄에는 없다. */
+  reasons?: string[];
+}
+
+export type DocumentsResult =
+  | {
+      state: 'AVAILABLE';
+      mode: 'SINGLE_CAUSE' | 'UNKNOWN_CAUSE';
+      lines: DocumentLine[];
+      ruleSetId: string;
+      ruleSetVersion: string;
+      origin: Origin;
+    }
+  | { state: 'RULES_UNAVAILABLE' };
+
 // ───────────────────────── 입력 (DD-03) ─────────────────────────
 
 export interface PublishedLine {
