@@ -9,6 +9,7 @@ export const READ_QUERY_NAMES = [
   'getTreatment',
   'listTreatments',
   'getTreatmentVersion',
+  'listTreatmentVersions',
   'getCommonBaseFee',
   'getCatalogVersion',
   'listCatalogVersions',

@@ -43,6 +43,7 @@ export function transitionInput(overrides: Partial<ItemTransitionInput> = {}): I
     at: TEST_FIXTURE_NOW,
     reason: null,
     approverAfter: null,
+    approvedFingerprintAfter: null,
     ...overrides,
   };
 }

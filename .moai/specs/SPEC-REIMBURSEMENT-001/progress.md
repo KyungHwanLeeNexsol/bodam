@@ -1338,6 +1338,128 @@ No coverage exclusions and no coverage-only tests. `interfaces.ts`, `ports.ts` a
 3. NOT VERIFIED: any DB behavior (no DB adapter, §E #1 undecided); asynchronous transactions; behavior of `canonicalDigest` on Map/Set/typed arrays (documented limit); digest determinism across a fresh process (not added).
 4. The digest encoding is versioned by the `bodam.digest.v1:` prefix. Any change to the encoding invalidates every sealed item hash; the `@MX:ANCHOR` on `canonicalDigest` records this.
 
+### M3.B 생명주기 (상태 기계·본인 승인 금지·재검토 전환), 2026-10-16
+
+**Scope.** M3.B only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.A (`f07df7b`), not committed by this step. It adds the lifecycle state machine shared by the three item kinds (DD-17), the authoring and approval services (draft create / edit / next version, submit, approve, reject, item suspend, internal publish / supersede / expire primitives), author != approver enforcement (owner decision #31), mapping fingerprint pinning at approval (DD-15), the re-review trigger (DD-16, unit-level part of AC-009a), the coverage review request flow (owner decision #34), and the engine-integration tests. It also contains the one deliberate change to M3.A decided by the orchestrator: `approvedFingerprint` moved from the immutable mapping content into the item STATE record. There is NO publish validation (M3.C), NO catalog or bundle publishing, bundle suspend, scope assignment (M3.D), NO readiness (M3.E), NO HTTP, NO DB, NO M4-M7 work. **No AC is closed by M3.B** (AC-009a closes in M3.D when catalog publishing calls the trigger in the same transaction; AC-024a and AC-025b close in M7 and only get domain-side evidence here).
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/lifecycle.ts` | NEW. `LIFECYCLE_STATES`, `LIFECYCLE_TRANSITIONS` (frozen data table, 11 allowed pairs), `isTransitionAllowed`, `assertTransition` (`STATE_CONFLICT` with from/to in message and a `TRANSITION_NOT_ALLOWED` defect) |
+| `src/server/deps.ts` | NEW. `ServiceDeps` = `AuditDeps` with the full `Repository` |
+| `src/server/authoring.ts` | NEW. `createDraft`, `editDraft`, `createNextDraft` (RV only; seals `contentHash` with the engine normalizers + `canonicalDigest`) |
+| `src/server/approval.ts` | NEW. `submitForReview`, `approve`, `reject`, `suspendItem`, `markPublished`, `markSuperseded`, `markExpired` |
+| `src/server/re-review.ts` | NEW. `triggerReReview(deps, actor, treatmentVersion)` |
+| `src/server/review-request.ts` | NEW. `createCoverageReviewRequest` (HA), `createMappingDraftFromRequest` (RV), `closeReviewRequestForMapping` (called by approve/reject), HA read helpers `readReviewRequest`, `readClinicReviewRequests` |
+| `src/server/domain/errors.ts` | 5 codes added (additive): `SELF_APPROVAL_FORBIDDEN`, `REASON_REQUIRED`, `TREATMENT_VERSION_ABSENT`, `NOT_ITEM_AUTHOR`, `INVALID_INPUT` (union stays closed, now 11) |
+| `src/server/domain/items.ts` | CHANGED (deliberate): `MappingContent` no longer has `approvedFingerprint`; `ItemStateRecord` / `ItemStateSnapshot` gain `approvedFingerprint`; `ItemTransitionInput` gains `approvedFingerprintAfter`; `StateTransition` gains `approver` and `approvedFingerprint` (the values in force after that transition); new helpers `formatRef`, `isMappingRecord` |
+| `src/server/domain/projection.ts` | CHANGED: `toEngineMapping` takes `approvedFingerprint` from the state snapshot (`null` becomes `''`, which the engine's `isUsable` turns into `INTEGRITY_MISMATCH`) |
+| `src/server/domain/entities.ts` | `CoverageReviewRequest` gains `draftMappingRef` (additive) |
+| `src/server/repo/interfaces.ts`, `repo/memory/memory-repository.ts`, `repo/memory/read-spy.ts` | Added `listTreatmentVersions(treatmentId)`, `reviseDraftItemVersion(record)` (the only content overwrite, DRAFT only), fingerprint handling in `recordItemTransition` / `readItemStates`, `draftMappingRef` existence check, spy name `listTreatmentVersions` |
+| `tests/server/{lifecycle-table,lifecycle-authoring,lifecycle-approval,lifecycle-engine,re-review,review-request,repo-lifecycle}.test.ts` | NEW (counts below) |
+| `tests/fixtures/server/lifecycle.fixture.ts` | NEW (world, content builders, `forceState`, `itemInState`, `adoptTreatmentVersion`); `actors.fixture.ts` (+`TEST_FIXTURE_RV_APPROVER_2`), `entities.fixture.ts` (+`draftMappingRef: null`), `items.fixture.ts` (mapping record has no `approvedFingerprint`), `repo.fixture.ts` (`approvedFingerprintAfter: null`) changed |
+| `tests/server/domain.test.ts`, `tests/server/repo-memory.test.ts` | M3.A tests adjusted for the deliberate change (error-code list, state shape, history shape, spy table, the "no overwrite verbs" test now names `reviseDraftItemVersion` as the one exception) |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched. Sources of truth reused: engine `profileContent` / `documentRuleSetContent` (sealing), `isUsable` / `mappingToRuleItem` (integration tests), M3.A `canonicalDigest`, `coverageFingerprintOf`, `appendAudit`, `requireRole`, repository transactions.
+
+| Test file | Tests |
+|-----------|-------|
+| `lifecycle-table.test.ts` | 88 (81-pair matrix + 7) |
+| `lifecycle-authoring.test.ts` | 134 |
+| `lifecycle-approval.test.ts` | 308 (189-cell service-operation x 9-state matrix inside) |
+| `lifecycle-engine.test.ts` | 13 |
+| `re-review.test.ts` | 34 |
+| `review-request.test.ts` | 19 |
+| `repo-lifecycle.test.ts` | 20 |
+| new total | 616 (M3.A files changed: `domain.test.ts` 23 -> 25, `repo-memory.test.ts` 141 -> 142) |
+
+#### Deliberate change to M3.A: `approvedFingerprint` is an approval-time fact `[not in docs]`
+
+DD-15 stores the fingerprint "at approval" and DD-17 allows `UNDER_REREVIEW -> APPROVED` (re-approval of the SAME version); both hold only if the fingerprint is not part of the immutable content. So, like the approver, it lives in the item state record. It is set on every transition to `APPROVED` (first approval and re-approval), carried unchanged through other transitions, read together with the state on every request (`readItemStates`), and each transition's history entry records the approver and fingerprint in force after it (earlier values stay in the history). `toEngineMapping` fills it from the state snapshot only, so a stale content cache can never serve a stale fingerprint (test: `lifecycle-engine.test.ts`, `내용을 미리 읽어 두었어도(캐시)...`).
+**SPEC wording issue found (not edited):** design.md:827 (DD-14 "항목 생명주기 상태와 캐시 계약", item (1) 내용) lists the mapping's `approvedFingerprint` among the immutable, cacheable content; design.md:844 (DD-15, "승인 때 … 저장") and design.md:908 (DD-17 table, `UNDER_REREVIEW -> APPROVED`) require it to change on re-approval. One of the three sentences has to change; the implementation follows 844 and 908.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Transition table (DD-17).** `DRAFT -> REVIEW_REQUESTED`; `REVIEW_REQUESTED -> APPROVED | REJECTED`; `APPROVED -> PUBLISHED | UNDER_REREVIEW`; `PUBLISHED -> SUSPENDED | SUPERSEDED | UNDER_REREVIEW | EXPIRED`; `UNDER_REREVIEW -> APPROVED | REJECTED`; `REJECTED`, `SUSPENDED`, `SUPERSEDED`, `EXPIRED` have no outgoing transition (the new version is a separate DRAFT, via `createNextDraft`). The table is frozen data; every service calls `assertTransition` before writing. The test matrix of 189 cells (3 kinds x 9 states x 7 service operations) proves that exactly the table's 9 operation-reachable pairs per kind succeed (the other 2 table pairs, `APPROVED/PUBLISHED -> UNDER_REREVIEW`, belong to the re-review trigger).
+2. **Roles.** `RV` for create / edit / next version / submit / approve / reject / item suspend and the internal publish, supersede, expire primitives; `HA` for `createCoverageReviewRequest`; the re-review trigger takes any actor (it is a system effect of publishing, recorded with the publisher's id and role). A mapping draft by `HA` is `ROLE_NOT_PERMITTED` (decision #34); HA has only read helpers.
+3. **Self-approval (decision #31).** `approve` throws `SELF_APPROVAL_FORBIDDEN` when `actor.id === record.authorId`, for first approval and re-approval and for every kind. It runs inside a transaction before any write, so state, approver record, fingerprint, audit log and review request are unchanged (`snapshotOf(repo)` before/after is deep-equal in the tests). Reject does not apply the rule. There is no `selfApproval` flag anywhere (an audit-entry key test still asserts it).
+4. **`[not in docs]` submit by author.** DD-17 says "작성자의 검토 제출"; `submitForReview` therefore requires `actor.id === authorId` (`NOT_ITEM_AUTHOR`) in addition to role `RV`.
+5. **`[not in docs]` editing a DRAFT in place.** Any `RV` may edit a DRAFT (author and `createdAt` never change); the audit entry records editor, time, optional reason and the canonical digests of the content before and after. Because the author is the only identity compared for author != approver, an RV who edited a draft written by someone else may approve it (design is silent on editors).
+6. **`[not in docs]` content seal.** `createDraft`, `editDraft` and `createNextDraft` recompute `contentHash` of profiles and document rule sets from the content with the engine's `profileContent` / `documentRuleSetContent` and `canonicalDigest` (a hash passed by the caller is ignored), so a stored hash always matches the stored content; the next-version copy needs it because the version label is part of the hashed content. Publish-time verification stays M3.C/M3.D.
+7. **`[not in docs]` repository additions.** `reviseDraftItemVersion` (DRAFT only; `NOT_FOUND` / `STATE_CONFLICT` / `REF_CONTENT_MISMATCH` / `IMMUTABLE_VERSION` for author or `createdAt` changes) is the only content overwrite and a test asserts it is the only such method name; `listTreatmentVersions` in write order.
+8. **Fingerprint pinning rule `[not in docs]`.** For a mapping, `approve` pins `coverageFingerprintOf(v)` where `v` is the treatment's version that is a member of its clinic's CURRENT `CatalogVersion` (first match in write order); if the treatment is not in the current catalog (or the clinic has none) it is the treatment's latest version by write order; if the treatment has no version (or does not exist) `TREATMENT_VERSION_ABSENT` and nothing changes. Consequence: a mapping cannot be approved before its treatment has at least one stored version.
+9. **Re-review trigger.** Compares each `APPROVED` / `PUBLISHED` mapping's pinned fingerprint of that treatment with `coverageFingerprintOf(newVersion)` (not with the previous treatment version), so it is idempotent. Moved mappings get a state-history entry (reason `COVERAGE_JUDGMENT_FIELD_CHANGED`, actor = the acting publisher, approver and pinned fingerprint kept) and an `ITEM_REREVIEW` audit entry. `[not in docs]` A mapping without a state record is skipped; an `APPROVED` / `PUBLISHED` mapping with a `null` pinned fingerprint cannot be compared and is moved (fail-safe). The function runs in `repo.transaction`, joins an outer one, and does not store the treatment version.
+10. **Review requests `[not in docs]`.** `CoverageReviewRequest.draftMappingRef` links the request to the single mapping draft RV creates for it (the existing `resultMappingRef` stays "approved result only", null after rejection as documented in M3.A). Approving that mapping closes the request `APPROVED` with `resultMappingRef`; rejecting closes it `REJECTED` with the reason; later re-review, re-approval or re-rejection of the same mapping, mappings created without a request, and profiles / document rule sets never touch requests. A second draft for one request, or a draft for a closed request, is `STATE_CONFLICT`. An RV may also create a mapping draft directly (needed for next versions and not forbidden by DD-17).
+11. **Audit conventions `[not in docs]`.** `beforeVersion` / `afterVersion` carry lifecycle states for state changes (`null` -> `DRAFT` for creation), the canonical digests of the content before/after for a draft edit, and states of the request for request audit entries (`REVIEW_REQUEST_CREATE`, `REVIEW_REQUEST_DRAFT_LINK`, `REVIEW_REQUEST_CLOSE`). Actions: `ITEM_CREATE_DRAFT`, `ITEM_EDIT_DRAFT`, `ITEM_CREATE_NEXT_VERSION`, `ITEM_SUBMIT`, `ITEM_APPROVE`, `ITEM_REJECT`, `ITEM_SUSPEND`, `ITEM_PUBLISH`, `ITEM_SUPERSEDE`, `ITEM_EXPIRE`, `ITEM_REREVIEW`. The target is `KIND/id/version`.
+12. **Reasons.** `reject` and `suspendItem` require a non-empty trimmed reason (`REASON_REQUIRED`, includes whitespace-only and the ideographic space).
+
+#### AC evidence
+
+No AC is closed. Evidence-only mapping (unit level):
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-009a (unit-level part; closes in M3.D) | `re-review.test.ts` : `보장 판단 필드가 바뀐 치료 버전 → ...`, `보장 판단 필드가 아닌 변경은 아무것도 바꾸지 않는다`, `바깥 트랜잭션 안에서 부를 수 있다`; `lifecycle-engine.test.ts` : `재검토 전환과 엔진 판정` | the four guarantee fields each trigger `APPROVED` / `PUBLISHED` -> `UNDER_REREVIEW`; price, display name and 7 other neutral changes leave the repository deep-equal; other states, other treatments, other kinds untouched; rolls back with an outer transaction; the engine reports `MAPPING_UNDER_REREVIEW`; the fingerprint mismatch alone is also caught by the engine |
+| AC-024a, AC-025b (domain side only; M7 closes) | `lifecycle-approval.test.ts` : `[AC-024a·AC-025b 의 도메인 쪽 증거]` tests in `승인 (PROFILE / MAPPING / DOCUMENT_RULE_SET)` | self-approval rejected for first approval and re-approval for every kind with the repository unchanged; a different principal succeeds afterwards |
+| AC-011a (sanity only; M3.D owns it) | `lifecycle-engine.test.ts` : `프로필·서류 규칙 묶음: 서비스가 봉인한 내용 해시가 엔진 무결성 판정을 통과한다` | service-sealed hashes (including after an edit) pass the engine's `isUsable` |
+| DD-14 state/content split | `lifecycle-engine.test.ts`, `domain.test.ts` | state and pinned fingerprint come from freshly read state; cached content cannot serve a stale fingerprint |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the M3.A tests and fixtures touched by the deliberate change, the new fixtures and all seven new test files were written first, with no change under `src/server/` yet; (2) the RED run; (3) the implementation. The RED run was `npx vitest run tests/server tests/boundary --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  9 failed | 7 passed (16)`, `Tests  8 failed | 512 passed (520)`. Seven files could not load (`Cannot find module '../../src/server/approval'`, `.../authoring`, `.../lifecycle`, `.../re-review`; `repo-lifecycle.test.ts` through the fixture import), and 8 assertions failed in two M3.A files: `domain.test.ts` (error-code list; two projection fingerprint tests) and `repo-memory.test.ts` (history shape, `readItemStates` keys, spy table, the one-overwrite-verb test, `listTreatmentVersions is not a function`).
+After the implementation the first run had 1 failure: an M3.A history assertion in `repo-memory.test.ts` that still lacked the new `approver` / `approvedFingerprint` fields (a test I had not updated; fixed in the test, the implementation was correct); the next run was 16 files / 1134 tests green (`first-green.txt`). `npx tsc --noEmit` first reported 4 type errors in two new test files (an import of `ItemUsabilityReason` from the wrong module; readonly array typing) and was exit 0 after test-only fixes. Two tests were added AFTER the first GREEN because the first coverage run showed two uncovered branches (`approval.ts` item without a state record; `review-request.ts` mapping whose treatment is absent): test-after, they passed immediately and are not evidence of a RED. Final totals below.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3b/`, gitignored; all vitest runs with `--maxWorkers=4`)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  16 passed (16)
+      Tests  1136 passed (1136)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged from M3.A)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  12 passed (12)
+      Tests  893 passed (893)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Per-folder coverage (summed from `coverage/coverage-summary.json` with the scratchpad `covsum.mjs`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 429/429  branches 234/234  functions 131/131  lines 417/417   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145  lines 606/606   = 100% each (unchanged)
+```
+
+No coverage exclusions; no coverage-only tests beyond the two noted above (each asserts a real behavior: a stateless item is `NOT_FOUND`, a mapping without a stored treatment can still be rejected). No `skip`, `only` or disabled test.
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4`; every edit reverted by hand and the restored sources compared by sha256: `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`, then `tests/server tests/boundary` again 16 files / 1136 tests green)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `approval.ts`: self-approval check never fires | `Test Files  3 failed \| 9 passed (12)`, `Tests  11 failed \| 882 passed (893)` |
+| (b) `lifecycle.ts`: table also allows `DRAFT -> APPROVED` | `Test Files  2 failed \| 10 passed (12)`, `Tests  5 failed \| 888 passed (893)` |
+| (c) `re-review.ts`: no fingerprint-equality skip (neutral changes also move mappings) | `Test Files  2 failed \| 10 passed (12)`, `Tests  10 failed \| 883 passed (893)` |
+| (d) `approval.ts`: pin the latest version instead of the current-catalog member | `Test Files  1 failed \| 11 passed (12)`, `Tests  1 failed \| 892 passed (893)` |
+| (e) `authoring.ts`: `editDraft` does not re-seal the content hash | `Test Files  2 failed \| 10 passed (12)`, `Tests  3 failed \| 890 passed (893)` |
+| (f) `approval.ts`: re-approval keeps the old approver record | `Test Files  2 failed \| 10 passed (12)`, `Tests  4 failed \| 889 passed (893)` |
+| (g) `memory-repository.ts`: `reviseDraftItemVersion` no longer requires DRAFT | `Test Files  2 failed \| 10 passed (12)`, `Tests  35 failed \| 858 passed (893)` |
+| (h) `approval.ts`: approving a mapping does not close its review request | `Test Files  1 failed \| 11 passed (12)`, `Tests  3 failed \| 890 passed (893)` |
+| (i) `approval.ts`: `approve` without the RV role check | `Test Files  2 failed \| 10 passed (12)`, `Tests  10 failed \| 883 passed (893)` |
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **SPEC wording (see above):** design.md:827 vs :844 / :908 on where `approvedFingerprint` lives. Not edited.
+2. **No trigger for `UNDER_REREVIEW` on profiles and document rule sets.** The table allows `APPROVED` / `PUBLISHED -> UNDER_REREVIEW` for all kinds, but design only names a trigger for mappings (guarantee-field change / fingerprint mismatch). No service moves a profile or document rule set there; tests reach that state with the repository primitive only.
+3. **Editors are not compared with approvers** (decision 5): only the author. If the owner wants editors treated as authors, `approve` needs a second check.
+4. **Publishing is not wired.** `markPublished` / `markSuperseded` / `markExpired` are internal primitives; the catalog-publish call to `triggerReReview` in the same transaction, the bundle publish, bundle suspend with reason, scope assignment, recovery, and the DD-10 default reader are M3.D. Publish validation (structure, ranges, mapping field rules, hash verification at publish) is M3.C. Readiness is M3.E. Their ACs stay open.
+5. **Mapping approval requires at least one stored treatment version** (decision 8); until M3.D publishes catalogs, tests store treatment versions directly with the repository.
+6. NOT VERIFIED: clinic ownership / membership of requests and drafts, 401 / 403, HTTP mapping (M7); any DB behavior; asynchronous transactions.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

@@ -30,8 +30,10 @@ export function toEngineProfile(record: ItemVersionRecordOf<'PROFILE'>, state: I
   return assemble(record, state);
 }
 
+// 매핑의 approvedFingerprint 는 승인 시점의 사실이라 내용이 아니라 상태 기록에서 온다(items.ts 머리말). 아직 고정되지 않았으면(null)
+// 엔진 형식에는 빈 문자열이 들어가고, 엔진의 무결성 판정(isUsable)이 빈 지문을 INTEGRITY_MISMATCH 로 막는다.
 export function toEngineMapping(record: ItemVersionRecordOf<'MAPPING'>, state: ItemStateSnapshot): TreatmentCoverageMapping {
-  return assemble(record, state);
+  return { ...assemble(record, state), approvedFingerprint: state.approvedFingerprint ?? '' };
 }
 
 export function toEngineDocumentRuleSet(record: ItemVersionRecordOf<'DOCUMENT_RULE_SET'>, state: ItemStateSnapshot): DocumentRuleSet {

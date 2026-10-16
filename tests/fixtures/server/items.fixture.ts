@@ -28,7 +28,8 @@ export function mappingRecord(
   overrides: Partial<TreatmentCoverageMapping> = {},
 ): ItemVersionRecordOf<'MAPPING'> {
   const mapping = makeMapping(treatmentId, overrides);
-  const { state: _state, approver: _approver, ...content } = mapping;
+  // 매핑의 approvedFingerprint 는 승인 시점의 사실이라 내용이 아니라 상태 기록이 갖는다 (M3.B 결정).
+  const { state: _state, approver: _approver, approvedFingerprint: _approvedFingerprint, ...content } = mapping;
   return {
     ref: { kind: 'MAPPING', id: mapping.id, version: mapping.version },
     content,

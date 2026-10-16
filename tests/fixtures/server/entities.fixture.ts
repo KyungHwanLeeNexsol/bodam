@@ -115,6 +115,7 @@ export function makeReviewRequest(overrides: Partial<CoverageReviewRequest> = {}
     requestedAt: TEST_FIXTURE_NOW,
     status: 'REVIEW_REQUESTED',
     rejectionReason: null,
+    draftMappingRef: null,
     resultMappingRef: null,
     ...overrides,
   };

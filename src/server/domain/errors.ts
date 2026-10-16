@@ -13,6 +13,13 @@
  *  - STATE_CONFLICT: 현재 상태와 맞지 않는 전이(항목 상태의 from 불일치, 묶음 상태 사슬 위반).
  *  - REF_CONTENT_MISMATCH: 참조(ref)가 내용의 id·버전과 다르거나, 다른 병원의 자료를 가리킨다.
  *  - ROLE_NOT_PERMITTED: 행위자의 역할이 이 동작의 역할 조건에 맞지 않는다(역할만 본다. 소유·인증은 M7).
+ *
+ * M3.B 가 더한 코드 (위 여섯 코드의 뜻은 그대로다):
+ *  - SELF_APPROVAL_FORBIDDEN: 작성자 본인이 승인하려 했다 (소유자 결정 #31). 거절하면 아무것도 바뀌지 않는다.
+ *  - REASON_REQUIRED: 사유가 필수인 동작(반려·항목 중지)에 비었거나 공백뿐인 사유가 왔다.
+ *  - TREATMENT_VERSION_ABSENT: 매핑 승인이 지문을 고정할 치료 버전이 하나도 없다 (DD-15).
+ *  - NOT_ITEM_AUTHOR: 작성자가 아닌 주체가 검토 제출을 하려 했다 (DD-17 "작성자의 검토 제출").
+ *  - INVALID_INPUT: 서비스 입력이 형식을 어겼다(예: 빈 id·버전 라벨). 결함 목록에 필드 경로가 담긴다.
  */
 export const DOMAIN_ERROR_CODES = [
   'IMMUTABLE_VERSION',
@@ -21,6 +28,11 @@ export const DOMAIN_ERROR_CODES = [
   'STATE_CONFLICT',
   'REF_CONTENT_MISMATCH',
   'ROLE_NOT_PERMITTED',
+  'SELF_APPROVAL_FORBIDDEN',
+  'REASON_REQUIRED',
+  'TREATMENT_VERSION_ABSENT',
+  'NOT_ITEM_AUTHOR',
+  'INVALID_INPUT',
 ] as const;
 export type DomainErrorCode = (typeof DOMAIN_ERROR_CODES)[number];
 

@@ -129,7 +129,12 @@ export interface CoverageReviewRequest {
   requestedAt: string;
   status: ReviewRequestStatus;
   rejectionReason: string | null;
-  /** 결과 매핑 버전. 처리 전이거나 반려면 null. */
+  /**
+   * [문서에 없음] (M3.B) RV 가 이 요청으로 만든 매핑 초안. 승인·반려가 요청을 어느 매핑에서 닫는지 알려면 처리 중에도
+   * 연결이 있어야 하므로 더했다. 한 요청에 초안은 하나이며 닫힌 뒤에도 그대로 남는다. 초안 전이면 null.
+   */
+  draftMappingRef: ItemVersionRef | null;
+  /** 결과 매핑 버전. 승인으로 닫혔을 때만 채운다. 처리 전이거나 반려면 null. */
   resultMappingRef: ItemVersionRef | null;
 }
 

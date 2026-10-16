@@ -220,7 +220,7 @@ describe('바뀌지 않는 버전 (write-once)', () => {
     expect(repo.getItemVersion(rules.ref)?.ref.kind).toBe('DOCUMENT_RULE_SET');
   });
 
-  it('저장소에는 삭제·덮어쓰기·초기화 동작이 없다', () => {
+  it('저장소에는 삭제·초기화 동작이 없고, 내용을 덮어쓰는 동작은 초안 수정(reviseDraftItemVersion) 하나뿐이다', () => {
     const repo = newRepo();
     const names = new Set<string>();
     for (let proto: object | null = Object.getPrototypeOf(repo) as object | null; proto !== null && proto !== Object.prototype; proto = Object.getPrototypeOf(proto) as object | null) {
@@ -234,6 +234,8 @@ describe('바뀌지 않는 버전 (write-once)', () => {
     for (const name of names) {
       expect(name, `삭제성 이름 ${name}`).not.toMatch(/delete|remove|clear|drop|truncate|purge|destroy|wipe|update(?!Version)/i);
     }
+    // 불변 내용을 덮어쓸 수 있는 이름은 초안 수정 하나뿐이다 (DRAFT 에만 듣는다는 검사는 repo-lifecycle.test.ts).
+    expect([...names].filter((name) => /overwrite|replace|revise|rewrite|upsert/i.test(name))).toEqual(['reviseDraftItemVersion']);
     // 위 검사가 빈 검사가 아님을 확인한다.
     expect(names.has('putItemVersion')).toBe(true);
     expect(names.has('transaction')).toBe(true);
@@ -275,7 +277,7 @@ describe('추가 전용 기록', () => {
       ['REVIEW_REQUESTED', 'REJECTED'],
     ]);
     expect(history.slice(0, 1)).toEqual(afterFirst);
-    expect(history[2]).toEqual({ from: 'REVIEW_REQUESTED', to: 'REJECTED', actorId: 'TEST_FIXTURE_RV_APPROVER', role: 'RV', at: 'T2', reason: 'TEST_FIXTURE 반려 사유' });
+    expect(history[2]).toEqual({ from: 'REVIEW_REQUESTED', to: 'REJECTED', actorId: 'TEST_FIXTURE_RV_APPROVER', role: 'RV', at: 'T2', reason: 'TEST_FIXTURE 반려 사유', approver: null, approvedFingerprint: null });
   });
 
   it('돌려받은 기록을 고쳐도 저장소의 기록은 그대로다', () => {
@@ -403,11 +405,33 @@ describe('항목 상태 기록 (ItemStateRecord)', () => {
     const record = mappingRecord();
     repo.putItemVersion(record);
     repo.recordItemTransition(record.ref, transitionInput());
-    repo.recordItemTransition(record.ref, transitionInput({ from: 'DRAFT', to: 'APPROVED', actor: TEST_FIXTURE_RV_APPROVER, at: 'T9', reason: 'TEST_FIXTURE 승인', approverAfter: { approverId: TEST_FIXTURE_RV_APPROVER.id, approvedAt: 'T9' } }));
+    repo.recordItemTransition(
+      record.ref,
+      transitionInput({
+        from: 'DRAFT',
+        to: 'APPROVED',
+        actor: TEST_FIXTURE_RV_APPROVER,
+        at: 'T9',
+        reason: 'TEST_FIXTURE 승인',
+        approverAfter: { approverId: TEST_FIXTURE_RV_APPROVER.id, approvedAt: 'T9' },
+        approvedFingerprintAfter: 'TEST_FIXTURE_FP',
+      }),
+    );
     const state = repo.getItemState(record.ref);
     expect(state?.state).toBe('APPROVED');
     expect(state?.approver).toEqual({ approverId: 'TEST_FIXTURE_RV_APPROVER', approvedAt: 'T9' });
-    expect(state?.history.at(-1)).toEqual({ from: 'DRAFT', to: 'APPROVED', actorId: 'TEST_FIXTURE_RV_APPROVER', role: 'RV', at: 'T9', reason: 'TEST_FIXTURE 승인' });
+    expect(state?.approvedFingerprint).toBe('TEST_FIXTURE_FP');
+    // 이력은 전이마다 그 전이 뒤의 승인자·지문을 남긴다 (재승인으로 현재 값이 바뀌어도 이전 값이 이력에 남는다).
+    expect(state?.history.at(-1)).toEqual({
+      from: 'DRAFT',
+      to: 'APPROVED',
+      actorId: 'TEST_FIXTURE_RV_APPROVER',
+      role: 'RV',
+      at: 'T9',
+      reason: 'TEST_FIXTURE 승인',
+      approver: { approverId: 'TEST_FIXTURE_RV_APPROVER', approvedAt: 'T9' },
+      approvedFingerprint: 'TEST_FIXTURE_FP',
+    });
   });
 
   it('항목 버전의 내용은 상태가 바뀌어도 그대로다 (내용과 상태가 따로 저장된다)', () => {
@@ -455,10 +479,10 @@ describe('항목 상태 일괄 읽기 (readItemStates)', () => {
     expect(repo.readItemStates([])).toEqual([]);
   });
 
-  it('각 항목은 ref·state·approver 만 담고 이력은 담지 않는다', () => {
+  it('각 항목은 ref·state·approver·approvedFingerprint 만 담고 이력은 담지 않는다', () => {
     const { repo, world } = seedThree();
     const [first] = repo.readItemStates([world.profileRef]);
-    expect(Object.keys(first ?? {}).sort()).toEqual(['approver', 'ref', 'state']);
+    expect(Object.keys(first ?? {}).sort()).toEqual(['approvedFingerprint', 'approver', 'ref', 'state']);
   });
 
   it('목록 길이와 상관없이 읽기 한 번으로 센다', () => {
@@ -484,6 +508,7 @@ describe('읽기 감시 (spy)', () => {
     ['getTreatment', (repo) => repo.getTreatment(makeTreatment().id)],
     ['listTreatments', (repo, w) => repo.listTreatments(w.clinicId)],
     ['getTreatmentVersion', (repo) => repo.getTreatmentVersion(makeTreatmentVersion().id)],
+    ['listTreatmentVersions', (repo) => repo.listTreatmentVersions(makeTreatment().id)],
     ['getCommonBaseFee', (repo) => repo.getCommonBaseFee(makeCommonBaseFee().id)],
     ['getCatalogVersion', (repo) => repo.getCatalogVersion(makeCatalogVersion().id)],
     ['listCatalogVersions', (repo, w) => repo.listCatalogVersions(w.clinicId)],

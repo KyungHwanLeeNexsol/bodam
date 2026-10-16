@@ -37,8 +37,21 @@ describe('DomainError', () => {
   });
 
   it('오류 코드는 닫힌 목록이며 HTTP 개념(INVALID_REQUEST, 상태 코드)이 없다', () => {
+    // M3.A 의 여섯 코드에 M3.B 가 다섯 코드를 더했다 (이미 있는 코드의 뜻은 바꾸지 않는다).
     expect([...DOMAIN_ERROR_CODES].sort()).toEqual(
-      ['DUPLICATE_KEY', 'IMMUTABLE_VERSION', 'NOT_FOUND', 'REF_CONTENT_MISMATCH', 'ROLE_NOT_PERMITTED', 'STATE_CONFLICT'].sort(),
+      [
+        'DUPLICATE_KEY',
+        'IMMUTABLE_VERSION',
+        'INVALID_INPUT',
+        'NOT_FOUND',
+        'NOT_ITEM_AUTHOR',
+        'REASON_REQUIRED',
+        'REF_CONTENT_MISMATCH',
+        'ROLE_NOT_PERMITTED',
+        'SELF_APPROVAL_FORBIDDEN',
+        'STATE_CONFLICT',
+        'TREATMENT_VERSION_ABSENT',
+      ].sort(),
     );
     for (const code of DOMAIN_ERROR_CODES) {
       expect(code).not.toMatch(/HTTP|INVALID_REQUEST|\d{3}/);
@@ -146,7 +159,7 @@ describe('appendAudit (감사 기록)', () => {
 describe('항목 내용 + 현재 상태 → 엔진 형식 (DD-14 항목 생명주기 상태와 캐시 계약)', () => {
   it('프로필: 내용은 그대로, state 와 approver 는 상태 기록에서 온다', () => {
     const record = profileRecord();
-    const engine = toEngineProfile(record, { ref: record.ref, state: 'PUBLISHED', approver: { approverId: 'TEST_FIXTURE_RV_APPROVER', approvedAt: '2026-01-02' } });
+    const engine = toEngineProfile(record, { ref: record.ref, state: 'PUBLISHED', approver: { approverId: 'TEST_FIXTURE_RV_APPROVER', approvedAt: '2026-01-02' }, approvedFingerprint: null });
     expect(engine.state).toBe('PUBLISHED');
     expect(engine.approver).toEqual({ approverId: 'TEST_FIXTURE_RV_APPROVER', approvedAt: '2026-01-02' });
     expect(engine.id).toBe(record.content.id);
@@ -156,16 +169,31 @@ describe('항목 내용 + 현재 상태 → 엔진 형식 (DD-14 항목 생명�
 
   it('같은 내용에 다른 상태를 채우면 상태만 달라진다', () => {
     const record = mappingRecord();
-    const published = toEngineMapping(record, { ref: record.ref, state: 'PUBLISHED', approver: { approverId: 'A', approvedAt: 'T' } });
-    const suspended = toEngineMapping(record, { ref: record.ref, state: 'SUSPENDED', approver: { approverId: 'A', approvedAt: 'T' } });
+    const published = toEngineMapping(record, { ref: record.ref, state: 'PUBLISHED', approver: { approverId: 'A', approvedAt: 'T' }, approvedFingerprint: 'TEST_FIXTURE_FP' });
+    const suspended = toEngineMapping(record, { ref: record.ref, state: 'SUSPENDED', approver: { approverId: 'A', approvedAt: 'T' }, approvedFingerprint: 'TEST_FIXTURE_FP' });
     expect({ ...published, state: 'X' }).toEqual({ ...suspended, state: 'X' });
     expect(published.state).toBe('PUBLISHED');
     expect(suspended.state).toBe('SUSPENDED');
   });
 
+  it('매핑: approvedFingerprint 는 내용이 아니라 상태 기록에서 온다 (승인 시점의 사실, M3.B 결정)', () => {
+    const record = mappingRecord();
+    expect(Object.keys(record.content)).not.toContain('approvedFingerprint');
+    const first = toEngineMapping(record, { ref: record.ref, state: 'PUBLISHED', approver: { approverId: 'A', approvedAt: 'T' }, approvedFingerprint: 'TEST_FIXTURE_FP_1' });
+    const second = toEngineMapping(record, { ref: record.ref, state: 'PUBLISHED', approver: { approverId: 'A', approvedAt: 'T' }, approvedFingerprint: 'TEST_FIXTURE_FP_2' });
+    expect(first.approvedFingerprint).toBe('TEST_FIXTURE_FP_1');
+    expect(second.approvedFingerprint).toBe('TEST_FIXTURE_FP_2');
+  });
+
+  it('매핑: 고정된 지문이 아직 없으면(null) 엔진 형식에는 빈 문자열이 들어가 무결성 판정이 막는다', () => {
+    const record = mappingRecord();
+    const engine = toEngineMapping(record, { ref: record.ref, state: 'DRAFT', approver: null, approvedFingerprint: null });
+    expect(engine.approvedFingerprint).toBe('');
+  });
+
   it('서류 규칙 묶음도 같은 방식이고 승인자가 없으면 null 이다', () => {
     const record = documentRuleSetRecord();
-    const engine = toEngineDocumentRuleSet(record, { ref: record.ref, state: 'DRAFT', approver: null });
+    const engine = toEngineDocumentRuleSet(record, { ref: record.ref, state: 'DRAFT', approver: null, approvedFingerprint: null });
     expect(engine.state).toBe('DRAFT');
     expect(engine.approver).toBeNull();
     expect(engine.rules).toEqual(record.content.rules);
@@ -173,7 +201,7 @@ describe('항목 내용 + 현재 상태 → 엔진 형식 (DD-14 항목 생명�
 
   it('입력(내용 기록, 상태 값)을 바꾸지 않고 결과는 입력과 깊이 분리된다', () => {
     const record = profileRecord();
-    const state = { ref: record.ref, state: 'PUBLISHED' as const, approver: { approverId: 'A', approvedAt: 'T' } };
+    const state = { ref: record.ref, state: 'PUBLISHED' as const, approver: { approverId: 'A', approvedAt: 'T' }, approvedFingerprint: null };
     const recordBefore = structuredClone(record);
     const stateBefore = structuredClone(state);
     const engine = toEngineProfile(record, state);
@@ -190,7 +218,7 @@ describe('항목 내용 + 현재 상태 → 엔진 형식 (DD-14 항목 생명�
     const record = profileRecord();
     const other = profileRecord({ id: 'TEST_PROFILE_OTHER' });
     for (const bad of [other.ref, { ...record.ref, version: 'v9' }, { ...record.ref, kind: 'MAPPING' as const }]) {
-      expect(catchDomainError(() => toEngineProfile(record, { ref: bad, state: 'PUBLISHED', approver: null })).code).toBe('REF_CONTENT_MISMATCH');
+      expect(catchDomainError(() => toEngineProfile(record, { ref: bad, state: 'PUBLISHED', approver: null, approvedFingerprint: null })).code).toBe('REF_CONTENT_MISMATCH');
     }
   });
 
@@ -198,11 +226,11 @@ describe('항목 내용 + 현재 상태 → 엔진 형식 (DD-14 항목 생명�
     const repo = newRepo();
     const record = profileRecord();
     repo.putItemVersion(record);
-    repo.recordItemTransition(record.ref, { from: null, to: 'PUBLISHED', actor: TEST_FIXTURE_RV_AUTHOR, at: 'T0', reason: null, approverAfter: { approverId: 'A', approvedAt: 'T0' } });
+    repo.recordItemTransition(record.ref, { from: null, to: 'PUBLISHED', actor: TEST_FIXTURE_RV_AUTHOR, at: 'T0', reason: null, approverAfter: { approverId: 'A', approvedAt: 'T0' }, approvedFingerprintAfter: null });
     const cached = repo.getItemVersion(record.ref);
     expect(cached).not.toBeNull();
     const first = repo.readItemStates([record.ref])[0];
-    repo.recordItemTransition(record.ref, { from: 'PUBLISHED', to: 'SUSPENDED', actor: TEST_FIXTURE_RV_AUTHOR, at: 'T1', reason: 'TEST_FIXTURE 중지', approverAfter: { approverId: 'A', approvedAt: 'T0' } });
+    repo.recordItemTransition(record.ref, { from: 'PUBLISHED', to: 'SUSPENDED', actor: TEST_FIXTURE_RV_AUTHOR, at: 'T1', reason: 'TEST_FIXTURE 중지', approverAfter: { approverId: 'A', approvedAt: 'T0' }, approvedFingerprintAfter: null });
     const second = repo.readItemStates([record.ref])[0];
     expect(cached).toEqual(repo.getItemVersion(record.ref));
     expect(toEngineProfile(cached as typeof record, first!).state).toBe('PUBLISHED');

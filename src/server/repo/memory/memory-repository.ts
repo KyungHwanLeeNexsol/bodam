@@ -182,6 +182,11 @@ export class MemoryRepository implements Repository {
     return this.read(this.store.treatmentVersions, id);
   }
 
+  listTreatmentVersions(treatmentId: string): TreatmentVersion[] {
+    this.spy.record('listTreatmentVersions');
+    return [...this.store.treatmentVersions.values()].filter((version) => version.treatmentId === treatmentId).map(deepCopy);
+  }
+
   putCommonBaseFee(fee: CommonBaseFee): void {
     this.requireClinic(fee.clinicId);
     this.putOnce(this.store.baseFees, fee.id, fee, '공통 기본비용');
@@ -252,6 +257,9 @@ export class MemoryRepository implements Repository {
   saveCoverageReviewRequest(request: CoverageReviewRequest): void {
     this.requireClinic(request.clinicId);
     this.requireTreatment(request.treatmentId);
+    if (request.draftMappingRef !== null) {
+      this.requireItem(request.draftMappingRef);
+    }
     if (request.resultMappingRef !== null) {
       this.requireItem(request.resultMappingRef);
     }
@@ -287,6 +295,25 @@ export class MemoryRepository implements Repository {
     return [...this.store.itemVersions.values()].filter((record) => record.ref.kind === kind).map(deepCopy);
   }
 
+  reviseDraftItemVersion(record: ItemVersionRecord): void {
+    const key = itemKey(record.ref);
+    const existing = this.store.itemVersions.get(key);
+    if (existing === undefined) {
+      throw notFound('항목 버전', describeRef(record.ref));
+    }
+    if (record.ref.id !== record.content.id || record.ref.version !== record.content.version) {
+      throw new DomainError('REF_CONTENT_MISMATCH', `참조 ${describeRef(record.ref)} 이(가) 내용의 id·version(${record.content.id}/${record.content.version})과 다르다`);
+    }
+    const state = this.store.itemStates.get(key)?.state;
+    if (state !== 'DRAFT') {
+      throw new DomainError('STATE_CONFLICT', `항목 ${describeRef(record.ref)} 의 현재 상태는 ${state ?? '(없음)'} 이라 내용을 바꿀 수 없다 (DRAFT 만 가능)`);
+    }
+    if (existing.authorId !== record.authorId || existing.createdAt !== record.createdAt) {
+      throw new DomainError('IMMUTABLE_VERSION', `항목 ${describeRef(record.ref)} 의 작성자와 작성 시각은 바꿀 수 없다`);
+    }
+    this.store.itemVersions.set(key, deepCopy(record));
+  }
+
   recordItemTransition(ref: ItemVersionRef, transition: ItemTransitionInput): void {
     this.requireItem(ref);
     const key = itemKey(ref);
@@ -298,6 +325,8 @@ export class MemoryRepository implements Repository {
         `항목 ${describeRef(ref)} 의 현재 상태는 ${expectedFrom ?? '(없음)'} 인데 전이의 from 은 ${transition.from ?? '(없음)'} 이다`,
       );
     }
+    const approver = transition.approverAfter === null ? null : deepCopy(transition.approverAfter);
+    const approvedFingerprint = transition.approvedFingerprintAfter;
     const step: StateTransition = {
       from: transition.from,
       to: transition.to,
@@ -305,13 +334,15 @@ export class MemoryRepository implements Repository {
       role: transition.actor.role,
       at: transition.at,
       reason: transition.reason,
+      approver: deepCopy(approver),
+      approvedFingerprint,
     };
-    const approver = transition.approverAfter === null ? null : deepCopy(transition.approverAfter);
     if (current === undefined) {
-      this.store.itemStates.set(key, { ref: { kind: ref.kind, id: ref.id, version: ref.version }, state: transition.to, approver, history: [step] });
+      this.store.itemStates.set(key, { ref: { kind: ref.kind, id: ref.id, version: ref.version }, state: transition.to, approver, approvedFingerprint, history: [step] });
     } else {
       current.state = transition.to;
       current.approver = approver;
+      current.approvedFingerprint = approvedFingerprint;
       current.history.push(step);
     }
   }
@@ -325,7 +356,7 @@ export class MemoryRepository implements Repository {
     this.spy.record('readItemStates');
     return refs.map((ref) => {
       const found = this.store.itemStates.get(itemKey(ref));
-      return found === undefined ? null : deepCopy({ ref: found.ref, state: found.state, approver: found.approver });
+      return found === undefined ? null : deepCopy({ ref: found.ref, state: found.state, approver: found.approver, approvedFingerprint: found.approvedFingerprint });
     });
   }
 

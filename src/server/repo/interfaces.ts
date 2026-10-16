@@ -28,7 +28,7 @@ import type { ItemKind, ItemStateRecord, ItemStateSnapshot, ItemTransitionInput,
 //    중첩 호출은 바깥 트랜잭션에 합류한다(안쪽이 던지면 안쪽 쓰기만 되돌리는 세이브포인트이고, 확정은 바깥 트랜잭션이 끝날 때다).
 //  - 격리: 쓸 때 복사해 저장하고 읽을 때 복사해 돌려준다. 호출자는 저장된 자료를 바꿀 수 없다.
 //  - 불변: put* 는 (키)마다 한 번만 쓴다. 같은 내용을 다시 쓰면 아무것도 바뀌지 않는 멱등이고(재시도 안전), 다른 내용을
-//    쓰면 IMMUTABLE_VERSION 이다. 삭제 동작은 없다. save* 는 상태가 바뀌는 엔티티(병원·치료·보험사·검토 요청·무조작 정책)의 upsert 다.
+//    쓰면 IMMUTABLE_VERSION 이다. 삭제 동작은 없고, 내용을 덮어쓸 수 있는 것은 DRAFT 항목의 reviseDraftItemVersion 하나뿐이다. save* 는 상태가 바뀌는 엔티티(병원·치료·보험사·검토 요청·무조작 정책)의 upsert 다.
 //  - 추가 전용: 감사 기록, 묶음 상태 사건, 항목 상태 전이 이력, 규칙 사용 범위 이력은 더하기만 한다.
 //  - 정렬(결정적): 이름 없는 키로 묶인 엔티티 목록(listClinics, listTreatments, listInsurers, listPolicySources,
 //    listCoverageReviewRequests)은 id 의 유니코드 코드 포인트 순이다. 버전·이력 목록(listItemVersions, listCatalogVersions,
@@ -58,6 +58,8 @@ export interface Repository {
   /** write-once. 치료가 있어야 한다. */
   putTreatmentVersion(version: TreatmentVersion): void;
   getTreatmentVersion(id: string): TreatmentVersion | null;
+  /** 치료의 모든 버전, 쓴 순서(게시 순서). 치료가 없거나 버전이 없으면 빈 목록. 매핑 승인이 고정할 지문의 버전을 고르는 데 쓴다(M3.B). */
+  listTreatmentVersions(treatmentId: string): TreatmentVersion[];
 
   /** write-once. 병원이 있어야 한다. */
   putCommonBaseFee(fee: CommonBaseFee): void;
@@ -79,7 +81,7 @@ export interface Repository {
   listPolicySources(): PolicySource[];
 
   // ── 검토 요청 ──
-  /** upsert. 병원·치료가 있어야 하고 resultMappingRef 가 있으면 그 매핑 버전도 있어야 한다. */
+  /** upsert. 병원·치료가 있어야 하고 draftMappingRef·resultMappingRef 가 있으면 그 매핑 버전도 있어야 한다. */
   saveCoverageReviewRequest(request: CoverageReviewRequest): void;
   getCoverageReviewRequest(id: string): CoverageReviewRequest | null;
   listCoverageReviewRequests(clinicId: string): CoverageReviewRequest[];
@@ -89,10 +91,18 @@ export interface Repository {
   putItemVersion(record: ItemVersionRecord): void;
   getItemVersion(ref: ItemVersionRef): ItemVersionRecord | null;
   listItemVersions(kind: ItemKind): ItemVersionRecord[];
+  /**
+   * (M3.B) 초안의 내용을 바꾼다. 내용을 덮어쓸 수 있는 유일한 동작이며 현재 상태가 DRAFT 인 항목에만 허용된다:
+   * 항목이 없으면 NOT_FOUND, 상태 기록이 없거나 DRAFT 가 아니면 STATE_CONFLICT, ref 와 내용의 id·version 이 다르면
+   * REF_CONTENT_MISMATCH, 작성자나 작성 시각이 바뀌면 IMMUTABLE_VERSION. 같은 내용으로 다시 쓰면 아무 일도 없다.
+   * 상태 기록은 바꾸지 않는다. DRAFT 를 떠난 버전의 내용은 putItemVersion 과 같이 영구히 바뀌지 않는다.
+   */
+  reviseDraftItemVersion(record: ItemVersionRecord): void;
 
   /**
-   * 항목 상태 전이를 이력에 더하고 현재 상태·승인자 기록을 바꾼다. 항목 버전이 있어야 한다(NOT_FOUND).
+   * 항목 상태 전이를 이력에 더하고 현재 상태·승인자 기록·고정 지문을 바꾼다. 항목 버전이 있어야 한다(NOT_FOUND).
    * 처음 쓰는 전이는 from 이 null, 이후에는 from 이 현재 상태와 같아야 한다(STATE_CONFLICT). 전이 표(DD-17)는 서비스가 본다.
+   * 승인자 기록과 고정 지문은 항상 전이 뒤의 값을 넘긴다(바꾸지 않는 전이는 이전 값을 그대로). 각 전이의 이력에도 그 값이 남는다.
    */
   recordItemTransition(ref: ItemVersionRef, transition: ItemTransitionInput): void;
   /** 이력을 포함한 상태 기록. 상태가 아직 없으면 null. */
