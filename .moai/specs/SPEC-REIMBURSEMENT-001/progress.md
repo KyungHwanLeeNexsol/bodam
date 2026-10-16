@@ -1211,6 +1211,133 @@ After each mutation the edit was reverted by hand; after the last one `git diff 
 - AC-007f, AC-007g, AC-007i and AC-008g are NOT closed by M2.D (AC-008g still has only the `documents = null on a held result` half evidenced). M4 (building `treatments` from validated lines, calling `selectDocumentRuleSet` and `deriveDocuments`) and M6 (kiosk screens) are not started.
 - SPEC wording aligned minimally with the M2.D decisions: design.md DD-06 (input-defect bullet, flag aggregation item 4, publish-validation bullet and item 9), acceptance.md AC-007d and AC-007f, plan.md M2 scope, a new M3 bullet for the `documentRuleSetContent` hash contract (NOT implemented, NOT verified) and one M4 clause. The wording of the earlier M2 decisions 1-15 in design.md / acceptance.md is otherwise not re-aligned. All earlier OPEN items of M1.5 to M2 remain open. Formal SPEC lint and `moai verify` remain UNVERIFIED (no tool). Only Windows 11 and Node 24.19.0 were run, with no CI.
 
+### M3.A 기반 (도메인·정본 해시·지문·저장소), 2026-10-16
+
+**Scope.** M3.A only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` (from M2 tip `2589ce8`, not committed by this step). It builds the foundation every later M3 step uses: domain types (DD-18 entities M3 touches), the typed error style, the production digest, the coverage fingerprint, repository interfaces plus an in-memory implementation with transactions, an audit helper, test doubles, and a server import-boundary test. There is NO lifecycle logic, NO publish validation, NO versioning service, NO readiness, NO HTTP, NO DB. M4 to M7 are not started. **No AC is closed by M3.A** (AC-011a is closed in M3.D).
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/domain/errors.ts` | `DomainError` (stable `code`, message, `defects: {code, path}[]`), closed `DOMAIN_ERROR_CODES` (6 codes so far) |
+| `src/server/domain/actor.ts` | `Actor`, `Role` (`HA`/`RV`/`PO`), `requireRole` (role check only, throws `ROLE_NOT_PERMITTED`) |
+| `src/server/domain/ports.ts` | `Clock`, `IdGenerator` ports |
+| `src/server/domain/items.ts` | `ItemKind`, `ItemVersionRef`, immutable `ItemVersionRecord` (content = engine type minus `state` and `approver`), `ItemStateRecord` / `ItemStateSnapshot`, `StateTransition`, `ItemTransitionInput` |
+| `src/server/domain/entities.ts` | Types for `Clinic`, `Treatment`, `TreatmentVersion`, `CommonBaseFee`, `CatalogVersion`, `Insurer`, `PolicySource`, `CoverageReviewRequest`, `RuleBundleVersion`, `RuleBundleStatusEvent`, `ClinicRuleScope`, `IdlePolicy`, `AuditLogEntry` |
+| `src/server/domain/projection.ts` | `toEngineProfile` / `toEngineMapping` / `toEngineDocumentRuleSet`: cached content + freshly read state -> engine type |
+| `src/server/digest.ts` | `canonicalDigest` (SHA-256 hex, encoding v1 documented in the file header); the ONLY `node:` import in `src/server` |
+| `src/server/fingerprint.ts` | `COVERAGE_JUDGMENT_FIELDS`, `coverageFingerprint`, `coverageFingerprintOf` (DD-15, DD-16) |
+| `src/server/audit.ts` | `appendAudit` |
+| `src/server/repo/interfaces.ts` | `Repository` port (contract in the file header) |
+| `src/server/repo/memory/{memory-repository,store,read-spy}.ts` | In-memory implementation: snapshot/rollback transactions, write-once versions, append-only logs, deep-copy isolation, read spy, `exportState()` |
+| `vitest.config.ts` | `coverage.include` is now `['src/engine/**', 'src/server/**']`; everything else unchanged |
+| `tests/server/{digest,fingerprint,domain,repo-memory,seal-roundtrip}.test.ts`, `tests/boundary/server-imports.test.ts` | New tests (counts below) |
+| `tests/fixtures/server/{actors,clock,entities,errors,items,repo}.fixture.ts` | New fixtures, all `TEST_FIXTURE`; engine content is imported from `tests/fixtures/engine/*` (profile, mapping, document rule set), not duplicated |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/` (existing files) or `tests/fixtures/engine/**` was edited. The new boundary test only imports `tests/boundary/source-scan.ts` read-only. `package.json` is untouched.
+
+| New test file | Tests |
+|---------------|-------|
+| `tests/server/digest.test.ts` | 58 |
+| `tests/server/fingerprint.test.ts` | 29 |
+| `tests/server/domain.test.ts` | 23 |
+| `tests/server/repo-memory.test.ts` | 141 |
+| `tests/server/seal-roundtrip.test.ts` | 23 |
+| `tests/boundary/server-imports.test.ts` | 37 |
+| total | 311 |
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Error style (fixed by the step prompt).** Domain rejections are thrown as `DomainError`; services run inside `repo.transaction`, so a throw rolls back every write including audit and status events. No HTTP concept appears in `src/server`.
+2. **Content vs state split.** `ItemVersionRecord.content` is the engine item type minus `state` AND `approver`; `ItemStateRecord` holds the current `LifecycleState`, the `approver` record, and an append-only transition history (actor id, role, time, reason). `[not in docs]` Moving `approver` to the state side is a decision: the approver exists only after approval, so keeping it in write-once content would force a second write. `projection.ts` fills `state` and `approver` from the freshly read state record and nothing else. `approvedFingerprint` of a mapping stays in content (see OPEN item 1).
+3. **Digest encoding v1** (full text in the `digest.ts` header). UTF-16LE bytes of `"bodam.digest.v1:" + enc(value)`, tagged self-delimiting tokens, object keys sorted (insertion order irrelevant), arrays order-sensitive, `-0`/`NaN`/`Infinity`/`undefined`/holes/`null`/missing key all distinct, no Unicode normalization, lone surrogates preserved, total (cycles and depth > 256 are closed with a marker rather than thrown). `[not in docs]` A key whose value is `undefined` differs from a missing key (injective); typed data cannot produce it under `exactOptionalPropertyTypes`. Known limits (Map, Set, typed arrays, boxed primitives are not distinguished by content) are listed in the header.
+4. **Fingerprint.** `approvedFingerprint = canonicalDigest({ treatmentCode, procedureCodes (code-point-sorted copy), benefitType, calcClass })`. `[not in docs]` DD-15 does not say whether the procedure code list is ordered or may repeat. Order does not matter (sorted copy, engine `compareCodePoints`), duplicates are NOT merged (`[A]` and `[A, A]` differ). The closed list `COVERAGE_JUDGMENT_FIELDS` uses the `TreatmentVersion` field names (`procedureCodes` for the document's `procedureCode(s)`).
+5. **Write-once rule.** Rewriting the same key with an identical record (compared by `canonicalDigest`, whole record including `authorId` and `createdAt`) is an idempotent no-op; any difference is `IMMUTABLE_VERSION`. There is no delete operation; a test scans the repository's method names for delete-like verbs. `[not in docs]` Idempotent-or-reject was left to M3.A by the prompt; idempotent was chosen so retries are safe.
+6. **Transactions.** Synchronous only (a callback returning a Promise is rejected with `TypeError` and rolled back). Every call takes a full-state checkpoint and restores it on throw, so a nested call is a savepoint that joins the outer transaction: an outer throw undoes the inner writes, an inner throw caught by the outer undoes only the inner writes. `[not in docs]` Async transactions are left for the DB adapter (plan.md §E #1 undecided).
+7. **Bundle status chain (repository backstop).** The only accepted chain is `[ACTIVE (previous = null), SUSPENDED (previous = ACTIVE)]`; any other event is `STATE_CONFLICT`, so re-activation is impossible at the repository level (DD-14). The typed service-level rejection and the mandatory suspend reason are M3.D.
+8. **Item state writes.** `recordItemTransition` requires the item version to exist and `from` to equal the current state (`null` for the first write) else `STATE_CONFLICT`. It does NOT check the DD-17 transition table (M3.B). `readItemStates(refs)` takes a list in one call and returns an array of the same length and order, with `null` for a ref that has no state record, and no history.
+9. **References.** Repository writes check that referenced entities exist (`NOT_FOUND`); catalog/bundle membership checks are existence-only. Clinic ownership of catalog entries is a service concern (M3.D). `saveClinic` also rejects a duplicate `slug` (`DUPLICATE_KEY`) and a `currentCatalogVersionId` that is missing (`NOT_FOUND`) or belongs to another clinic (`REF_CONTENT_MISMATCH`).
+10. **Ordering.** Entity lists keyed by id (clinics, treatments per clinic, insurers, policy sources, review requests per clinic) are in code-point order of `id`; version and history lists (item versions, catalog versions, bundles, status events, scope history, audit log) are in write order.
+11. **Entity shapes `[not in docs]`.** DD-18 lists fields but not types. Chosen: `TreatmentVersion` has no mutable "publish status" (it is catalog membership); `CommonBaseFee` is write-once by id (a changed fee gets a new id); `CatalogChangeSummary` is `{addedTreatmentIds, removedTreatmentIds, priceChangedTreatmentIds, baseFeesChanged}`; `ProposedCoverageInfo` is `{benefitType, procedureCodes, calcClass}`; `Clinic.institutionType` is `'CLINIC'`; actor-bearing records use `Actor` (`publishedBy`, `assignedBy`, `requestedBy`) while status events and audit entries use flat `actorId` + `role` as DD-18 lists them. `TreatmentCoverageMapping` has no `clinicId` because the engine type has none (a mapping is scoped by `treatmentId`).
+12. **IdlePolicy.** Type only: `{clinicId, screens: Record<string, {warnSeconds, resetSeconds}>, completionHoldSeconds: number | null}`. The DD-10 default reader is left to M3.D, which will also fix the closed list of screen kinds (the DD-10 table groups screens, it does not name keys).
+13. **Determinism.** `src/server` uses no `Date.now`, `Math.random`, `randomUUID`; time and ids come from the injected `Clock` and `IdGenerator` (test doubles `FixedClock`, `CounterIdGenerator`). The boundary test reuses the engine hazard rules (clock, random, environment, network call, timer, locale) on `src/server`. A fresh-process determinism run of the digest (the `child-run.ts` pattern) was NOT added (the prompt said only if cheap): determinism is evidenced by pure-function tests and the known-answer vectors, not by a second process.
+14. **`exportState()` on the memory class** exists for the `snapshotOf(repo)` test helper (rollback comparisons). It returns a deep copy and does not touch the read spy.
+
+#### Foundation behaviors later steps depend on
+
+- M3.B (lifecycle): `recordItemTransition` (from-check, append-only history with actor id and role), `readItemStates`, `requireRole`, `appendAudit`, `COVERAGE_JUDGMENT_FIELDS`, `coverageFingerprintOf`, `DomainError` and the `STATE_CONFLICT` / `ROLE_NOT_PERMITTED` codes, the transaction rollback guarantee for rejected self-approval.
+- M3.C (publish validation): `DomainError.defects`, `canonicalDigest`, engine structure checks (not wrapped yet).
+- M3.D (versions/bundles): write-once `put*`, `IMMUTABLE_VERSION`, `appendBundleStatusEvent` chain backstop, `assignClinicRuleScope`, `toEngine*` projections, sealing with `canonicalDigest(profileContent(p))` / `canonicalDigest(documentRuleSetContent(s))` (proved to verify through engine `isUsable`, reorder-with-original-hash and change detection in `seal-roundtrip.test.ts` as a SANITY test only; AC-011a ownership stays in M3.D).
+- M3.E (readiness): `readItemStates`, `toEngine*`, `ReadSpy` counters.
+
+#### AC evidence
+
+No AC is closed. Evidence-only support for later closure: AC-011a (digest/seal sanity in `tests/server/seal-roundtrip.test.ts`, describe `프로필: 봉인과 검증이 같은 정규화를 쓴다` and `서류 규칙 묶음: 봉인과 검증이 같은 정규화를 쓴다`); DD-14 read contract (`readItemStates` batch and spy in `tests/server/repo-memory.test.ts`, describe `항목 상태 일괄 읽기` and `읽기 감시 (spy)`); atomic rollback (describe `트랜잭션`).
+
+#### RED before GREEN (exact statement)
+
+Tests and fixtures were written first, with no implementation under `src/server/` yet (the fixtures are typed against the planned module paths). The RED run was a module-resolution failure, not an assertion failure, because no `src/server` module existed:
+
+```
+$ npx vitest run tests/server tests/boundary/server-imports.test.ts --maxWorkers=4   -> exit 1 (RED, red.txt)
+ Test Files  6 failed (6)
+      Tests  no tests
+ e.g. Error: Cannot find module '../../src/server/digest' imported from tests/server/fingerprint.test.ts
+      Error: Cannot find module '../../src/server/repo/memory/memory-repository' imported from tests/server/repo-memory.test.ts
+```
+
+Then the implementation was written and the same command passed on the first run (6 files / 307 tests, exit 0, `first-green.txt`) after `npx tsc --noEmit` exit 0. The known-answer digest vectors were computed once with an independent re-derivation of the encoding spec (a scratch script, not the repo code) and cross-checked for `null` and `"a"` with `printf | iconv -t UTF-16LE | sha256sum`; they were hard-coded in the test before `digest.ts` existed. Four tests were added AFTER the first GREEN (three `brokenFirstEvents` rows and one per-bundle chain test in `repo-memory.test.ts`) because the first coverage run showed one branch of the bundle status chain unexercised; they passed immediately against the existing implementation (test-after for those four; they are not evidence of a RED). Two small source edits followed the first coverage run: an unused `ITEM_KINDS` constant was removed and `ReadSpy.counts` was typed by query name. Final totals are in the next block.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3a/`, gitignored; all vitest runs with `--maxWorkers=4`)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary-post.txt)
+ Test Files  9 passed (9)
+      Tests  517 passed (517)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary-post.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc-post.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server-post.txt)
+ Test Files  5 passed (5)
+      Tests  274 passed (274)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine-post.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Regression baseline: the M2 engine+boundary set was 35 files / 1507 tests; it is now 36 files / 1544 tests = the same 35 files / 1507 tests plus the new boundary file (37 tests). No existing test was modified; no `skip`, `only` or disabled test was added.
+
+Coverage. This vitest version prints only non-100% rows in the text table, so per-file figures were read from `coverage/coverage-summary.json` and summed per directory (`coverage-server-rows-post.txt`, `coverage-engine-rows-post.txt`). Because `coverage.include` now has both folders, the `All files` row of a run that executes only one folder mixes in the other folder at 0%; read the per-folder sums:
+
+```
+src/server (tests/server run):  statements 247/247  branches 132/132  functions 85/85  lines 239/239   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145 lines 606/606  = 100% each (unchanged)
+```
+
+No coverage exclusions and no coverage-only tests. `interfaces.ts`, `ports.ts` and `entities.ts` are type-only (no statements).
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4`; the boundary mutation with the boundary file only; every edit reverted by hand and the restored files compared by sha256 — `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`, and `audit.ts` hash equals its pre-mutation hash)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `digest.ts`: stop sorting object keys | `Test Files  3 failed \| 2 passed (5)`, `Tests  6 failed \| 268 passed (274)` |
+| (b) `digest.ts`: drop the `-0` branch | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (c) `memory-repository.ts`: transaction no longer restores the checkpoint | `Test Files  2 failed \| 3 passed (5)`, `Tests  7 failed \| 267 passed (274)` |
+| (d) `putOnce`: different content overwrites instead of `IMMUTABLE_VERSION` | `Test Files  1 failed \| 4 passed (5)`, `Tests  12 failed \| 262 passed (274)` |
+| (e) `fingerprint.ts`: procedure codes not sorted | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (f) bundle status chain relaxed to `previousStatus === last.status` (re-activation allowed) | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (g) reads return the stored object instead of a copy | `Test Files  1 failed \| 4 passed (5)`, `Tests  8 failed \| 266 passed (274)` |
+| (h) read spy counts once per ref instead of once per `readItemStates` call | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (i) append `Date.now()` and a `tests/fixtures` import to `src/server/audit.ts` | boundary file only: `Test Files  1 failed (1)`, `Tests  2 failed \| 35 passed (37)` |
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Re-approval vs immutable fingerprint (design contradiction, for M3.B).** DD-17 lifecycle table allows `UNDER_REREVIEW -> APPROVED` (re-approval of the same mapping version, design.md:908) while DD-14 lists the mapping's `approvedFingerprint` among the immutable cached content (design.md:827) and DD-15 stores it "at approval" (design.md:844). M3.A keeps `approvedFingerprint` in write-once content. If a re-approval must carry a new fingerprint, M3.B must either require a new mapping version or move the fingerprint into the state record; this was not decided here.
+2. NOT IMPLEMENTED: lifecycle state machine and self-approval rejection (M3.B), publish validation (M3.C), catalog/bundle publish, suspend service and reason check, DD-10 default reader, scope assignment service, recovery (M3.D), readiness tables (M3.E). All their ACs stay open.
+3. NOT VERIFIED: any DB behavior (no DB adapter, §E #1 undecided); asynchronous transactions; behavior of `canonicalDigest` on Map/Set/typed arrays (documented limit); digest determinism across a fresh process (not added).
+4. The digest encoding is versioned by the `bodam.digest.v1:` prefix. Any change to the encoding invalidates every sealed item hash; the `@MX:ANCHOR` on `canonicalDigest` records this.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
