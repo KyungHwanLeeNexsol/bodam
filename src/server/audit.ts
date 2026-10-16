@@ -20,6 +20,8 @@ export interface AuditInput {
   beforeVersion: string | null;
   afterVersion: string | null;
   reason: string | null;
+  /** 규칙 묶음 중지만 넘긴다(M3.D2). 넘기지 않으면 기록에 이 키가 생기지 않는다. */
+  affectedClinicCount?: number;
 }
 
 // @MX:ANCHOR: [AUTO] 감사 기록의 단일 진입점. 생명주기·게시·중지·범위 지정(M3.B~D)의 모든 상태 변경이 부른다.
@@ -37,6 +39,9 @@ export function appendAudit(deps: AuditDeps, actor: Actor, input: AuditInput): A
     reason: input.reason,
     at: deps.clock.now(),
   };
+  if (input.affectedClinicCount !== undefined) {
+    entry.affectedClinicCount = input.affectedClinicCount;
+  }
   deps.repo.appendAuditLog(entry);
   return entry;
 }

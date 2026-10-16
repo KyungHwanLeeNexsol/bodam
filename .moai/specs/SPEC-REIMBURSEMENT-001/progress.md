@@ -1753,6 +1753,140 @@ All 14 mutants end up killed with the final tests. (f), (h), (m) and (n) are kil
 8. NOT VERIFIED: any DB behavior; asynchronous transactions; behavior under real concurrency (two sessions publishing at once); the SPEC lint (`moai` CLI absent); only Windows 11 and Node 24.19.0 were run, with no CI. AC-024a / AC-025b receive no new evidence here.
 9. SPEC wording notes (not edited): acceptance.md:207 (AC-011a) says "service-level attempts" to modify or delete are rejected, but no modify or delete service exists to attempt; the replayed-id test is the closest service-level attempt. acceptance.md:216 names `policySourceIds` while the engine / DD-18 item types carry `policySources` (also noted in M3.C).
 
+### M3.D2 묶음 중지·범위·보험사·무조작 정책, 2026-10-16
+
+**Scope.** M3.D2 only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.D1 (`2b408b1`), not committed by this step. It builds four small services over the existing repository interface (no `Repository` method was added or changed): rule bundle suspend (role `RV`), `ClinicRuleScope` assignment (role `PO`), insurer institution records (role `RV`), and the clinic idle policy save (role `HA`) plus its default reader. Errors are typed `DomainError` thrown inside the transaction (same style as M3.A to M3.D1); every rejection leaves the repository deep-equal to its state before the call. **Closed by this step (tests pass): AC-011d, AC-011e.** The scope service and the idle policy close no AC by themselves (they are supporting scope for AC-011f / M4 / M5 / M7). Not closed: AC-011c, 011j, 011k, 011l (M3.E). NO readiness tables, NO HTTP, NO DB, NO estimate path, NO M4-M7 work.
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/bundle-status.ts` | NEW. `suspendRuleBundle` (the only export; there is deliberately no reactivation function) |
+| `src/server/rule-scope.ts` | NEW. `assignRuleScope`, `readClinicRuleBundle`, `findAffectedClinics` |
+| `src/server/insurer.ts` | NEW. `saveInsurerRecord` |
+| `src/server/idle-policy.ts` | NEW. `saveClinicIdlePolicy`, `readIdlePolicy`, `IDLE_SCREEN_KINDS`, `DEFAULT_IDLE_THRESHOLDS`, `MIN_IDLE_LEAD_SECONDS` |
+| `src/server/audit.ts` | CHANGED (additive): `AuditInput.affectedClinicCount?`; the entry gets the key only when it is passed, so every other audit entry keeps its 9 keys (the existing key-list test still passes) |
+| `src/server/domain/entities.ts` | CHANGED (additive): `AuditLogEntry.affectedClinicCount?: number` |
+| `tests/server/bundle-suspend.test.ts` | NEW, 34 tests |
+| `tests/server/rule-scope.test.ts` | NEW, 13 tests |
+| `tests/server/insurer.test.ts` | NEW, 42 tests |
+| `tests/server/idle-policy.test.ts` | NEW, 70 tests |
+| `tests/fixtures/server/governance.fixture.ts` | NEW fixtures (all `TEST_FIXTURE`): scope world with clinics 1-4 and one ACTIVE bundle, second bundle of the same items, three synthetic insurers |
+
+New tests total 159 (4 files). No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched; no existing test was edited; `versioning.ts` (the exact-export-list facade) was not touched; the repository method-name scan test and the AC-010c no-seed scan test still pass (the new modules contain no seed / migrate / bootstrap identifiers and no `TEST_FIXTURE` / `DEMO` token).
+
+#### Public API (what M3.E / M4 / M7 call)
+
+```ts
+// src/server/bundle-status.ts
+suspendRuleBundle(deps: ServiceDeps, actor: Actor, bundleId: string, reason: string):
+  { event: RuleBundleStatusEvent; affectedClinics: { clinicId: string; slug: string }[] }
+// src/server/rule-scope.ts
+assignRuleScope(deps, actor /* PO */, clinicId: string, bundleId: string): ClinicRuleScope
+readClinicRuleBundle(repo, clinicId): { ruleBundleVersionId: string | null; ruleBundleStatus: 'ACTIVE' | 'SUSPENDED' | null }
+findAffectedClinics(repo, bundleId): { clinicId: string; slug: string }[]      // id order, current scope only
+// src/server/insurer.ts
+saveInsurerRecord(deps, actor /* RV */, input: unknown): Insurer
+// src/server/idle-policy.ts
+saveClinicIdlePolicy(deps, actor /* HA */, clinicId: string, request: unknown /* { screens, completionHoldSeconds } */): IdlePolicy
+readIdlePolicy(repo, clinicId): { clinicId; screens: Record<IdleScreenKind, { warnSeconds; resetSeconds }>; completionHoldSeconds: number | null }
+```
+
+Reading the calculation-time facts needs no new method: `repo.getClinicRuleScope(clinicId)` + `repo.getBundleStatus(bundleId)` (or `readClinicRuleBundle`, which does both and is read fresh on every call), and `repo.readItemStates(bundle.itemRefs)` for item states. Suspend errors: `ROLE_NOT_PERMITTED`, `REASON_REQUIRED` (defect `{code:'EMPTY', path:'reason'}`), `NOT_FOUND`, `STATE_CONFLICT` (already suspended or no availability record), repository `DUPLICATE_KEY` on an occupied audit id (whole transaction rolled back).
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Suspend pipeline (one transaction).** role `RV` -> reason check -> bundle exists (`NOT_FOUND`) -> current availability must be `ACTIVE` (`STATE_CONFLICT` otherwise: already `SUSPENDED`, or no availability record at all) -> append the `SUSPENDED` event (actor id / role, time from the injected clock, reason, `previousStatus = ACTIVE`) -> compute affected clinics -> audit `BUNDLE_SUSPEND` (target `BUNDLE/<id>`, before `ACTIVE`, after `SUSPENDED`, reason, affected count). The role is checked before the reason, so a non-RV with an empty reason gets `ROLE_NOT_PERMITTED`. The reason must be a string with a non-blank trim (`undefined`, `null`, numbers, objects, `''`, whitespace-only all give `REASON_REQUIRED`); it is stored verbatim, not trimmed. `REASON_REQUIRED` / path `reason` reuses the M3.B code and defect shape.
+2. **No reactivation function exists.** DD-14 says "다시 활성으로 돌리는 동작은 없다", so `bundle-status.ts` exports only `suspendRuleBundle` (a test checks the export list for activate / resume / restore verbs). The two "reactivation attempt" proofs are therefore: (a) repository level, `appendBundleStatusEvent(ACTIVE, previousStatus = SUSPENDED | ACTIVE | null)` on a suspended bundle -> `STATE_CONFLICT`, nothing stored; (b) service level, the closest real attempt: a second `publishRuleBundle` of the same items at the same clock time with an id generator that replays the suspended bundle's id (the bundle record write is idempotent, the ACTIVE event is not) -> `STATE_CONFLICT`, repository deep-equal. A second suspend is also `STATE_CONFLICT` (no second `SUSPENDED` event). Same limitation as D1 decision 12 / OPEN item 9: acceptance.md:211 speaks of a service-level rejection but no reactivation service exists to attempt.
+3. **Affected clinics = clinics whose CURRENT `ClinicRuleScope` points at the bundle id** (DD-14, design.md:828), computed with `listClinics` + `getClinicRuleScope`, returned as `{ clinicId, slug }` in clinic id order; earlier scope history and clinics on another bundle are not counted.
+4. **`[not in docs]` Audit entry carries the affected-clinic count in a new OPTIONAL field `affectedClinicCount`.** design.md:828 requires the count in the suspend audit entry, but the DD-18 `AuditLog` field list (design.md:944) has no place for it. An optional field was the smallest additive change (no existing audit entry gains the key; the 9-key test still passes). M7's audit query should read the count from it.
+5. **Scope assignment (PO).** `assignRuleScope` checks role `PO`, clinic exists, bundle exists (`NOT_FOUND`), appends to the history through `assignClinicRuleScope` and audits `CLINIC_SCOPE_ASSIGN` (target `CLINIC/<id>`, before = previous bundle id or null, after = new bundle id). `[not in docs]` Assigning a SUSPENDED bundle is ALLOWED: DD-14 only says the scope keeps pointing at a suspended bundle, and adding a rejection rule would be the bigger behavior; the calculation then holds with `RULE_BUNDLE_SUSPENDED`. Assigning the bundle that is already current appends another history entry (no de-duplication rule was invented). Suspending a bundle never touches any scope (tested on current value and history of all four clinics).
+6. **Insurer records (RV).** An insurer is identified by `id` only. Input is validated field by field with fixed defect order (`id`, `insurerType`, `currentName`, `formerNames[i]`, `verifiedContact`): `id` / names must be strings with a non-blank trim (`EMPTY`), `insurerType` must be one of `NON_LIFE | LIFE | MUTUAL_AID` (the engine's closed list, via `validate/shape.ts`; absent -> `VALUE_MISSING`, other -> `VALUE_INVALID`), `formerNames` an array, `verifiedContact` a string or an explicit `null` (`undefined` -> `VALUE_MISSING`, no silent default). Only the known fields are stored (extra keys such as a `selfApproval` flag are dropped); names are stored verbatim (no trim, no Unicode normalization). Nothing looks up or merges records by name or alias: same name + different type, an alias equal to another record's current name, and same name + same type with a different id all stay separate records (tested). `[not in docs]` The `insurerType` of an EXISTING id cannot change (`STATE_CONFLICT`, defect `INSURER_TYPE_CHANGE` @ `insurerType`): changing it would turn one institution into another, which is the merge AC-011d forbids. Audit: `INSURER_SAVE`, target `INSURER/<id>`, before / after = `canonicalDigest` of the previous / new record (same convention as `editDraft`).
+7. **Real names are not seeded.** AC-011d names NH농협손해보험, NH농협생명 and 과거 농협공제. Following brief §3 (no real insurer data), the tests use three visibly synthetic records `TEST_FIXTURE_INSURER_NONLIFE` (`NON_LIFE`), `TEST_FIXTURE_INSURER_LIFE` (`LIFE`), `TEST_FIXTURE_INSURER_FORMER_MUTUAL` (`MUTUAL_AID`), each with its own name and alias list. A test asserts that the fixtures carry the `TEST_FIXTURE` marker and none of the real names. The property proven is "institutions of different type are separate records that never merge", not those specific names.
+8. **Idle policy role = `HA`.** design.md:875 (authority table: 무조작 정책·`completionHoldSeconds` 조회·수정 is `O` only in the HA column, RV / PO are `—`) and design.md:1142 (`GET/PUT …/idle-policy` -> HA). Brief §5 does not list this operation. Role only; clinic ownership is M7.
+9. **Closed screen kinds (M3.A item 12 left this to D2).** Five keys taken from the DD-19 `catalog` response example (design.md:995-1002, 1010): `INPUT`, `RESULT`, `BASIS_AND_DOCUMENTS`, `HOLD_RESULT`, `NOTICE_PROGRESS_ERROR` (K00_Start and K06_Complete have no timer and no key). Defaults encoded from the DD-10 table (design.md:742-749): `INPUT` 100/120, `RESULT` 160/180, `BASIS_AND_DOCUMENTS` 160/180, `HOLD_RESULT` 160/180, `NOTICE_PROGRESS_ERROR` 100/120 (warn/reset seconds). `completionHoldSeconds` default is `null` (design.md:1011: no default until plan.md §E #12 is decided; plan.md B4 ① only proposes 10 s, which is NOT encoded).
+10. **Idle policy save validation.** Order: role -> clinic exists (`NOT_FOUND`) -> request check (`INVALID_INPUT` with `{code, path}` defects) -> write -> audit `IDLE_POLICY_SAVE` (target `CLINIC/<id>/IDLE_POLICY`, before / after = `canonicalDigest` of the previous stored policy (null if none) / the new one). `screens` is required (object; may be empty), keys must be in the closed list (`SCREEN_UNKNOWN` @ `screens.<key>`), each entry a plain object whose `warnSeconds` / `resetSeconds` are safe integers >= 0 (`VALUE_MISSING` for absent / null, `VALUE_INVALID` otherwise), and `resetSeconds - warnSeconds >= 20` (`LEAD_TIME_TOO_SHORT` @ `screens.<key>.resetSeconds`; this covers equal and reversed values). The 20-second floor is design.md:754 (DD-10, "잠정, SPEC 결정", plan.md §E #16, owner confirmation pending) and lives in one constant `MIN_IDLE_LEAD_SECONDS`; it does NOT apply to `completionHoldSeconds`. `completionHoldSeconds` must be explicitly `null` or a safe integer >= 1 (`undefined` -> `VALUE_MISSING`, 0 / negative / decimal / NaN / string -> `VALUE_INVALID`; design.md:1011 "양의 정수"). All defects are reported together in the order: screen names in code-point order (per screen: warn, reset, gap), then `completionHoldSeconds`, independent of the order the keys were written. `[not in docs]` Save is a full replacement (PUT): screens not in the request read back as defaults.
+11. **Idle policy reader.** `readIdlePolicy` returns all five screens always: the stored value for a stored screen, the DD-10 default otherwise (design.md:1010 "저장하지 않은 화면 종류는 DD-10 표의 값"); `completionHoldSeconds` = stored value or `null`. It never mutates the repository and returns a fresh copy each call (mutating the result changes neither the next read nor the default table). Keys outside the closed list that someone wrote straight into the repository are not returned. `[not in docs]` An unknown clinic gives `NOT_FOUND` (the M4 catalog route checks the clinic first anyway).
+12. **No new `DomainErrorCode`.** The existing `domain.test.ts` enumerates the closed code list exactly, so the services reuse existing codes (`ROLE_NOT_PERMITTED`, `REASON_REQUIRED`, `NOT_FOUND`, `STATE_CONFLICT`, `INVALID_INPUT`); the new strings are defect codes only (`SCREEN_UNKNOWN`, `LEAD_TIME_TOO_SHORT`, `INSURER_TYPE_CHANGE`; `EMPTY` / `VALUE_MISSING` / `VALUE_INVALID` are existing ones).
+13. **Determinism.** The services use no clock, random or id source of their own; the suspend scenario run in two fresh worlds yields deep-equal repository state (audit log and status events included). The server boundary test (hazard rules, imports) passes over the new files unchanged.
+
+#### AC evidence (test file -> describe -> what is checked)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011d | `insurer.test.ts` : `AC-011d 종류가 다른 보험사는 서로 다른 기관 기록이다` | three records of three different `insurerType` values stay three records, each readable by its own id with its own type / name / aliases; all 6 save orders give the same list; saving or editing one leaves the others deep-equal and the alias lists per record; equal names / aliases across types and equal name + type with different ids do not merge; changing an existing id's type is rejected (`[not in docs]`); audit hashes |
+| AC-011d | `insurer.test.ts` : `보험사 저장 서비스의 역할·입력 검사`, `실제 기관명을 시드하지 않는다` | role `RV` only; 18 field-level bad inputs and 5 non-object inputs -> `INVALID_INPUT` with paths and repository deep-equal; fixed defect order; unknown fields dropped; isolation; verbatim names; audit-id collision rolls back; fixtures are `TEST_FIXTURE` only |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 게시는 ACTIVE 가용성 기록을 같은 트랜잭션에 쓴다` | publish writes exactly one `ACTIVE` event (publisher id / role / time, `previousStatus` null); a rejected publish leaves no bundle and no event |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 중지는 SUSPENDED 기록을 덧붙이고 앞의 기록을 지우지 않는다` | the appended event has actor id / role / time / reason / `previousStatus = ACTIVE`, the earlier `ACTIVE` event is deep-equal, reason stored verbatim, audit entry has actor / role / action / target / before / after / reason / time / affected count (2, and 0 with no clinics) |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 중지는 묶음 기록만 바꾼다` | bundle record, `contentHash`, `itemRefs` unchanged and the hash recomputes from stored item content; profile / mapping / document rule set state records (history included) and contents unchanged and still `PUBLISHED`; only `auditLog` and `bundleEvents` differ in the full repository snapshot; scope current value and history of four clinics unchanged; engine `isBundleUsable` on the stored snapshot flips from usable to `BUNDLE_SUSPENDED` |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 같은 항목 버전을 담은 두 번째 묶음은 계속 사용할 수 있다` | second bundle (same item refs, same hash) keeps its `ACTIVE` status, its events and record are untouched, its items are `PUBLISHED`, engine says usable while the first is not |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 같은 묶음 id 를 다시 활성으로 돌리려는 시도는 거절된다` | repository `STATE_CONFLICT` for `ACTIVE` after `SUSPENDED` with 3 `previousStatus` values; service-level id replay -> `STATE_CONFLICT`; second suspend -> `STATE_CONFLICT`; export list has no reactivation verb; recovery path (restore as new id, `ACTIVE`, PO reassigns the affected clinics, history `[old, new]`, old stays `SUSPENDED`) |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 사유가 비었거나 없는 중지는 …` | 7 reason values (`''`, whitespace, tab / newline, `undefined`, `null`, number, object) -> `REASON_REQUIRED` with `[{EMPTY, reason}]`, full repository snapshot (audit log, status events) deep-equal, status still `ACTIVE`; the same call with a valid reason afterwards succeeds |
+| (support) | `bundle-suspend.test.ts` : `중지의 역할·대상 거절`, `영향을 받는 병원`, `중지 서비스의 결정성` | `HA` / `PO` -> `ROLE_NOT_PERMITTED` (role before reason), unknown bundle `NOT_FOUND`, no availability record `STATE_CONFLICT`, audit-id collision rolls back; affected clinics = current scope only, id order; two-world determinism |
+| (support) | `rule-scope.test.ts` | PO assignment, history and current value, audit before / after, roles `HA` / `RV` rejected, unknown clinic / bundle `NOT_FOUND`, suspended bundle assignable `[not in docs]`, only `auditLog` and `scopeHistory` change, rollback; `readClinicRuleBundle` (null / ACTIVE / SUSPENDED, read-only, copy); `findAffectedClinics` |
+| (support) | `idle-policy.test.ts` | defaults equal the DD-10 table, reader read-only and copy, partial stored screens merged over defaults, PUT replacement, per-clinic isolation, unknown stored keys dropped, audit hashes; role `HA` only; gap boundary 19 / 20 (and equal, reversed, 0 / 20); 2 x 9 number cases; unknown screen / bad entry / bad `screens` / non-object request; 12 `completionHoldSeconds` cases (no 20 s floor on it); combined defect order independent of key order; rejection keeps the stored policy |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixture `governance.fixture.ts` and the four test files were written first, with no `bundle-status.ts`, `rule-scope.ts`, `insurer.ts`, `idle-policy.ts` yet; (2) the RED run; (3) the implementation (the two additive audit edits and the four new modules). RED: `npx vitest run <the 4 new files> --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  4 failed (4)`, `Tests  no tests`, every file failing to load (`Cannot find module '../../src/server/bundle-status'` for `bundle-suspend.test.ts` and `rule-scope.test.ts`, `.../idle-policy`, `.../insurer`). So the RED state is "module absent", not failing assertions. After the implementation `npx tsc --noEmit` was exit 0 and the first run (`first-run.txt`) was `Test Files  4 passed (4)`, `Tests  159 passed (159)`: no test and no implementation line was changed after the RED run. Two test-authoring slips were corrected BEFORE the RED run (a nonsensical assertion in `idle-policy.test.ts`, a stray test removed from `bundle-suspend.test.ts`). The value of the tests as behavior detectors is shown by the mutation table below, not by a failing-assertion RED.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3d2/`, gitignored; all vitest runs with `--maxWorkers=4`, run sequentially on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  33 passed (33)
+      Tests  2256 passed (2256)          (M3.D1 baseline 29 files / 2097 tests + 4 files / 159 tests)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  29 passed (29)
+      Tests  2013 passed (2013)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 1086/1086  branches 590/590  functions 271/271  lines 1028/1028  = 100% each
+src/engine (tests/engine run):  statements 652/652    branches 558/558  functions 145/145   lines 606/606    = 100% each (unchanged)
+```
+
+No coverage exclusions, no `skip` / `only` / disabled tests.
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4` after a scripted one-spot edit of the final tree; the script restored the file from memory each time; `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`; the baseline of that run is 29 files / 2013 tests; outputs `mut-<id>.txt`, rows in `mutation-rows.txt`)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `bundle-status.ts`: reason check removed | `Test Files  1 failed \| 28 passed (29)`, `Tests  8 failed \| 2005 passed (2013)` |
+| (b) `memory-repository.ts`: bundle event chain accepts any event after the first (reactivation backstop removed) | `3 failed \| 26 passed`, `8 failed \| 2005 passed (2013)` |
+| (c) `rule-scope.ts`: affected clinics = every clinic that has any scope | `2 failed \| 27 passed`, `2 failed \| 2011 passed (2013)` |
+| (d) `bundle-status.ts`: suspend also moves the contained items to `SUSPENDED` | `2 failed \| 27 passed`, `6 failed \| 2007 passed (2013)` |
+| (e) `insurer.ts`: insurer type change guard removed | `1 failed \| 28 passed`, `1 failed \| 2012 passed (2013)` |
+| (f) `insurer.ts`: record keyed by name (merges same-named institutions) | `1 failed \| 28 passed`, `14 failed \| 1999 passed (2013)` |
+| (g) `idle-policy.ts`: minimum lead 20 -> 10 | `1 failed \| 28 passed`, `2 failed \| 2011 passed (2013)` |
+| (h) `idle-policy.ts`: reader ignores stored screens | `1 failed \| 28 passed`, `6 failed \| 2007 passed (2013)` |
+| (i) `bundle-status.ts`: suspend runs without a transaction | `1 failed \| 28 passed`, `1 failed \| 2012 passed (2013)` |
+| (j) `rule-scope.ts`: scope assignment role check removed | `1 failed \| 28 passed`, `2 failed \| 2011 passed (2013)` |
+| (k) `bundle-status.ts`: audit entry no longer records the affected clinic count | `1 failed \| 28 passed`, `3 failed \| 2010 passed (2013)` |
+| (l) `idle-policy.ts`: idle policy save role check removed | `1 failed \| 28 passed`, `2 failed \| 2011 passed (2013)` |
+
+All 12 mutants are killed (no survivor). (b) also fails two existing M3.A repository tests, which confirms the backstop is covered at both levels. (e), (i) are killed by a single test each.
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Assigning a SUSPENDED bundle is allowed** (decision 5). If the owner wants it rejected, that is a new rule (`STATE_CONFLICT` at assignment) and it affects the DD-14 recovery sequencing only slightly (recovery always assigns the NEW bundle).
+2. **Insurer type of an existing id is immutable** (decision 6) is my addition to make "never merge" enforceable; the docs do not state it.
+3. **`affectedClinicCount` is a new optional audit field** (decision 4); DD-18 should list it if the owner agrees.
+4. **Idle policy: role `HA` (decision 8), 20-second floor (decision 10, §E #16 pending), five screen keys (decision 9) and `completionHoldSeconds` with no default (decision 9)** are taken from the docs as written; plan.md B4 ① proposes a 10-second hold default that the design says does not exist yet. Nothing here decides §E #12 / #16.
+5. **No reactivation service exists** (decision 2): AC-011e's "service rejects reactivation" is proven through the repository backstop and the id-replay publish, not through a reactivation function.
+6. NOT IMPLEMENTED (M3.E): readiness tables; AC-011c, 011j, 011k, 011l stay open. M4 to M7, DB adapter, HTTP, clinic ownership / membership checks (AC-022a), the HTTP 400 mapping of the suspend rejection (AC-025f / AC-021f), deployment, merging and commits are not started.
+7. NOT VERIFIED: any DB behavior; asynchronous transactions; behavior under real concurrency (two sessions suspending or assigning at once); the SPEC lint (`moai` CLI absent); only Windows 11 and Node 24.19.0 were run, with no CI.
+8. SPEC wording notes (not edited): design.md:828 asks for the affected-clinic count in the audit entry while design.md:944 (DD-18 `AuditLog`) has no field for it; the brief §5 role list omits the idle policy operation, design.md:875 / 1142 give `HA`; design.md:754 / plan.md B4 ⑤ present the 20-second floor as provisional; acceptance.md:211 (AC-011e) speaks of a service-level rejection of reactivation although DD-14 defines no reactivation action.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

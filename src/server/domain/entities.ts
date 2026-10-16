@@ -206,4 +206,9 @@ export interface AuditLogEntry {
   afterVersion: string | null;
   reason: string | null;
   at: string;
+  /**
+   * [문서에 없음] (M3.D2) 규칙 묶음 중지만 채우는 영향 병원 수. DD-14 는 중지의 감사 기록에 "영향을 받는 병원 수"를 남기라고 하지만
+   * DD-18 AuditLog 필드 목록에는 자리가 없어 선택 필드로 더했다. 다른 동작의 기록에는 이 키가 없다.
+   */
+  affectedClinicCount?: number;
 }
