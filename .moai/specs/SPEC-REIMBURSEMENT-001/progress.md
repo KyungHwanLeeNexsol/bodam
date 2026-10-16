@@ -1133,6 +1133,84 @@ Items marked **[not in docs]** are implementer decisions that design.md / accept
 5. Design ambiguities met in M2 (file:line as reported): design.md:508 (cardinality of COMMON reasons beyond "distinct, in priority order"); design.md:342-353 (silent about the order of document lines); design.md:500 vs acceptance.md:110 (order of the hold check and the unavailable check); design.md:509 (header items "출처·약관 출처·승인자·내용 해시" are listed with the rule structure but are item-level checks); design.md:509 and :524 (no path convention for a `when` that is not an object or a rule set that is not an object).
 6. All earlier OPEN items of M1.5 to M1.8 remain open: the M4 mandatory validations (a)-(d), the HTTP 500 mappings, the M3 production digest and publish path, bundle null entries (M3 rejection / M4 500), the `referenceGroups` owner decision, the 11 operational-data holds and the deferred owner decisions. Formal SPEC lint and `moai verify` remain UNVERIFIED (no tool). Only Windows 11 and Node 24.19.0 were run, with no CI. M3+ is not started; PR #1 is not merged. No real insurance values or insurer document requirements are registered anywhere.
 
+### M2.D 외부 검토 보완 (비정상 입력 처리), 2026-10-16
+
+**Scope and base.** Supplement to M2 only, base `ef8d687` (branch `feature/SPEC-REIMBURSEMENT-001-m2-documents`), answering the external review of PR #2 (invalid-input handling in the documents engine). No M3+ work, no merge, no deploy, no new SPEC audit, no commit/push by the implementer. `types.ts`, `usability.ts` (so the hash input `documentRuleSetContent`), M1 code and all fixtures are unchanged; `spec.md` / `plan.md` / `acceptance.md` / `design.md` and the earlier M2 block above are untouched. All data is `TEST_FIXTURE`.
+
+#### What changed
+
+| File | Change |
+|------|--------|
+| `src/engine/documents.ts` | `collectFlags` now returns `Record<FlagKey, boolean> \| null` (null = invalid input) so validation and OR aggregation are one pass over `treatments` by index; three small readonly enum lists (`CAUSE_VALUES`, `INSURER_TYPE_VALUES`, `CLINIC_SETTING_VALUES`); `deriveDocuments` returns `RULES_UNAVAILABLE` when any input defect is found, after the unchanged null checks; `checkDocumentRuleSetStructure` requires `reason.trim().length >= 1`; the stale comments and docstrings ("bad input counts as no flag", "any other value is UNKNOWN", "reason only has to be non-empty") were replaced |
+| `tests/engine/documents.test.ts` | Expectations of the bad-`cause`, malformed-`treatments` and garbage-`insurerType`/`clinicSetting` tests changed to `RULES_UNAVAILABLE`; whitespace-only reasons added to the malformed rule-set list; new groups: mixed arrays, per-flag matrix, positive controls, ON_HOLD precedence, reason original text, no throw / no mutation of invalid inputs |
+| `tests/engine/document-rule-set-structure.test.ts` | The test that accepted a whitespace-only reason now expects `REASON_INVALID` at `rules[1].reason` (7 whitespace kinds); added padded-reason-valid and defect-order tests; `rules: []` test retitled (it already existed, not duplicated) |
+| `tests/engine/document-rule-set-select.test.ts` | Added: sealed set with a whitespace-only reason -> `null` through `selectDocumentRuleSet`; sealed set with a padded reason (' 사유 ') still selected as the same object |
+
+#### Decisions (M2.D)
+
+1. Order of results is unchanged: non-object input -> `null`; `overallState` not `ESTIMATED` / `ESTIMATED_WITH_EXCLUSIONS` (including `ON_HOLD` and unknown values) -> `null` and it wins over every other defect; then any input defect -> `{ state: 'RULES_UNAVAILABLE' }`; otherwise `AVAILABLE` as before. Never throws, never uses data partially, never mutates the input.
+2. `treatments` that is not an array -> `RULES_UNAVAILABLE`. Any element that is not a non-null, non-array object (null, undefined, primitives, arrays, sparse-array holes) -> `RULES_UNAVAILABLE`. `documentFlags` missing, null, not an object or an array -> `RULES_UNAVAILABLE`.
+3. `documentFlags.imaging`, `.biopsy`, `.opinionRequired` must each be `typeof === 'boolean'`; strings ("true"), numbers (0/1), null, undefined and missing keys are invalid, with no coercion. `false` is valid.
+4. Mixed arrays (valid and invalid elements) are invalid as a whole; the valid elements are not counted.
+5. `cause` must be exactly `INJURY`, `ILLNESS` or `UNKNOWN`; anything else (empty string, wrong case, null, undefined, numbers ...) -> `RULES_UNAVAILABLE`, no fallback to UNKNOWN. Explicit `UNKNOWN` keeps the two-evaluation `UNKNOWN_CAUSE` behaviour.
+6. `insurerType` must be exactly `NON_LIFE`, `LIFE` or `MUTUAL_AID`; `clinicSetting` must be exactly `OUTPATIENT_ONLY`.
+7. Empty `treatments: []` stays valid (all flags false, as before). Valid all-false flags stay valid. Extra properties on treatment elements and on `documentFlags` are allowed.
+8. `reason` must be a string with `trim().length >= 1`; whitespace-only reasons (space, tab, newline, CRLF, mixed, U+00A0, U+3000) -> `REASON_INVALID` at `rules[i].reason`, the same code and path as the empty string. This is only a validity judgement: the original text of a valid reason is never trimmed or modified (output `reasons`, and the hash input `documentRuleSetContent`, carry the raw string).
+9. An empty `rules: []` is VALID under the current structure contract (`checkDocumentRuleSetStructure` returns `{ ok: true }`; the result is the receipt line only). This is a statement of the contract, not an open owner/business question.
+
+**Superseded decisions.** M2 decisions 3, 4, 5 and 11 above are superseded by M2.D (3: a bad `cause` is no longer evaluated as UNKNOWN; 4: malformed `treatments` no longer add no flag but make the result `RULES_UNAVAILABLE`; 5: garbage `insurerType` / `clinicSetting` no longer just fail to match but make the result `RULES_UNAVAILABLE`; 11: a whitespace-only `reason` no longer passes). M2 decision 10 ("OWNER DECISION NEEDED" on an empty `rules: []`) is closed as: an empty `rules: []` is valid under the current structure contract (decision 9 here).
+
+#### RED before GREEN (exact statement)
+
+M2.D: tests were modified/written first, then the implementation was changed (test-first); this is distinct from M2.A, where the implementation was drafted first and RED was obtained by removing it, and from M2.B, where tests were written before the implementation. For M2.D the tests were edited while `src/engine/documents.ts` was still at `ef8d687`, and RED was run before any source edit.
+
+```
+$ npx vitest run tests/engine/documents.test.ts tests/engine/document-rule-set-structure.test.ts tests/engine/document-rule-set-select.test.ts   -> exit 1 (RED, source unchanged)
+ Test Files  3 failed (3)
+      Tests  54 failed | 213 passed (267)
+$ (same command after the source change)                                                   -> exit 0 (GREEN)
+ Test Files  3 passed (3)
+      Tests  267 passed (267)
+```
+
+The RED failures include, for example, the `documentFlags 가 null`, `희소 배열의 빈 칸`, `표시값 imaging 만 틀려도 ...`, `원인이 정확히 INJURY·ILLNESS·UNKNOWN 이 아니면 ...`, `공백뿐인 문자열(탭)은 ... REASON_INVALID` and `공백뿐인 reason(...)이 든 묶음은 ... null 이다` cases. The ON_HOLD / unknown-state precedence tests, the reason-original-text tests and the positive controls pass in RED on purpose: they pin behaviour that must not change (ON_HOLD precedence is checked by mutation (d) below). One test title in the ON_HOLD group was reworded after the RED run (names only, no assertion change).
+
+#### Evidence (measured after the change; the full set was run with `--maxWorkers=4` to avoid load noise; outputs saved under `.moai/state/verify/m2d/`, gitignored)
+
+```
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4     -> exit 0   (vitest-all.txt; re-run after the mutation checks: vitest-all-post.txt, exit 0)
+ Test Files  35 passed (35)
+      Tests  1507 passed (1507)
+$ npx tsc --noEmit                                               -> exit 0   (tsc.txt; re-run after the mutation checks: tsc-post.txt, exit 0)
+$ npx vitest run --coverage tests/engine --maxWorkers=4          -> exit 0   (coverage.txt; re-run after the mutation checks: coverage-post.txt, exit 0)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+Statements   : 100% ( 652/652 )
+Branches     : 100% ( 558/558 )
+Functions    : 100% ( 145/145 )
+Lines        : 100% ( 606/606 )
+```
+
+Before M2.D (`ef8d687`, measured by the orchestrator): 35 files / 1420 tests; coverage 643/551/145/598. Now: 35 files / 1507 tests (+87, all in the three changed test files: 180 -> 267); coverage 652/558/145/606, still 100% with no exclusions. No `skip`, `only` or disabled test was added.
+
+#### Mutation checks (each run with `npx vitest run tests/engine --maxWorkers=4`, then restored)
+
+| Mutation | Result |
+|----------|--------|
+| (a) revert the reason `trim()` to the old `reason === ''` check | `Test Files  3 failed \| 29 passed (32)`, `Tests  18 failed \| 1283 passed (1301)` |
+| (b) a bad `cause` falls back to UNKNOWN again (the `CAUSE_VALUES` check removed) | `Test Files  1 failed \| 31 passed (32)`, `Tests  4 failed \| 1297 passed (1301)` |
+| (c) skip the non-boolean flag check (truthy accepted) | `Test Files  1 failed \| 31 passed (32)`, `Tests  7 failed \| 1294 passed (1301)` |
+| (d) validate the input before the `overallState` check (ON_HOLD with bad input returns `RULES_UNAVAILABLE`) | `Test Files  1 failed \| 31 passed (32)`, `Tests  20 failed \| 1281 passed (1301)` |
+
+After each mutation the edit was reverted by hand; after the last one `git diff --stat` showed only the four intended files (`src/engine/documents.ts`, `tests/engine/document-rule-set-select.test.ts`, `tests/engine/document-rule-set-structure.test.ts`, `tests/engine/documents.test.ts`), and the full set, `tsc` and coverage were re-run green (outputs above).
+
+#### OPEN items (unchanged by M2.D)
+
+- The sharing of `documentRuleSetContent` stays a contract, NOT IMPLEMENTED and NOT VERIFIED on the M3 side: M3 must seal document rule sets with that single function, test reorder-with-original-hash and change detection, and the production digest must be canonical over object key order.
+- M3 publish / seal verification of document rule sets (AC-007f, using `checkDocumentRuleSetStructure`) is NOT IMPLEMENTED and NOT VERIFIED.
+- AC-007f, AC-007g, AC-007i and AC-008g are NOT closed by M2.D (AC-008g still has only the `documents = null on a held result` half evidenced). M4 (building `treatments` from validated lines, calling `selectDocumentRuleSet` and `deriveDocuments`) and M6 (kiosk screens) are not started.
+- SPEC wording aligned minimally with the M2.D decisions: design.md DD-06 (input-defect bullet, flag aggregation item 4, publish-validation bullet and item 9), acceptance.md AC-007d and AC-007f, plan.md M2 scope, a new M3 bullet for the `documentRuleSetContent` hash contract (NOT implemented, NOT verified) and one M4 clause. The wording of the earlier M2 decisions 1-15 in design.md / acceptance.md is otherwise not re-aligned. All earlier OPEN items of M1.5 to M2 remain open. Formal SPEC lint and `moai verify` remain UNVERIFIED (no tool). Only Windows 11 and Node 24.19.0 were run, with no CI.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
