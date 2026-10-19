@@ -1,4 +1,6 @@
-import type { ApproverRecord, DocumentRuleSet, LifecycleState, StandardAssumptionProfile, TreatmentCoverageMapping } from '../../engine/types';
+import type { ApproverRecord, DocumentRuleSet, LifecycleState, PublishedLine, StandardAssumptionProfile, TreatmentCoverageMapping } from '../../engine/types';
+import { coverageFingerprint, coverageFingerprintOf } from '../fingerprint';
+import type { CommonBaseFee, TreatmentVersion } from './entities';
 import { DomainError } from './errors';
 import type { ItemContentByKind, ItemKind, ItemStateSnapshot, ItemVersionRecordOf } from './items';
 
@@ -38,4 +40,44 @@ export function toEngineMapping(record: ItemVersionRecordOf<'MAPPING'>, state: I
 
 export function toEngineDocumentRuleSet(record: ItemVersionRecordOf<'DOCUMENT_RULE_SET'>, state: ItemStateSnapshot): DocumentRuleSet {
   return assemble(record, state);
+}
+
+// ───────────────────────── 게시된 줄 ─────────────────────────
+// 병원의 현재 카탈로그 버전에 든 치료 버전과 공통 기본비용을 엔진의 게시 줄로 바꾼다. 준비 상태 계산(M3.E)과 계산 경로(M4)가 같은 변환을 쓴다.
+
+/** 치료 버전 → 줄. 지문은 보장 판단 필드에서 나온다(DD-15). 값은 복사본이며 입력을 바꾸지 않는다. */
+export function toEnginePublishedLine(version: TreatmentVersion): PublishedLine {
+  return {
+    treatmentId: version.treatmentId,
+    treatmentVersionId: version.id,
+    displayName: version.displayName,
+    benefitType: version.benefitType,
+    calcClass: version.calcClass,
+    patientAmount: version.patientAmount,
+    coverageFingerprint: coverageFingerprintOf(version),
+    isBaseFee: false,
+    documentFlags: { ...version.documentFlags },
+    origin: version.origin,
+  };
+}
+
+// @MX:NOTE: [AUTO] [문서에 없음] 공통 기본비용(CommonBaseFee)에는 분류·지문·치료 버전이 없다. DD-03 은 기본비용 줄이 치료와 같은 매핑 판정을 거친다고만 적는다.
+// 여기서 정한 변환: 줄 id 와 버전 id 는 기본비용 id, 분류는 급여 구분에서(급여 → GENERAL_BENEFIT, 비급여 → GENERAL_NON_BENEFIT, 확인 필요로 두지 않는다),
+// 서류 표시는 모두 false, 지문은 같은 지문 함수에 (기본비용 코드, 행위 코드 없음, 급여 구분, 분류)를 넣은 값이다.
+// 주의: 매핑 승인(approval.ts)은 치료 버전의 지문을 고정하므로 기본비용 id 를 가리키는 매핑은 지금 승인할 수 없다(TREATMENT_VERSION_ABSENT). 스펙 모호점으로 progress.md 에 올렸다.
+/** 공통 기본비용 → 줄. */
+export function toEngineBaseFeeLine(fee: CommonBaseFee): PublishedLine {
+  const calcClass = fee.benefitType === 'BENEFIT' ? 'GENERAL_BENEFIT' : 'GENERAL_NON_BENEFIT';
+  return {
+    treatmentId: fee.id,
+    treatmentVersionId: fee.id,
+    displayName: fee.displayName,
+    benefitType: fee.benefitType,
+    calcClass,
+    patientAmount: fee.amount,
+    coverageFingerprint: coverageFingerprint({ treatmentCode: fee.code, procedureCodes: [], benefitType: fee.benefitType, calcClass }),
+    isBaseFee: true,
+    documentFlags: { imaging: false, biopsy: false, opinionRequired: false },
+    origin: fee.origin,
+  };
 }
