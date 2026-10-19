@@ -166,12 +166,12 @@ interface RuleBundleSnapshot {
 | 엔진이 검사함 | 같은 `treatmentId`의 줄(치료 줄, 공통 기본비용 줄 각각)이 내용이 달라 충돌 → `INPUT_INTEGRITY_VIOLATION` | 구현·시험됨 (M1) |
 | 엔진이 검사함 | 줄 금액이 `Won` 범위 밖 → `INVALID_NUMERIC_INPUT` | 구현·시험됨 (M1) |
 | 엔진이 검사함 | 예상 병원 결제액 T의 검사 합산이 안전 정수 밖 → `INVALID_NUMERIC_INPUT` | 구현·시험됨 (M1) |
-| 엔진이 검사하지 않음 (서버 보장) | (a) 선택한 `treatmentId`에 게시된 줄이 없음 | 구현 안 됨 — M4 필수 검증·시험 |
-| 엔진이 검사하지 않음 (서버 보장) | (b) 선택하지 않은 `treatmentId`의 줄이 들어옴 | 구현 안 됨 — M4 필수 검증·시험 |
-| 엔진이 검사하지 않음 (서버 보장) | (c) 같은 `treatmentId`가 `lines`와 `baseFeeLines` 양쪽에 있음 | 구현 안 됨 — M4 필수 검증·시험 |
-| 엔진이 검사하지 않음 (서버 보장) | (d) `isBaseFee` 표시가 줄이 든 배열과 어긋남 | 구현 안 됨 — M4 필수 검증·시험 |
+| 엔진이 검사하지 않음 (서버 보장) | (a) 선택한 `treatmentId`에 게시된 줄이 없음 | 구현·시험됨 (M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B) |
+| 엔진이 검사하지 않음 (서버 보장) | (b) 선택하지 않은 `treatmentId`의 줄이 들어옴 | 구현·시험됨 (M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B) |
+| 엔진이 검사하지 않음 (서버 보장) | (c) 같은 `treatmentId`가 `lines`와 `baseFeeLines` 양쪽에 있음 | 구현·시험됨 (M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B) |
+| 엔진이 검사하지 않음 (서버 보장) | (d) `isBaseFee` 표시가 줄이 든 배열과 어긋남 | 구현·시험됨 (M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B) |
 
-  표의 (a)~(d)는 엔진의 보장이 아니다. M1 엔진은 이 넷을 거절하지도 보정하지도 않으며(현재 동작은 `tests/engine/duplicate-conflict.test.ts`가 "검사하지 않음"으로만 기록한다), 서버가 엔진을 부르기 전에 줄을 올바르게 조립해야 한다. 이 넷은 아직 구현도 시험도 되지 않았고 M4의 필수 검증·시험 항목이다(plan.md M4, AC-006i).
+  표의 (a)~(d)는 엔진의 보장이 아니다. M1 엔진은 이 넷을 거절하지도 보정하지도 않으며(현재 동작은 `tests/engine/duplicate-conflict.test.ts`가 "검사하지 않음"으로만 기록한다), 서버가 엔진을 부르기 전에 줄을 올바르게 조립해야 한다. 이 넷은 M4.B에서 서버의 줄 조립 보장으로 구현·시험되었다(엔진 호출 전 검사, 위반은 결과 없이 HTTP 500 `INTERNAL_ERROR`, 엔진은 호출되지 않음. 구현 결정, DD-19 "구현 결정", progress.md M4.B 결정 1·2, plan.md M4, AC-006i). 운영 자료가 없어 실제 병원 데이터로는 검증되지 않았다.
 
 ### 출력
 
@@ -822,7 +822,7 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 - 내용과 가용성을 나눈다. `RuleBundleVersion`은 바꿀 수 없다(id, 포함한 항목 버전 목록, 내용 해시, 게시자, 게시일). 사용 가능 여부는 별도의 추가 전용 기록 `RuleBundleStatusEvent { bundleId, status: 'ACTIVE' | 'SUSPENDED', actorId, role, at, reason, previousStatus }`로 남긴다. 게시 트랜잭션이 첫 `ACTIVE` 사건을 함께 쓰고, 현재 상태는 가장 마지막 사건이다.
 - 중지는 그 묶음 id에서 끝이다. 다시 활성으로 돌리는 동작은 없다(`ACTIVE` 사건을 다시 쓰려는 시도는 거절). 복구는 새 `RuleBundleVersion`을 게시(이전 버전의 사본이거나 고친 판, 위 복구 규칙)하고 플랫폼 운영자가 영향을 받는 병원마다 규칙 사용 범위를 다시 지정(기존 REQ-ADM-004 권한)하는 것이다. 새 권한도 병원별 긴급 중지도 두지 않는다.
 - 중지는 묶음 기록만 바꾼다. 묶음에 든 프로필·매핑·서류 규칙 버전의 상태는 그대로이므로, 같은 버전을 담은 다른 묶음은 영향을 받지 않는다. 개별 항목을 중지하는 동작(DD-17 생명주기의 `PUBLISHED → SUSPENDED`)은 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 이 SPEC은 항목 중지를 묶음 중지의 수단으로 쓰지 않는다.
-- 계산 요청(`POST …/estimate`) 처리 순서(SPEC 결정, 개정 5. 정본은 DD-19 "요청 검증의 층"의 표이고 여기에는 같은 순서를 옮겨 적는다): ① 병원 확인(없으면 404) → ② 요청 구조 검증(400 `INVALID_REQUEST`) → ③ 지원 세대·치료 비어 있음 검증(422 `UNSUPPORTED_GENERATION`, `NO_TREATMENT_SELECTED`) → ④ 현재 `ClinicRuleScope`와 묶음 스냅샷, 묶음 상태, 묶음에 든 항목의 현재 생명주기 상태를 새로 읽고(상태는 캐시하지 않음, 아래 "항목 생명주기 상태와 캐시 계약") `catalogVersion`·`ruleBundleVersion`(묶음 id)을 병원의 현재 값과 비교해 다르면 409(본문 `latest`에 `ruleBundleStatus` 포함) → ⑤ 요청한 치료 ID를 병원의 현재 게시 카탈로그와 대조해 없는 것이 있으면 422 `TREATMENT_NOT_PUBLISHED`(다른 병원의 치료 ID 포함) → ⑥ 계산. ②·③은 요청 본문만 보고 정해지므로 ④의 읽기보다 먼저 거절한다. 한 요청에 여러 조건이 겹치면 앞선 단계의 응답 하나만 나온다. 버전이 같아도 묶음이 `SUSPENDED`이면 HTTP 200 `ON_HOLD`다. 모든 줄이 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금은 null, `documents`는 null, `versions.ruleBundleStatus = 'SUSPENDED'`이며 409도 4xx도 아니다. 버전이 같다는 사실은 묶음을 쓸 수 있다는 뜻이 아니다.
+- 계산 요청(`POST …/estimate`) 처리 순서(SPEC 결정, 개정 5. 정본은 DD-19 "요청 검증의 층"의 표이고 여기에는 같은 순서를 옮겨 적는다): ① 병원 확인(없으면 404) → ② 요청 구조 검증(400 `INVALID_REQUEST`) → ③ 지원 세대·치료 비어 있음 검증(422 `UNSUPPORTED_GENERATION`, `NO_TREATMENT_SELECTED`) → ④ 현재 `ClinicRuleScope`와 묶음 스냅샷, 묶음 상태, 묶음에 든 항목의 현재 생명주기 상태를 새로 읽고(상태는 캐시하지 않음, 아래 "항목 생명주기 상태와 캐시 계약") `catalogVersion`·`ruleBundleVersion`(묶음 id)을 병원의 현재 값과 비교해 다르면 409(본문 `latest`에 `ruleBundleStatus` 포함) → ⑤ 요청한 치료 ID를 병원의 현재 게시 카탈로그와 대조해 없는 것이 있으면 422 `TREATMENT_NOT_PUBLISHED`(다른 병원의 치료 ID 포함) → ⑥ 계산. ②·③은 요청 본문만 보고 정해지므로 ④의 읽기보다 먼저 거절한다. 한 요청에 여러 조건이 겹치면 앞선 단계의 응답 하나만 나온다. 버전이 같아도 묶음이 `SUSPENDED`이면 HTTP 200 `ON_HOLD`다. 모든 줄이 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금은 null, `documents`는 null, `versions.ruleBundleStatus = 'SUSPENDED'`이며 409도 4xx도 아니다. 버전이 같다는 사실은 묶음을 쓸 수 있다는 뜻이 아니다. [구현 선택, 소유자 확인 필요: 구현은 ④에서 항목 생명주기 상태를 읽지 않는다. 409와 층 4의 422는 범위·묶음 가용성·카탈로그만 읽고, 항목 상태·승인자·지문은 계산 경로(⑥)에서만 요청마다 한 번 읽는다. 위 ④의 문장은 바꾸지 않았다. 아래 "구현 선택, 소유자 확인 필요 (M4)" 참조.]
 - `GET …/insurance/options`: `ruleBundleVersion`은 범위의 묶음 id(중지 중에도 같음), `ruleBundleStatus`는 `ACTIVE` | `SUSPENDED` | null(범위 없음)이다. 카드는 5 / 3 / 3 그대로다(DD-05). 응답에 `Cache-Control: no-store`를 붙여(SPEC 결정) 중지가 다음 요청에서 보이게 한다. `ClinicRuleScope`는 중지로 바뀌지 않고 중지된 묶음을 계속 가리킨다.
 - 캐시 계약: 가용성은 계산 요청과 options 요청마다 읽는다. 캐시해도 되는 것은 (id, 내용 해시)로 찾는 바뀌지 않는 묶음 내용뿐이다(항목 버전의 내용·해시·출처·약관 출처·유효 기간·작성자까지이며, 항목의 현재 생명주기 상태 `state`와 승인자, 매핑의 `approvedFingerprint`는 포함하지 않는다. 이 셋은 요청마다 함께 새로 읽는다. 아래 "항목 생명주기 상태와 캐시 계약". 구현 기준으로 정합, 2026-10-19, progress.md M3 외부 검토 보완 ②). 구현이 범위→묶음이나 상태의 캐시를 추가하면 중지 사건 기록과 캐시 무효화를 같은 트랜잭션에서 한다. 이미 키오스크 화면에 나온 결과는 소급해서 바꾸지 않는다(환자 세션은 메모리뿐이다). "예상 부담액 확인"을 다시 누르면 보류가 나온다.
 - 영향을 받는 병원 = 현재 `ClinicRuleScope`가 중지된 묶음 id를 가리키는 병원이다. 다른 묶음을 쓰는 병원과 지난 범위 이력은 해당하지 않는다. 중지 API(`POST /api/admin/rule-bundles/{id}/suspend`)는 비어 있지 않은 `reason`을 요구하고(없으면 400 `INVALID_REQUEST`), 검토 담당자만 할 수 있으며(병원 관리자·플랫폼 운영자는 403, 인증이 없으면 401), 응답에 `affectedClinics: [{ clinicId, slug }]`를 담는다. 감사 기록에는 수행자·역할·일시·사유·이전/이후 상태·영향을 받는 병원 수를 남긴다.
@@ -837,7 +837,19 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 - 버전: 항목 하나의 상태 변경(재승인으로 승인자와 지문이 새로 쓰이는 경우 포함)은 `RuleBundleVersion`(id, 내용 해시), `CatalogVersion`, `ClinicRuleScope`를 바꾸지 않는다. 그래서 클라이언트가 가진 두 버전은 계속 현재 값과 같고, 다음 요청은 409가 아니라 200으로 계산하며 쓸 수 없게 된 항목은 기존 보류 계약의 코드로 나온다(묶음 중지가 버전을 바꾸지 않는 것과 같은 모양). 상태 변경은 게시가 아니므로 새 버전을 내지 않는다.
 - 효과(모두 기존 계약 그대로이며 새 보류 코드가 없다): 프로필이 `SUSPENDED`이면 `STATE_INVALID`로 그 칸의 모든 줄이 `PROFILE_INVALID`, `UNDER_REREVIEW`이면 `PROFILE_UNDER_REREVIEW`다(DD-04 표). 매핑이 `SUSPENDED`이면 그 후보가 `MAPPING_INVALID`, `UNDER_REREVIEW`이면 `MAPPING_UNDER_REREVIEW`이며 줄의 최종 코드는 `resolveMapping`이 정한다(사용 가능한 다른 후보가 있으면 그것으로 확정, DD-03). 서류 규칙 묶음이 `isUsable`을 통과하지 못하면 `deriveDocuments`가 null 규칙 묶음을 받으므로, 계산이 가능한 입력에서는 응답이 200이고 `documents`가 `RULES_UNAVAILABLE`이며 금액은 영향을 받지 않는다(DD-06. 전체가 `ON_HOLD`이면 `documents`는 null). 같은 항목 버전을 담은 다른 묶음(다른 병원 포함)도 같은 저장소 값을 읽으므로 다음 요청에 똑같이 반영된다. 묶음 중지는 항목 상태를 바꾸지 않는다(위, DD-17).
 - 운영 준비 상태(DD-23)는 이미 저장소 스냅샷을 읽는 순수 함수이므로 같은 저장소 상태를 보고하며 이 경로로 달라지는 것이 없다.
-- 시험이 보는 곳: 메모리 저장소 구현의 읽기 호출 감시로 묶음 내용 조회는 캐시 적중일 수 있어도 `state`·승인자·지문을 읽는 조회는 요청마다 일어남을 확인하고, "묶음 내용을 먼저 읽어 캐시한 뒤 항목을 중지하고 다음 요청을 보낸다"는 순서로 응답을 확인한다(AC-011m~p). 캐시 적중 조건 여덟 가지는 plan.md M4와 acceptance.md AC-011m이 시험 기준으로 두며, 실제 HTTP 캐시는 M4이고 구현 안 됨·미검증이다. 캐시 없이 저장소와 합성 수준에서 같은 계약을 고정한 시험은 M3에 있다.
+- 시험이 보는 곳: 메모리 저장소 구현의 읽기 호출 감시로 묶음 내용 조회는 캐시 적중일 수 있어도 `state`·승인자·지문을 읽는 조회는 요청마다 일어남을 확인하고, "묶음 내용을 먼저 읽어 캐시한 뒤 항목을 중지하고 다음 요청을 보낸다"는 순서로 응답을 확인한다(AC-011m~p). 캐시 적중 조건 여덟 가지는 plan.md M4와 acceptance.md AC-011m이 시험 기준으로 두며, 실제 HTTP 계층의 묶음 내용 캐시는 M4.C에서 구현·시험되었다(메모리 저장소 위 통합 시험, progress.md M4.C. 운영 구성의 저장소는 비어 있어 운영 구성에서 캐시가 채워진 적은 없고, 동시 요청·여러 프로세스·실제 DB 어댑터는 검증되지 않았다). 캐시 없이 저장소와 합성 수준에서 같은 계약을 고정한 시험은 M3에 있다.
+
+### 구현 선택, 소유자 확인 필요 (M4, 구현 기준으로 기록, 2026-10-19)
+
+M4 구현이 위 DD-14 문장이나 plan.md·acceptance.md의 기존 문장과 어긋나거나 좁혀서 읽은 곳이다. 기존 문장은 바꾸지 않았고 소유자가 확인할 때까지 열린 항목이다(구현 결정이며 소유자 승인이 아니다. 근거는 progress.md M4.B·M4.C의 "Decisions and assumptions").
+
+1. **항목 상태를 읽는 위치.** 위 처리 순서 ④는 항목의 현재 생명주기 상태를 버전 비교 전에 읽는다고 적었으나 구현은 409와 층 4의 422에서 범위·묶음 가용성·카탈로그만 읽고, 항목 상태·승인자·지문은 계산 경로(⑥)에서 요청마다 한 번 읽는다(AC-021h~j는 400·422 층의 읽기 금지만 정한다). 응답은 같고 읽기 횟수만 다르다(progress.md M4.B OPEN 4(a)).
+2. **묶음 기록은 요청마다 읽는다.** 캐시 키 (묶음 id, 내용 해시)의 해시는 묶음 기록에만 있으므로 계산 요청마다 묶음 기록(`getRuleBundleVersion`)을 한 번 읽는다. plan.md M4 (1)이 캐시 대상으로 든 묶음 버전의 `itemRefs`·내용 해시·id 가운데 해시를 얻는 읽기는 캐시하지 않으며, 캐시가 줄이는 것은 항목 버전 내용 읽기뿐이다(progress.md M4.C 결정 1).
+3. **"버전은 바뀌지 않는다"의 읽기.** plan.md M4 (4)~(6)과 AC-011m의 재승인 시나리오에서 옛 사본과 새로 읽은 상태가 다른 판정을 내려면 옛 지문과 새 지문이 달라야 하고, 이는 보장 판단 필드가 바뀐 카탈로그 게시, 곧 `catalogVersion` 변경을 부른다. 시험은 요청에 새 `catalogVersion`을 싣고, 묶음 id·내용 해시가 그대로이며 재승인과 같은 항목 참조의 묶음 게시가 409를 부르지 않는다는 뜻으로 읽었다(progress.md M4.C 결정 9).
+4. **AC-011n의 "사용 가능한 다른 후보".** 같은 칸·치료에 사용 가능한 후보가 둘이면 `MAPPING_INVALID`(모호)이므로, 후보의 상태가 바뀌어도 응답이 그대로인 경우는 두 번째 후보가 바꾸기 전에도 후에도 사용 불가일 때뿐이다. 시험은 출처가 `DEMO`인 두 번째 후보로 응답이 바이트까지 같음을 보인다(progress.md M4.C 결정 10).
+5. **프로필·서류 규칙 묶음의 `UNDER_REREVIEW` 전환.** M3에는 이 둘을 `UNDER_REREVIEW`로 옮기는 도메인 서비스가 없다(자동 재검토 대상은 매핑뿐이다). AC-011m·AC-011o의 해당 변형은 저장소의 `recordItemTransition`(표가 허용하는 `PUBLISHED → UNDER_REREVIEW`)으로 전이를 썼고, `SUSPENDED` 변형은 도메인 서비스를 썼다. M7이 서비스를 더하면 그 서비스로 바꾼다(progress.md M4.C 결정 8, OPEN 6).
+6. **운영 로그 출구.** 운영 구성의 로그 출구는 `silentLog`(아무것도 쓰지 않음)라서 운영에서 500은 흔적을 남기지 않는다. 항목은 `{event, code}` 두 필드뿐이라 환자 정보가 없으며 표준 오류 출구를 `src/app`에서 주입할 수 있다. 결정 필요(progress.md M4.A 결정 12).
+7. **묶음 내용 캐시의 크기.** 제거 규칙이 없다. 항목 수는 활성 범위가 가리킨 서로 다른 (묶음 id, 내용 해시) 쌍의 수로 한정되고 요청이 새 키를 만들 수 없다. 묶음 게시가 많아지면 한도가 필요하다(progress.md M4.C 결정 6, OPEN 4).
 
 ## DD-15 지문 방어
 
@@ -1050,7 +1062,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 - 서버는 규칙 사용 범위의 묶음과 그 묶음의 상태를 이 요청 안에서 새로 읽고(캐시하지 않음) 버전을 비교한 뒤 계산한다. 거절 조건이 겹칠 때의 순서는 아래 "요청 검증의 층"(정본)과 DD-14에 있고, 중지된 묶음의 응답(HTTP 200 `ON_HOLD`)은 DD-14에 있다.
 - 키오스크가 계산 시도마다 만드는 `requestId`(DD-09)는 요청 본문에 없으며 서버는 이 값을 알지 못한다.
 - 요청 본문은 금액·비율 필드를 담지 않으므로(위 규칙) 요청 검증은 아래 "요청 검증의 층"의 구조와 열거값만 본다. 수치 검증은 DD-24에 따라 게시 단계와 계산 단계에서 한다.
-- 엔진이 `INVALID_NUMERIC_INPUT`으로 거절하거나 `INPUT_INTEGRITY_VIOLATION`(같은 `treatmentId`의 줄이 내용이 달라 충돌)으로 거절하면(저장된 줄 금액이 게시 검증을 통과하고도 범위 밖이거나, 서버가 충돌하는 중복 줄을 엔진에 넘긴 서버 데이터 무결성 결함) 서버는 금액도 치료 ID도 내부 상세도 담지 않고 HTTP 500 `INTERNAL_ERROR`를 낸다. 결과 객체도 0도 `NaN`도 만들지 않는다. 이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다(M4 · 미구현).
+- 엔진이 `INVALID_NUMERIC_INPUT`으로 거절하거나 `INPUT_INTEGRITY_VIOLATION`(같은 `treatmentId`의 줄이 내용이 달라 충돌)으로 거절하면(저장된 줄 금액이 게시 검증을 통과하고도 범위 밖이거나, 서버가 충돌하는 중복 줄을 엔진에 넘긴 서버 데이터 무결성 결함) 서버는 금액도 치료 ID도 내부 상세도 담지 않고 HTTP 500 `INTERNAL_ERROR`를 낸다. 결과 객체도 0도 `NaN`도 만들지 않는다. 이 API 매핑은 계약 요구사항이며 M4.B에서 구현·시험되었다(메모리 저장소 위 통합 시험, progress.md M4.B).
 
 #### 요청 검증의 층 (SPEC 결정)
 
@@ -1064,7 +1076,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 2 내용 | `treatmentIds`가 빈 배열 | 422 `NO_TREATMENT_SELECTED` |
 | 3 버전 | `catalogVersion` 또는 `ruleBundleVersion`이 그 병원의 현재 값과 다름(층 0~2를 통과한 요청에서만 비교한다) | 409 `VERSION_MISMATCH`(DD-14, 본문 `changes.treatmentsUnpublished[]` 포함) |
 | 4 병원 데이터 | 버전이 현재 값과 같은데 선택한 치료 ID 가운데 그 병원의 현재 게시 카탈로그에 없는 것이 있음(다른 병원의 치료 ID, 비활성·미게시 치료 ID 포함) | 422 `TREATMENT_NOT_PUBLISHED` |
-| 5 계산 | 위 층을 모두 통과 | HTTP 200(계산 보류와 묶음 중지의 `ON_HOLD` 포함, DD-14). 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절만 500 `INTERNAL_ERROR`(M4 · 미구현) |
+| 5 계산 | 위 층을 모두 통과 | HTTP 200(계산 보류와 묶음 중지의 `ON_HOLD` 포함, DD-14). 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절만 500 `INTERNAL_ERROR`(구현·시험됨: M4.B. 서버 데이터 결함의 500은 아래 "구현 결정" 1) |
 
 - 층 2의 두 코드는 엔진의 입력 검증 순서(`UNSUPPORTED_GENERATION` → `NO_TREATMENT_SELECTED`, DD-03)와 같다. 서버가 같은 확인을 엔진 호출 전에 하는 것은 요청 거절을 엔진 거절과 같은 코드로 내기 위해서다. 한 요청에 두 코드가 겹치면 `UNSUPPORTED_GENERATION`이 먼저다.
 - 순서의 이유(SPEC 결정): 층 1·2는 요청 본문만 보고 정해지므로 서버 데이터를 읽기 전에 거절한다. 층 3이 층 4보다 앞서는 것은 옛 카탈로그를 본 클라이언트가 이미 내려간 치료를 보낸 요청을 422로 막지 않고 409(`treatmentsUnpublished[]`)로 알려 키오스크가 갱신 흐름(DD-14)을 타게 하려는 것이다. 층 4는 버전이 현재 값과 같은데도 현재 카탈로그에 없는 치료 ID(잘못 보낸 값, 다른 병원의 ID)를 가려낸다. 규칙 묶음의 중지는 거절 층이 아니라 층 5(계산)의 결과이므로 버전이 같으면 200 `ON_HOLD`다. 요청 본문의 다른 필드(가격·비율·병원 ID 등)는 어느 층에서도 읽거나 검사하지 않는다(REQ-API-002).
@@ -1080,6 +1092,21 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | (f) 최신 버전 + 중지된 규칙 묶음 | 200 `ON_HOLD`, 모든 줄 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금 두 값과 `documents`는 null, `versions.ruleBundleStatus = "SUSPENDED"`(DD-14) |
 
 - 시험: AC-006f(층 구분과 422 두 코드), AC-021a(공개 오류 표 전체), AC-021h~m(겹침 여섯 사례).
+
+#### 구현 결정 (M4, 구현 기준으로 기록, 2026-10-19)
+
+문서가 정하지 않은 곳에서 M4 구현이 내린 기술 결정이다. 모두 구현 결정이며 소유자 승인이 아니다. 각 항목의 근거는 progress.md M4.A·M4.B·M4.C의 "Decisions and assumptions"다. 기존 문장과 어긋나거나 좁혀 읽은 곳은 DD-14 "구현 선택, 소유자 확인 필요 (M4)"에 따로 모았다.
+
+1. **500이 되는 서버 결함** (M4.B 결정 1, M4.A 결정 9): 요청 거절(404·400·422·409)은 값으로 돌려주고, 아래는 모두 `ServerIntegrityError`로 HTTP 500 `{"error":"INTERNAL_ERROR"}`이며 본문에 상세가 없고 로그는 `{event, code}`만 남긴다. 줄 조립 결함 네 가지 (a)~(d), `ACTIVE` 묶음의 구조 결함, 묶음 기록·항목 내용·항목 상태·가용성 기록의 누락, 카탈로그 참조 결함 다섯 가지(치료 버전·치료·기본비용의 누락, 다른 병원 참조), 엔진의 모든 거절(`INVALID_NUMERIC_INPUT`, `INPUT_INTEGRITY_VIOLATION`. 서버의 층 2를 우회해야만 닿는 `UNSUPPORTED_GENERATION`, `NO_TREATMENT_SELECTED` 포함). 예기치 못한 예외도 500이다. 검사는 엔진 호출 전에 하며 위반이면 엔진을 부르지 않는다.
+2. **카탈로그를 게시한 적 없는 병원** (M4.A 결정 4, M4.B 결정 5): `catalog`는 404가 아니라 200이고 `catalogVersion`은 null, `treatments`·`baseFees`는 빈 배열, `baseFeeIncluded`는 `NOT_REGISTERED`다. 이 병원의 계산 요청은 `catalogVersion`이 문자열이어야 하므로 항상 409이고 본문 `latest.catalogVersion`은 null이다.
+3. **catalog 응답의 줄** (M4.A 결정 5~8): `baseFees[]`의 항목은 `{ baseFeeId, displayName, benefitType, amount }`이고 `baseFeeId`의 코드 포인트 순이며, 하나 이상 있으면 `baseFeeIncluded = INCLUDED`다. `priceCondition`은 저장된 금액 조건을 `"<환자 유형> · <가정> · 기준일 <기준일>"`로 이은 문자열이고 값을 해석하지 않는다. `order`는 치료의 `sortOrder`이며 같으면 `treatmentId` 코드 포인트 순이다. 비활성(`active = false`) 치료는 현재 게시 카탈로그에 없는 것으로 보아 응답에서 빼고, 층 4의 대조도 같은 정의(`readPublishedCatalog`)를 쓴다.
+4. **409의 `priceChanged`** (M4.B 결정 5): 요청의 `catalogVersion`이 현재 값이면 false다. 아니면 요청이 본 카탈로그를 읽어, 모르는 버전이거나 다른 병원의 것이면 true(비교 근거가 없다), 그 밖에는 두 카탈로그에 모두 있는 치료(`treatmentId`)나 공통 기본비용(`baseFeeId`)의 금액이 하나라도 다르면 true다. 치료의 추가·제거나 기본비용의 신규 등록만 있으면 false다. `ruleChanged`는 요청의 `ruleBundleVersion`이 현재 범위의 묶음 id와 다른 경우(null 대 문자열 포함)다.
+5. **판정 기준일** (M4.B 결정 6): 엔진의 `at`과 서류 규칙 선택에 주입하는 기준일은 서울(Asia/Seoul, UTC+9) 달력 날짜 `YYYY-MM-DD`다. 규칙 유효 기간이 날짜이고 병원이 한국에 있어서이며, UTC 날짜를 쓰면 한국 자정부터 아침 9시까지 하루 전 날짜가 된다. 시계는 `src/app`에서만 읽고 `src/server`는 읽지 않는다.
+6. **`origin` 요약** (M4.B 결정 7): "쓴 것"은 결과의 모든 줄, `basis.profile`의 프로필, 보류가 아닌 줄마다 판정한 매핑, `documents.state = AVAILABLE`일 때의 서류 규칙 묶음이다. 쓰지 않은 항목(선택하지 않은 치료의 매핑, 전체 보류 때의 서류 규칙)은 세지 않는다. 우선순위는 `TEST_FIXTURE`, `DEMO`, `OPERATING` 순이다. 결정한 매핑은 결과에 나오지 않아 엔진의 `resolveMapping`을 같은 인자로 다시 부르며, 결정된 줄의 매핑이 풀리지 않으면 서버 결함이다.
+7. **중지된 묶음의 스냅샷** (M4.B 결정 4): `SUSPENDED`이면 엔진에 `{ id, contentHash: '', status: 'SUSPENDED', profiles: [], mappings: [], documentRuleSet: null }`을 넘긴다. 엔진은 이때 `status`만 읽고 묶음 기록을 읽지 않으므로 넣을 실제 해시가 없으며 응답에도 나오지 않는다. 규칙 사용 범위가 없을 때와 `SUSPENDED`일 때는 항목을 읽지 않는다.
+8. **응답의 `basis`** (M4.B OPEN 4(d)): 위 성공 응답 예시의 `"basis": {}`는 줄임 표시이고 응답은 엔진의 실제 `basis`(규칙 묶음 id, 프로필 id·버전·출처·약관 출처, 계산식 단계)를 담는다.
+9. **묶음 내용 캐시** (M4.C 결정 1~6): 키는 (묶음 id, 내용 해시)이고 값은 바뀌지 않는 항목 버전 기록(참조 순서의 프로필·매핑·서류 규칙 묶음)이다. 해시는 묶음 기록에만 있으므로 계산 요청마다 묶음 기록을 한 번 읽고 키를 찾는다. 적중하면 항목 버전 내용 읽기를 건너뛰며, 항목 상태·승인자·지문과 가용성은 적중이어도 요청마다 새로 읽는다(사용한 묶음당 `readItemStates` 정확히 한 번). 캐시는 서비스 객체가 가지며(구성이 만든다) 모듈 수준 상태·무효화 메서드·운영 코드의 주입 경로가 없고, 저장은 깊은 복사본을 얼려서 하며 같은 키는 처음 것을 둔다. 구조가 맞는 내용만 저장한다. 요청은 키를 만들 수 없다(묶음 id는 병원의 범위에서 온다). 제거 규칙은 없다(DD-14 "구현 선택, 소유자 확인 필요 (M4)" 7).
+10. **요청 본문 읽기** (M4.B 결정 9): 병원이 있을 때만 본문을 읽고, 읽기 실패와 객체가 아닌 본문(`null`·배열·원시값)은 400이다. 여섯 계약 속성의 이름만 읽고 본문을 열거하지 않는다. `treatmentIds`의 중복은 처음 등장 순서를 두고 제거하며 수량은 없다.
 
 성공 응답(보류 포함, HTTP 200). 아래는 `TEST_FIXTURE` 예시 4종(합계 124,000원)으로 보류된 경우의 형식 예시다:
 
@@ -1119,7 +1146,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 | 422 | `UNSUPPORTED_GENERATION` | `generation`이 문자열이지만 세대 열거 밖(5세대 등). 문자열이 아니거나 필드가 없으면 400. C4로 계산하지 않음 | 공개 |
 | 422 | `NO_TREATMENT_SELECTED` | `treatmentIds`가 빈 배열(필드가 없거나 배열이 아니면 400) | 공개 |
 | 422 | `TREATMENT_NOT_PUBLISHED` | 버전이 현재 값과 같은데 그 병원 게시 카탈로그에 없는 치료 ID(요청 검증의 층 4. 옛 버전이면 409가 먼저 나간다) | 공개 |
-| 500 | `INTERNAL_ERROR` | 서버 실패. 계산 때 저장된 줄 금액이 범위 밖이거나 병원 결제액 T가 안전 정수가 아닌 데이터 무결성 결함(엔진의 `INVALID_NUMERIC_INPUT` 거절, DD-24)와 같은 `treatmentId`의 줄이 내용이 달라 충돌하는 데이터 무결성 결함(엔진의 `INPUT_INTEGRITY_VIOLATION` 거절, DD-03)도 여기로 낸다(이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다). 금액·스택·필드 내용을 담지 않음 | 공개·관리자 |
+| 500 | `INTERNAL_ERROR` | 서버 실패. 계산 때 저장된 줄 금액이 범위 밖이거나 병원 결제액 T가 안전 정수가 아닌 데이터 무결성 결함(엔진의 `INVALID_NUMERIC_INPUT` 거절, DD-24)와 같은 `treatmentId`의 줄이 내용이 달라 충돌하는 데이터 무결성 결함(엔진의 `INPUT_INTEGRITY_VIOLATION` 거절, DD-03)도 여기로 낸다(이 API 매핑은 M4.B에서 구현·시험되었다. 서버 줄 조립·묶음 구조 결함 등 그 밖의 서버 데이터 결함도 같은 500이다. 아래 "구현 결정" 1). 금액·스택·필드 내용을 담지 않음 | 공개·관리자 |
 | 5xx | — | 그 밖의 서버 실패 | 공개·관리자 |
 
 계산 보류는 HTTP 200이다.
@@ -1349,7 +1376,7 @@ documentReady        = S == ACTIVE ∧ D == READY
 | 게시·관리자 입력 (카탈로그의 가격·기본비용, 규칙 묶음의 프로필·한도·비율 값) | 범위 밖 | **게시 거절**: 도메인 게시 검증이 거절하고, 관리자 API는 HTTP 400 `INVALID_REQUEST`와 어긋난 필드 경로를 낸다 | 아무것도 저장하지 않고 이전 게시 버전이 그대로 남는다. 경계값 0과 `MAX_AMOUNT_WON`은 허용 |
 | 계산 요청 구조 | JSON·필수 필드·JSON 형식 오류, `insurerType`·`cause`의 열거값 밖 문자열(`generation`이 문자열이지만 열거 밖이면 400이 아니라 422 `UNSUPPORTED_GENERATION`, DD-19 "요청 검증의 층") | **요청 거절**: HTTP 400 `INVALID_REQUEST` | 구조만 본다 |
 | 계산: 저장된 줄(치료·공통 기본비용) 금액이 무효이거나 T가 안전 정수가 아님 | 게시 검증을 통과한 뒤에는 생길 수 없어야 하는 서버 데이터 무결성 결함 | **계산 거절**: 엔진이 `INVALID_NUMERIC_INPUT`으로 거절(`UNSUPPORTED_GENERATION`처럼 결과가 아니라 거절)하고 API는 HTTP 500 `INTERNAL_ERROR`를 금액과 내부 상세 없이 낸다 | 키오스크는 `FAILED` → `KXX_Error_Network`로 처리한다. 병원 결제액은 믿을 수 있는 숫자여야 하므로 나쁜 줄을 보류로 돌리거나 합계에서 빼지 않는다 |
-| 계산: 같은 `treatmentId`의 저장된 줄(치료 줄, 공통 기본비용 줄 각각)이 둘 이상인데 내용이 다름 | 게시 검증을 통과한 카탈로그에서는 생길 수 없어야 하는 서버 데이터 무결성 결함 | **계산 거절**: 엔진이 `INPUT_INTEGRITY_VIOLATION`으로 거절하고(줄 금액 검사보다 먼저) API는 HTTP 500 `INTERNAL_ERROR`를 금액과 치료 ID와 내부 상세 없이 낸다(이 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다) | 키오스크는 `FAILED` → `KXX_Error_Network`로 처리한다. 어느 줄도 고르거나 합하지 않고 결과 객체도 없다 |
+| 계산: 같은 `treatmentId`의 저장된 줄(치료 줄, 공통 기본비용 줄 각각)이 둘 이상인데 내용이 다름 | 게시 검증을 통과한 카탈로그에서는 생길 수 없어야 하는 서버 데이터 무결성 결함 | **계산 거절**: 엔진이 `INPUT_INTEGRITY_VIOLATION`으로 거절하고(줄 금액 검사보다 먼저) API는 HTTP 500 `INTERNAL_ERROR`를 금액과 치료 ID와 내부 상세 없이 낸다(이 매핑은 M4.B에서 구현·시험되었다) | 키오스크는 `FAILED` → `KXX_Error_Network`로 처리한다. 어느 줄도 고르거나 합하지 않고 결과 객체도 없다 |
 | 계산: 프로필 그룹 값이 무효 | 범위 밖(없음·null은 `PROFILE_VALUE_MISSING`) | 그 그룹의 줄을 `PROFILE_VALUE_INVALID`로 보류 | 병원 결제액은 숫자, 보험금은 null |
 | 계산: "계산 단계의 검사 연산 순서" 표의 단계 하나에서 정확한 결과가 `S`를 넘음 | 범위 초과(값은 모두 유효) | 그 그룹의 줄을 `CALC_RANGE_EXCEEDED`로 보류. 금액·비율을 잘라 맞추지 않고 부분 `D`·`P`도 내지 않음 | 병원 결제액은 숫자, 보험금은 null |
 

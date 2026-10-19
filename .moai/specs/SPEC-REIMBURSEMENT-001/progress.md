@@ -2751,6 +2751,79 @@ All 13 mutants killed. Limits: one-spot edits; they do not prove absence of othe
 8. NOT VERIFIED: CI; platforms other than Windows 11 with Node 24.19.0; `next dev`; lint (no lint script and no `moai` CLI on this machine, as in M3 / M4.A / M4.B).
 9. The new files were written with LF and the working tree uses CRLF (`core.autocrlf=true`); Git normalizes on commit (warnings only).
 
+### M4 AC 추적표 (A·B·C 통합), 2026-10-19
+
+**Scope.** Documentation alignment only (no code, no test run by the author of this section). One row per closing AC of plan.md M4 (29) plus the two evidence-only ACs. "Status" restates the AC evidence tables of the M4.A, M4.B and M4.C sections above; where the author could verify a link independently, it was done by grep (every AC id in the table appears in the cited test file, except that the AC-021e files `estimate-integrity.test.ts` and `estimate-cache-contract.test.ts` carry the assertion without the AC id in their text; every cited source file exists in the tree at HEAD `87b504d`). "Closed at integration level" means: exercised through the real route exports over the IN-MEMORY repository with the TEST composition (`TEST_FIXTURE` data only); it does not mean verified against production data, a database, or a deployment. Abbreviations: `api/` = `src/server/api/`; tests are under `tests/api/` unless the path starts with `tests/boundary/`.
+
+| AC | Implementing source | Test file / describe | Step | Status |
+|----|---------------------|----------------------|------|--------|
+| AC-006f | `api/estimate-request.ts` (layers 1-2), `api/estimate.ts` (`handleEstimate`, layers 0-5), `api/http.ts` | `estimate-layers.test.ts` / `AC-006f · AC-021a 층 0`, `층 1: 요청 구조`, `층 2: 지원 세대와 빈 치료` | B | closed at integration level |
+| AC-006g | `api/estimate.ts` (`cause` goes only to `deriveDocuments`, never to `estimate()`) | `estimate-compute.test.ts` / `AC-006g 원인만 다른 세 요청은 result 블록이 바이트까지 같다` | B | closed at integration level |
+| AC-006i | `api/estimate-lines.ts` (`assertLineAssembly`), `api/bundle-content.ts` (`isBundleStructureValid`, `assertBundleStructure`), `api/integrity.ts` (`ServerIntegrityError`, `guarded`), `api/estimate.ts` | `estimate-integrity.test.ts` / `AC-006i (1)` x2, `AC-006i (2)`, `AC-006i (3)`, `저장소 자료가 서로 맞지 않으면 …` | B | closed at integration level |
+| AC-010b | `src/server/composition.ts`, `src/app/services.ts`, `api/services.ts` | `tests/boundary/production-no-fixtures.test.ts` / `실제 운영 진입점`, `음성 시험: …`; `production-composition.test.ts` / `운영 구성: 허용 출처`, `운영 구성의 허용 출처로 엔진을 부르면 시험 자료는 쓸 수 없다` | A | closed at integration level |
+| AC-010d | `api/estimate.ts` (origin summary, `SUMMARY_PRECEDENCE`) | `estimate-compute.test.ts` / `AC-010d 응답 origin …` | B | closed at integration level |
+| AC-011f | `api/estimate.ts`, `api/estimate-versions.ts`, `api/bundle-ref.ts` | `estimate-compute.test.ts` / `AC-011f 묶음 중지와 복구 시나리오 …` | B | closed at integration level |
+| AC-011g | `api/options.ts`, `api/bundle-ref.ts` | `options.test.ts` / `AC-011g 묶음 중지` | A | closed at integration level |
+| AC-011m | `api/bundle-content.ts` (`loadBundleContent`, `composeBundleSnapshot`), `api/bundle-content-cache.ts`, `api/estimate.ts` | `estimate-cache-ac011.test.ts` / `AC-011m …`; `estimate-cache-contract.test.ts` / `(1)` … `(8)` | C | closed at integration level (cache-hit contract: DD-14 "구현 선택, 소유자 확인 필요 (M4)" 2, 3, 5 are open) |
+| AC-011n | same as AC-011m | `estimate-cache-ac011.test.ts` / `AC-011n …` | C | closed at integration level (open: DD-14 "구현 선택" 4) |
+| AC-011o | same as AC-011m | `estimate-cache-ac011.test.ts` / `AC-011o …` | C | closed at integration level (open: DD-14 "구현 선택" 5, the `UNDER_REREVIEW` variant) |
+| AC-011p | same as AC-011m | `estimate-cache-ac011.test.ts` / `AC-011p …` | C | closed at integration level |
+| AC-016e | `api/log.ts`, `api/integrity.ts`, `api/bundle-content-cache.ts`, `src/server/composition.ts` | `privacy.test.ts` / `AC-016e …`; `tests/boundary/server-state.test.ts` | C | closed at integration level (infrastructure and access logs not observed) |
+| AC-016n | `api/estimate-request.ts`, `src/app/api/clinics/[slug]/estimate/route.ts` (reads only `json()`) | `privacy.test.ts` / `AC-016n …`; `tests/boundary/server-state.test.ts` | C | closed at integration level (kiosk-side behaviour is M6; infrastructure and access logs not observed) |
+| AC-018a | `api/catalog.ts`, `api/published-catalog.ts`, `api/clinic.ts`, `src/app/api/clinics/[slug]/catalog/route.ts` | `catalog.test.ts` / `AC-018a 없는 slug`, `게시 카탈로그: 표시 필드만`, `idlePolicy`, `병원마다 다른 카탈로그`, `규칙 범위가 없거나 …`, `카탈로그를 게시한 적 없는 병원 [문서에 없음]` | A | closed at integration level |
+| AC-018b | `api/options.ts`, `api/options-cards.ts`, `api/bundle-ref.ts`, `src/app/api/clinics/[slug]/insurance/options/route.ts` | `options.test.ts` / `AC-018b 없는 slug`, `AC-018b 카드와 안내 문구`, `AC-018b 규칙 묶음 버전과 상태`, `읽는 것: 범위와 가용성만 (항목은 읽지 않는다)` | A | closed at integration level |
+| AC-019a | `api/estimate-request.ts` (`CONTRACT_FIELDS`, `parseEstimateRequest`) | `estimate-body-access.test.ts` / `AC-019a 본문 읽기 함수 …`, `AC-019a 실제 route.ts 의 POST …` | B | closed at integration level |
+| AC-019b | `api/estimate.ts` (layer 4), `api/published-catalog.ts` | `estimate-layers.test.ts` / `AC-019b · AC-021l 겹침 (e) …` | B | closed at integration level |
+| AC-019d | `api/estimate.ts` (`documentTreatments`, `deriveDocuments` input) | `estimate-compute.test.ts` / `AC-019d 서류 산출 입력 …` | B | closed at integration level |
+| AC-020a | `api/estimate-versions.ts` (`versionsMatch`, `versionMismatchBody`) | `estimate-layers.test.ts` / `AC-020a 409 VERSION_MISMATCH 본문 (DD-14)` | B | closed at integration level |
+| AC-021a | `api/http.ts` (`ERROR_STATUS`), `api/integrity.ts`, `api/estimate.ts` | `estimate-layers.test.ts` / `AC-021a 공개 오류 표 전체 …` and the three layer describes | B | closed at integration level |
+| AC-021b | `api/estimate.ts` | `estimate-compute.test.ts` / `AC-021b 보류도 HTTP 200 이다` | B | closed at integration level |
+| AC-021c | `api/estimate.ts` (`versions`, `origin`, `result`, `documents`) | `estimate-compute.test.ts` / `AC-021b · AC-021c · AC-021e 성공 응답 (200)` | B | closed at integration level |
+| AC-021e | `api/http.ts` (`jsonResponse`, the only response constructor) | options half: `options.test.ts`, `catalog.test.ts`, `plumbing.test.ts` (A); estimate half: `estimate-compute.test.ts`, `estimate-layers.test.ts`, `estimate-integrity.test.ts` (B); `no-store` vs the internal cache: `estimate-cache-contract.test.ts` (C) | A + B | closed at integration level (options half in A, estimate half in B) |
+| AC-021h | `api/estimate.ts`, `api/estimate-request.ts` | `estimate-layers.test.ts` / `AC-021h 겹침 (a) …` | B | closed at integration level |
+| AC-021i | `api/estimate.ts` | `estimate-layers.test.ts` / `AC-021i 겹침 (b) …` | B | closed at integration level |
+| AC-021j | `api/estimate.ts` | `estimate-layers.test.ts` / `AC-021j 겹침 (c) …` | B | closed at integration level |
+| AC-021k | `api/estimate.ts`, `api/estimate-versions.ts` | `estimate-layers.test.ts` / `AC-021k 겹침 (d) …` | B | closed at integration level |
+| AC-021l | `api/estimate.ts` (layer 4), `api/published-catalog.ts` | `estimate-layers.test.ts` / `AC-019b · AC-021l 겹침 (e) …` | B | closed at integration level |
+| AC-021m | `api/estimate.ts` (`SUSPENDED` decision before any item read), `api/estimate-versions.ts` | `estimate-layers.test.ts` / `AC-021m 겹침 (f) …` | B | closed at integration level |
+| AC-019c | `api/estimate.ts` imports `estimate`, `deriveDocuments`, `selectDocumentRuleSet`, `resolveMapping` from `src/engine/*` (no second implementation) | `tests/boundary/engine-module-identity.test.ts` / `AC-019c 증거(서버 쪽) …` (C); call spies in `estimate-compute.test.ts` / `엔진과 서류 산출에 실제로 넘어간 인자 (통과형 감시)` (B) | B, C | evidence only, NOT closed (M6 closes it together with the kiosk side) |
+| AC-021d | `src/server/api/**`, `src/server/composition.ts`, `src/app/**` (no outside-call identifiers or modules, `Date` only in `src/app/clock.ts`) | `tests/boundary/estimate-surface.test.ts` / `계산 요청 경로가 운영 진입점 그래프에 들어 있다` (B); `tests/boundary/engine-module-identity.test.ts` / `AC-021d 증거(서버 쪽) …` (C) | B, C | evidence only, NOT closed (M7 closes it over all of `src/`) |
+
+Table note: every closing AC has at least one test file in this table; none was left without a test. The AC-021e row lists files, not describes, because the `no-store` and `application/json` assertions run in the shared header helpers of every describe of those files (M4.A and M4.B tables). `…` in a describe name abbreviates the rest of the name in the test file.
+
+#### M4 필요 기존 코드 변경 (earlier-step files changed by B and C; taken from the M4.B and M4.C sections)
+
+| Step | File | Reason | Blast radius |
+|------|------|--------|--------------|
+| B | `src/server/api/services.ts` | `ApiServices` gains `today: () => string` (the injected reference date, required by the estimate path) | every `ApiServices` producer: the two compositions |
+| B | `src/server/composition.ts` | `OperatingDeps` gains a required `today`; accepted origins unchanged (`OPERATING` only) | `createOperatingServices` callers: `src/app/services.ts` and 5 calls in `tests/api/production-composition.test.ts` |
+| B | `src/app/services.ts` | passes `systemToday` (new `src/app/clock.ts`); still exports only `getApiServices` | the production wiring only |
+| B | `src/server/api/integrity.ts` | the closed error-code list grows (bundle, assembly, origin-mapping and engine-rejection codes); no existing code changed | type union only, no change for existing callers |
+| B | `src/server/api/options.ts` | the "scope points to a bundle without availability" check moved into the shared `readBundleRef` (behaviour identical, same code); done so the invariant has one definition | options tests unchanged and green |
+| B | `src/server/api/catalog.ts` | `SETTING_OF` exported (the document derivation uses the same table) | one keyword |
+| B | `tests/fixtures/server/api-composition.fixture.ts` | `TEST_TODAY` and `createTestServices({ today? })` | test composition only |
+| B | `tests/api/production-composition.test.ts` | the five `createOperatingServices(...)` calls pass a fixed `today` (forced by the contract change) | no assertion changed |
+| C | `src/server/api/bundle-content.ts` | `loadBundleContent` gets a required third parameter (the cache) | its one caller `estimate.ts` and `tests/api/bundle-content.test.ts` (5 calls now pass `createBundleContentCache()`; no assertion changed) |
+| C | `src/server/api/services.ts`, `src/server/composition.ts` | new required field `bundleCache`; `createOperatingServices` creates a new cache per call and ignores an extra argument | the two compositions only |
+| C | `src/server/api/estimate.ts` | signature of the private `readBundle`; no behaviour change besides the cache | none outside the file |
+| C | `src/server/api/estimate-lines.ts` | doc comment only | none |
+| C | `tests/fixtures/server/api-composition.fixture.ts`, `tests/api/post-helpers.ts` | `createTestServices` accepts an optional `bundleCache` (default a fresh cache); `callPostRequest` added | tests only |
+
+No file under `src/engine/**`, no existing file under `tests/engine/**`, `tests/boundary/**` (existing files), `tests/server/**`, and no M3 `src/server/**` module outside `src/server/api/**` and `src/server/composition.ts` was edited by A, B or C (each step section states this).
+
+#### 미구현·미검증 (still true after M4; none of these may be read as closed)
+
+1. Production data does not exist: the operating store is empty, so every slug is 404 on the operating composition (also over real HTTP). The estimate path with real clinics, prices, rules and approvers is NOT VERIFIED; only the TEST composition (`TEST_FIXTURE` data) exercises it, and the bundle content cache has never been filled in the operating composition.
+2. NOT IMPLEMENTED: a DB adapter and the DB product (§E #1 stays deferred); M5 and later (kiosk session store, screens); M7 (admin API, authentication, RBAC); M8; deployment; CI.
+3. NOT VERIFIED: lint and the formal `moai` SPEC lint (no lint script and no `moai` CLI on this machine); platforms other than Windows 11 with Node 24.19.0; behaviour under `next dev`.
+4. NOT VERIFIED: real concurrency (the in-memory repository is synchronous; two concurrent cache misses are not tested; the cache is per process); the real size of a cached bundle (no real bundle exists); behaviour under very large request bodies (no size limit was added).
+5. NOT VERIFIED: server-side traces outside application code (Next.js, Node, reverse-proxy or platform access logs can record the request URL including a query string); state held in closures (the module-scope scan is lexical); client-side behaviour (the kiosk not sending the attempt id) belongs to M6.
+6. The production log sink is `silentLog`, so a production 500 leaves no trace (DD-14 "구현 선택, 소유자 확인 필요 (M4)" 6).
+7. AC-019c and AC-021d are evidence only and stay open (M6 and M7 close them).
+8. Open owner confirmations for implementation choices that conflict with or narrow existing text (not added as `[NEEDS CLARIFICATION` rows in plan.md §E): design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" items 1-7 (the DD-14 step ④ read position, the per-request bundle record read vs plan.md M4 (1), the "versions unchanged" reading of scenarios (4)-(6), AC-011n's second candidate, no domain service for PROFILE / DOCUMENT_RULE_SET `UNDER_REREVIEW`, the production log sink, no cache eviction).
+9. Whole-SPEC audit status is unchanged: the earlier plan-audit FAIL records and `plan_status: fail` above are history and are preserved verbatim; no audit was run for M4 and nothing here marks the SPEC audited, approved or ready.
+10. The test counts and coverage figures quoted in the M4.C section (tsc exit 0; 99 files / 4786 tests; `tests/engine` + `tests/boundary` 40 files / 1627 tests; engine, server and `src/app` 100%) were reported by the orchestrator on the final tree and are not re-measured by this documentation step.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
