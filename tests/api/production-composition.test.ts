@@ -12,8 +12,11 @@ import { createMemoryRepository } from '../../src/server/repo/memory/memory-repo
 import { bundleWith, exampleLines, makeInput } from '../fixtures/engine/lines.fixture';
 import { makeMapping } from '../fixtures/engine/mappings.fixture';
 import { makeProfile, testDigest } from '../fixtures/engine/profiles.fixture';
-import { TEST_ACCEPTED_ORIGINS } from '../fixtures/server/api-composition.fixture';
+import { TEST_ACCEPTED_ORIGINS, TEST_TODAY } from '../fixtures/server/api-composition.fixture';
 import { callGet } from './helpers';
+
+/** 판정 기준일 주입값 (M4.B 에서 ApiServices 가 today 를 갖게 되어 구성 시험이 고정 값을 넘긴다). */
+const fixedToday = (): string => TEST_TODAY;
 
 // AC-010b (운영 구성 쪽 증거): 운영 구성은 규칙·줄의 허용 출처로 OPERATING 하나만 넘기고, 시험 자료(TEST_FIXTURE)는 그 구성에서 쓸 수 없다.
 // 이 파일은 src/app/services.ts 를 vi.mock 하지 않는다: 실제 운영 연결(빈 메모리 저장소)을 실제 route.ts 로 부른다.
@@ -21,13 +24,13 @@ import { callGet } from './helpers';
 
 describe('운영 구성: 허용 출처', () => {
   it('규칙과 줄의 허용 출처는 OPERATING 하나뿐이다', () => {
-    const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog });
+    const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog, today: fixedToday });
     expect(services.acceptedOrigins).toEqual({ rules: ['OPERATING'], lines: ['OPERATING'] });
     expect(OPERATING_ACCEPTED_ORIGINS).toEqual({ rules: ['OPERATING'], lines: ['OPERATING'] });
   });
 
   it('만들어진 구성과 허용 출처 목록은 얼려 있어 고칠 수 없다', () => {
-    const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog });
+    const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog, today: fixedToday });
     expect(Object.isFrozen(services)).toBe(true);
     expect(Object.isFrozen(services.acceptedOrigins)).toBe(true);
     expect(Object.isFrozen(services.acceptedOrigins.rules)).toBe(true);
@@ -42,20 +45,20 @@ describe('운영 구성: 허용 출처', () => {
 
   it('주입한 저장소와 로그 출구를 그대로 쓴다', () => {
     const repo = createMemoryRepository();
-    const services = createOperatingServices({ repo, log: silentLog });
+    const services = createOperatingServices({ repo, log: silentLog, today: fixedToday });
     expect(services.repo).toBe(repo);
     expect(services.log).toBe(silentLog);
   });
 
   it('허용 출처를 바꾸는 매개변수나 덮어쓰는 훅이 없다: 모듈이 내보내는 것은 둘뿐이고, 인자로 허용 출처를 넘겨도 쓰이지 않는다', () => {
     expect(Object.keys(compositionModule).sort()).toEqual(['OPERATING_ACCEPTED_ORIGINS', 'createOperatingServices']);
-    const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog, acceptedOrigins: TEST_ACCEPTED_ORIGINS } as Parameters<typeof createOperatingServices>[0]);
+    const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog, today: fixedToday, acceptedOrigins: TEST_ACCEPTED_ORIGINS } as Parameters<typeof createOperatingServices>[0]);
     expect(services.acceptedOrigins).toEqual({ rules: ['OPERATING'], lines: ['OPERATING'] });
   });
 });
 
 describe('운영 구성의 허용 출처로 엔진을 부르면 시험 자료는 쓸 수 없다', () => {
-  const operating = createOperatingServices({ repo: createMemoryRepository(), log: silentLog });
+  const operating = createOperatingServices({ repo: createMemoryRepository(), log: silentLog, today: fixedToday });
   const operatingOrigins = { rules: [...operating.acceptedOrigins.rules], lines: [...operating.acceptedOrigins.lines] };
   const IDS = exampleLines().map((line) => line.treatmentId);
 

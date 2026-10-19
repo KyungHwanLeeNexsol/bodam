@@ -1,8 +1,7 @@
 import type { BundleAvailability } from '../domain/entities';
-import { readClinicRuleBundle } from '../rule-scope';
 import type { Repository } from '../repo/interfaces';
+import { readBundleRef } from './bundle-ref';
 import { handleClinicRead } from './clinic';
-import { ServerIntegrityError } from './integrity';
 import { optionCards } from './options-cards';
 import type { OptionCards } from './options-cards';
 import type { ApiServices } from './services';
@@ -19,14 +18,12 @@ export interface OptionsResponse extends OptionCards {
   ruleBundleStatus: BundleAvailability | null;
 }
 
-// @MX:NOTE: [AUTO] [문서에 없음] 범위가 묶음을 가리키는데 그 묶음의 가용성 기록이 하나도 없으면(게시는 첫 ACTIVE 기록을 같은 트랜잭션에 쓰므로 정상 경로에서는 없는 상태)
-// status 를 null 로 흘리지 않고 서버 데이터 무결성 결함(500)으로 낸다. null 은 "범위 없음" 의 뜻으로만 쓴다.
-/** options 응답 본문을 만든다. 규칙 범위 읽기 1회와 (범위가 있으면) 가용성 읽기 1회만 하고 저장소를 바꾸지 않는다. */
+/**
+ * options 응답 본문을 만든다. 규칙 범위 읽기 1회와 (범위가 있으면) 가용성 읽기 1회만 하고 저장소를 바꾸지 않는다.
+ * 가용성 기록이 없는 묶음 참조의 처리(서버 데이터 무결성 결함)는 계산 요청과 같은 읽기(bundle-ref.ts)가 한다.
+ */
 export function buildOptionsResponse(repo: Pick<Repository, 'getClinicRuleScope' | 'getBundleStatus'>, clinicId: string): OptionsResponse {
-  const { ruleBundleVersionId, ruleBundleStatus } = readClinicRuleBundle(repo, clinicId);
-  if (ruleBundleVersionId !== null && ruleBundleStatus === null) {
-    throw new ServerIntegrityError('BUNDLE_AVAILABILITY_MISSING');
-  }
+  const { ruleBundleVersionId, ruleBundleStatus } = readBundleRef(repo, clinicId);
   return { ruleBundleVersion: ruleBundleVersionId, ruleBundleStatus, ...optionCards() };
 }
 

@@ -30,15 +30,25 @@ export class CollectingLog implements ServerLog {
   }
 }
 
+/** 시험 구성의 판정 기준일. 시험 항목의 유효 기간(2026-01-01 ~ 2026-12-31) 안이다. 시스템 시계를 읽지 않는 고정 값이다. */
+export const TEST_TODAY = '2026-10-15';
+
 export interface TestServicesOptions {
   repo: Repository;
   log?: ServerLog;
   acceptedOrigins?: AcceptedOrigins;
+  /** 판정 기준일(YYYY-MM-DD). 없으면 TEST_TODAY. */
+  today?: () => string;
 }
 
-/** 시험 구성. 운영 구성과 같은 ApiServices 모양이고 허용 출처만 시험 값이다. */
+/** 시험 구성. 운영 구성과 같은 ApiServices 모양이고 허용 출처와 판정 기준일만 시험 값이다. */
 export function createTestServices(options: TestServicesOptions): ApiServices {
-  return { repo: options.repo, log: options.log ?? new CollectingLog(), acceptedOrigins: options.acceptedOrigins ?? TEST_ACCEPTED_ORIGINS };
+  return {
+    repo: options.repo,
+    log: options.log ?? new CollectingLog(),
+    acceptedOrigins: options.acceptedOrigins ?? TEST_ACCEPTED_ORIGINS,
+    today: options.today ?? (() => TEST_TODAY),
+  };
 }
 
 let active: ApiServices | null = null;

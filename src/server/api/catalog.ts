@@ -14,8 +14,8 @@ import type { ApiServices } from './services';
 /** 서비스 이름. 기획서 §4 가 확정한 이름이다. */
 const SERVICE_DISPLAY_NAME = '보담';
 
-/** 병원 종별 → 응답의 setting. 의원(CLINIC)은 통원 전용이다(기획서 §4 화면 3, DD-19 예시). */
-const SETTING_OF: Record<InstitutionType, 'OUTPATIENT_ONLY'> = { CLINIC: 'OUTPATIENT_ONLY' };
+/** 병원 종별 → 응답의 setting. 의원(CLINIC)은 통원 전용이다(기획서 §4 화면 3, DD-19 예시). 서류 산출의 clinicSetting(M4.B)도 이 표를 쓴다. */
+export const SETTING_OF: Record<InstitutionType, 'OUTPATIENT_ONLY'> = { CLINIC: 'OUTPATIENT_ONLY' };
 
 export interface CatalogTreatmentView {
   treatmentId: string;
