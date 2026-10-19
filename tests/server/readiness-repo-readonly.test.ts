@@ -18,13 +18,13 @@ import { TEST_FIXTURE_CLINIC_ID, approveSpec, catalogWorld, publishCatalogOf, pu
 
 // AC-011l (5) 와 읽기 전용 증명 보강 (M3.E 보강 세션).
 //   (a) 운영 데이터가 없는 저장소를 한 번에: 병원은 있고(게시된 카탈로그 포함) 규칙 사용 범위가 없을 때 네 표와 두 조건과 보류 코드 종류를 함께 본다.
-//   (b) 읽기 전용: 쓰기 메서드에 닿으면 던지는 대리 객체로 감싼 저장소를 넘겨도 같은 보고가 나온다 (읽기 메서드 아홉 개만 쓴다).
+//   (b) 읽기 전용: 쓰기 메서드에 닿으면 던지는 대리 객체로 감싼 저장소를 넘겨도 같은 보고가 나온다 (읽기 메서드 열 개만 쓴다).
 //   (c) 항목 상태는 호출마다 새로 읽는다: 두 호출 사이에 상태를 바꾸면 두 번째 보고가 바뀐다 (캐시 없음).
 
 const REPO_CTX: ReadinessContext = { ...TEST_CTX, at: '2026-10-16', digest: canonicalDigest };
 
 /** ReadinessReads 가 정한 읽기 메서드 이름. 이 밖의 속성에 닿으면 던진다 (쓰기 메서드 포함). */
-const READ_METHODS = ['listClinics', 'getClinicRuleScope', 'getClinicCurrentCatalogVersion', 'getTreatmentVersion', 'getCommonBaseFee', 'listRuleBundleVersions', 'getBundleStatus', 'getItemVersion', 'readItemStates'] as const;
+const READ_METHODS = ['listClinics', 'getClinicRuleScope', 'getClinicCurrentCatalogVersion', 'getTreatmentVersion', 'getTreatment', 'getCommonBaseFee', 'listRuleBundleVersions', 'getBundleStatus', 'getItemVersion', 'readItemStates'] as const;
 
 function readOnlyView<T extends object>(repo: T): { view: ReadinessReads; touched: Set<string> } {
   const touched = new Set<string>();
@@ -117,8 +117,8 @@ describe('AC-011l (5) 운영 데이터가 없는 저장소: 병원과 게시된 
 });
 
 describe('읽기 전용 증명: 쓰기 메서드를 쓰지 않는다', () => {
-  it('읽기 메서드 아홉 개만 접근할 수 있는 대리 객체로도 같은 보고가 나오고, 쓰기 메서드·그 밖의 속성에 접근하지 않는다', () => {
-    // 공통 기본비용이 든 카탈로그여야 getCommonBaseFee 까지 아홉 개가 모두 쓰인다.
+  it('읽기 메서드 열 개만 접근할 수 있는 대리 객체로도 같은 보고가 나오고, 쓰기 메서드·그 밖의 속성에 접근하지 않는다', () => {
+    // 공통 기본비용이 든 카탈로그여야 getCommonBaseFee 까지 열 개가 모두 쓰인다.
     const { world } = readyWorld({ baseFees: true });
     const direct = readReadiness(world.repo, REPO_CTX);
     const { view, touched } = readOnlyView(world.repo);

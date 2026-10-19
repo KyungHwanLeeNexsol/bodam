@@ -2820,9 +2820,98 @@ No file under `src/engine/**`, no existing file under `tests/engine/**`, `tests/
 5. NOT VERIFIED: server-side traces outside application code (Next.js, Node, reverse-proxy or platform access logs can record the request URL including a query string); state held in closures (the module-scope scan is lexical); client-side behaviour (the kiosk not sending the attempt id) belongs to M6.
 6. The production log sink is `silentLog`, so a production 500 leaves no trace (DD-14 "구현 선택, 소유자 확인 필요 (M4)" 6).
 7. AC-019c and AC-021d are evidence only and stay open (M6 and M7 close them).
-8. Open owner confirmations for implementation choices that conflict with or narrow existing text (not added as `[NEEDS CLARIFICATION` rows in plan.md §E): design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" items 1-7 (the DD-14 step ④ read position, the per-request bundle record read vs plan.md M4 (1), the "versions unchanged" reading of scenarios (4)-(6), AC-011n's second candidate, no domain service for PROFILE / DOCUMENT_RULE_SET `UNDER_REREVIEW`, the production log sink, no cache eviction).
+8. Open owner confirmations for implementation choices that conflict with or narrow existing text (not added as `[NEEDS CLARIFICATION` rows in plan.md §E): design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" items 1-7 (the DD-14 step ④ read position, the per-request bundle record read vs plan.md M4 (1), the "versions unchanged" reading of scenarios (4)-(6), AC-011n's second candidate, no domain service for PROFILE / DOCUMENT_RULE_SET `UNDER_REREVIEW`, the production log sink, no cache eviction). [Update 2026-10-19, after this section was written: item 1 was resolved by the owner's PR #4 review-follow-up instruction and DD-14 step ④~⑥ was aligned to the implementation; items 2-7 stay open. See "M4 review follow-up: published-treatment set consistency (PR #4, 2026-10-19)" below. The original wording above is kept as written.]
 9. Whole-SPEC audit status is unchanged: the earlier plan-audit FAIL records and `plan_status: fail` above are history and are preserved verbatim; no audit was run for M4 and nothing here marks the SPEC audited, approved or ready.
 10. The test counts and coverage figures quoted in the M4.C section (tsc exit 0; 99 files / 4786 tests; `tests/engine` + `tests/boundary` 40 files / 1627 tests; engine, server and `src/app` 100%) were reported by the orchestrator on the final tree and are not re-measured by this documentation step.
+
+### M4 review follow-up: published-treatment set consistency (PR #4, 2026-10-19)
+
+**Scope.** A code fix found by an external review of Draft PR #4, plus the minimal documentation alignment recorded here. Branch `feature/SPEC-REIMBURSEMENT-001-m4-api` on top of `01009fd`; the code change was not committed when this section was written (the orchestrator commits after reviewing the diff). PR #3 and its branch were NOT touched: the M3-layer fix lives in PR #4 only. The numbers below marked "orchestrator-run" were reported by the orchestrator on the final tree and were not re-run by the author of this documentation step.
+
+#### Defect
+
+The public API's `readPublishedCatalog()` (`src/server/api/published-catalog.ts`) excluded inactive (`Treatment.active = false`) treatments, but the operational readiness snapshot `loadReadinessSnapshot()` (`src/server/readiness.ts`, M3.E) included every treatment version of the clinic's current catalog. Two cases were reproduced:
+
+1. Active treatment with a base fee fine, inactive treatment unmapped: an estimate over the whole public catalog was `ESTIMATED`, while readiness said `NOT_READY` (the inactive treatment's line was `MAPPING_ABSENT`).
+2. All treatments inactive, mappings fine: the public catalog was empty and nothing was computable, while readiness said `READY`.
+
+Both break the DD-23 / AC-011l equivalence ("readiness `READY` <=> an estimate over the published set is not `ON_HOLD`") because the two layers disagreed on what "published" means.
+
+#### Fix and design
+
+One shared selection criterion in a new lower-layer module `src/server/published-treatments.ts` (`selectPublishedTreatments(repo, clinicId, catalog, fail)`): per catalog treatment version, in catalog order: version -> treatment -> ownership (`treatment.clinicId === clinicId`) -> keep only `active`. Broken references (missing version, missing treatment, treatment of another clinic) are reported through an injected `fail` callback, regardless of `active` and before the active check. No sorting; read-only (uses only `getTreatmentVersion` and `getTreatment`). The module imports domain entity types and repository interface types only (not `src/server/api`), so both layers can depend on it.
+
+- Public API: maps the defects to `ServerIntegrityError` with the same three codes as before (`TREATMENT_VERSION_MISSING`, `TREATMENT_MISSING`, `TREATMENT_CLINIC_MISMATCH`) -> HTTP 500 `INTERNAL_ERROR`; behaviour unchanged.
+- Readiness: maps the defects to `DomainError` (`NOT_FOUND` for a missing version or treatment, `REF_CONTENT_MISMATCH` for a treatment owned by another clinic).
+- `computeReadiness` (pure function, engine-function reuse contract of DD-23 rule 0) is unchanged. Only `loadReadinessSnapshot` and the `ReadinessReads` type (gained `getTreatment`) changed in `src/server/readiness.ts`.
+- Common base fees are unchanged in both layers: every registered base fee is auto-included.
+
+#### Files changed
+
+| File | Change | Reason |
+|------|--------|--------|
+| `src/server/published-treatments.ts` | New | the single selection criterion |
+| `src/server/api/published-catalog.ts` | Modified (uses the shared module; defect mapping to `ServerIntegrityError`) | public API and readiness must use one definition |
+| `src/server/readiness.ts` (existing M3 file) | `loadReadinessSnapshot` uses the shared module; `ReadinessReads` gained `getTreatment`; a failure mapper to `DomainError`; doc comments | readiness must see the same treatments as the public API |
+| `tests/api/published-set-consistency.test.ts` | New | cross-layer consistency through the real Route Handlers and `readReadiness` over one repository |
+| `tests/server/published-treatments.test.ts` | New | unit tests of the shared module |
+| `tests/server/readiness-inactive-treatment.test.ts` | New | snapshot-level behaviour and the readiness-side rejections |
+| `tests/server/readiness-repo-readonly.test.ts` (existing M3 test) | `READ_METHODS` allow-list gained `'getTreatment'`; "아홉 개" -> "열 개" in one comment and one test title | the read-only guard enumerates the read methods; no assertion was weakened |
+
+Existing M3 files touched (reason and impact scope): `src/server/readiness.ts` and `tests/server/readiness-repo-readonly.test.ts`. Impact: `readReadiness` and `loadReadinessSnapshot` have no `src` caller (only tests; the M8 operation gate will call them), so no runtime path changed; the M3.E readiness tests ran green on the final tree (orchestrator-run, counts below). This supersedes the earlier statement in the "M4 필요 기존 코드 변경" section that no M3 `src/server/**` module outside `src/server/api/**` and `src/server/composition.ts` was edited: that statement was true for steps A, B and C and is kept as written.
+
+#### Behaviour changes
+
+1. Readiness excludes the lines of inactive treatments (they are not published treatments).
+2. Readiness now throws `DomainError` on a catalog treatment version whose treatment is missing, and on a treatment owned by another clinic (`REF_CONTENT_MISMATCH`); previously there was no such check. A missing treatment version was already `NOT_FOUND` and still is.
+3. With every treatment inactive, readiness reports `calculationReady` `NOT_READY` at the treatment stage with `NO_PUBLISHED_TREATMENT`, instead of `READY`.
+
+#### Tests added and what each proves
+
+- `tests/api/published-set-consistency.test.ts` (a)(b)(c), against the real Route Handlers and `readReadiness` over the same repository: (a) an active well-mapped treatment plus a base fee plus an inactive unmapped treatment: the inactive one is absent from the public catalog and from readiness; readiness `READY` <=> the estimate over all published treatments is `ESTIMATED` for every cell (exactly one `READY` cell is asserted); the base fee is still included. (b) all treatments inactive: catalog `treatments` is `[]`, readiness `calculationReady` at the usable cell is `NOT_READY` at stage `TREATMENT` with code `NO_PUBLISHED_TREATMENT`, the estimate is 422 `TREATMENT_NOT_PUBLISHED` / `NO_TREATMENT_SELECTED`, the base fee is still included. (c) re-activation: the treatment reappears in the catalog and in readiness; readiness stage `M` `MAPPING_ABSENT` for that treatment and the estimate is `ON_HOLD` with the same `MAPPING_ABSENT` hold; the base fee is still `ESTIMATED` and included.
+- `tests/server/published-treatments.test.ts` (unit): only active treatments, in catalog order; all inactive -> empty (the `fail` callback is not called); re-activation selects again; no sorting; the three defect codes through the injected `fail`; ownership check precedes the active check; read-only (only the two read methods, input catalog unchanged).
+- `tests/server/readiness-inactive-treatment.test.ts` (snapshot level): no line for an inactive treatment, base fee lines unchanged, all-inactive gives no treatment lines, re-activation restores the lines in catalog order, a clinic without a catalog has no lines, table M has no inactive line, the snapshot stays a copy, read-only with `getTreatment` among ten read methods; `DomainError` `NOT_FOUND` for a missing version and a missing treatment, `REF_CONTENT_MISMATCH` for a foreign treatment, and a broken reference is rejected even when the treatment is inactive.
+
+#### Evidence
+
+Orchestrator-run, on the final tree (the author of this documentation step did not re-run them):
+
+| Check | Observed |
+|-------|----------|
+| `tsc --noEmit` | exit 0 |
+| full `vitest run --coverage` | 102 files / 4813 tests pass |
+| coverage | 100% on `src/engine`, `src/server`, `src/app` |
+| `next build` | exit 0 |
+| revert-then-restore of the readiness expression | with `loadReadinessSnapshot` reverted to the old expression the three cross-layer tests (a)(b)(c) fail; they pass after restoring it |
+
+Agent-run mutation checks (4, all detected, all restored afterwards):
+
+| Mutant | Result |
+|--------|--------|
+| the `active` filter removed from the shared module | killed: 13 tests failed |
+| readiness bypasses the shared module (old expression) | killed: 11 tests failed |
+| the ownership check dropped from the shared module | killed: 4 tests failed |
+| base fees dropped from the readiness snapshot | killed: 7 tests failed |
+
+Limits: one-spot edits; they do not prove the absence of other defects.
+
+#### Documentation alignment (this step; documents only)
+
+- DD-23 (design.md: table M key, the `NO_PUBLISHED_TREATMENT` note, a new definition bullet) and AC-011l / AC-011j (acceptance.md) now say that "published treatment / published line" means exactly the public API's set: treatment versions of the current `CatalogVersion` whose treatment is active, plus all registered common base fees. The single shared criterion and the readiness-side rejection of an inconsistent store are stated in one place. AC-011l carries an integration-level marker pointing to `tests/api/published-set-consistency.test.ts` (a)(b)(c). DD-19 "구현 결정" 3 got one cross-reference sentence.
+- DD-14 (design.md) step ④ was rewritten to the implementation: ④ reads scope, bundle availability and the current catalog (409), ⑤ checks treatment ids (422), neither reads item states; ⑥ reads item states / approver / approvedFingerprint together once per used bundle, also on a content-cache hit. Item 1 of "구현 선택, 소유자 확인 필요 (M4)" ("항목 상태를 읽는 위치") is marked resolved by the owner's PR #4 review-follow-up instruction of 2026-10-19 (number and history kept); items 2-7 are untouched and open. plan.md's M4 status line was updated to say 1 of 7 is resolved and 6 remain.
+- Stale status wording corrected where evidence exists: spec.md C6 row, spec-compact.md C6 row and the AC-006 row now say implemented and tested in M4.B at integration level over the in-memory repository (evidence: the "M4 AC 추적표" rows AC-006i / AC-021a and `tests/api/estimate-integrity.test.ts` `AC-006i (1)`, `(2)`, `(3)`); the production-data limit is stated.
+- The "M4 AC 추적표" has no AC-011l row (AC-011l is an M3 AC), so no row was changed; the extra evidence for AC-011l is recorded in this section and in acceptance.md. The earlier statements that quote "99 files / 4786 tests" (M4.C and the "미구현·미검증" item 10, plan.md M4 status line) are history and are kept; the final-tree numbers after this follow-up are the ones in the Evidence table above.
+
+#### Not done / unverified / open
+
+1. Observation (i), from code reading only and NOT reproduced by a test: base-fee API-vs-readiness drift. The public API throws `BASE_FEE_CLINIC_MISMATCH` / `BASE_FEE_MISSING` (HTTP 500) while readiness only does `must(getCommonBaseFee)` with no ownership check. Not fixed.
+2. Observation (ii): the `TREATMENT_MISSING` and `TREATMENT_CLINIC_MISMATCH` paths are tested through read-method overrides because the in-memory repository rejects such inconsistent writes; stored data cannot produce them in the test environment, so these two paths are NOT verified against a real inconsistent store.
+3. Observation (iii): the `silentLog` production log sink and the absence of cache eviction remain pre-operation tasks (design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" items 6 and 7, unchanged; not broadened and not implemented here).
+4. NOT RUN: formal SPEC lint and any `moai` CLI verification (this machine has no `moai` CLI and the repository has no lint script); CI; platforms other than Windows 11 with Node 24.19.0; real concurrency (the in-memory repository is synchronous); production data (the operating store is empty, every slug is 404 on the operating composition, so none of this was exercised with real clinics, prices, rules or approvers).
+5. Whole-SPEC audit status is unchanged: frontmatter `plan_status: fail` and every earlier plan-audit FAIL record are history and are preserved verbatim; no audit was rerun and nothing here marks the SPEC audited, approved or ready.
+6. DD-14 items 2-7 of "구현 선택, 소유자 확인 필요 (M4)" are still open (six items).
+7. AC-019c and AC-021d are still evidence only and not closed (M6 and M7 close them).
+8. Other stale wording noticed and NOT changed (M3 wording, out of this step's M4 scope): acceptance.md AC-007f (line 112) and design.md line 510 still say the publishing-path rejection of a document rule set structure is "M3의 일이며 아직 구현·검증되지 않았다", while plan.md's M3 status line (2026-10-19) lists AC-007f among the 14 closing ACs implemented and verified at unit level over the in-memory repository (plan.md lines 104-105; not re-checked against the M3.D sections by this step). For the document owner.
 
 ## §E.3 Run-phase Audit-Ready Signal
 

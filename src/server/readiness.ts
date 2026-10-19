@@ -23,6 +23,8 @@ import { DomainError } from './domain/errors';
 import { formatRef } from './domain/items';
 import type { ItemVersionRecordOf } from './domain/items';
 import { toEngineBaseFeeLine, toEngineDocumentRuleSet, toEngineMapping, toEnginePublishedLine, toEngineProfile } from './domain/projection';
+import { selectPublishedTreatments } from './published-treatments';
+import type { PublishedTreatmentDefect } from './published-treatments';
 import type { Repository } from './repo/interfaces';
 
 // 운영 준비 상태 계산 (SPEC-REIMBURSEMENT-001 M3.E, design.md DD-23, REQ-DATA-004, AC-011c·j·k·l).
@@ -97,7 +99,10 @@ const REAL_FUNCTIONS: ReadinessFunctions = {
 
 // ───────────────────────── 스냅샷 (입력) ─────────────────────────
 
-/** 병원 하나의 입력: 규칙 사용 범위가 가리키는 묶음(없으면 null)과 현재 카탈로그의 게시 줄(치료 줄, 공통 기본비용 줄). */
+/**
+ * 병원 하나의 입력: 규칙 사용 범위가 가리키는 묶음(없으면 null)과 현재 카탈로그의 게시 줄(치료 줄, 공통 기본비용 줄).
+ * 치료 줄은 현재 게시된 치료(활성 치료)의 줄이다: 공개 카탈로그와 계산 요청이 보는 치료와 같은 집합이다(published-treatments.ts).
+ */
 export interface ReadinessClinicInput {
   clinicId: string;
   slug: string;
@@ -419,6 +424,7 @@ export type ReadinessReads = Pick<
   | 'getClinicRuleScope'
   | 'getClinicCurrentCatalogVersion'
   | 'getTreatmentVersion'
+  | 'getTreatment'
   | 'getCommonBaseFee'
   | 'listRuleBundleVersions'
   | 'getBundleStatus'
@@ -430,11 +436,28 @@ export type ReadinessReads = Pick<
  * [문서에 없음] 저장소가 가리키는 자료가 없으면(깨진 저장소) 상태를 추측하지 않고 NOT_FOUND 로 거절한다. 서비스 경로로는 생길 수 없는 경우다:
  * 게시는 묶음·가용성 기록·항목 상태를 한 트랜잭션에 쓰고, 저장소는 없는 자료를 가리키는 쓰기를 거절한다.
  */
+const INCONSISTENT_STORE = '저장소가 일관되지 않아 준비 상태를 낼 수 없다';
+
 function must<T>(value: T | null | undefined, what: string): T {
   if (value === null || value === undefined) {
-    throw new DomainError('NOT_FOUND', `${what} 이(가) 없다 (저장소가 일관되지 않아 준비 상태를 낼 수 없다)`);
+    throw new DomainError('NOT_FOUND', `${what} 이(가) 없다 (${INCONSISTENT_STORE})`);
   }
   return value;
+}
+
+/**
+ * 공유 선택 기준(published-treatments.ts)이 알린 결함을 이 층의 깨진 저장소 거절(DomainError)로 바꾼다. 공개 경로의 ServerIntegrityError 와 같은 세 결함이고
+ * 같은 순서로 걸린다. 운영자 보고 경로라서 어느 자료인지(id)를 메시지에 싣는다.
+ */
+function publishedTreatmentFailure(defect: PublishedTreatmentDefect): never {
+  switch (defect.code) {
+    case 'TREATMENT_VERSION_MISSING':
+      throw new DomainError('NOT_FOUND', `치료 버전 '${defect.treatmentVersionId}' 이(가) 없다 (${INCONSISTENT_STORE})`);
+    case 'TREATMENT_MISSING':
+      throw new DomainError('NOT_FOUND', `치료 버전 '${defect.treatmentVersionId}' 이(가) 가리키는 치료 '${defect.treatmentId}' 이(가) 없다 (${INCONSISTENT_STORE})`);
+    case 'TREATMENT_CLINIC_MISMATCH':
+      throw new DomainError('REF_CONTENT_MISMATCH', `카탈로그가 담은 치료 '${defect.treatmentId}' 이(가) 병원 '${defect.clinicId}' 의 것이 아니다 (${INCONSISTENT_STORE})`);
+  }
 }
 
 /** 묶음 하나를 엔진 입력으로 조립한다: 바뀌지 않는 항목 내용 + 방금 읽은 항목 상태(projection.ts 의 단일 합성) + 방금 읽은 가용성. */
@@ -465,7 +488,9 @@ function assembleBundle(repo: ReadinessReads, version: RuleBundleVersion): RuleB
 
 /**
  * 저장소를 읽기만 해서 스냅샷을 만든다. 아무것도 쓰지 않는다. 항목의 현재 상태와 묶음 가용성은 호출마다 새로 읽는다(캐시하지 않는다, DD-14).
- * 병원의 게시 줄 = 현재 카탈로그 버전에 든 치료 버전과 공통 기본비용 전부(projection.ts 의 줄 변환). 결과는 저장소와 분리된 복사본이다.
+ * 병원의 게시 줄 = 현재 카탈로그 버전에 든 치료 버전 가운데 활성 치료의 것(공개 카탈로그·계산 요청과 같은 선택, published-treatments.ts)과
+ * 공통 기본비용 전부(projection.ts 의 줄 변환). 비활성 치료의 줄은 없다: 계산이 하지 못하는 치료가 준비 상태를 막거나 줄이 하나도 없는데 준비 완료로 나오지 않는다.
+ * 결과는 저장소와 분리된 복사본이다.
  */
 export function loadReadinessSnapshot(repo: ReadinessReads): ReadinessSnapshot {
   const bundles = repo.listRuleBundleVersions().map((version) => assembleBundle(repo, version));
@@ -477,7 +502,7 @@ export function loadReadinessSnapshot(repo: ReadinessReads): ReadinessSnapshot {
       clinicId: clinic.id,
       slug: clinic.slug,
       bundle: scope === null ? null : must(byId.get(scope.ruleBundleVersionId), `병원 '${clinic.id}' 의 규칙 사용 범위가 가리키는 묶음 '${scope.ruleBundleVersionId}'`),
-      lines: catalog === null ? [] : catalog.treatmentVersionIds.map((id) => toEnginePublishedLine(must(repo.getTreatmentVersion(id), `치료 버전 '${id}'`))),
+      lines: catalog === null ? [] : selectPublishedTreatments(repo, clinic.id, catalog, publishedTreatmentFailure).map(({ version }) => toEnginePublishedLine(version)),
       baseFeeLines: catalog === null ? [] : catalog.baseFeeIds.map((id) => toEngineBaseFeeLine(must(repo.getCommonBaseFee(id), `공통 기본비용 '${id}'`))),
     };
   });
