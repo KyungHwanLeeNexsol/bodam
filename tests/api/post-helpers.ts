@@ -23,6 +23,11 @@ export function callPost(handler: PostHandler, slug: string, body: unknown): Pro
   return callPostRaw(handler, slug, JSON.stringify(body));
 }
 
+/** 이미 만든 요청 객체를 그대로 싣는다 (헤더·쿼리를 실은 요청, 접근을 기록하는 요청 대역 시험). */
+export async function callPostRequest(handler: PostHandler, slug: string, request: Request): Promise<Called> {
+  return readResponse(await handler(request, { params: Promise.resolve({ slug }) }));
+}
+
 /**
  * 본문 읽기를 직접 정하는 요청 (필드 접근 감시 시험). 핸들러는 요청의 `json()` 만 부르므로 `json()` 이 감시용 객체를 돌려주게 한다.
  * 핸들러가 `json()` 이외의 것(헤더·url·본문 스트림)을 읽으면 이 요청 대역은 던진다.

@@ -1,5 +1,6 @@
 import type { Origin } from '../../engine/types';
 import type { Repository } from '../repo/interfaces';
+import type { BundleContentCache } from './bundle-content-cache';
 import type { ServerLog } from './log';
 
 // API 계층이 쓰는 서비스 묶음 (SPEC-REIMBURSEMENT-001 M4.A, design.md DD-04·DD-19).
@@ -22,4 +23,9 @@ export interface ApiServices {
    * 시험 구성은 고정 값을 넘긴다. 요청마다 부른다.
    */
   readonly today: () => string;
+  /**
+   * 바뀌지 않는 규칙 묶음 내용의 캐시(M4.C). 구성이 만들어 싣는 인스턴스이며 모듈 수준 상태가 아니다. 상태·승인자·승인 지문·가용성은 담지 않는다(요청마다 새로 읽는다).
+   * 환자 선택이나 요청 식별자를 담을 자리도 없다.
+   */
+  readonly bundleCache: BundleContentCache;
 }

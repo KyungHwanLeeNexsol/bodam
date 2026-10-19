@@ -1,3 +1,4 @@
+import { createBundleContentCache } from './api/bundle-content-cache';
 import type { ServerLog } from './api/log';
 import type { AcceptedOrigins, ApiServices } from './api/services';
 import type { Repository } from './repo/interfaces';
@@ -25,7 +26,7 @@ export interface OperatingDeps {
 
 // @MX:ANCHOR: [AUTO] 운영 서비스 구성의 단일 진입점. src/app/services.ts(모든 route.ts 가 거치는 연결)와 구성 시험이 부른다.
 // @MX:REASON: 허용 출처가 이 한 곳에서만 정해져야 "운영 구성은 OPERATING 만 받는다"가 구성 하나를 보고 증명된다. 매개변수로 열면 시험 출처가 운영 경로로 샌다.
-/** 운영 서비스를 만든다. 저장소·로그 출구·기준일 함수만 받고, 허용 출처는 OPERATING 으로 고정이다. */
+/** 운영 서비스를 만든다. 저장소·로그 출구·기준일 함수만 받고, 허용 출처는 OPERATING 으로 고정이다. 묶음 내용 캐시는 호출마다 새로 만든다(주입하지 않는다). */
 export function createOperatingServices(deps: OperatingDeps): ApiServices {
-  return Object.freeze({ repo: deps.repo, log: deps.log, acceptedOrigins: OPERATING_ACCEPTED_ORIGINS, today: deps.today });
+  return Object.freeze({ repo: deps.repo, log: deps.log, acceptedOrigins: OPERATING_ACCEPTED_ORIGINS, today: deps.today, bundleCache: createBundleContentCache() });
 }

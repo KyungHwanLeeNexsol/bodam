@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { assertBundleStructure, composeBundleSnapshot, loadBundleContent } from '../../src/server/api/bundle-content';
 import type { BundleContent } from '../../src/server/api/bundle-content';
+import { createBundleContentCache } from '../../src/server/api/bundle-content-cache';
 import { ServerIntegrityError } from '../../src/server/api/integrity';
 import { suspendItem } from '../../src/server/approval';
 import { loadReadinessSnapshot } from '../../src/server/readiness';
@@ -15,7 +16,7 @@ import { repoWith } from './helpers';
 
 function world() {
   const w = buildWorld();
-  const content = loadBundleContent(w.world.repo, w.bundle!.id);
+  const content = loadBundleContent(w.world.repo, w.bundle!.id, createBundleContentCache());
   return { w, content };
 }
 
@@ -23,7 +24,7 @@ describe('loadBundleContent: 바뀌지 않는 내용만 읽는다', () => {
   it('묶음 기록 1회와 항목 내용 5회(프로필 1 + 매핑 3 + 서류 규칙 1)를 읽고 항목 상태는 읽지 않는다', () => {
     const w = buildWorld();
     w.world.repo.spy.reset();
-    const content = loadBundleContent(w.world.repo, w.bundle!.id);
+    const content = loadBundleContent(w.world.repo, w.bundle!.id, createBundleContentCache());
     expect(w.world.repo.spy.counts.getRuleBundleVersion).toBe(1);
     expect(w.world.repo.spy.counts.getItemVersion).toBe(5);
     expect(w.world.repo.spy.counts.readItemStates).toBe(0);
@@ -45,9 +46,9 @@ describe('loadBundleContent: 바뀌지 않는 내용만 읽는다', () => {
 
   it('없는 묶음이면 BUNDLE_MISSING, 항목 내용이 없으면 ITEM_CONTENT_MISSING 이다', () => {
     const w = buildWorld();
-    expect(() => loadBundleContent(w.world.repo, 'NO_SUCH_BUNDLE')).toThrow(new ServerIntegrityError('BUNDLE_MISSING'));
+    expect(() => loadBundleContent(w.world.repo, 'NO_SUCH_BUNDLE', createBundleContentCache())).toThrow(new ServerIntegrityError('BUNDLE_MISSING'));
     const noItems = repoWith(w.world.repo, { getItemVersion: () => null });
-    expect(() => loadBundleContent(noItems, w.bundle!.id)).toThrow(new ServerIntegrityError('ITEM_CONTENT_MISSING'));
+    expect(() => loadBundleContent(noItems, w.bundle!.id, createBundleContentCache())).toThrow(new ServerIntegrityError('ITEM_CONTENT_MISSING'));
   });
 
   it('서류 규칙 묶음이 둘 이상 저장돼 있으면 itemRefs 순서의 첫 번째만 쓴다 (준비 상태 계산과 같다)', () => {
@@ -55,7 +56,7 @@ describe('loadBundleContent: 바뀌지 않는 내용만 읽는다', () => {
     const second = approveSpec(w.world, specOf({ idSuffix: '_B' }));
     const bundle = w.bundle!;
     const doubled = { ...bundle, itemRefs: [...bundle.itemRefs, second.documentRuleSet!] };
-    const content = loadBundleContent(repoWith(w.world.repo, { getRuleBundleVersion: () => doubled }), bundle.id);
+    const content = loadBundleContent(repoWith(w.world.repo, { getRuleBundleVersion: () => doubled }), bundle.id, createBundleContentCache());
     expect(content.documentRuleSet!.ref.id).toBe('TEST_FIXTURE_DOCUMENT_RULE_SET_1');
   });
 });

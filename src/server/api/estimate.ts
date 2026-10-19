@@ -6,7 +6,6 @@ import type { UsabilityContext } from '../../engine/usability';
 import type { DocumentsResult, EstimateInput, EstimateResult, Origin, PublishedLine, RuleBundleSnapshot } from '../../engine/types';
 import { canonicalDigest } from '../digest';
 import type { Clinic } from '../domain/entities';
-import type { Repository } from '../repo/interfaces';
 import { ORIGINS } from '../validate/shape';
 import { assertBundleStructure, composeBundleSnapshot, loadBundleContent } from './bundle-content';
 import { readBundleRef } from './bundle-ref';
@@ -59,18 +58,18 @@ function suspendedSnapshot(id: string): RuleBundleSnapshot {
 
 /**
  * 병원의 규칙 사용 범위를 엔진 입력의 묶음으로 만든다. 범위가 없으면 null(엔진이 CLINIC_RULE_SCOPE_ABSENT), 중지이면 내용을 읽지 않은 중지 스냅샷,
- * ACTIVE 이면 내용을 읽고(M4.C 가 감싸는 곳) 구조를 검사한 뒤 항목의 현재 상태를 한 번 새로 읽어 합성한다.
+ * ACTIVE 이면 내용을 읽고(캐시 적중이면 항목 내용을 다시 읽지 않는다, bundle-content.ts) 구조를 검사한 뒤 항목의 현재 상태를 요청마다 한 번 새로 읽어 합성한다.
  */
-function readBundle(repo: Repository, ref: BundleRef): RuleBundleSnapshot | null {
+function readBundle(services: ApiServices, ref: BundleRef): RuleBundleSnapshot | null {
   if (ref.ruleBundleVersionId === null) {
     return null;
   }
   if (ref.ruleBundleStatus === 'SUSPENDED') {
     return suspendedSnapshot(ref.ruleBundleVersionId);
   }
-  const content = loadBundleContent(repo, ref.ruleBundleVersionId);
+  const content = loadBundleContent(services.repo, ref.ruleBundleVersionId, services.bundleCache);
   assertBundleStructure(content);
-  return composeBundleSnapshot(repo, content, ref.ruleBundleStatus);
+  return composeBundleSnapshot(services.repo, content, ref.ruleBundleStatus);
 }
 
 /** 서류 산출에 넘기는 치료: 선택한 치료 전부(확인된 제외 포함)의 서류 표시. 공통 기본비용 줄은 넣지 않는다(DD-06). 같은 치료는 한 번이다. */
@@ -122,7 +121,7 @@ function calculate(services: ApiServices, clinic: Clinic, request: EstimateReque
   const { lines, baseFeeLines } = resolveLines(published, request.treatmentIds);
   assertLineAssembly(request.treatmentIds, lines, baseFeeLines);
 
-  const bundle = readBundle(services.repo, bundleRef);
+  const bundle = readBundle(services, bundleRef);
   const input: EstimateInput = {
     generation: request.generation,
     insurerType: request.insurerType,

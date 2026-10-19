@@ -1,6 +1,8 @@
 import { assignRuleScope } from '../../../src/server/rule-scope';
 import { suspendRuleBundle } from '../../../src/server/bundle-status';
 import type { ApiServices, AcceptedOrigins } from '../../../src/server/api/services';
+import { createBundleContentCache } from '../../../src/server/api/bundle-content-cache';
+import type { BundleContentCache } from '../../../src/server/api/bundle-content-cache';
 import type { ServerLog, ServerLogEntry } from '../../../src/server/api/log';
 import type { CatalogVersion, RuleBundleVersion } from '../../../src/server/domain/entities';
 import type { Repository } from '../../../src/server/repo/interfaces';
@@ -39,6 +41,8 @@ export interface TestServicesOptions {
   acceptedOrigins?: AcceptedOrigins;
   /** 판정 기준일(YYYY-MM-DD). 없으면 TEST_TODAY. */
   today?: () => string;
+  /** 묶음 내용 캐시. 없으면 서비스마다 새 캐시를 만든다. 시험은 호출을 세는 감싸개나 캐시 없는 대역(M4.C)을 넣는다. */
+  bundleCache?: BundleContentCache;
 }
 
 /** 시험 구성. 운영 구성과 같은 ApiServices 모양이고 허용 출처와 판정 기준일만 시험 값이다. */
@@ -48,6 +52,7 @@ export function createTestServices(options: TestServicesOptions): ApiServices {
     log: options.log ?? new CollectingLog(),
     acceptedOrigins: options.acceptedOrigins ?? TEST_ACCEPTED_ORIGINS,
     today: options.today ?? (() => TEST_TODAY),
+    bundleCache: options.bundleCache ?? createBundleContentCache(),
   };
 }
 

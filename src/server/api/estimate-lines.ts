@@ -13,7 +13,7 @@ import type { PublishedCatalog } from './published-catalog';
 // 위반은 요청의 잘못이 아니라 서버 데이터·조립의 결함이므로 형식을 갖춘 오류(ServerIntegrityError)를 던지고, 계산 서비스가 500 INTERNAL_ERROR 로 바꾼다.
 
 export interface ResolvedLines {
-  /** 고른 치료의 줄 (병원 카탈로그의 노출 순서). 중복 제거는 엔진이 한다. */
+  /** 고른 치료의 줄 (병원 카탈로그의 노출 순서). 요청의 중복 치료 id 는 요청 구문 분석(estimate-request.ts)에서 이미 한 번씩만 남았다. */
   lines: PublishedLine[];
   /** 등록된 공통 기본비용 줄 전부 (baseFeeId 순). */
   baseFeeLines: PublishedLine[];
