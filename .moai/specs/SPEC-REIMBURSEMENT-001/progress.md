@@ -2023,6 +2023,78 @@ $ node .moai/state/m3/covsum.mjs coverage/coverage-summary.json (s2-final-covsum
 7. NOT VERIFIED: any DB adapter behaviour; behaviour under real concurrency (a readiness read while a suspension commits); the formal SPEC lint (the `moai` CLI is absent); CI. Only Windows 11 with Node v24.19.0 were run. `renderReadinessReport` is a human-readable report only; its wording is not an acceptance contract beyond "no merged phrase", "one line per cell", "stage and code on NOT_READY lines".
 8. The readiness CLI / report command and a persistence of reports are not part of M3.E and do not exist.
 
+### M3.F 최종 검증과 M3 종결 기록, 2026-10-19
+
+**Scope.** Closing record of milestone M3 (data model, lifecycle, repository interface with in-memory implementation, versions, publish validation, readiness). Branch `feature/SPEC-REIMBURSEMENT-001-m3-data`, created from the M2 tip `2589ce8`; Draft PR #1 (M1, head `b27bf38`) and Draft PR #2 (M2, head `2589ce8`) were read through GitHub REST before work resumed and were not changed. This section adds no code. Its inputs are the orchestrator's own runs on the final tree, the per-step sections M3.A to M3.E above, and the status-wording update of plan.md / acceptance.md (six stale `구현 안 됨` / `M3 · 미구현` markers and one M3 status line; nothing else in those files).
+
+**Owner decisions applied (2026-10-16, recorded in plan.md §E.10 and design DD-17 / DD-18).** #34 mapping authors are the platform insurance-rule staff (role `RV`), separate from hospital staff (`HA`). #31 an author may not approve their own work (typed domain error, state unchanged). #1 the database product stays deferred; M3 ships repository interfaces plus an in-memory implementation only. These are policy decisions, not the registration of real accounts, staff or approval records. Every id, name and approver in tests and fixtures is `TEST_FIXTURE`; no operating data exists anywhere in `src/` or `tests/`.
+
+#### Final verification (run by the orchestrator on the final tree; HEAD at run time `f4744e9` plus uncommitted plan.md / acceptance.md wording edits, which no test reads; always `--maxWorkers=4`; outputs under `.moai/state/verify/m3f/`, gitignored)
+
+```
+$ npx tsc --noEmit                                           -> exit 0 (empty output)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4  -> exit 0
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, no test file of M1/M2 edited)
+$ npx vitest run tests/server tests/boundary --maxWorkers=4  -> exit 0
+ Test Files  44 passed (44)
+      Tests  2793 passed (2793)
+$ npx vitest run --coverage --maxWorkers=4                   -> exit 0
+ Test Files  76 passed (76)
+      Tests  4094 passed (4094)
+```
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`):
+
+```
+src/engine: statements 652/652  branches 558/558  functions 145/145  lines 606/606   (unchanged from M2)
+src/server: statements 1237/1237  branches 685/685  functions 319/319  lines 1165/1165
+```
+
+No coverage exclusions, no `skip` / `only` / disabled tests. Compared with the M2 tip `2589ce8`: `src/engine/**`, `tests/engine/**`, `tests/fixtures/engine/**`, `package.json` and every existing file under `tests/boundary/**` are unchanged. Two deliberate changes outside `src/server/`, both from M3.A: `vitest.config.ts` (coverage now includes `src/server/**`) and one NEW file `tests/boundary/server-imports.test.ts` (server import boundary; added, no existing boundary test edited).
+
+#### Closing ACs by step (evidence tables are in the named sections; this table only locates them)
+
+| AC | Closed in | Level |
+|----|-----------|-------|
+| AC-007f, AC-009a, AC-009c, AC-010c, AC-011a, AC-011b, AC-011h, AC-011i | M3.D1 (publish services, versions, recovery), on the validators of M3.C | unit, in-memory repository |
+| AC-011d, AC-011e | M3.D2 (insurers, bundle suspend, rule scope, idle policy) | unit, in-memory repository |
+| AC-011c, AC-011j, AC-011k, AC-011l | M3.E (readiness tables P / M / D / S, `calculationReady`, `documentReady`) | unit, in-memory repository |
+
+These 14 ACs are the ones plan.md assigns to M3; no other AC is marked closed. AC-024a and AC-025b received evidence-only support from the domain self-approval rejection (M3.B) and stay open for M7. AC-007g, AC-007i, AC-008g are not M3 ACs and stay open.
+
+#### Contract points named by the owner, and where they are proven
+
+| Contract | Proven in |
+|----------|-----------|
+| Reorder of `groups` / `sharedLimitPools` / document `rules` with the ORIGINAL hash passes; a real content change is detected as `INTEGRITY_MISMATCH` | `tests/server/seal-roundtrip.test.ts` (profile and document rule set; hash input is the engine's `profileContent` / `documentRuleSetContent`, sealed with `canonicalDigest`) |
+| `profiles = null` and `mappings = null` rejected separately; bad container entries rejected; nothing stored | `tests/server/validate-bundle-form.test.ts` (describe "profiles · mappings 가 배열이 아닌 묶음 (각각 따로)"), `tests/server/publish-bundle.test.ts` (reject table rows `profiles = null`, `mappings = null`, item rows; each row compares the repository before and after and publishes the corrected bundle) |
+| Whitespace-only document reason rejected; empty `rules: []` allowed | `tests/server/publish-bundle.test.ts`, `tests/server/validate-bundle-docrules.test.ts` |
+| `calculationReady` and `documentReady` separate, equivalent to engine verdicts | M3.E section: `tests/server/readiness-derived.test.ts` (seeded matrix), `readiness-documents-derived.test.ts`, `readiness-reuse-identity.test.ts` |
+| M1 / M2 shared judgement, structure and hash-input functions reused, no second implementation | `tests/server/readiness-reuse-identity.test.ts`, `tests/server/readiness-reuse.test.ts`, server boundary scan |
+
+#### Not done (unchanged by M3)
+
+- M4: HTTP layer, HTTP 500 mapping, read-path structure check (AC-006i), real API integration, estimate service. NOT IMPLEMENTED, NOT VERIFIED.
+- M5 to M8, M7 permissions (clinic ownership, membership, 401 / 403), any database adapter or driver (DB product still deferred, §E #1), deployment, paid services.
+- Formal SPEC lint, `moai verify`, model profile resolution, session registry and handoff save: the `moai` CLI is absent on this machine, so these were not run. CI: none; only Windows 11 and Node v24.19.0 were run.
+- No full-SPEC audit was run in M3; the last audit result (iteration 5, FAIL 0.89, MP-7) is untouched and `plan_status` is unchanged.
+
+#### OPEN items collected from M3.B to M3.E (each needs an owner decision or later work; none is resolved here)
+
+1. **Common base fee lines cannot get an approved mapping.** Approval pins the TREATMENT version's fingerprint (`approval.ts` -> `pinnedFingerprint` -> `treatment-current.ts`), so a mapping that points at a common base fee id fails with `TREATMENT_VERSION_ABSENT`, and bundle publish rejects it for the same reason, while design.md:157 and :318 say base-fee lines go through the same mapping judgement. Through the real services a clinic whose catalog holds any common base fee therefore cannot reach `calculationReady = READY`. Evidence: M3.E section and `readiness-repo.test.ts` "공통 기본비용 줄에는 지금 매핑을 승인할 길이 없다". Needs an owner decision (how a base fee pins a fingerprint).
+2. **Self-approval compares the approver only with the version's author** (M3.B). A different `RV` who merely edited a draft may approve it. Kept because the owner's wording was "author != approver".
+3. **AC-011a "수정·삭제 시도 거절".** Immutability is proven at the repository (write-once, `IMMUTABLE_VERSION`, no delete operation, scanned by method name) and by the id-replay publish test. No service-level modify / delete function exists, so there is no separate service-level rejection test (M3.D1 note 9). The hash-contract part of AC-011a is proven as in the table above.
+4. Assigning a SUSPENDED bundle to a clinic scope is allowed `[not in docs]` (M3.D2 decision 5); insurer type of an existing id is immutable `[not in docs]` (decision 6); `affectedClinicCount` is an optional audit field that DD-18 does not list (decision 4).
+5. Table M on a SUSPENDED bundle: design.md:1233 says table M ignores availability, acceptance.md:220 (3) and design.md:1236 say to use the table P clinic-view reason. They differ only in the reason shown for an unresolved profile on a suspended bundle; the reported `calculationReady` / `documentReady` are identical because stage S comes first (M3.E).
+6. `computeReadiness` throws `TypeError` for a bundle containing a `null` profile entry even when the bundle is SUSPENDED, whereas `estimate()` returns `RULE_BUNDLE_SUSPENDED` without reading items. Unreachable through the repository path (publish rejects such bundles); M4's structure check (AC-006i) should run before readiness if a raw snapshot can ever reach it. No test pins the throw.
+7. Idle policy: role `HA`, 20-second floor (§E #16 pending), five screen keys, `completionHoldSeconds` without a default are taken from the documents as written; nothing here decides §E #12 / #16.
+8. The M3.E module and its first six test files were written by an earlier session; M3.E added tests and mutation evidence but there is no failing-assertion RED for them (stated in the M3.E section). Three mutants survived the first 285 tests and are killed by the final suite.
+
+#### Branch and PR hygiene
+
+M3 changes live only on `feature/SPEC-REIMBURSEMENT-001-m3-data`. Draft PR #1 and #2 were not edited and not merged; `main` was not touched; nothing was deployed; no paid service was used. The M3 pull request is separate, with the M2 branch as its base, so only M3 changes show.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
