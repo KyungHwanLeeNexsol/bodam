@@ -50,7 +50,10 @@ export interface Repository {
   /** 병원의 현재 카탈로그 버전. 병원이 없거나 아직 게시한 적이 없으면 null. */
   getClinicCurrentCatalogVersion(clinicId: string): CatalogVersion | null;
 
-  /** upsert. 병원이 있어야 한다. */
+  /**
+   * upsert. 병원이 있어야 한다. 치료 id 와 공통 기본비용의 baseFeeId 는 한 id 공간이다: 이미 어떤 기본비용의 baseFeeId 인 id 는
+   * DUPLICATE_KEY 로 거절한다(둘 다 엔진 줄의 treatmentId 가 되고 매핑의 treatmentId 가 가리킨다).
+   */
   saveTreatment(treatment: Treatment): void;
   getTreatment(id: string): Treatment | null;
   listTreatments(clinicId: string): Treatment[];
@@ -61,9 +64,14 @@ export interface Repository {
   /** 치료의 모든 버전, 쓴 순서(게시 순서). 치료가 없거나 버전이 없으면 빈 목록. 매핑 승인이 고정할 지문의 버전을 고르는 데 쓴다(M3.B). */
   listTreatmentVersions(treatmentId: string): TreatmentVersion[];
 
-  /** write-once. 병원이 있어야 한다. */
+  /**
+   * write-once(키는 버전 id). 병원이 있어야 한다. 이미 어떤 치료의 id 인 baseFeeId 는 DUPLICATE_KEY 로 거절한다(한 id 공간, saveTreatment 와 대칭).
+   * 거절하면 저장소는 그대로다.
+   */
   putCommonBaseFee(fee: CommonBaseFee): void;
   getCommonBaseFee(id: string): CommonBaseFee | null;
+  /** 기본비용의 모든 버전(baseFeeId 가 같은 것), 쓴 순서(게시 순서). 없거나 버전이 없으면 빈 목록. 매핑 승인이 고정할 지문의 버전을 고르는 데 쓴다. */
+  listCommonBaseFeeVersions(baseFeeId: string): CommonBaseFee[];
 
   /** write-once. 병원·치료 버전·공통 기본비용이 모두 있어야 한다(존재만 본다. 병원 소유 일치는 서비스가 본다). */
   putCatalogVersion(catalog: CatalogVersion): void;

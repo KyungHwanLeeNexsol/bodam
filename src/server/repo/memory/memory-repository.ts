@@ -159,6 +159,12 @@ export class MemoryRepository implements Repository {
 
   saveTreatment(treatment: Treatment): void {
     this.requireClinic(treatment.clinicId);
+    // 한 id 공간: 치료 id 는 기본비용의 안정 식별자와 겹치지 못한다 (둘 다 매핑의 treatmentId 가 가리키는 값이다).
+    for (const fee of this.store.baseFees.values()) {
+      if (fee.baseFeeId === treatment.id) {
+        throw new DomainError('DUPLICATE_KEY', `치료 id '${treatment.id}' 은(는) 공통 기본비용의 baseFeeId 로 이미 쓰인다 (치료와 기본비용은 한 id 공간을 쓴다)`);
+      }
+    }
     this.store.treatments.set(treatment.id, deepCopy(treatment));
   }
 
@@ -189,12 +195,21 @@ export class MemoryRepository implements Repository {
 
   putCommonBaseFee(fee: CommonBaseFee): void {
     this.requireClinic(fee.clinicId);
+    // 한 id 공간: 기본비용의 안정 식별자는 치료 id 와 겹치지 못한다 (saveTreatment 와 대칭).
+    if (this.store.treatments.has(fee.baseFeeId)) {
+      throw new DomainError('DUPLICATE_KEY', `baseFeeId '${fee.baseFeeId}' 은(는) 치료 id 로 이미 쓰인다 (치료와 기본비용은 한 id 공간을 쓴다)`);
+    }
     this.putOnce(this.store.baseFees, fee.id, fee, '공통 기본비용');
   }
 
   getCommonBaseFee(id: string): CommonBaseFee | null {
     this.spy.record('getCommonBaseFee');
     return this.read(this.store.baseFees, id);
+  }
+
+  listCommonBaseFeeVersions(baseFeeId: string): CommonBaseFee[] {
+    this.spy.record('listCommonBaseFeeVersions');
+    return [...this.store.baseFees.values()].filter((fee) => fee.baseFeeId === baseFeeId).map(deepCopy);
   }
 
   putCatalogVersion(catalog: CatalogVersion): void {

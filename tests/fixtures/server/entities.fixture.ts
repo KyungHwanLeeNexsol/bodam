@@ -55,9 +55,12 @@ export function makeTreatmentVersion(overrides: Partial<TreatmentVersion> = {}):
   };
 }
 
+/** 공통 기본비용 버전. baseFeeId 를 따로 넘기지 않으면 버전 id 와 같은 값이다 (버전이 하나뿐인 기본비용). 가격이 바뀌는 새 버전은 baseFeeId 를 같게 하고 id 를 달리한다. */
 export function makeCommonBaseFee(overrides: Partial<CommonBaseFee> = {}): CommonBaseFee {
+  const id = overrides.id ?? 'TEST_FIXTURE_FEE_1';
   return {
-    id: 'TEST_FIXTURE_FEE_1',
+    id,
+    baseFeeId: id,
     clinicId: TEST_FIXTURE_CLINIC_ID,
     displayName: 'TEST_FIXTURE 공통 기본비용',
     benefitType: 'BENEFIT',

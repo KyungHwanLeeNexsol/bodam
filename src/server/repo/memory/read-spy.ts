@@ -11,6 +11,7 @@ export const READ_QUERY_NAMES = [
   'getTreatmentVersion',
   'listTreatmentVersions',
   'getCommonBaseFee',
+  'listCommonBaseFeeVersions',
   'getCatalogVersion',
   'listCatalogVersions',
   'getInsurer',

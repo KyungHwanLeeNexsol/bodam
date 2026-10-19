@@ -2095,6 +2095,136 @@ These 14 ACs are the ones plan.md assigns to M3; no other AC is marked closed. A
 
 M3 changes live only on `feature/SPEC-REIMBURSEMENT-001-m3-data`. Draft PR #1 and #2 were not edited and not merged; `main` was not touched; nothing was deployed; no paid service was used. The M3 pull request is separate, with the M2 branch as its base, so only M3 changes show.
 
+### M3 외부 검토 보완 ① 공통 기본비용 매핑 승인·게시 경로, 2026-10-19
+
+**Scope.** External-review item 1 for Draft PR #3 (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` at `9bc0b4a`, not committed by this step. Defect accepted as an M3 gap by the owner review: `approve()` (`approval.ts` `pinnedFingerprint` -> `treatment-current.ts`) and the rule-bundle publish stale check (`bundle-publish.ts`) looked up only treatments, so a mapping whose `treatmentId` was a common base fee id failed with `TREATMENT_VERSION_ABSENT` and a clinic whose catalog holds a base fee could never reach `calculationReady = READY` through the real services. The business decision is NOT open (plan.md §E #8 "정정 수용", design.md:157): a base fee gets the same coverage-mapping judgement as a treatment, the base fee is ALWAYS part of the hospital payment T, and a missing / unusable mapping keeps the existing hold contract on the benefit side only. This section completes the M3 path for that contract. **It closes NO new AC and adds NO AC id**; it gives additional evidence to AC-009a, AC-009c, AC-011b, AC-011j, AC-011l (AC-011c only indirectly, see the evidence table). **Supersedes the earlier text** in M3.B (line 1391), M3.D1 (line 1672), M3.E (line 2017) and M3.F OPEN item 1 (line 2085) saying "common base fee lines cannot get an approved mapping" / `TREATMENT_VERSION_ABSENT` for base fee mappings: that statement is no longer true as of this section (the old text is intentionally not edited; line numbers are those of the file before this section was inserted). Owner decisions #31 / #34 / #1 are intact (author != approver, `RV` authors mappings, in-memory repository only). NO M4 (HTTP, caching, 500 mapping, API) and NO M7 (permissions) work.
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/domain/entities.ts` | CHANGED. `CommonBaseFee.baseFeeId: string` (stable identity); `id` stays the immutable version id |
+| `src/server/fingerprint.ts` | CHANGED (additive). `COMMON_BASE_FEE_JUDGMENT_FIELDS = ['code','benefitType']`, `calcClassOfBaseFee`, `coverageFingerprintOfBaseFee` (built on the existing `coverageFingerprint`, `procedureCodes: []`) |
+| `src/server/coverage-target.ts` | NEW. `currentCoverageTarget(repo, targetId)` + `CoverageTarget`: the ONE "current coverage target" lookup (treatment first, base fee second, else `null`) |
+| `src/server/treatment-current.ts` | CHANGED. The selection rule is extracted as `pickCurrentVersion` (shared by treatments and base fees); `currentTreatmentVersion` behaves exactly as before |
+| `src/server/approval.ts` | CHANGED. `pinnedFingerprint` uses only `currentCoverageTarget`; same error code `TREATMENT_VERSION_ABSENT`, message says "치료 또는 공통 기본비용" |
+| `src/server/bundle-publish.ts` | CHANGED. The stale-fingerprint precondition uses only `currentCoverageTarget` (defect codes `TREATMENT_VERSION_ABSENT` / `FINGERPRINT_STALE` unchanged) |
+| `src/server/re-review.ts` | CHANGED. Shared body `triggerReReviewForTarget(deps, actor, targetId, fingerprint)`; `triggerReReview(deps, actor, version)` keeps its signature and delegates; NEW entry `triggerReReviewForBaseFee(deps, actor, fee)` |
+| `src/server/catalog-publish.ts` | CHANGED. Ownership step: two new typed defects per base fee; after the writes the re-review trigger runs for EVERY base fee version in the catalog (as for treatment versions) |
+| `src/server/validate/catalog.ts`, `src/server/publish-validate.ts` | CHANGED. `baseFeeId` non-empty string check (field path), duplicate `baseFeeId` in one catalog -> `DUPLICATE_BASE_FEE_ID` (added to `PUBLISH_DEFECT_CODES`) |
+| `src/server/publish-defects.ts` | CHANGED. `BASE_FEE_ID_COLLIDES_WITH_TREATMENT`, `BASE_FEE_ID_CLINIC_MISMATCH` added to `SERVICE_PUBLISH_DEFECT_CODES` |
+| `src/server/domain/projection.ts` | CHANGED. `toEngineBaseFeeLine`: `treatmentId = baseFeeId`, `treatmentVersionId = fee.id`, `calcClass = calcClassOfBaseFee(...)`, `coverageFingerprint = coverageFingerprintOfBaseFee(fee)`; the inline fingerprint and the inline derivation are removed |
+| `src/server/repo/interfaces.ts`, `repo/memory/memory-repository.ts`, `repo/memory/read-spy.ts` | CHANGED. `listCommonBaseFeeVersions(baseFeeId)` (write order, copies, empty when none, counted by the read spy); one id space enforced at the backstop: `putCommonBaseFee` rejects a `baseFeeId` equal to an existing treatment id, `saveTreatment` rejects an id equal to an existing `baseFeeId` (`DUPLICATE_KEY`, repository unchanged) |
+| `src/server/readiness.ts` | NOT CHANGED (it builds base fee lines from `catalog.baseFeeIds` through `toEngineBaseFeeLine`; verified working with the new line shape, see tests) |
+| `tests/fixtures/server/base-fee.fixture.ts` | NEW (all `TEST_FIXTURE`): clinic world with a base fee, base fee version factory, COVERED / EXCLUDED / no mapping through approve -> bundle publish -> PO scope, independent engine-input builder for the base fee line, estimate helpers |
+| `tests/server/base-fee-mapping-path.test.ts` | NEW, 12 tests (test group B) |
+| `tests/server/base-fee-versions.test.ts` | NEW, 16 tests (test group C) |
+| `tests/server/base-fee-identity.test.ts` | NEW, 22 tests (test group D) |
+| `tests/server/base-fee-fingerprint.test.ts` | NEW, 28 tests (test group E) |
+
+Existing files touched, with the reason (no assertion weakened or removed; no skipped test):
+
+| Existing file | Why |
+|---------------|-----|
+| `tests/fixtures/server/entities.fixture.ts` | `makeCommonBaseFee` must return the new required `baseFeeId`; it defaults to the version `id`, so every existing test that passes only `id` keeps its meaning |
+| `tests/server/readiness-repo.test.ts` | Test group A. The test "공통 기본비용 줄에는 지금 매핑을 승인할 길이 없다..." (asserted the defect as if it were the contract) is REPLACED by a test of the normal capability (a base fee mapping approves and pins the base fee fingerprint) plus a new describe with the real failure conditions (neither-treatment-nor-base-fee target at approve and at bundle publish -> `TREATMENT_VERSION_ABSENT`, nothing stored; self-approval -> `SELF_APPROVAL_FORBIDDEN`; stale pinned fingerprint at publish -> `FINGERPRINT_STALE`, then re-review + re-approval + publish). Five imports added |
+| `tests/server/repo-memory.test.ts` | One table row for the new read method: a test enumerates every `get*` / `list*` / `read*` method of the repository and the read-spy counter per name |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**`, `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched; `design.md` / `acceptance.md` / `plan.md` / `spec*.md` / `research.md` are untouched. New tests total 78 in 4 files; with +4 in `readiness-repo.test.ts` and +1 in `repo-memory.test.ts` the suite grew by 83 tests (4094 -> 4177 in the full run).
+
+#### Public API (new or changed)
+
+```ts
+// src/server/fingerprint.ts
+COMMON_BASE_FEE_JUDGMENT_FIELDS: readonly ['code', 'benefitType']
+calcClassOfBaseFee(benefitType: BenefitType): CalcClass            // BENEFIT -> GENERAL_BENEFIT, NON_BENEFIT -> GENERAL_NON_BENEFIT (the only place)
+coverageFingerprintOfBaseFee(fee: CommonBaseFee): string
+// src/server/coverage-target.ts
+type CoverageTarget = { kind: 'TREATMENT'; version: TreatmentVersion; fingerprint: string } | { kind: 'BASE_FEE'; fee: CommonBaseFee; fingerprint: string }
+currentCoverageTarget(repo, targetId: string): CoverageTarget | null   // approval, bundle publish and every other caller use ONLY this
+// src/server/re-review.ts
+triggerReReviewForTarget(deps, actor, targetId, fingerprint): ItemVersionRef[]
+triggerReReview(deps, actor, version: TreatmentVersion): ItemVersionRef[]      // signature unchanged, delegates
+triggerReReviewForBaseFee(deps, actor, fee: CommonBaseFee): ItemVersionRef[]
+// Repository
+listCommonBaseFeeVersions(baseFeeId: string): CommonBaseFee[]
+```
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **`[not in docs]` Stable identity `baseFeeId`.** DD-18 (design.md:929) lists the `CommonBaseFee` fields as "id, clinicId, 표시명, `benefitType`, 금액, 코드, `origin`" and the code comment said a changed price is issued under a NEW id. A mapping keyed by that id would be orphaned by a price-only change, which confuses a price change with a coverage-judgement change. So `CommonBaseFee` mirrors the treatment model: `id` = immutable VERSION id (like `TreatmentVersion.id`, engine line `treatmentVersionId`), `baseFeeId` = stable identity (like `treatmentId`; a base fee mapping's `treatmentId` is the `baseFeeId`; engine line `treatmentId`). The line shape change is internal: a base fee line's `coverageFingerprint` is byte-identical to the earlier inline computation for the same fee (same input to the same function), only `treatmentId` changed from the version id to `baseFeeId`.
+2. **`[not in docs]` Coverage-judgement fields of a base fee (closed list): `code` and `benefitType`.** DD-16 lists judgement fields for treatment versions only. `calcClass` is DERIVED from `benefitType` (`calcClassOfBaseFee`, one place, used by the fingerprint and by the engine line; there is no `NEEDS_REVIEW` for base fees). `amount`, `displayName`, `origin`, `clinicId`, `id`, `baseFeeId` are NOT judgement fields. A test lists every key of a base fee version and requires it to be a judgement field or a known non-judgement field, so a new field forces a decision.
+3. **One fingerprint function per target kind, one target lookup.** `coverageFingerprintOfBaseFee` is used by `currentCoverageTarget` (approval and bundle publish), `triggerReReviewForBaseFee` and `toEngineBaseFeeLine`. Selection of the "current version" is one function (`pickCurrentVersion`): the version listed in the clinic's current catalog version, else the latest written, else none. A base fee's clinic is read from its first-written version (catalog publish guarantees all versions share one clinic). Treatment is looked up first, base fee second; the repository id space makes this unambiguous.
+4. **Error and defect names unchanged.** `TREATMENT_VERSION_ABSENT` (error at approve, defect at bundle publish) and `FINGERPRINT_STALE` keep their codes; only the approve message wording says "치료 또는 공통 기본비용". The domain error list test passes unchanged. New defect codes only where needed: validator `DUPLICATE_BASE_FEE_ID`; service `BASE_FEE_ID_COLLIDES_WITH_TREATMENT`, `BASE_FEE_ID_CLINIC_MISMATCH`. Per base fee the ownership defects are reported in the order `BASE_FEE_CLINIC_MISMATCH` -> `BASE_FEE_ID_COLLIDES_WITH_TREATMENT` -> `BASE_FEE_ID_CLINIC_MISMATCH`; validator order inside a base fee entry is `id` -> `baseFeeId` -> `clinicId` -> ..., duplicates after `DUPLICATE_ID`.
+5. **`[not in docs]` Id-space backstop at the repository** (design.md:318 says treatment and base fee lines share one id space and ids do not overlap; design.md:171 (c) says the engine does not check a `treatmentId` present in both `lines` and `baseFeeLines`, a server guarantee left to M4). This step makes the STORED data safe: a `baseFeeId` equal to a treatment id, or a treatment id equal to a `baseFeeId`, is `DUPLICATE_KEY` and atomic. The M4 request-time check (c) is still M4. Not enforced (by choice): a base fee VERSION id vs a treatment id (they are different spaces; only `baseFeeId` reaches the engine as `treatmentId`), and "all versions of one `baseFeeId` share a clinic" at the repository (catalog publish enforces it with `BASE_FEE_ID_CLINIC_MISMATCH`).
+6. **Re-review for base fees uses the pinned fingerprint, not the previous version.** Same body as treatments (`triggerReReviewForTarget`): only `APPROVED` / `PUBLISHED` mappings of the target whose pinned fingerprint differs from the new version's fingerprint move to `UNDER_REREVIEW`, with reason `COVERAGE_JUDGMENT_FIELD_CHANGED`, history and audit entries by the publishing actor; approver and pinned fingerprint are kept until re-approval. A price-only / `displayName` / `origin`-only version moves nothing and records nothing. A catalog that omits a base fee does not touch its mappings.
+7. **Restore.** `restoreCatalogVersion` needed no change: it republishes copies of stored base fee versions, which now carry `baseFeeId`, through the same ownership and re-review path. Observed behaviour (tested, same as treatments): restoring an earlier catalog after a price-only change keeps the mapping `PUBLISHED` and puts T back; restoring after a judgement-field change leaves an already `UNDER_REREVIEW` mapping where it is until a different RV re-approves (the re-approval then pins the restored version's fingerprint); restoring a catalog whose base fee fingerprint differs from a current pin moves the mapping to `UNDER_REREVIEW`.
+8. **After a re-approval the mapping is `APPROVED`, not yet usable.** Readiness shows `MAPPING_UNREVIEWED` until a new bundle containing it is published (`APPROVED -> PUBLISHED`) and the PO assigns the scope. This is the existing lifecycle, asserted in the version tests, not a new rule.
+9. **HA review requests stay treatment-only** (`closeReviewRequestForMapping` already returns early for an id that is not a treatment); RV authors base fee mappings directly (#34).
+
+#### AC evidence (additional evidence only; no AC is closed or added by this section)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011j | `base-fee-mapping-path.test.ts`: `기본비용 줄: 준비 상태와 계산이 줄 단위로 같다` | Through approve (a different RV) -> bundle publish -> PO scope -> `readReadiness`: base fee row `READY`, `READY` with `confirmedExclusion` (EXCLUDED), `MAPPING_ABSENT`, `MAPPING_UNDER_REREVIEW`, and (versions file) `MAPPING_UNREVIEWED`; each row equals the hold code / state the independent `estimate()` gives that line at the READY cell |
+| AC-011l | same describe + `it.each` over COVERED / EXCLUDED / NONE | `calculationReady` equals the `estimate()` verdict for all 15 cells (`expectCalculationAgrees` plus an explicit "READY only at the profile cell and only when the base fee mapping exists"); `estimate()` input assembled independently of the service (`independentClinicInput`) |
+| AC-011j / AC-011l (T contract) | same file | `hospitalPayment` = treatments + base fee in all of: mapping present, absent (hold on that line only, `expectedInsurancePayout` null), `UNDER_REREVIEW`, EXCLUDED; `baseFeeIncluded` `INCLUDED` when registered, `NOT_REGISTERED` after a catalog without it |
+| AC-009a | `base-fee-versions.test.ts`: `보장 판단 필드(code, benefitType)가 바뀐 새 버전` ; `base-fee-fingerprint.test.ts` | Each judgement field alone (`code`, `benefitType`) moves the PUBLISHED mapping to `UNDER_REREVIEW` with history + audit; fingerprint differs; non-judgement fields never move it; trigger compares with the pinned fingerprint (a version 3 written without version 2 still moves it) and is idempotent; shared body for treatments and base fees |
+| AC-009c | `base-fee-versions.test.ts`: `가격만 바뀐 새 기본비용 버전` | Same `baseFeeId`, new version id, new amount: same fingerprint, mapping state record deep-equal, no `ITEM_REREVIEW` audit, readiness `READY`, `estimate()` T changes by exactly the price delta |
+| AC-011b | `base-fee-versions.test.ts`: `카탈로그 게시의 그 밖의 경로` | Restoring an earlier catalog version publishes a new-id copy including base fees, results stay consistent with the engine (3 scenarios above in decision 7) |
+| AC-011c | indirect only | Table P is untouched; in every scenario the single profile cell stays the only `READY` cell (`calculationReady` over 15 cells) |
+| (supporting, DD-15 / design.md:318) | `base-fee-identity.test.ts`, `base-fee-fingerprint.test.ts`, `readiness-repo.test.ts` | One id space and ownership (repository + catalog publish, full snapshot before / after, corrected request publishes); shared lookup rules; reuse proof (module-wrapped spies prove `approve`, `publishRuleBundle`, `toEngineBaseFeeLine` and the catalog re-review call the shared functions; source scans prove the single definitions and that `approval.ts` / `bundle-publish.ts` do not import `currentTreatmentVersion` or a fingerprint function) |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixture change (`baseFeeId` default), the new fixture `base-fee.fixture.ts`, the four new test files, the replacement test group A in `readiness-repo.test.ts` and the read-spy table row were written FIRST, with no change under `src/` (the repository had no `listCommonBaseFeeVersions`, no `coverage-target.ts`, no `baseFeeId`); (2) the RED run; (3) the implementation. RED run: `npx vitest run tests/server --maxWorkers=4` -> exit 1 (`red-server.txt`): `Test Files  6 failed | 38 passed (44)`, `Tests  50 failed | 2555 passed (2605)`. The six files: `base-fee-mapping-path`, `base-fee-versions`, `base-fee-identity`, `readiness-repo`, `repo-memory` (assertion failures / missing methods) and `base-fee-fingerprint` (failed to load: `Cannot find module '/src/server/coverage-target'`, so its 28 tests have only load-failure RED, no per-assertion RED). The behavioural RED that motivated the step is visible: the replaced test failed because `approve()` threw `TREATMENT_VERSION_ABSENT` from `pinnedFingerprint` (`approval.ts:90`), and 20+ service-path tests failed at `approveSpec` -> `approve` for the same reason. The group A tests that assert PRESERVED guards (neither-treatment-nor-base-fee target at approve and at publish, self-approval) passed before the implementation by design; they are the "real failure conditions still reject" half and are made meaningful by the mutation table (M1 breaks 34 tests including them). After the implementation: `npx tsc --noEmit` exit 0, and the first GREEN run was `Test Files  44 passed (44)`, `Tests  2633 passed (2633)` (`green-iter1.txt`). No test was changed between the RED run and the GREEN run. Test-authoring slips corrected BEFORE the RED run: a convoluted assertion in the 15-cell test was simplified, one bogus re-approve test was dropped, an unused import merged. No implementation was written before its failing test.
+
+#### Evidence (outputs under `.moai/state/verify/m3g1/`, gitignored; every vitest run with `--maxWorkers=4`, sequential, on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4     -> exit 0   (vitest-server-boundary.txt)
+ Test Files  48 passed (48)
+      Tests  2876 passed (2876)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4     -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, unedited)
+$ npx tsc --noEmit                                              -> exit 0   (tsc.txt, empty output)
+$ npx vitest run --coverage --maxWorkers=4                      -> exit 0   (vitest-coverage.txt)
+ Test Files  80 passed (80)
+      Tests  4177 passed (4177)          (before this step: 76 files / 4094 tests)
+$ node .moai/state/m3/covsum.mjs coverage/coverage-summary.json (covsum.txt)
+ engine: statements 652/652, branches 558/558, functions 145/145, lines 606/606
+ server: statements 1266/1266, branches 701/701, functions 330/330, lines 1191/1191
+```
+
+Engine stays at 100% (652/558/145/606) and `src/server` at 100% for what was added (before this step: 1237/685/319/1165). No coverage-only tests were added; no unreachable-by-design lines. No `skip` / `only` / disabled tests. `git -C <worktree> diff --check` printed only the LF-to-CRLF autocrlf warnings (the same warning every existing LF working-copy file produces) and no whitespace-error line.
+
+#### Mutation spot checks (scripted one-spot edit of the final tree, `npx vitest run tests/server --maxWorkers=4` each; baseline 2633 tests; the script restored every file from its in-memory original; `src-hashes-before.txt` equals `src-hashes-after.txt` over every `src/server/**` file; outputs `mutations/M*.txt`, rows in `mutations/summary.json`)
+
+| Mutation | Result (failed tests / files) |
+|----------|-------------------------------|
+| M1 `coverage-target.ts`: base fee branch skipped (approval / publish ignore base fees again) | 34 / 4 |
+| M2 `coverage-target.ts`: base fee version picked as latest written instead of the current-catalog version | 2 / 2 |
+| M3 `fingerprint.ts`: `amount` leaks into the base fee fingerprint (price-only change moves the mapping) | 17 / 4 |
+| M4 `fingerprint.ts`: `code` ignored in the base fee fingerprint (judgement change does NOT move the mapping) | 20 / 4 |
+| M5a `memory-repository.ts`: `putCommonBaseFee` accepts a `baseFeeId` equal to a treatment id | 1 / 1 |
+| M5b `memory-repository.ts`: `saveTreatment` accepts an id equal to a `baseFeeId` | 2 / 1 |
+| M6 `projection.ts`: engine base fee line computes its own fingerprint | 16 / 4 |
+| M7 `projection.ts`: base fee line amount forced to 0 (hospital payment loses the base fee) | 3 / 3 |
+| M8 `catalog-publish.ts`: re-review trigger skipped for base fees | 8 / 2 |
+| M9 `bundle-publish.ts`: stale fingerprint check disabled | 2 / 2 |
+| M10 `catalog-publish.ts`: other-clinic `baseFeeId` no longer rejected | 2 / 1 |
+| M11 `projection.ts`: engine line `treatmentId` = version id instead of `baseFeeId` | 16 / 3 |
+
+All 12 mutants are killed. Limit: "the engine excludes a held base fee from T" cannot be mutated here because `src/engine/**` is out of bounds for this step; M7 is the projection-level analogue and the T-invariance tests assert the engine behaviour (T = 25 000 in all four mapping states).
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Spec wording to update by the document owner (not edited here).** design.md:929 (DD-18 `CommonBaseFee` field list) should add `baseFeeId` and say `id` is the version id; DD-16 (judgement fields) and DD-15 should add the base fee judgement fields (`code`, `benefitType`; `calcClass` derived); design.md:157 / :318 / :1233 should say a base fee mapping's `treatmentId` is the `baseFeeId`. plan.md §E #8 text is consistent with the implementation; the M3.B / M3.D1 / M3.E / M3.F texts saying base fee mappings cannot be approved are superseded by this section.
+2. **M4 still owns design.md:171 (c)** (the same `treatmentId` in both `lines` and `baseFeeLines` of an estimate request). This step only guarantees that stored treatment ids and `baseFeeId`s cannot collide; request-level validation and the HTTP 500 mapping are NOT IMPLEMENTED.
+3. **Catalog `changeSummary.baseFeesChanged`** still compares version ids, so a price-only new base fee version reports `true` (a change of the catalog's base fee set). Left as is `[not in docs]`; no priceChangedBaseFeeIds list exists in DD-14.
+4. NOT IMPLEMENTED: M4 to M7, DB adapter, HTTP, clinic ownership / membership checks (AC-022a), deployment, merging, committing. NOT VERIFIED: any DB behaviour; asynchronous transactions; real concurrency; lint (no lint script and no `moai` CLI on this machine); CI; only Windows 11 and the local Node were run.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

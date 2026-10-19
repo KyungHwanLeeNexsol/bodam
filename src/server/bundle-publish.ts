@@ -11,12 +11,11 @@ import { DomainError } from './domain/errors';
 import type { Defect } from './domain/errors';
 import type { ItemKind, ItemStateSnapshot, ItemVersionRecord, ItemVersionRecordOf, ItemVersionRef } from './domain/items';
 import { toEngineDocumentRuleSet, toEngineMapping, toEngineProfile } from './domain/projection';
-import { coverageFingerprintOf } from './fingerprint';
+import { currentCoverageTarget } from './coverage-target';
 import { assertNoDefects, validateRuleBundlePublish } from './publish-validate';
 import type { BundleItemResolver } from './publish-validate';
 import type { Repository } from './repo/interfaces';
 import { isPlainObject } from './validate/shape';
-import { currentTreatmentVersion } from './treatment-current';
 
 // 규칙 묶음 게시 서비스 (SPEC-REIMBURSEMENT-001 M3.D1, design.md DD-14·DD-17, 역할 RV).
 //   publishRuleBundle   — 항목 버전 참조 목록을 새 RuleBundleVersion 으로 게시한다 (AC-007f, AC-011h, AC-011i, AC-011a)
@@ -117,10 +116,11 @@ function preconditionDefects(repo: Repository, request: unknown, seen: Seen, tod
     }
     if (ref.kind === 'MAPPING') {
       const mapping = engine as TreatmentCoverageMapping;
-      const current = currentTreatmentVersion(repo, mapping.treatmentId);
+      // 대상은 치료이거나 공통 기본비용이다: 승인이 지문을 고정할 때와 같은 조회(coverage-target.ts)로 현재 지문을 읽는다.
+      const current = currentCoverageTarget(repo, mapping.treatmentId);
       if (current === null) {
         out.push({ code: 'TREATMENT_VERSION_ABSENT', path: `${path}.treatmentId` });
-      } else if (mapping.approvedFingerprint !== '' && mapping.approvedFingerprint !== coverageFingerprintOf(current)) {
+      } else if (mapping.approvedFingerprint !== '' && mapping.approvedFingerprint !== current.fingerprint) {
         // 고정 지문이 없는 경우(빈 문자열)는 검증기가 FINGERPRINT_MISSING 으로 이미 보고한다.
         out.push({ code: 'FINGERPRINT_STALE', path: `${path}.approvedFingerprint` });
       }

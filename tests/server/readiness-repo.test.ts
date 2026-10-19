@@ -6,16 +6,17 @@ import { canonicalDigest } from '../../src/server/digest';
 import type { Actor } from '../../src/server/domain/actor';
 import type { CommonBaseFee } from '../../src/server/domain/entities';
 import { toEngineBaseFeeLine, toEnginePublishedLine } from '../../src/server/domain/projection';
-import { coverageFingerprint } from '../../src/server/fingerprint';
+import { coverageFingerprint, coverageFingerprintOfBaseFee } from '../../src/server/fingerprint';
+import { triggerReReviewForBaseFee } from '../../src/server/re-review';
 import { loadReadinessSnapshot, operatingReadinessContext, readReadiness } from '../../src/server/readiness';
 import type { ReadinessClinicInput, ReadinessContext } from '../../src/server/readiness';
 import { assignRuleScope } from '../../src/server/rule-scope';
-import { TEST_FIXTURE_PO_1, TEST_FIXTURE_RV_AUTHOR } from '../fixtures/server/actors.fixture';
-import { makeBundleVersion, makeClinic, makeCommonBaseFee, makeStatusEvent, makeTreatmentVersion } from '../fixtures/server/entities.fixture';
+import { TEST_FIXTURE_HA_1, TEST_FIXTURE_PO_1, TEST_FIXTURE_RV_APPROVER_2, TEST_FIXTURE_RV_AUTHOR } from '../fixtures/server/actors.fixture';
+import { makeBundleVersion, makeCatalogVersion, makeClinic, makeCommonBaseFee, makeStatusEvent, makeTreatmentVersion } from '../fixtures/server/entities.fixture';
 import { catchDomainError } from '../fixtures/server/errors.fixture';
 import { TEST_FIXTURE_RV_SUSPENDER, addClinics, clinicIdOf, publishSecondBundleOfSameItems } from '../fixtures/server/governance.fixture';
 import { documentRuleSetRecord, mappingRecord } from '../fixtures/server/items.fixture';
-import { baseContent, newWorld } from '../fixtures/server/lifecycle.fixture';
+import { baseContent, forceState, newWorld } from '../fixtures/server/lifecycle.fixture';
 import type { World } from '../fixtures/server/lifecycle.fixture';
 import { TEST_CATALOG_CONFIG, validCatalogRequest } from '../fixtures/server/publish.fixture';
 import { ALL_CELLS, TEST_CTX, cellName, expectCalculationAgrees, rowOfCell, sameCell } from '../fixtures/server/readiness.fixture';
@@ -234,12 +235,86 @@ describe('읽은 스냅샷은 서비스와 따로 조립한 엔진 입력과 같
     });
   });
 
-  it('공통 기본비용 줄에는 지금 매핑을 승인할 길이 없다: 승인이 지문을 고정할 치료 버전이 없어 TREATMENT_VERSION_ABSENT (스펙 모호점의 증거)', () => {
+  it('공통 기본비용 줄의 매핑이 정상 경로로 승인된다: 대상은 기본비용의 안정 식별자이고 고정 지문은 기본비용 현재 버전의 지문이다 (이전의 TREATMENT_VERSION_ABSENT 경로를 대체한다)', () => {
     const { world } = readyWorld({ baseFees: true });
     const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord('TEST_FIXTURE_FEE_1', { id: 'TEST_FIXTURE_MAPPING_FEE' }).content).ref;
     submitForReview(world.deps, TEST_FIXTURE_RV_AUTHOR, draft);
     const approver: Actor = { id: 'TEST_FIXTURE_RV_APPROVER', role: 'RV' };
+
+    approve(world.deps, approver, draft);
+
+    const state = world.repo.getItemState(draft)!;
+    expect(state.state).toBe('APPROVED');
+    expect(state.approver?.approverId).toBe(approver.id);
+    expect(state.approvedFingerprint).toBe(coverageFingerprintOfBaseFee(makeCommonBaseFee({ id: 'TEST_FIXTURE_FEE_1' })));
+  });
+});
+
+describe('공통 기본비용 매핑 승인·게시의 실제 실패 조건은 그대로 거절된다', () => {
+  const approver: Actor = { id: 'TEST_FIXTURE_RV_APPROVER', role: 'RV' };
+
+  it('대상이 치료도 기본비용도 아니면 승인은 TREATMENT_VERSION_ABSENT 이고 저장소 전후 비교가 같다', () => {
+    const { world } = readyWorld({ baseFees: true });
+    const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord('TEST_FIXTURE_NO_SUCH_TARGET', { id: 'TEST_FIXTURE_MAPPING_NONE' }).content).ref;
+    submitForReview(world.deps, TEST_FIXTURE_RV_AUTHOR, draft);
+    const before = repoSnapshotOf(world.repo);
+
     expect(catchDomainError(() => approve(world.deps, approver, draft)).code).toBe('TREATMENT_VERSION_ABSENT');
+
+    expect(repoSnapshotOf(world.repo)).toEqual(before);
+    expect(world.repo.getItemState(draft)?.state).toBe('REVIEW_REQUESTED');
+  });
+
+  it('대상이 치료도 기본비용도 아닌 승인 상태 매핑을 담은 묶음 게시는 TREATMENT_VERSION_ABSENT 결함으로 거절되고 아무것도 저장되지 않는다', () => {
+    const { world, refs } = readyWorld({ baseFees: true });
+    const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord('TEST_FIXTURE_NO_SUCH_TARGET', { id: 'TEST_FIXTURE_MAPPING_NONE' }).content).ref;
+    forceState(world.repo, draft, 'APPROVED'); // 서비스는 대상 없는 매핑을 승인하지 않는다. 게시 쪽 백스톱만 본다.
+    const before = repoSnapshotOf(world.repo);
+
+    const error = catchDomainError(() => publishRefs(world, { profiles: refs.profiles, mappings: [draft], documentRuleSet: refs.documentRuleSet }));
+
+    expect(error.code).toBe('PUBLISH_VALIDATION_FAILED');
+    expect(error.defects).toContainEqual({ code: 'TREATMENT_VERSION_ABSENT', path: 'bundle.mappings[0].treatmentId' });
+    expect(repoSnapshotOf(world.repo)).toEqual(before);
+  });
+
+  it('작성자 본인의 승인은 기본비용 매핑에서도 SELF_APPROVAL_FORBIDDEN 이고 저장소 전후 비교가 같다', () => {
+    const { world } = readyWorld({ baseFees: true });
+    const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord('TEST_FIXTURE_FEE_1', { id: 'TEST_FIXTURE_MAPPING_FEE' }).content).ref;
+    submitForReview(world.deps, TEST_FIXTURE_RV_AUTHOR, draft);
+    const before = repoSnapshotOf(world.repo);
+
+    expect(catchDomainError(() => approve(world.deps, TEST_FIXTURE_RV_AUTHOR, draft)).code).toBe('SELF_APPROVAL_FORBIDDEN');
+
+    expect(repoSnapshotOf(world.repo)).toEqual(before);
+    expect(world.repo.getItemState(draft)?.approvedFingerprint).toBeNull();
+  });
+
+  it('재검토 전환 없이 기본비용의 판단 필드가 달라진 현재 버전이 생기면 게시는 기존 FINGERPRINT_STALE 결함으로 거절되고, 재검토·재승인 뒤에는 게시된다', () => {
+    const { world, refs } = readyWorld({ baseFees: true });
+    const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord('TEST_FIXTURE_FEE_1', { id: 'TEST_FIXTURE_MAPPING_FEE' }).content).ref;
+    submitForReview(world.deps, TEST_FIXTURE_RV_AUTHOR, draft);
+    approve(world.deps, approver, draft);
+    // 저장소 원시 동작: 판단 필드가 바뀐 새 버전을 현재 카탈로그에 올리되 재검토 전환은 부르지 않는다.
+    const changed = makeCommonBaseFee({ id: 'TEST_FIXTURE_FEE_1_V2', baseFeeId: 'TEST_FIXTURE_FEE_1', code: 'TEST_FIXTURE_FEE_CODE_CHANGED' });
+    const current = world.repo.getClinicCurrentCatalogVersion(TEST_FIXTURE_CLINIC_ID)!;
+    world.repo.putCommonBaseFee(changed);
+    world.repo.putCatalogVersion(makeCatalogVersion({ id: 'TEST_FIXTURE_CATALOG_RAW', treatmentVersionIds: current.treatmentVersionIds, baseFeeIds: [changed.id, 'TEST_FIXTURE_FEE_2'] }));
+    world.repo.saveClinic({ ...world.repo.getClinic(TEST_FIXTURE_CLINIC_ID)!, currentCatalogVersionId: 'TEST_FIXTURE_CATALOG_RAW' });
+    const request = { profiles: refs.profiles, mappings: [draft], documentRuleSet: refs.documentRuleSet };
+    const before = repoSnapshotOf(world.repo);
+
+    const error = catchDomainError(() => publishRefs(world, request));
+
+    expect(error.code).toBe('PUBLISH_VALIDATION_FAILED');
+    expect(error.defects).toEqual([{ code: 'FINGERPRINT_STALE', path: 'bundle.mappings[0].approvedFingerprint' }]);
+    expect(repoSnapshotOf(world.repo)).toEqual(before);
+
+    // 교정: 재검토 전환 → 다른 승인자의 재승인(새 지문 고정) → 게시.
+    triggerReReviewForBaseFee(world.deps, TEST_FIXTURE_HA_1, changed);
+    expect(world.repo.getItemState(draft)?.state).toBe('UNDER_REREVIEW');
+    approve(world.deps, TEST_FIXTURE_RV_APPROVER_2, draft);
+    expect(() => publishRefs(world, request)).not.toThrow();
   });
 });
 

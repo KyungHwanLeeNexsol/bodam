@@ -1,7 +1,7 @@
 import { compareCodePoints } from '../engine/validate';
 import type { BenefitType, CalcClass } from '../engine/types';
 import { canonicalDigest } from './digest';
-import type { TreatmentVersion } from './domain/entities';
+import type { CommonBaseFee, TreatmentVersion } from './domain/entities';
 
 // 지문 방어 (design.md DD-15)와 재검토 기준의 보장 판단 필드 (DD-16).
 //   approvedFingerprint = 해시(치료 코드, 행위 코드 목록, 급여 구분, 계산 분류)
@@ -48,5 +48,35 @@ export function coverageFingerprintOf(version: TreatmentVersion): string {
     procedureCodes: version.procedureCodes,
     benefitType: version.benefitType,
     calcClass: version.calcClass,
+  });
+}
+
+// ───────────────────────── 공통 기본비용 ─────────────────────────
+// 공통 기본비용도 치료와 같은 보장 판단(매핑)을 거친다 (design.md DD-03, plan.md §E #8). 기본비용에는 행위 코드 목록과 분류가 없으므로
+// 지문 입력의 해당 칸을 정해 같은 지문 함수(coverageFingerprint)에 넣는다. 지문 함수는 대상 종류마다 하나다.
+
+/**
+ * 공통 기본비용의 보장 판단 필드 (닫힌 목록). [문서에 없음] DD-16 은 치료 버전의 판단 필드만 적는다. 기본비용에는 코드와 급여 구분을 골랐다:
+ * 분류(calcClass)는 급여 구분에서 파생되므로(calcClassOfBaseFee) 따로 필드로 두지 않는다. 가격(amount)·표시 이름·출처·병원은 판단 필드가 아니다.
+ * 기본비용에 새 필드를 추가할 때는 설계 단계에서 이 목록에 넣을지 정한다.
+ */
+export const COMMON_BASE_FEE_JUDGMENT_FIELDS = ['code', 'benefitType'] as const;
+export type CommonBaseFeeJudgmentField = (typeof COMMON_BASE_FEE_JUDGMENT_FIELDS)[number];
+
+// @MX:NOTE: [AUTO] [문서에 없음] 기본비용의 분류 파생이 사는 유일한 곳. 급여 → GENERAL_BENEFIT, 비급여 → GENERAL_NON_BENEFIT 이고 확인 필요(NEEDS_REVIEW)로 두지 않는다.
+/** 기본비용의 계산 분류는 급여 구분에서 정한다. 지문과 엔진 줄(projection.ts)이 모두 이 함수를 쓴다. */
+export function calcClassOfBaseFee(benefitType: BenefitType): CalcClass {
+  return benefitType === 'BENEFIT' ? 'GENERAL_BENEFIT' : 'GENERAL_NON_BENEFIT';
+}
+
+// @MX:ANCHOR: [AUTO] 공통 기본비용 지문의 단일 구현. 매핑 승인·규칙 묶음 게시의 낡음 검사(coverage-target.ts)·재검토 전환·엔진 줄 변환이 모두 부른다.
+// @MX:REASON: 승인 때 고정한 지문과 계산 때 줄이 싣는 지문이 한 함수에서 나와야 같은 기본비용이 MAPPING_UNDER_REREVIEW 로 잘못 보류되지 않는다(DD-15). 구현이 둘이면 가격만 바뀐 새 버전이 매핑을 재검토로 떨어뜨릴 수 있다.
+/** 기본비용 버전의 현재 지문: (기본비용 코드, 행위 코드 없음, 급여 구분, 파생 분류). 가격·표시 이름·출처·병원·id 는 들어가지 않는다. */
+export function coverageFingerprintOfBaseFee(fee: CommonBaseFee): string {
+  return coverageFingerprint({
+    treatmentCode: fee.code,
+    procedureCodes: [],
+    benefitType: fee.benefitType,
+    calcClass: calcClassOfBaseFee(fee.benefitType),
   });
 }

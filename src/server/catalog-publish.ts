@@ -8,13 +8,13 @@ import { DomainError } from './domain/errors';
 import type { Defect } from './domain/errors';
 import { assertNoDefects, validateCatalogPublish } from './publish-validate';
 import type { CatalogPublishConfig } from './publish-validate';
-import { triggerReReview } from './re-review';
+import { triggerReReview, triggerReReviewForBaseFee } from './re-review';
 
 // 카탈로그 게시 서비스 (SPEC-REIMBURSEMENT-001 M3.D1, design.md DD-14·DD-16·DD-24, 역할 HA).
 //   publishCatalog          — 한 병원의 치료 버전·공통 기본비용을 새 CatalogVersion 으로 게시한다 (AC-009a, AC-009c, AC-010c, AC-011h)
 //   restoreCatalogVersion   — 이전 CatalogVersion 의 사본을 같은 게시 경로로 새 id 에 게시한다 (AC-011b)
 // 게시는 하나의 저장소 트랜잭션이다: 검증 → 소유 확인 → 치료 버전·기본비용·카탈로그 쓰기 → 병원의 현재 카탈로그 갱신 →
-// 치료 버전마다 재검토 전환 → 감사 기록. 어느 단계든 던지면 쓰기 전부(감사 기록 포함)가 되돌려지고 이전 카탈로그가 현재로 남는다.
+// 치료 버전과 공통 기본비용 버전마다 재검토 전환 → 감사 기록. 어느 단계든 던지면 쓰기 전부(감사 기록 포함)가 되돌려지고 이전 카탈로그가 현재로 남는다.
 // 역할만 본다: 병원 소유·소속·인증은 M7(AC-022a)이 하며 여기에 구현하지 않는다.
 
 /** 소유 확인: 검증이 끝난 요청의 치료 버전이 이 병원의 치료에 속하는지, 공통 기본비용이 이 병원의 것인지. 검증기는 병원 id 를 받지 않는다. */
@@ -31,6 +31,14 @@ function ownershipDefects(deps: ServiceDeps, clinicId: string, versions: readonl
   fees.forEach((fee, index) => {
     if (fee.clinicId !== clinicId) {
       out.push({ code: 'BASE_FEE_CLINIC_MISMATCH', path: `commonBaseFees[${index}].clinicId` });
+    }
+    // 한 id 공간 [문서에 없음]: 기본비용의 안정 식별자는 치료 id 와 겹치면 안 되고, 다른 병원이 이미 쓰는 식별자여도 안 된다.
+    // 같은 결함을 저장소 백스톱(DUPLICATE_KEY)이 한 번 더 막지만, 게시 요청에는 경로가 있는 유형 결함으로 돌려준다.
+    if (deps.repo.getTreatment(fee.baseFeeId) !== null) {
+      out.push({ code: 'BASE_FEE_ID_COLLIDES_WITH_TREATMENT', path: `commonBaseFees[${index}].baseFeeId` });
+    }
+    if (deps.repo.listCommonBaseFeeVersions(fee.baseFeeId).some((earlier) => earlier.clinicId !== clinicId)) {
+      out.push({ code: 'BASE_FEE_ID_CLINIC_MISMATCH', path: `commonBaseFees[${index}].baseFeeId` });
     }
   });
   return out;
@@ -91,6 +99,8 @@ function publishNew(deps: ServiceDeps, actor: Actor, clinicId: string, request: 
     deps.repo.saveClinic({ ...clinic, currentCatalogVersionId: catalog.id });
     // 보장 판단 필드가 바뀐 치료 버전이면 그 치료의 APPROVED·PUBLISHED 매핑이 UNDER_REREVIEW 가 된다. 가격만 바뀐 게시는 아무것도 옮기지 않는다 (DD-16).
     treatmentVersions.forEach((version) => triggerReReview(deps, actor, version));
+    // 공통 기본비용도 같다: 판단 필드(code, 급여 구분)가 바뀐 버전이면 그 기본비용 매핑이 UNDER_REREVIEW 가 되고, 가격만 바뀐 버전은 아무것도 옮기지 않는다.
+    commonBaseFees.forEach((fee) => triggerReReviewForBaseFee(deps, actor, fee));
     appendAudit(deps, actor, { action: audit.action, target: `CATALOG/${catalog.id}`, beforeVersion: previous?.id ?? null, afterVersion: catalog.id, reason: audit.reason });
     return catalog;
   });

@@ -93,6 +93,7 @@ function checkTreatmentVersion(out: Defect[], entry: Record<string, unknown>, at
 
 function checkCommonBaseFee(out: Defect[], entry: Record<string, unknown>, at: string, config: CatalogPublishConfig): void {
   expectValue(out, entry.id, `${at}.id`, isNonEmptyString);
+  expectValue(out, entry.baseFeeId, `${at}.baseFeeId`, isNonEmptyString);
   expectValue(out, entry.clinicId, `${at}.clinicId`, isNonEmptyString);
   expectValue(out, entry.displayName, `${at}.displayName`, isString);
   expectValue(out, entry.benefitType, `${at}.benefitType`, isBenefitType);
@@ -126,8 +127,8 @@ function reportDuplicates(out: Defect[], list: unknown, container: string, field
  * 카탈로그 게시 요청의 결함을 모두 모아 고정된 순서로 돌려준다 (결함이 없으면 빈 배열):
  *   1) 치료 버전 목록: 목록 모양 → 항목 순서대로(항목 모양, 그 안에서는 id → treatmentId → displayName → benefitType →
  *      patientAmount → treatmentCode → procedureCodes → calcClass → documentFlags → origin → 허용 출처)
- *   2) 공통 기본비용 목록: 같은 방식 (id → clinicId → displayName → benefitType → amount → code → origin → 허용 출처)
- *   3) 중복: 치료 버전의 treatmentId → 치료 버전의 id → 공통 기본비용의 id (엔진이 INPUT_INTEGRITY_VIOLATION 으로 거절할 입력을 막는다)
+ *   2) 공통 기본비용 목록: 같은 방식 (id → baseFeeId → clinicId → displayName → benefitType → amount → code → origin → 허용 출처)
+ *   3) 중복: 치료 버전의 treatmentId → 치료 버전의 id → 공통 기본비용의 id → 공통 기본비용의 baseFeeId (엔진이 INPUT_INTEGRITY_VIOLATION 으로 거절할 입력을 막는다)
  * 금액은 엔진의 isWon(0 이상 MAX_AMOUNT_WON 이하 안전 정수, -0 제외)을 그대로 부른다. 값을 고치거나 채우지 않는다.
  * 병원 소유(기본비용의 clinicId 가 이 카탈로그의 병원인지)는 서비스가 확인한다: 이 함수는 병원 id 를 받지 않는다.
  */
@@ -141,5 +142,7 @@ export function validateCatalogPublish(request: unknown, config: CatalogPublishC
   reportDuplicates(out, request.treatmentVersions, 'treatmentVersions', 'treatmentId', 'DUPLICATE_TREATMENT_ID');
   reportDuplicates(out, request.treatmentVersions, 'treatmentVersions', 'id', 'DUPLICATE_ID');
   reportDuplicates(out, request.commonBaseFees, 'commonBaseFees', 'id', 'DUPLICATE_ID');
+  // 같은 기본비용의 두 버전이 한 카탈로그에 든 것도 결함이다(엔진 입력에서 같은 줄 id 가 둘이 된다). 치료의 treatmentId 중복과 같은 성격이다.
+  reportDuplicates(out, request.commonBaseFees, 'commonBaseFees', 'baseFeeId', 'DUPLICATE_BASE_FEE_ID');
   return out;
 }

@@ -61,13 +61,26 @@ export interface TreatmentVersion {
   effectiveDate: string;
 }
 
-/** 자동 포함 줄 (DD-03). 한 번 쓰면 바꾸지 않으며 바뀐 비용은 새 id 로 낸다([문서에 없음]: 카탈로그 버전이 id 목록을 담는다). */
+/**
+ * 자동 포함 줄 (DD-03)의 한 버전. 한 번 쓰면 바꾸지 않으며(id 가 버전 id 다) 바뀐 비용은 같은 baseFeeId 의 새 버전으로 낸다
+ * ([문서에 없음]: 카탈로그 버전이 이 버전 id 목록을 담는다). 치료의 TreatmentVersion(id / treatmentId)과 같은 모양이다.
+ */
 export interface CommonBaseFee {
+  /** 버전 id. 엔진 줄의 treatmentVersionId 가 된다. */
   id: string;
+  /**
+   * [문서에 없음] 기본비용의 안정 식별자. 같은 기본비용의 모든 버전이 같은 값을 갖고, 매핑의 treatmentId 가 이 값을 가리키며,
+   * 엔진 줄의 treatmentId 가 된다. 치료 id 와 한 id 공간을 쓴다(둘은 겹치지 못한다: 저장소 백스톱).
+   * 가격만 바뀐 새 버전이 매핑을 고아로 만들지 않도록 버전 id 와 분리했다.
+   */
+  baseFeeId: string;
   clinicId: string;
   displayName: string;
+  /** 보장 판단 필드 (fingerprint.ts COMMON_BASE_FEE_JUDGMENT_FIELDS). */
   benefitType: BenefitType;
+  /** 가격. 보장 판단 필드가 아니다. */
   amount: Won;
+  /** 보장 판단 필드 (fingerprint.ts COMMON_BASE_FEE_JUDGMENT_FIELDS). */
   code: string;
   origin: Origin;
 }

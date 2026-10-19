@@ -6,10 +6,9 @@ import type { Actor } from './domain/actor';
 import { DomainError } from './domain/errors';
 import { formatRef, isMappingRecord } from './domain/items';
 import type { ItemStateRecord, ItemVersionRecord, ItemVersionRef } from './domain/items';
-import { coverageFingerprintOf } from './fingerprint';
+import { currentCoverageTarget } from './coverage-target';
 import { assertTransition } from './lifecycle';
 import { closeReviewRequestForMapping } from './review-request';
-import { currentTreatmentVersion } from './treatment-current';
 
 // 제출·승인·반려·항목 중지와 시스템 전이 (design.md DD-17 생명주기 표, 소유자 결정 #31 본인 승인 금지).
 // 세 종류의 규칙 항목이 같은 서비스를 쓰고 같은 전이 표(lifecycle.ts)를 공유한다. 역할만 본다: 소유·인증은 M7.
@@ -81,15 +80,16 @@ export function submitForReview(deps: ServiceDeps, actor: Actor, ref: ItemVersio
 }
 
 /**
- * 매핑 승인이 고정할 치료 버전의 지문 (DD-15). [문서에 없음] 지문을 만들 치료 버전은 병원의 현재 카탈로그 버전에 든 그 치료의
- * 버전이고, 현재 카탈로그에 없으면 쓰기 순서상 가장 나중 버전이다. 버전이 하나도 없으면 TREATMENT_VERSION_ABSENT.
+ * 매핑 승인이 고정할 대상 버전의 지문 (DD-15). 대상은 치료이거나 공통 기본비용이다(매핑의 treatmentId 가 가리키는 값, 한 id 공간).
+ * [문서에 없음] 지문을 만들 버전은 병원의 현재 카탈로그 버전에 든 그 대상의 버전이고, 현재 카탈로그에 없으면 쓰기 순서상 가장 나중 버전이다
+ * (coverage-target.ts 한 곳). 치료도 기본비용도 아니거나 버전이 하나도 없으면 TREATMENT_VERSION_ABSENT (코드 이름은 기존 계약 그대로).
  */
 function pinnedFingerprint(deps: ServiceDeps, treatmentId: string): string {
-  const version = currentTreatmentVersion(deps.repo, treatmentId);
-  if (version === null) {
-    throw new DomainError('TREATMENT_VERSION_ABSENT', `치료 '${treatmentId}' 의 버전이 없어 승인 지문을 고정할 수 없다`);
+  const target = currentCoverageTarget(deps.repo, treatmentId);
+  if (target === null) {
+    throw new DomainError('TREATMENT_VERSION_ABSENT', `치료 또는 공통 기본비용 '${treatmentId}' 의 버전이 없어 승인 지문을 고정할 수 없다`);
   }
-  return coverageFingerprintOf(version);
+  return target.fingerprint;
 }
 
 // @MX:ANCHOR: [AUTO] 승인의 단일 진입점. 첫 승인과 재승인(UNDER_REREVIEW → APPROVED)이 모두 지나가며 본인 승인 금지와 지문 고정이 여기서 일어난다.
