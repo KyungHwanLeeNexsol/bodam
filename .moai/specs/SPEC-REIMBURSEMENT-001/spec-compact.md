@@ -304,7 +304,7 @@
 | C3 | 관리자 경로의 오류는 401 `UNAUTHENTICATED`와 403 `FORBIDDEN`으로 반환한다. | SPEC 결정 | DD-19, AC-021f |
 | C4 | 서버 실패는 500 `INTERNAL_ERROR`와 그 밖의 5xx로 반환한다. | SPEC 결정 | DD-19, AC-021a |
 | C5 | 관리자 입력의 수치 범위 위반은 400 `INVALID_REQUEST`로 반환한다. | SPEC 결정 | DD-19, DD-24, AC-021f |
-| C6 | 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`로 반환한다(이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다: M4 · 미구현). | SPEC 결정 | DD-19, DD-24, AC-006i |
+| C6 | 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`로 반환한다(이 API 매핑은 계약 요구사항이며 M4.B에서 구현·시험되었다: M4 · 구현·시험됨, 메모리 저장소 위 통합 시험, progress.md M4.B. 운영 자료로는 검증하지 않았다). | SPEC 결정 | DD-19, DD-24, AC-006i |
 | C7 | 성공 응답에 계산에 실제로 쓴 버전·규칙 묶음 가용성(`ruleBundleStatus`)·프로필 id·버전·`origin` 요약을 담는다. | 확정 근거: 기획서 §8 (결과와 근거 반환) | DD-04, DD-14, DD-19, AC-021c |
 | C8 | 키오스크는 활성 요청의 409를 버전 불일치 흐름으로 처리한다. | SPEC 결정 | DD-07, DD-19 |
 | C9 | 키오스크는 활성 요청의 `NO_TREATMENT_SELECTED`와 `TREATMENT_NOT_PUBLISHED`를 DD-19 클라이언트 처리 표의 해당 행으로 처리한다. | SPEC 결정 | DD-07, DD-19, AC-013d |
@@ -343,7 +343,7 @@
 | AC-003 | a 원 단위 처리 누락 보류 · b 버림·반올림·선택형Ⅱ 1회 처리 · c 미지원 공식·COVERED_COST 보류 · d 잔여 한도 가정 · e 조항 누락 보류 · f 공유 한도 1회(P·P_pooled 기록) · g 프로필 값 무효 보류(없음은 `PROFILE_VALUE_MISSING`) · h 계산 범위 초과 보류(공제 방식·원 단위 처리별 경계표)와 합계 넘침 | unit |
 | AC-004 | a 정상 0원 · b 전부 제외 · c 보류 null(병원 결제액 124,000) · d 매핑 없는 줄의 그룹 제외와 참고 그룹(P 4,000 / 40,000) · e 가정 코드(보류에도 PERSONAL_CONTRACT_NOT_CONFIRMED) · f 기본비용 세 경우 · g 계산 근거(P·P_pooled) · h 공유 한도 뒤 출력 일관성 | unit |
 | AC-005 | a 속성 기반 불변 조건(고정 시드; 합계 일치, `P_pooled ≤ P ≤ E`, `NaN`·비안전 정수 없음 포함) | unit |
-| AC-006 | a 지원 밖 세대 거절 · b 치료 0개 거절 · c 중복 ID 1회(내용이 다른 중복은 `INPUT_INTEGRITY_VIOLATION` 거절) · d 원인 독립(엔진) · e 원인 모름은 보류 아님 · f API 400/422 층 구분과 422 두 종 · g API 결과 블록 동일 · h 수치 범위 밖 줄 금액·합계 넘침 거절(`INVALID_NUMERIC_INPUT`) · i 저장된 줄 금액 무효·충돌하는 중복 줄 → API 500 (M4 · 미구현, 서버 줄 조립 검증 (a)~(d)도 M4 필수 · 미구현) | unit (a·b·c·d·e·h), integration (f·g·i) |
+| AC-006 | a 지원 밖 세대 거절 · b 치료 0개 거절 · c 중복 ID 1회(내용이 다른 중복은 `INPUT_INTEGRITY_VIOLATION` 거절) · d 원인 독립(엔진) · e 원인 모름은 보류 아님 · f API 400/422 층 구분과 422 두 종 · g API 결과 블록 동일 · h 수치 범위 밖 줄 금액·합계 넘침 거절(`INVALID_NUMERIC_INPUT`) · i 저장된 줄 금액 무효·충돌하는 중복 줄 → API 500 (M4 · 구현·시험됨: M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B. 서버 줄 조립 검증 (a)~(d)도 같다. 운영 자료로는 검증하지 않았다) | unit (a·b·c·d·e·h), integration (f·g·i) |
 | AC-007 | a 9줄·영수증 줄 항상 · b 원인별 서류와 우선 사유 · c 원인 모름 예시 묶음의 7+1+1(일반 규칙 아님) · d RULES_UNAVAILABLE · e 보류 시 null · f 서류 규칙 게시는 구조·`when` 계약 검사만(전용 줄 수는 거절 사유 아님) · g 규칙 없음일 때 서류 화면(안내 문구, "결과로 돌아가기"·"이용 완료" 유지)과 보류 시 진입 없음 · h 전용 줄이 여럿인 규칙에서 9줄 한 번씩·사유 병합 · i 그 경우의 화면(세로·가로·큰 글자, 이전/다음 목록) · j `when` 키(`cause`·`setting`·`insurerType`)별 평가(AND·빠진 키·`when: {}`) · k 치료 서류 표시의 OR 집계와 치료 순열 불변 · l 우선순위·사유 코드 포인트 동률 규칙과 규칙 순열 불변 | unit (a·b·c·d·e·h·j·k·l), integration (f), e2e-app (g), render + e2e-app (i) |
 | AC-008 | a 프로필 상태별 코드(구조 결함·같은 칸 프로필 둘·묶음 중지 포함) · b 매핑 상태별 코드(승인자·출처 누락 포함) · c 분류 확인 필요 · d 칸 대체 금지 · e 판정 순서 · f 규칙 사용 범위 없음 · g 규칙 묶음 중지(버전·해시가 같아도 보류, 판정 순서) · h 매핑 후보 구성 행렬(사용 가능한 후보 개수·지문) · i 사용 불가 후보들의 고정 우선순위 코드 · j 매핑 `decision`·제외 지름길 없음·필드 규칙 방어 · k 배열 순서 독립과 출력 순서 · l 묶음 선행 판정과 항목 판정의 호출 순서(묶음 중지 때 `isUsable` 호출 0) · m 프로필 구조 결함과 공유 한도 풀 값 결함의 영향 범위 | unit |
 | AC-009 | a 보장 판단 필드 변경 → 재검토 · b 지문 불일치 보류 · c 가격만 변경 시 매핑 유지 | integration (a·c), unit (b) |

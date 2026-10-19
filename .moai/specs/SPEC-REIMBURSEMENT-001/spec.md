@@ -410,7 +410,7 @@ tier: L
 | C3 | 관리자 경로의 오류는 401 `UNAUTHENTICATED`와 403 `FORBIDDEN`으로 반환한다. | SPEC 결정 | DD-19, AC-021f |
 | C4 | 서버 실패는 500 `INTERNAL_ERROR`와 그 밖의 5xx로 반환한다. | SPEC 결정 | DD-19, AC-021a |
 | C5 | 관리자 입력의 수치 범위 위반은 400 `INVALID_REQUEST`로 반환한다. | SPEC 결정 | DD-19, DD-24, AC-021f |
-| C6 | 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`로 반환한다(이 API 매핑은 계약 요구사항이며 M4 전까지 구현되지 않았다: M4 · 미구현). | SPEC 결정 | DD-19, DD-24, AC-006i |
+| C6 | 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절은 금액과 내부 상세 없이 500 `INTERNAL_ERROR`로 반환한다(이 API 매핑은 계약 요구사항이며 M4.B에서 구현·시험되었다: M4 · 구현·시험됨, 메모리 저장소 위 통합 시험, progress.md M4.B. 운영 자료로는 검증하지 않았다). | SPEC 결정 | DD-19, DD-24, AC-006i |
 | C7 | 성공 응답에 계산에 실제로 쓴 버전·규칙 묶음 가용성(`ruleBundleStatus`)·프로필 id·버전·`origin` 요약을 담는다. | 확정 근거: 기획서 §8 (결과와 근거 반환) | DD-04, DD-14, DD-19, AC-021c |
 | C8 | 키오스크는 활성 요청의 409를 버전 불일치 흐름으로 처리한다. | SPEC 결정 | DD-07, DD-19 |
 | C9 | 키오스크는 활성 요청의 `NO_TREATMENT_SELECTED`와 `TREATMENT_NOT_PUBLISHED`를 DD-19 클라이언트 처리 표의 해당 행으로 처리한다. | SPEC 결정 | DD-07, DD-19, AC-013d |
