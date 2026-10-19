@@ -2225,6 +2225,128 @@ All 12 mutants are killed. Limit: "the engine excludes a held base fee from T" c
 3. **Catalog `changeSummary.baseFeesChanged`** still compares version ids, so a price-only new base fee version reports `true` (a change of the catalog's base fee set). Left as is `[not in docs]`; no priceChangedBaseFeeIds list exists in DD-14.
 4. NOT IMPLEMENTED: M4 to M7, DB adapter, HTTP, clinic ownership / membership checks (AC-022a), deployment, merging, committing. NOT VERIFIED: any DB behaviour; asynchronous transactions; real concurrency; lint (no lint script and no `moai` CLI on this machine); CI; only Windows 11 and the local Node were run.
 
+### M3 외부 검토 보완 ② 재승인 정보와 캐시 계약 회귀 시험, 2026-10-19
+
+**Scope.** External-review item 2 (code side) for Draft PR #3 (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` at `76646d3`, not committed by this step. Review finding: `ItemStateSnapshot` carries `state`, `approver` and `approvedFingerprint`; they live in the item STATE record (`repo.readItemStates`), not in the immutable item content (`repo.getItemVersion`), and `domain/projection.ts` composes immutable content plus freshly read state into the engine snapshot. A re-approval (`UNDER_REREVIEW -> APPROVED`, `approval.ts` `approve`) writes a NEW approver and re-pins a NEW fingerprint, while the rule bundle version (`id`, `itemRefs`, `contentHash`) and every item content stay unchanged. design.md DD-14 still lists approver and fingerprint as immutable / cacheable content; the document owner corrects the wording separately (this step does not edit design.md, acceptance.md, plan.md, spec*.md or research.md). **This step is a regression proof in code only. It changes NO production code, closes NO new AC and adds NO AC id.** The implementation already matched the corrected contract; the new tests pin it. NO M4 work (no HTTP, no cache layer, no routes, no 500 mapping). Owner decisions #31 / #34 / #1 are intact.
+
+The contract the tests pin:
+
+| Kind | Items | Cache rule |
+|------|-------|------------|
+| Immutable, cacheable | item version content (`content`, `contentHash`, header fields such as `origin`, `validity`, `policySources`, author), rule bundle version (`id`, `itemRefs`, `contentHash`) | may be served from a cache keyed by (bundle id, `contentHash`) |
+| Read fresh on every composition, composed TOGETHER | `state`, `approver`, `approvedFingerprint` (item level), plus bundle availability `status` | never cached; one `readItemStates` per composition |
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `tests/server/reapproval-cache-contract.test.ts` | NEW, 32 tests per target x 2 targets = 64 tests (`describe.each` over a treatment mapping and a common base fee mapping) |
+| `tests/fixtures/server/reapproval.fixture.ts` | NEW (all `TEST_FIXTURE`): the two targets, the test-side "cache" (`cacheBundle` = a deep copy of one `getRuleBundleVersion` + `getItemVersion` read), `composeFromCache` (cached content + `readItemStates` + `getBundleStatus` through `projection.ts`; reads NO content), step helpers `stepOne / stepTwo / stepThree / stepFive`, engine verdict helpers |
+
+No file under `src/**` was edited (hash proof below). No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**`, `tests/fixtures/engine/**` was edited; `package.json`, `vitest.config.ts`, design.md, acceptance.md, plan.md, spec*.md and research.md are untouched. Existing fixtures are reused unchanged (`publishedBaseFeePath`, `base-fee.fixture.ts`, `governance.fixture.ts`, `versioning.fixture.ts`).
+
+#### Scenario S (every step goes through the services; no direct repository state injection)
+
+Principals: author `TEST_FIXTURE_RV_AUTHOR`, first approver A1 = `TEST_FIXTURE_RV_APPROVER`, re-approver A2 = `TEST_FIXTURE_RV_APPROVER_2` (a test asserts the three differ), bundle publisher `TEST_FIXTURE_RV_PUBLISHER`, catalog publisher `TEST_FIXTURE_HA_1`, scope `TEST_FIXTURE_PO_1`, suspender `TEST_FIXTURE_RV_SUSPENDER`. Path: catalog publish -> author -> submit -> approve (A1) -> bundle publish (X) -> PO scope -> readiness `READY`.
+
+| Step | What the tests do and assert |
+|------|------------------------------|
+| 1 | Read bundle X first and keep a deep copy of what a cache would hold (bundle record + the content records of all its items). Negative control: a deep copy of the state snapshots read at that time (mapping `PUBLISHED`, A1, F1). Assert content records have no `state` / `approver` / `approvedFingerprint` key (3 item kinds), the bundle record keys are exactly `id, itemRefs, contentHash, publishedBy, publishedAt`, and the stale copy equals `{PUBLISHED, A1, F1}` |
+| 2 | HA publishes a catalog with a new version whose coverage-judgement field changed (treatment: `treatmentCode`; base fee: `code`). Fresh state read: `UNDER_REREVIEW`, approver and fingerprint still A1 / F1. X `id` / `contentHash` / `itemRefs` deep-equal the cached copy, `bundleContentHashOf` recomputed from storage equals it, cached content deep-equals a fresh `getItemVersion` read, readiness row and `estimate()` both give `MAPPING_UNDER_REREVIEW` |
+| 3 | A2 re-approves. Fresh read: `APPROVED`, approver `{A2, 2026-10-20T09:00:00.000Z}`, fingerprint F2 != F1 and equal to the fingerprint of the NEW current version. X unchanged vs the cache, content unchanged (and content has no `approver` / `approvedFingerprint`). History keeps the A1 / F1 rows and appends `APPROVED, A2, F2` (full tuple list asserted); audit shows `ITEM_APPROVE(A1)`, `ITEM_REREVIEW(HA_1)`, `ITEM_APPROVE(A2)` in that order |
+| 4 | Compose the engine snapshot two ways. (a) cached content + FRESH state: mapping `APPROVED`, A2, F2. (b) cached content + the stale copy: `PUBLISHED`, A1, F1. Engine verdicts differ: (a) `MAPPING_UNREVIEWED`, (b) `MAPPING_UNDER_REREVIEW` (the stale F1 no longer equals the line's fingerprint). The readiness loader's bundle deep-equals composition (a) (one composition path). Key-shape assertion: composed keys = content keys + `state, approver, approvedFingerprint`. Planting fake `state` / `approver` / `approvedFingerprint` values into the cached content changes nothing in the composed result (they come only from the state record) |
+| 5 | Lifecycle continuation, see "Observed semantics" below |
+| 6 | Read spy: composing from the cache calls `readItemStates` exactly once per composition and `getItemVersion` / `getRuleBundleVersion` zero times; the readiness loader calls `readItemStates` once per bundle per load (second load doubles it); one cache object composed three times across `UNDER_REREVIEW -> APPROVED -> PUBLISHED` returns the new state / approver / fingerprint each time, the cache object stays deep-equal to its pre-sequence copy, and no invalidation call exists or is needed |
+| 7 | Suspend bundle X: item states, approvers, fingerprints and item histories are unchanged (deep-equal before / after), X's record equals the cached copy, composition shows `status SUSPENDED` read fresh while the mapping is still `PUBLISHED, A2, F2`; the clinic scoped to X reads `RULE_BUNDLE_SUSPENDED`, and after the PO scopes it to X2 it is `READY` for the same items |
+
+#### Observed semantics of step 5 (plain words; read from `bundle-publish.ts` / `lifecycle.ts` and confirmed by tests, nothing invented)
+
+1. After the re-approval the mapping is `APPROVED`, which the engine does not accept: while bundle X is still `ACTIVE` and the clinic still points at X, the line is held with `MAPPING_UNREVIEWED`. Bundle X itself is not touched by the re-approval.
+2. The only way back to `PUBLISHED` is publishing a bundle that contains the item: `publishRuleBundle` moves every `APPROVED` item of the request to `PUBLISHED`. There is no operation that "re-publishes" X (a published bundle is write-once); publishing the same item refs gives a NEW bundle X2 (new id).
+3. X2's `contentHash` EQUALS X's (the hash is defined over the sorted item refs and the digests of the stored item content; it does not read state, approver, fingerprint, bundle id, time or publisher). X2's `itemRefs` equal X's. X's record is unchanged and X stays `ACTIVE`. The publish does not mark any earlier item version `SUPERSEDED` (the existing `@MX:NOTE` in `bundle-publish.ts`).
+4. Item state is shared across bundles. So after X2 is published, bundle X becomes usable again WITHOUT any action on X: a clinic whose scope still points at X reads `READY` (scope bundle id is still X) and the engine estimates the line. The mapping now carries A2 and F2. A clinic scoped to X2 sees the identical item states; composing X and X2 from their caches differs only in the bundle id.
+5. Consequence worth knowing: nothing forces anyone to publish X2. Until some RV publishes a bundle containing the re-approved mapping, every bundle with that item stays held for that line, and publishing ANY bundle that contains it (not only a copy of X) also returns it to `PUBLISHED`.
+6. A stale fingerprint alone blocks even a `PUBLISHED` item: after step 5, the composition with the stale state copy (`PUBLISHED`, A1, F1) is held with `MAPPING_UNDER_REREVIEW` while the fresh composition estimates the line. This is the concrete reason `state`, `approver` and `approvedFingerprint` must be read fresh and together.
+
+History after step 5 (asserted): `DRAFT, REVIEW_REQUESTED, APPROVED(A1,F1), PUBLISHED(A1,F1), UNDER_REREVIEW(A1,F1), APPROVED(A2,F2), PUBLISHED(A2,F2)`.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **`[not in docs]` The "cache" is test-side only.** There is no cache layer in `src/`. `cacheBundle` is a deep copy of repository reads and `composeFromCache` is the composition an M4 server would do from such a cache; the readiness loader (the real composition path) is compared to it by deep equality. Content reads may be repeated or cached; the tests do not require a cache.
+2. **`[not in docs]` One judgement field per target.** Treatment: `treatmentCode`; base fee: `code`. The other judgement fields (`procedureCodes`, `benefitType`, `calcClass`) are covered by `re-review.test.ts`, `base-fee-versions.test.ts` and `base-fee-fingerprint.test.ts`; `calcClass: NEEDS_REVIEW` was deliberately not used here because it adds an unrelated classification hold to the verdicts.
+3. **`[not in docs]` Composition ignores unknown keys planted in content for kinds that do not have the field.** `state` and `approver` are always taken from the state record for all three kinds, and a mapping's `approvedFingerprint` always from the state record (a planted value is overridden). A planted `approvedFingerprint` key on a PROFILE or DOCUMENT_RULE_SET content record is not an engine field and passes through as an unknown content key; it cannot be produced through the services. My first version of the planting test planted it on every kind and failed on that (2 of 64 tests); the test was narrowed to plant the mapping-only field only on mappings. This is a test-authoring correction, not a production defect, and no `src/` file was changed.
+4. **Audit sequence is part of the contract check** (step 3): the re-approval is a second `ITEM_APPROVE` entry rather than an edit of the first; nothing is overwritten silently.
+5. **Document wording left to the document owner:** design.md DD-14 / DD-15 / DD-17 text that treats approver and `approvedFingerprint` as immutable cacheable content; the corrected statement is the table at the top of this section. Already noted in `items.ts`'s header comment from M3.B.
+
+#### AC evidence (additional evidence only; no AC is closed or added by this section)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011a | `reapproval-cache-contract.test.ts`: steps 1, 2, 3, 5 | The bundle content hash is unchanged by approver / fingerprint / state changes and recomputes equal from storage; X2 over the same item refs has the same hash as X; bundle record is write-once and equal to the cached copy |
+| AC-009a | same: steps 2, 3 | Judgement field change -> `UNDER_REREVIEW` (history + audit), re-approval by a different RV re-pins the fingerprint to the new current version and writes the new approver, the old values stay in the history |
+| AC-011m / AC-011n (data-layer part only, M3) | same: steps 4, 5, 6 | Cached content + freshly read state reflects `UNDER_REREVIEW` / `APPROVED` / `PUBLISHED` on the next composition with no invalidation and the same bundle id / hash; the HTTP 200 / 409 behaviour is M4 |
+| AC-011p (data-layer part only, M3) | same: step 5 | Item state is shared by two bundles containing the same item version; bundle X and X2 compose to the same item states |
+| AC-011e (additional) | same: step 7 | Suspension is a bundle-level availability read fresh, item-level state / approver / fingerprint unchanged |
+
+#### RED before GREEN (exact statement)
+
+Order: the fixture and the test file were written FIRST; no change under `src/` was made at any time. The contract was already implemented (`projection.ts`, `approval.ts`, `re-review.ts`, `bundle-publish.ts`, the memory repository), so there was no failing run caused by missing production behaviour and **no behavioural RED exists for this step**. The first run (`first-run.txt`) was `Tests  2 failed | 62 passed (64)`: the 2 failures were my own over-broad planting assertion (decision 3), fixed in the test; 62 tests passed on their first run. Because passing-on-first-run says nothing about teeth, the proof that the tests can fail is the mutation table below (11 production mutants, all killed, each by the new file). No implementation was written before a failing test because no implementation was written.
+
+#### Evidence (outputs under `.moai/state/verify/m3g2/`, gitignored; every vitest run with `--maxWorkers=4`, sequential, on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4     -> exit 0   (vitest-server-boundary.txt)
+ Test Files  49 passed (49)
+      Tests  2940 passed (2940)         (before this step: 48 files / 2876 tests; +1 file, +64 tests)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4     -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, unedited)
+$ npx tsc --noEmit                                              -> exit 0   (tsc.txt, empty output)
+$ npx vitest run --coverage --maxWorkers=4                      -> exit 0   (vitest-coverage.txt)
+ Test Files  81 passed (81)
+      Tests  4241 passed (4241)          (before this step: 80 files / 4177 tests)
+$ node .moai/state/m3/covsum.mjs coverage/coverage-summary.json (covsum.txt)
+ engine: statements 652/652, branches 558/558, functions 145/145, lines 606/606
+ server: statements 1266/1266, branches 701/701, functions 330/330, lines 1191/1191
+```
+
+Coverage is unchanged (no `src/` change). No coverage-only tests; no `skip` / `only` / disabled tests.
+
+#### Mutation spot checks (scripted one-spot edit of the final tree, `npx vitest run tests/server --maxWorkers=4` each; baseline 2940 tests; the script restored every file from its in-memory original; `src-hashes-before.txt` equals `src-hashes-after.txt` over all 40 `src/server/**` files; outputs `mutations/M*.txt`, rows in `mutations/summary.json`, script `.moai/state/m3/mutate-m3g2.mjs`)
+
+| Mutation | Failed tests total / files | Failed in the new file (of 64) |
+|----------|----------------------------|--------------------------------|
+| M1 `projection.ts`: `approver` taken from the content record | 351 / 14 | 64 |
+| M2 `projection.ts`: mapping `approvedFingerprint` taken from the content record | 341 / 13 | 64 |
+| M3 `projection.ts`: `state` taken from the content record | 32 / 7 | 12 |
+| M4 `memory-repository.ts`: `readItemStates` result cached per repository instance | 143 / 15 | 56 |
+| M5 `approval.ts`: `approve()` does not re-pin the fingerprint on re-approval | 36 / 6 | 28 |
+| M6 `approval.ts`: `approve()` keeps the old approver on re-approval | 22 / 4 | 16 |
+| M7 `bundle-publish.ts`: bundle `contentHash` recomputed to include item state | 18 / 4 | 8 |
+| M8 `re-review.ts`: the re-review transition clears the approver | 12 / 2 | 8 |
+| M9 `readiness.ts`: loader reuses the states of an earlier load of the same bundle | 8 / 4 | 2 |
+| M10 `bundle-publish.ts`: publish does not move `APPROVED` items back to `PUBLISHED` | 185 / 9 | 26 |
+| M11 `memory-repository.ts`: the state history entry loses the approver | 19 / 7 | 4 |
+
+All 11 mutants are killed, and each is killed by the new file. Limits: the mutants are one-spot edits of the in-memory implementation; they do not prove the absence of other cache bugs. The planted-content test (decision 3) is the only guard against a mutant that reads a planted content key for kinds other than the mutated one; a mutant that takes `approvedFingerprint` for a PROFILE from content would not be caught because the field does not exist on profiles.
+
+#### M4 cache-hit test criteria to carry forward (for the document owner to link into the specification; testable sentences, NOT implemented or verified here)
+
+1. Item content (`content`, `contentHash`, header fields) and the rule bundle version (`id`, `itemRefs`, `contentHash`) may be served from a cache keyed by (bundle id, `contentHash`). A cache hit never changes the response for a request whose state has not changed.
+2. `state`, `approver`, `approvedFingerprint` and the bundle availability `status` are read on every request and composed together into the engine snapshot; none of the four is ever served from the content cache.
+3. A cache hit for content still triggers exactly one `readItemStates` call per request (per bundle used) and one availability read; a request that served content from the cache and skipped the state read is a failure.
+4. After a re-approval (`UNDER_REREVIEW -> APPROVED`, then publication of a bundle containing the mapping) the next request returns HTTP 200 and the response carries the same `ruleBundleVersion` id and `contentHash` as before when the clinic's scope still points at the original bundle, with NO 409 and no cache invalidation call; the engine uses the new approver and the new `approvedFingerprint`.
+5. Between the re-approval and the publication of a bundle containing the mapping, the next request returns HTTP 200 with the line `ON_HOLD` and `MAPPING_UNREVIEWED` (state `APPROVED`), again with the unchanged bundle id and hash and no 409.
+6. Serving a state snapshot older than the request (stale state, stale approver or stale fingerprint) is a failure: with a cached content and a state copy from before the re-approval, a request must not return the result that stale copy would give (the stale `PUBLISHED, A1, F1` copy gives `MAPPING_UNDER_REREVIEW` after a judgement-field change, the fresh state gives `ESTIMATED`).
+7. Two bundles containing the same item version return the same item state to their clinics; changing the state through the domain service is reflected for both on their next request.
+8. Suspending a bundle changes only that bundle's availability: item state / approver / fingerprint are unchanged and a clinic scoped to another bundle with the same items is unaffected.
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Spec wording to update by the document owner (not edited here):** DD-14 (cache contract) should say approver and `approvedFingerprint` are item STATE read per request, not cacheable content; DD-15 / DD-17 should say a re-approval writes a new approver and re-pins the fingerprint, and the bundle `contentHash` does not change; acceptance wording for AC-011m..p may reference the M4 criteria above.
+2. **Owner may want a rule for the `APPROVED`-but-unpublished gap** (observed semantics 5): today re-approval does not republish anything, so a bundle stays held for that line until some RV publishes a bundle containing the item. Not changed here (no document requires otherwise).
+3. NOT IMPLEMENTED: M4 caching, HTTP, routes, 500 mapping; M5 to M7; DB adapter; clinic ownership / membership; deployment; merging; committing. NOT VERIFIED: any real cache behaviour, concurrency (a state change between the content read and the state read), a DB; lint (no lint script and no `moai` CLI on this machine); CI; only Windows 11 and the local Node were run. The case of a re-approval that lands between two requests is the same as step 6 of the scenario; races inside a single request are not modelled by the synchronous memory repository.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
