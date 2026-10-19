@@ -2904,14 +2904,105 @@ Limits: one-spot edits; they do not prove the absence of other defects.
 
 #### Not done / unverified / open
 
-1. Observation (i), from code reading only and NOT reproduced by a test: base-fee API-vs-readiness drift. The public API throws `BASE_FEE_CLINIC_MISMATCH` / `BASE_FEE_MISSING` (HTTP 500) while readiness only does `must(getCommonBaseFee)` with no ownership check. Not fixed.
+1. Observation (i), from code reading only and NOT reproduced by a test: base-fee API-vs-readiness drift. The public API throws `BASE_FEE_CLINIC_MISMATCH` / `BASE_FEE_MISSING` (HTTP 500) while readiness only does `must(getCommonBaseFee)` with no ownership check. Not fixed. [Update 2026-10-19: later reproduced by injecting another clinic's `clinicId` into `getCommonBaseFee()` (catalog 500, estimate 500, readiness cell `READY`) and FIXED in "M4 review follow-up 2: base-fee existence/ownership consistency and stale status wording" below; the original text above is kept as written.]
 2. Observation (ii): the `TREATMENT_MISSING` and `TREATMENT_CLINIC_MISMATCH` paths are tested through read-method overrides because the in-memory repository rejects such inconsistent writes; stored data cannot produce them in the test environment, so these two paths are NOT verified against a real inconsistent store.
 3. Observation (iii): the `silentLog` production log sink and the absence of cache eviction remain pre-operation tasks (design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" items 6 and 7, unchanged; not broadened and not implemented here).
 4. NOT RUN: formal SPEC lint and any `moai` CLI verification (this machine has no `moai` CLI and the repository has no lint script); CI; platforms other than Windows 11 with Node 24.19.0; real concurrency (the in-memory repository is synchronous); production data (the operating store is empty, every slug is 404 on the operating composition, so none of this was exercised with real clinics, prices, rules or approvers).
 5. Whole-SPEC audit status is unchanged: frontmatter `plan_status: fail` and every earlier plan-audit FAIL record are history and are preserved verbatim; no audit was rerun and nothing here marks the SPEC audited, approved or ready.
 6. DD-14 items 2-7 of "구현 선택, 소유자 확인 필요 (M4)" are still open (six items).
 7. AC-019c and AC-021d are still evidence only and not closed (M6 and M7 close them).
-8. Other stale wording noticed and NOT changed (M3 wording, out of this step's M4 scope): acceptance.md AC-007f (line 112) and design.md line 510 still say the publishing-path rejection of a document rule set structure is "M3의 일이며 아직 구현·검증되지 않았다", while plan.md's M3 status line (2026-10-19) lists AC-007f among the 14 closing ACs implemented and verified at unit level over the in-memory repository (plan.md lines 104-105; not re-checked against the M3.D sections by this step). For the document owner.
+8. Other stale wording noticed and NOT changed (M3 wording, out of this step's M4 scope): acceptance.md AC-007f (line 112) and design.md line 510 still say the publishing-path rejection of a document rule set structure is "M3의 일이며 아직 구현·검증되지 않았다", while plan.md's M3 status line (2026-10-19) lists AC-007f among the 14 closing ACs implemented and verified at unit level over the in-memory repository (plan.md lines 104-105; not re-checked against the M3.D sections by this step). For the document owner. [Update 2026-10-19: both sentences were corrected in "M4 review follow-up 2: base-fee existence/ownership consistency and stale status wording" below, after checking them against the code and the M3.C / M3.D1 tests; the original text above is kept as written.]
+
+### M4 review follow-up 2: base-fee existence/ownership consistency and stale status wording (PR #4, 2026-10-19)
+
+**Scope.** A second code fix found by an external review of Draft PR #4, plus the minimal documentation alignment recorded here and the correction of two stale status sentences the document owner asked for. Branch `feature/SPEC-REIMBURSEMENT-001-m4-api` on top of `f63a56a`; the code change and these documents were not committed when this section was written (the orchestrator commits after reviewing the diff). PR #3 and its branch were NOT touched. The numbers below marked "orchestrator-run" were reported by the orchestrator on the final tree and were not re-run by the author of this documentation step; the only commands this step ran are named under "Evidence (this step)".
+
+#### Defect
+
+The public API's `readPublishedCatalog()` (`src/server/api/published-catalog.ts`) rejected a current-catalog common base fee whose `clinicId` differs from the requested clinic (HTTP 500 `INTERNAL_ERROR`, code `BASE_FEE_CLINIC_MISMATCH`) and a missing one (`BASE_FEE_MISSING`), but the operational readiness snapshot `loadReadinessSnapshot()` (`src/server/readiness.ts`, M3.E) did no ownership check, so another clinic's base fee could still be turned into a line. Reproduced by the orchestrator by injecting another clinic's `clinicId` into `getCommonBaseFee()`: the catalog was 500, the estimate was 500, and the `readReadiness` cell was `READY`. This breaks the DD-23 / AC-011l equivalence (readiness `READY` <=> an estimate over the published set is not `ON_HOLD`) for base fees, the same way follow-up 1 broke it for inactive treatments. It also confirms observation (i) of follow-up 1, which was "from code reading only" at that time.
+
+#### Fix and design
+
+One shared existence + ownership criterion in a new lower-layer module `src/server/published-base-fees.ts` (`selectPublishedBaseFees(repo, clinicId, catalog, fail)`): per `catalog.baseFeeIds` entry, in catalog order: read -> missing? -> ownership (`fee.clinicId === clinicId`)? The first defect is reported through an injected `fail` callback and later entries are not read. No sorting (display order by `baseFeeId` stays with the caller); read-only (uses only `getCommonBaseFee`). Like `published-treatments.ts`, the module imports domain entity types and repository interface types only (not `src/server/api`).
+
+- Public API: `readPublishedCatalog` maps the defects to `ServerIntegrityError` with the same two codes (`BASE_FEE_MISSING`, `BASE_FEE_CLINIC_MISMATCH`) -> HTTP 500 `INTERNAL_ERROR`, unchanged; it still checks all treatments first and the base fees after, then sorts base fees by `baseFeeId`.
+- Readiness: maps the defects to `DomainError`: a missing base fee keeps the existing `NOT_FOUND` with the identical message (`공통 기본비용 '<id>' 이(가) 없다 (저장소가 일관되지 않아 준비 상태를 낼 수 없다)`), and a base fee owned by another clinic is the new `REF_CONTENT_MISMATCH` (the same code as the treatment ownership mismatch).
+- `computeReadiness` (pure function, engine-function reuse contract of DD-23 rule 0) is unchanged. No new hold code and no new API field. Normal base-fee auto-inclusion, `baseFeeId` / version-id resolution and mapping retention on price-only changes are unchanged.
+
+#### Files changed
+
+| File | Change | Reason |
+|------|--------|--------|
+| `src/server/published-base-fees.ts` | New | the single existence + ownership criterion for common base fees |
+| `src/server/api/published-catalog.ts` | Modified (inline base-fee loop replaced by the shared module; `integrityFailure` accepts both defect types) | public API and readiness must use one definition |
+| `src/server/readiness.ts` (existing M3 file) | `loadReadinessSnapshot` builds `baseFeeLines` through the shared module; a new failure mapper `publishedBaseFeeFailure` to `DomainError`; doc comment | readiness must reject the same base-fee defects as the public API |
+| `tests/api/published-base-fee-consistency.test.ts` | New | cross-layer consistency through the real Route Handlers and `readReadiness` over one repository |
+| `tests/server/published-base-fees.test.ts` | New | unit tests of the shared module |
+| `tests/server/readiness-base-fee.test.ts` | New | snapshot-level behaviour and the readiness-side rejections |
+
+Existing M3 file touched again (reason and impact scope): `src/server/readiness.ts`, only `loadReadinessSnapshot` and one new helper. Impact: a base fee owned by another clinic now makes `readReadiness` / `loadReadinessSnapshot` throw instead of returning a report. Their callers are tests only (no `src` caller yet; the M8 operation gate will call them), so no runtime path changed. The read-method set of `ReadinessReads` did not change (`getCommonBaseFee` was already read), so `tests/server/readiness-repo-readonly.test.ts` needed no change.
+
+#### Behaviour change
+
+1. Readiness throws `DomainError` `REF_CONTENT_MISMATCH` when a current-catalog base fee belongs to another clinic; previously the foreign base fee became a line and the cell could be `READY`.
+2. A missing base fee is still `DomainError` `NOT_FOUND` with an unchanged message; the public API is still 500 `INTERNAL_ERROR` for both defects.
+
+#### Tests added and what each proves
+
+- `tests/api/published-base-fee-consistency.test.ts` (a)(b)(c), against the real Route Handlers and `readReadiness` over the same repository: (a) a properly owned base fee: readiness `READY` <=> estimate `ESTIMATED` over all 15 cells with exactly one `READY` cell asserted, and the base fee is present in the estimate lines (`isBaseFee`), in the catalog `baseFees` and in the 15 readiness mapping rows. (b) a base fee owned by another clinic: catalog and estimate are 500 `INTERNAL_ERROR` with no id in the body, readiness throws `DomainError` `REF_CONTENT_MISMATCH` and returns no report. (c) a missing base fee: both API paths are 500, readiness keeps the existing `NOT_FOUND` message. (b) and (c) are DATA-DEFECT tests built with a read-method override (`getCommonBaseFee`) of the same repository, because the in-memory repository rejects such inconsistent writes; they are NOT stored-data cases. Both assert that the repository content (full snapshot comparison) is identical before and after and that no write method was touched.
+- `tests/server/published-base-fees.test.ts` (unit): the owned base fees come back in catalog order with the stored content; no sorting; an empty catalog gives an empty list and `fail` is not called; `BASE_FEE_MISSING` and `BASE_FEE_CLINIC_MISMATCH` through the injected `fail`; checks run per entry in catalog order and stop at the first defect (later entries are not read); only `getCommonBaseFee` is used, once per catalog entry; the input catalog is not changed.
+- `tests/server/readiness-base-fee.test.ts` (snapshot level): owned base fees become lines in catalog order with the stored conversion; a foreign base fee is `REF_CONTENT_MISMATCH` (message carries the base-fee id and the clinic), `readReadiness` rejects with the same error, a foreign second base fee is rejected too (all are checked); a missing one is `NOT_FOUND` with the message byte-identical to the old one. The foreign / missing cases use a repository whose read results are overridden.
+
+#### Evidence
+
+Orchestrator-run, on the final tree (the author of this documentation step did not re-run them):
+
+| Check | Observed |
+|-------|----------|
+| `tsc --noEmit` | exit 0 |
+| full `vitest run` | 105 files / 4833 tests pass |
+| coverage | 100% on `src/engine`, `src/server`, `src/app`: 2214/2214 statements, 1417/1417 branches, 564/564 functions, 2067/2067 lines |
+| `tests/engine` + `tests/boundary` | 40 files / 1627 tests pass |
+| `next build` | exit 0 |
+| revert-then-restore of the readiness base-fee expression | with `loadReadinessSnapshot` reverted to the old inline base-fee lines, 4 of the new tests (the ownership ones) fail; they pass after restoring it |
+
+Agent-run mutation checks (4, all detected, all restored afterwards):
+
+| Mutant | Result |
+|--------|--------|
+| the ownership check disabled in the shared module | killed: 6 tests failed |
+| readiness uses the old inline way | killed: 4 tests failed |
+| the public API uses an inline existence-only check | killed: 2 tests failed (including the existing catalog test "카탈로그가 다른 병원의 기본비용을 담았다") |
+| readiness `baseFeeLines: []` | killed: 8 tests failed |
+
+Limits: one-spot edits; they do not prove the absence of other defects.
+
+Evidence (this step, run by the author of this documentation step on the working tree, which already holds the code change): `npx vitest run tests/server/publish-bundle.test.ts tests/server/validate-bundle-docrules.test.ts --maxWorkers=2` -> 2 test files passed, 225 tests passed (these are the two AC-007f files used for the wording correction below). Nothing else was run.
+
+#### Stale status wording corrected (Part A, requested by the owner)
+
+The two sentences that follow-up 1 left unchanged ("Other stale wording noticed and NOT changed", item 8 above) were checked against the code and tests before being corrected:
+
+- Code read: `src/server/validate/bundle-docrules.ts` calls the engine's `checkDocumentRuleSetStructure` with no second implementation and prefixes each defect path with `bundle.documentRuleSet`; `src/server/validate/bundle.ts` runs it as layer (e) of `validateRuleBundlePublish`; `src/server/bundle-publish.ts` calls `validateRuleBundlePublish` and throws `PUBLISH_VALIDATION_FAILED`, documented there as leaving the repository (including audit and availability records) as before the call.
+- Tests read: `tests/server/validate-bundle-docrules.test.ts` (accepted cases `rules: []`, `when: {}`, priority 0 / `Number.MAX_SAFE_INTEGER`, several injury-only / illness-only lines; one case per engine defect code with paths; header wiring; sealing) and `tests/server/publish-bundle.test.ts` `AC-007f 서류 규칙 묶음 게시` (10 rejection rows with `expect(snapshotOf(repo)).toEqual(before)`, previous bundle intact, corrected bundle publishes, `rules: []` publishes, several injury-only / illness-only lines publish, a valid `reason` stored verbatim). Matches the M3.C and M3.D1 evidence rows already in this file (AC-007f traceability rows) and plan.md lines 104-105 (AC-007f among the 14 closing M3 ACs "구현·검증").
+- acceptance.md AC-007f and design.md DD-06 (publish-validation bullet) now say the publishing path is implemented and tested in M3.C / M3.D1 over the in-memory repository (unit and integration), and keep the limits: no DB adapter / real DB, no production data, no other platforms. All other words of both paragraphs are unchanged.
+- Other occurrences checked and left: spec.md / spec-compact.md C1-C8 rows only list AC-007f as a reference and carry no "not implemented" claim; plan.md lines 98-99 and 104-105 already say implemented and verified; acceptance.md and design.md carry no other "아직 구현" claim for AC-007f. Statements such as "NOT IMPLEMENTED" for AC-007f inside the M2 and early M3 sections of this file are history of what was true at that step and are left as written.
+
+#### Documentation alignment (this step; documents only)
+
+- design.md DD-23 definition bullet ("게시된 줄·게시된 치료의 정의는 하나다") extended: the common base fee's existence and ownership are also checked by one shared criterion used by the public API and readiness; readiness rejects a foreign-owned or missing base fee with an error instead of reporting; the public API reports the same defects as 500 `INTERNAL_ERROR` (DD-19 "구현 결정" 1). DD-19 "구현 결정" 3 got one clause for base fees. The DD-23 table M key sentence needed no change.
+- acceptance.md AC-011l: the previous marker was kept and a "M4 후속 2" marker was appended with the base-fee evidence, including the explicit note that (b)(c) are read-override data-defect tests. No AC was created or closed.
+- plan.md M4 status line: one clause for this second follow-up and the final-tree figures replaced by 105 files / 4833 tests (orchestrator-run, from this follow-up's final tree; this document step did not rerun them). The earlier 99 / 4786 and 102 / 4813 figures are history.
+- The "M4 AC 추적표" was not changed: AC-011l is an M3 AC and no row's closing statement is affected.
+
+#### Not done / unverified / open
+
+1. Observation 1: `priceChanged` in `src/server/api/estimate-versions.ts` (the 409 body) reads the base fees of the client-seen OLDER catalog of the same clinic with a null check only and no `fee.clinicId` check (its treatments loop likewise has no treatment ownership check). A corrupted older catalog could feed another clinic's amount into the single boolean `changes.priceChanged`. Not covered by any test; left as is (outside this scope).
+2. Observation 2: the (b)/(c) cases are read-override data-defect tests, not stored-data cases; no real inconsistent store was exercised.
+3. Observation 3: the `silentLog` production log sink and the absence of cache eviction remain pre-operation tasks (design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" items 6 and 7, unchanged).
+4. NOT RUN: formal SPEC lint and any `moai` CLI verification (no `moai` CLI and no lint script here); CI; platforms other than Windows 11 with Node 24.19.0; real concurrency; production data (the operating store is empty, every slug is 404 on the operating composition). The whole-SPEC audit status is unchanged: `plan_status: fail` and every earlier plan-audit FAIL record are history and preserved; no audit was rerun and nothing here marks the SPEC audited, approved or ready.
+5. DD-14 items 2-7 of "구현 선택, 소유자 확인 필요 (M4)" are still open (six items). AC-019c and AC-021d are still evidence only and not closed.
+6. The correction of the two stale sentences rests on reading the code and tests and on one two-file vitest run in this step; the DB-backed publish path, production data and other platforms are not verified and are stated as such in the corrected sentences.
 
 ## §E.3 Run-phase Audit-Ready Signal
 

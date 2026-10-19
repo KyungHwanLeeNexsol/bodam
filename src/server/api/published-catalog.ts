@@ -1,5 +1,7 @@
 import { compareCodePoints } from '../../engine/validate';
 import type { CatalogVersion, Clinic, CommonBaseFee } from '../domain/entities';
+import { selectPublishedBaseFees } from '../published-base-fees';
+import type { PublishedBaseFeeDefect } from '../published-base-fees';
 import { selectPublishedTreatments } from '../published-treatments';
 import type { PublishedTreatment, PublishedTreatmentDefect } from '../published-treatments';
 import type { Repository } from '../repo/interfaces';
@@ -20,8 +22,8 @@ export interface PublishedCatalog {
 
 type CatalogReads = Pick<Repository, 'getClinicCurrentCatalogVersion' | 'getTreatmentVersion' | 'getTreatment' | 'getCommonBaseFee'>;
 
-/** 공유 선택 기준(published-treatments.ts)이 알린 결함을 이 층의 서버 데이터 무결성 오류로 바꾼다. 코드는 그대로이고 id 는 오류에 싣지 않는다. */
-function integrityFailure(defect: PublishedTreatmentDefect): never {
+/** 공유 확인 기준(published-treatments.ts, published-base-fees.ts)이 알린 결함을 이 층의 서버 데이터 무결성 오류로 바꾼다. 코드는 그대로이고 id 는 오류에 싣지 않는다. */
+function integrityFailure(defect: PublishedTreatmentDefect | PublishedBaseFeeDefect): never {
   throw new ServerIntegrityError(defect.code);
 }
 
@@ -40,17 +42,8 @@ export function readPublishedCatalog(repo: CatalogReads, clinic: Clinic): Publis
   const treatments = selectPublishedTreatments(repo, clinic.id, catalog, integrityFailure);
   treatments.sort((a, b) => a.treatment.sortOrder - b.treatment.sortOrder || compareCodePoints(a.treatment.id, b.treatment.id));
 
-  const baseFees: CommonBaseFee[] = [];
-  for (const feeVersionId of catalog.baseFeeIds) {
-    const fee = repo.getCommonBaseFee(feeVersionId);
-    if (fee === null) {
-      throw new ServerIntegrityError('BASE_FEE_MISSING');
-    }
-    if (fee.clinicId !== clinic.id) {
-      throw new ServerIntegrityError('BASE_FEE_CLINIC_MISMATCH');
-    }
-    baseFees.push(fee);
-  }
+  // 공통 기본비용의 존재·소유 확인도 준비 상태와 공유하는 단일 기준이다(치료를 모두 확인한 뒤에 기본비용을 확인하는 순서는 그대로). 표시 순서(baseFeeId 순)는 여기서 정한다.
+  const baseFees = selectPublishedBaseFees(repo, clinic.id, catalog, integrityFailure);
   baseFees.sort((a, b) => compareCodePoints(a.baseFeeId, b.baseFeeId));
   return { catalog, treatments, baseFees };
 }
