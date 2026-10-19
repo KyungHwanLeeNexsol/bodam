@@ -152,9 +152,9 @@ interface RuleBundleSnapshot {
 }
 ```
 
-- `bundle.status`는 서버가 채워 넘기는 값이다. 엔진은 이 값을 추정하거나 바꾸지 않고 받은 대로 판정한다. 버전 id와 내용 해시가 같아도 `SUSPENDED`이면 묶음을 쓰지 않는다(`RULE_BUNDLE_SUSPENDED`, 아래 보류 사유 표). 묶음 안의 항목(`profiles`·`mappings`·`documentRuleSet`)이 가진 생명주기 `state`도 서버가 요청 시점에 저장소에서 새로 읽어 채운 값이며 캐시된 묶음 내용의 값이 아니다(SPEC 제안, DD-14 "항목 생명주기 상태와 캐시 계약").
+- `bundle.status`는 서버가 채워 넘기는 값이다. 엔진은 이 값을 추정하거나 바꾸지 않고 받은 대로 판정한다. 버전 id와 내용 해시가 같아도 `SUSPENDED`이면 묶음을 쓰지 않는다(`RULE_BUNDLE_SUSPENDED`, 아래 보류 사유 표). 묶음 안의 항목(`profiles`·`mappings`·`documentRuleSet`)이 가진 생명주기 `state`와 승인자(`approver`), 매핑의 `approvedFingerprint`도 서버가 요청 시점에 저장소에서 함께 새로 읽어 채운 값이며 캐시된 묶음 내용의 값이 아니다(SPEC 제안, DD-14 "항목 생명주기 상태와 캐시 계약". 구현 기준으로 정합, 2026-10-19, progress.md M3 외부 검토 보완 ②).
 
-- 공통 기본비용(`CommonBaseFee`, SPEC 결정)은 자동 포함 줄로 계산하며, 보험금 계산에서는 치료와 같은 매핑 판정을 거친다. 매핑이 없거나 쓸 수 없으면 그 줄이 보류된다(보험금 쪽만 해당하며 예상 병원 결제액 T에는 영향이 없다). 기본비용이 하나라도 등록되어 있으면 `baseFeeIncluded = 'INCLUDED'`(그 줄이 보류되어도 금액은 병원 결제액에 들어간다), 하나도 없으면 `'NOT_REGISTERED'`이고 화면은 기본 진료비 포함 여부를 안내한다(기획서 §5). 기본비용 줄의 매핑 판정은 보험금 계산에만 적용하고 예상 병원 결제액 T에는 보장 여부와 관계없이 항상 포함한다는 결정은 plan.md §E #8(SPEC 제안 · 소유자 수용 2026-10-15, 정정 수용, plan.md §E.9)이다.
+- 공통 기본비용(`CommonBaseFee`, SPEC 결정)은 자동 포함 줄로 계산하며, 보험금 계산에서는 치료와 같은 매핑 판정을 거친다(기본비용 줄의 `treatmentId`는 기본비용의 안정 식별자 `baseFeeId`이고 버전 id는 `treatmentVersionId`다. 기본비용 매핑의 `treatmentId`도 `baseFeeId`다). 매핑이 없거나 쓸 수 없으면 그 줄이 보류된다(보험금 쪽만 해당하며 예상 병원 결제액 T에는 영향이 없다). 기본비용이 하나라도 등록되어 있으면 `baseFeeIncluded = 'INCLUDED'`(그 줄이 보류되어도 금액은 병원 결제액에 들어간다), 하나도 없으면 `'NOT_REGISTERED'`이고 화면은 기본 진료비 포함 여부를 안내한다(기획서 §5). 기본비용 줄의 매핑 판정은 보험금 계산에만 적용하고 예상 병원 결제액 T에는 보장 여부와 관계없이 항상 포함한다는 결정은 plan.md §E #8(SPEC 제안 · 소유자 수용 2026-10-15, 정정 수용, plan.md §E.9)이다.
 - 엔진 입력 검증: 세대가 열거값 밖이면 `UNSUPPORTED_GENERATION`, 치료가 없으면 `NO_TREATMENT_SELECTED`, 같은 `treatmentId`의 줄이 둘 이상인데 내용이 다르면(치료 줄과 공통 기본비용 줄을 각각 따로 본다) `INPUT_INTEGRITY_VIOLATION`(사유 `CONFLICTING_DUPLICATE_TREATMENT_LINE` 또는 `CONFLICTING_DUPLICATE_BASE_FEE_LINE`이며 둘 다 충돌하면 치료 줄 사유), 줄(치료·공통 기본비용)의 금액이 `Won` 범위 밖이거나 예상 병원 결제액 T의 검사 합산이 안전 정수를 넘으면 `INVALID_NUMERIC_INPUT`으로 거절한다(판정 순서는 이 순서이며, 수치 검사의 정의와 처리는 DD-24). 이 넷은 계산 결과가 아니라 거절이다. `INPUT_INTEGRITY_VIOLATION`과 `INVALID_NUMERIC_INPUT`은 보류 코드가 아니다. 충돌 검사는 줄 금액 검사와 T의 합산보다 먼저다. 내용이 완전히 같은 중복 줄(`PublishedLine`의 모든 필드가 같음)은 한 번으로 세고, 하나라도 다르면 어느 줄도 고르거나 합하지 않고 입력 순서와 줄 위치에 상관없이 같은 거절을 낸다(값 비교는 `Object.is` 의미: `NaN`은 같고 `-0`은 `0`과 다르다. 형식이 깨진 항목은 던지지 않고 `INVALID_NUMERIC_INPUT`으로 거절한다). 두 거절 모두 치료 ID·금액·내부 상세를 싣지 않는다(AC-006i와 같은 진단 전용 방침). 병원 결제액이 믿을 수 있는 숫자여야 하므로 잘못된 줄을 보류로 돌리거나 합계에서 빼지 않는다. 엔진은 지원 범위 밖 계약(노후·유병력자·단체 실손 등)을 판별하지 않는다. 그런 입력이 없고, 가려내는 방법은 미정이다(plan.md §E #11).
 
 - 입력 검증의 책임 분담 (엔진 대 서버, 외부 검토 수정 M1.5):
@@ -315,7 +315,7 @@ function resolveMapping(
 
 조회는 다음 순서로 한다. 배열 순서에 기대는 단계는 없다.
 
-1. **후보 범위.** `bundle.mappings`에서 `mapping.treatmentId === line.treatmentId`이고 `(generation, insurerType) ∈ mapping.scope`인 것이 후보다. 치료와 공통 기본비용 줄은 같은 id 공간을 쓰며 id는 겹치지 않는다. 후보가 없으면 `MAPPING_ABSENT`로 끝낸다.
+1. **후보 범위.** `bundle.mappings`에서 `mapping.treatmentId === line.treatmentId`이고 `(generation, insurerType) ∈ mapping.scope`인 것이 후보다. 치료와 공통 기본비용 줄은 같은 id 공간을 쓰며 id는 겹치지 않는다(기본비용 줄의 id는 `baseFeeId`이고, 치료 id와의 충돌은 저장소와 카탈로그 게시가 거절한다). 후보가 없으면 `MAPPING_ABSENT`로 끝낸다.
 2. **후보별 사용 가능 판정.** 후보마다 DD-04의 `isUsable`을 같은 검사 순서(출처 → 상태 → 유효 기간 → 약관 출처 → 승인자 → 무결성)로 부른다. 무결성은 매핑의 `approvedFingerprint`와 이 줄의 현재 `coverageFingerprint`를 비교하며 가장 마지막 검사다. 지문이 어긋난 후보는 사용 가능하지 않다(사유 `INTEGRITY_MISMATCH` → `MAPPING_UNDER_REREVIEW`).
 3. **사용 가능한 후보의 개수.** 사용 가능하다는 것은 지문까지 모든 검사를 통과했다는 뜻이다.
    - 정확히 하나: 그 매핑으로 확정한다. 사용 불가인 다른 후보는 무시한다.
@@ -438,7 +438,7 @@ type RuleItem =
 | `BUNDLE_SUSPENDED` (`bundle.status = SUSPENDED`) | `RULE_BUNDLE_SUSPENDED` | 모든 줄. 전체가 `ON_HOLD`이므로 서류는 null |
 
 - 묶음 단위 선행 판정: 규칙 묶음의 가용성(`RuleBundleSnapshot.status`)은 묶음에 든 항목을 보기 전에 먼저 본다. `SUSPENDED`이면 `BUNDLE_SUSPENDED`이고 보류 코드는 `RULE_BUNDLE_SUSPENDED`다. 이 판정은 항목의 상태를 읽지도 바꾸지도 않으며 항목 판정을 호출하지도 않는다(DD-14, DD-17). 버전 id와 내용 해시가 같아도 사용 가능으로 보지 않는다.
-- 항목 단위 판정이 읽는 `state`(`RuleItemHeader.state`)는 계산 요청마다 새로 읽은 현재 생명주기 상태다. 항목 버전의 내용은 캐시할 수 있어도 `state`는 캐시하지 않으므로, 묶음 내용을 캐시한 뒤 항목을 중지하거나 재검토로 돌리면 다음 요청의 `isUsable`이 그 상태를 본다(SPEC 제안, 승인 전. DD-14 "항목 생명주기 상태와 캐시 계약").
+- 항목 단위 판정이 읽는 `state`(`RuleItemHeader.state`)와 `approver`, 매핑의 `approvedFingerprint`는 계산 요청마다 함께 새로 읽은 현재 값이다. 항목 버전의 내용은 캐시할 수 있어도 이 셋은 캐시하지 않으므로, 묶음 내용을 캐시한 뒤 항목을 중지하거나 재검토로 돌리거나 다시 승인하면 다음 요청의 `isUsable`이 그 값을 본다(SPEC 제안, 승인 전. DD-14 "항목 생명주기 상태와 캐시 계약". 구현 기준으로 정합, 2026-10-19, progress.md M3 외부 검토 보완 ②).
 - 줄(치료·공통 기본비용)은 카탈로그 게시로만 들어오므로 출처만 본다. 출처가 줄 허용 출처 밖이면 `LINE_ORIGIN_NOT_ACCEPTED`다.
 - 구성별 허용 출처:
 
@@ -795,7 +795,7 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 
 ## DD-14 버전
 
-- `CatalogVersion`(병원 단위): 게시된 치료 버전 묶음 + 공통 기본비용. 게시할 때마다 새 버전이며, 가격만 바뀐 게시도 변경 이력과 함께 새 버전이다.
+- `CatalogVersion`(병원 단위): 게시된 치료 버전 묶음 + 공통 기본비용. 게시할 때마다 새 버전이며, 가격만 바뀐 게시도 변경 이력과 함께 새 버전이다. 공통 기본비용도 같아서, 가격만 바뀐 새 기본비용 버전은 같은 `baseFeeId`에 새 버전 id를 받고 그 기본비용의 매핑 상태와 지문은 그대로 남는다(DD-15, DD-16).
 - `RuleBundleVersion`(플랫폼 단위): 게시된 프로필·매핑·서류 규칙 묶음의 바꿀 수 없는 스냅샷. 어느 병원이 어느 묶음을 쓰는지는 플랫폼 운영자가 정하는 `ClinicRuleScope`다. 범위가 없는 병원은 묶음이 없고 모든 계산이 `CLINIC_RULE_SCOPE_ABSENT`로 보류된다.
 - 병원의 현재 버전은 그 병원의 최신 `CatalogVersion`과 그 병원 `ClinicRuleScope`가 가리키는 `RuleBundleVersion`이다. catalog와 options 응답은 각각 이 두 값을 담는다(DD-19). 두 버전이 현재 값과 같다는 사실은 그 묶음을 쓸 수 있다는 뜻이 아니다. 사용 가능 여부는 묶음의 가용성이 따로 정한다(아래 "규칙 묶음 가용성과 중지").
 - 계산 요청은 클라이언트가 본 `catalogVersion`과 `ruleBundleVersion`을 담는다. 경로의 병원 기준 현재 버전과 다르면 HTTP 409 `VERSION_MISMATCH`, 결과 없음. 본문 형식:
@@ -824,7 +824,7 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 - 중지는 묶음 기록만 바꾼다. 묶음에 든 프로필·매핑·서류 규칙 버전의 상태는 그대로이므로, 같은 버전을 담은 다른 묶음은 영향을 받지 않는다. 개별 항목을 중지하는 동작(DD-17 생명주기의 `PUBLISHED → SUSPENDED`)은 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 이 SPEC은 항목 중지를 묶음 중지의 수단으로 쓰지 않는다.
 - 계산 요청(`POST …/estimate`) 처리 순서(SPEC 결정, 개정 5. 정본은 DD-19 "요청 검증의 층"의 표이고 여기에는 같은 순서를 옮겨 적는다): ① 병원 확인(없으면 404) → ② 요청 구조 검증(400 `INVALID_REQUEST`) → ③ 지원 세대·치료 비어 있음 검증(422 `UNSUPPORTED_GENERATION`, `NO_TREATMENT_SELECTED`) → ④ 현재 `ClinicRuleScope`와 묶음 스냅샷, 묶음 상태, 묶음에 든 항목의 현재 생명주기 상태를 새로 읽고(상태는 캐시하지 않음, 아래 "항목 생명주기 상태와 캐시 계약") `catalogVersion`·`ruleBundleVersion`(묶음 id)을 병원의 현재 값과 비교해 다르면 409(본문 `latest`에 `ruleBundleStatus` 포함) → ⑤ 요청한 치료 ID를 병원의 현재 게시 카탈로그와 대조해 없는 것이 있으면 422 `TREATMENT_NOT_PUBLISHED`(다른 병원의 치료 ID 포함) → ⑥ 계산. ②·③은 요청 본문만 보고 정해지므로 ④의 읽기보다 먼저 거절한다. 한 요청에 여러 조건이 겹치면 앞선 단계의 응답 하나만 나온다. 버전이 같아도 묶음이 `SUSPENDED`이면 HTTP 200 `ON_HOLD`다. 모든 줄이 `RULE_BUNDLE_SUSPENDED`, `hospitalPayment`는 숫자, 보험금은 null, `documents`는 null, `versions.ruleBundleStatus = 'SUSPENDED'`이며 409도 4xx도 아니다. 버전이 같다는 사실은 묶음을 쓸 수 있다는 뜻이 아니다.
 - `GET …/insurance/options`: `ruleBundleVersion`은 범위의 묶음 id(중지 중에도 같음), `ruleBundleStatus`는 `ACTIVE` | `SUSPENDED` | null(범위 없음)이다. 카드는 5 / 3 / 3 그대로다(DD-05). 응답에 `Cache-Control: no-store`를 붙여(SPEC 결정) 중지가 다음 요청에서 보이게 한다. `ClinicRuleScope`는 중지로 바뀌지 않고 중지된 묶음을 계속 가리킨다.
-- 캐시 계약: 가용성은 계산 요청과 options 요청마다 읽는다. 캐시해도 되는 것은 (id, 내용 해시)로 찾는 바뀌지 않는 묶음 내용뿐이다(항목 버전의 내용·해시·지문·출처·약관 출처·승인자·유효 기간까지이며, 항목의 현재 생명주기 상태 `state`는 포함하지 않는다. 아래 "항목 생명주기 상태와 캐시 계약"). 구현이 범위→묶음이나 상태의 캐시를 추가하면 중지 사건 기록과 캐시 무효화를 같은 트랜잭션에서 한다. 이미 키오스크 화면에 나온 결과는 소급해서 바꾸지 않는다(환자 세션은 메모리뿐이다). "예상 부담액 확인"을 다시 누르면 보류가 나온다.
+- 캐시 계약: 가용성은 계산 요청과 options 요청마다 읽는다. 캐시해도 되는 것은 (id, 내용 해시)로 찾는 바뀌지 않는 묶음 내용뿐이다(항목 버전의 내용·해시·출처·약관 출처·유효 기간·작성자까지이며, 항목의 현재 생명주기 상태 `state`와 승인자, 매핑의 `approvedFingerprint`는 포함하지 않는다. 이 셋은 요청마다 함께 새로 읽는다. 아래 "항목 생명주기 상태와 캐시 계약". 구현 기준으로 정합, 2026-10-19, progress.md M3 외부 검토 보완 ②). 구현이 범위→묶음이나 상태의 캐시를 추가하면 중지 사건 기록과 캐시 무효화를 같은 트랜잭션에서 한다. 이미 키오스크 화면에 나온 결과는 소급해서 바꾸지 않는다(환자 세션은 메모리뿐이다). "예상 부담액 확인"을 다시 누르면 보류가 나온다.
 - 영향을 받는 병원 = 현재 `ClinicRuleScope`가 중지된 묶음 id를 가리키는 병원이다. 다른 묶음을 쓰는 병원과 지난 범위 이력은 해당하지 않는다. 중지 API(`POST /api/admin/rule-bundles/{id}/suspend`)는 비어 있지 않은 `reason`을 요구하고(없으면 400 `INVALID_REQUEST`), 검토 담당자만 할 수 있으며(병원 관리자·플랫폼 운영자는 403, 인증이 없으면 401), 응답에 `affectedClinics: [{ clinicId, slug }]`를 담는다. 감사 기록에는 수행자·역할·일시·사유·이전/이후 상태·영향을 받는 병원 수를 남긴다.
 - 복구 경로: 검토 담당자가 새 묶음 버전을 게시 → 플랫폼 운영자가 영향을 받는 병원마다 범위를 다시 지정 → 옛 버전을 든 클라이언트는 409 `VERSION_MISMATCH`(`ruleChanged: true`)를 받고 새 버전은 정상 계산한다. 중지부터 재지정까지 영향을 받는 병원은 계산 보류를 보인다.
 
@@ -832,23 +832,26 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 
 개정 5의 사용자 검토에서 나온 새 발견(progress.md R6-1)에 대한 이 SPEC의 최소 해법이다. 소유자 승인이 아니며 plan.md §E의 열린 행을 닫거나 바꾸지 않는다.
 
-- 두 가지를 구분한다. ① **내용**: 프로필·매핑·서류 규칙 묶음 항목 버전의 내용(`content`와 `contentHash`, 매핑의 `approvedFingerprint`, 출처, 약관 출처, 승인자, 유효 기간)과 규칙 묶음 버전의 구성(어느 항목 버전을 담는지)은 게시된 뒤 바뀌지 않는다(위 `RuleBundleVersion`, DD-18). ② **생명주기 상태**: 항목 버전 하나의 현재 `state`(DD-17: `PUBLISHED`에서 `SUSPENDED`·`UNDER_REREVIEW`·`SUPERSEDED`·`EXPIRED`로 가는 전이)는 검토 담당자의 명시 동작(항목 중지, 재검토 전환)이나 보장 판단 필드가 바뀐 치료 버전의 게시(DD-16)로 바뀐다. 상태가 바뀌어도 항목 버전의 내용은 바뀌지 않으며 전이는 감사 기록에 남는다(DD-17). 사용자 표현의 "중지"와 "검토 필요"는 각각 `SUSPENDED`와 `UNDER_REREVIEW`다.
-- 경로: 계산 요청마다 서버는 묶음 상태(위)와 함께 묶음에 든 항목 버전들의 현재 `state`를 저장소에서 새로 읽고(항목 버전 id 목록으로 한 번에 조회), 캐시된 묶음 내용에 방금 읽은 `state`를 채워 `RuleBundleSnapshot`(DD-03)을 조립한다. `state`는 캐시하지 않으므로 무효화 경로가 필요 없다. 이것은 묶음 가용성의 읽기 규칙(위 캐시 계약)을 항목 상태까지 넓힌 최소 해법이며 새 이벤트나 캐시 무효화 메커니즘을 만들지 않는다. 구현이 항목 상태 캐시를 더하려면 상태 전이와 캐시 무효화를 같은 트랜잭션에서 해야 한다.
-- 버전: 항목 하나의 상태 변경은 `RuleBundleVersion`(id, 내용 해시), `CatalogVersion`, `ClinicRuleScope`를 바꾸지 않는다. 그래서 클라이언트가 가진 두 버전은 계속 현재 값과 같고, 다음 요청은 409가 아니라 200으로 계산하며 쓸 수 없게 된 항목은 기존 보류 계약의 코드로 나온다(묶음 중지가 버전을 바꾸지 않는 것과 같은 모양). 상태 변경은 게시가 아니므로 새 버전을 내지 않는다.
+- 두 가지를 구분한다. ① **내용**: 프로필·매핑·서류 규칙 묶음 항목 버전의 내용(`content`와 `contentHash`, 출처, 약관 출처, 작성자, 유효 기간)과 규칙 묶음 버전의 구성(어느 항목 버전을 담는지)은 게시된 뒤 바뀌지 않는다(위 `RuleBundleVersion`, DD-18). ② **생명주기 상태와 승인 기록**: 항목 버전 하나의 현재 `state`(DD-17: `PUBLISHED`에서 `SUSPENDED`·`UNDER_REREVIEW`·`SUPERSEDED`·`EXPIRED`로 가는 전이)는 검토 담당자의 명시 동작(항목 중지, 재검토 전환)이나 보장 판단 필드가 바뀐 치료 버전의 게시(DD-16)로 바뀐다. 상태가 바뀌어도 항목 버전의 내용은 바뀌지 않으며 전이는 감사 기록에 남는다(DD-17). 승인자와 매핑의 `approvedFingerprint`도 이 쪽에 속하며 `state`와 함께 쓰고 읽는다. 재승인(`UNDER_REREVIEW` → `APPROVED`)은 새 승인자를 쓰고 새 `approvedFingerprint`를 다시 고정하며(DD-15), 이전 값은 상태 이력에 남고 항목 내용과 묶음 id·내용 해시는 바뀌지 않는다. 재승인한 항목은 `APPROVED`라 사용 불가이므로, 그 항목을 담은 규칙 묶음을 게시해 `PUBLISHED`로 되돌리기 전까지 그 매핑 후보는 `MAPPING_UNREVIEWED`를 받는다(줄의 최종 코드는 `resolveMapping`이 정한다). 항목 상태는 묶음 사이에 공유되므로 그 게시가 어느 묶음이든 같은 항목을 담은 모든 묶음에 반영된다(구현 기준으로 정합 (2026-10-19, progress.md M3 외부 검토 보완 ②)). 사용자 표현의 "중지"와 "검토 필요"는 각각 `SUSPENDED`와 `UNDER_REREVIEW`다.
+- 경로: 계산 요청마다 서버는 묶음 상태(위)와 함께 묶음에 든 항목 버전들의 현재 `state`·승인자·매핑의 `approvedFingerprint`를 저장소에서 함께 새로 읽고(항목 버전 id 목록으로 한 번에 조회), 캐시된 묶음 내용에 방금 읽은 세 값을 채워 `RuleBundleSnapshot`(DD-03)을 조립한다. 이 세 값은 캐시하지 않으므로 무효화 경로가 필요 없다. 내용 조회가 캐시 적중이어도 이 읽기는 요청마다 한 번 일어난다. 이것은 묶음 가용성의 읽기 규칙(위 캐시 계약)을 항목 상태까지 넓힌 최소 해법이며 새 이벤트나 캐시 무효화 메커니즘을 만들지 않는다. 구현이 항목 상태 캐시를 더하려면 상태 전이와 캐시 무효화를 같은 트랜잭션에서 해야 한다.
+- 버전: 항목 하나의 상태 변경(재승인으로 승인자와 지문이 새로 쓰이는 경우 포함)은 `RuleBundleVersion`(id, 내용 해시), `CatalogVersion`, `ClinicRuleScope`를 바꾸지 않는다. 그래서 클라이언트가 가진 두 버전은 계속 현재 값과 같고, 다음 요청은 409가 아니라 200으로 계산하며 쓸 수 없게 된 항목은 기존 보류 계약의 코드로 나온다(묶음 중지가 버전을 바꾸지 않는 것과 같은 모양). 상태 변경은 게시가 아니므로 새 버전을 내지 않는다.
 - 효과(모두 기존 계약 그대로이며 새 보류 코드가 없다): 프로필이 `SUSPENDED`이면 `STATE_INVALID`로 그 칸의 모든 줄이 `PROFILE_INVALID`, `UNDER_REREVIEW`이면 `PROFILE_UNDER_REREVIEW`다(DD-04 표). 매핑이 `SUSPENDED`이면 그 후보가 `MAPPING_INVALID`, `UNDER_REREVIEW`이면 `MAPPING_UNDER_REREVIEW`이며 줄의 최종 코드는 `resolveMapping`이 정한다(사용 가능한 다른 후보가 있으면 그것으로 확정, DD-03). 서류 규칙 묶음이 `isUsable`을 통과하지 못하면 `deriveDocuments`가 null 규칙 묶음을 받으므로, 계산이 가능한 입력에서는 응답이 200이고 `documents`가 `RULES_UNAVAILABLE`이며 금액은 영향을 받지 않는다(DD-06. 전체가 `ON_HOLD`이면 `documents`는 null). 같은 항목 버전을 담은 다른 묶음(다른 병원 포함)도 같은 저장소 값을 읽으므로 다음 요청에 똑같이 반영된다. 묶음 중지는 항목 상태를 바꾸지 않는다(위, DD-17).
 - 운영 준비 상태(DD-23)는 이미 저장소 스냅샷을 읽는 순수 함수이므로 같은 저장소 상태를 보고하며 이 경로로 달라지는 것이 없다.
-- 시험이 보는 곳: 메모리 저장소 구현의 읽기 호출 감시로 묶음 내용 조회는 캐시 적중일 수 있어도 `state` 조회는 요청마다 일어남을 확인하고, "묶음 내용을 먼저 읽어 캐시한 뒤 항목을 중지하고 다음 요청을 보낸다"는 순서로 응답을 확인한다(AC-011m~p).
+- 시험이 보는 곳: 메모리 저장소 구현의 읽기 호출 감시로 묶음 내용 조회는 캐시 적중일 수 있어도 `state`·승인자·지문을 읽는 조회는 요청마다 일어남을 확인하고, "묶음 내용을 먼저 읽어 캐시한 뒤 항목을 중지하고 다음 요청을 보낸다"는 순서로 응답을 확인한다(AC-011m~p). 캐시 적중 조건 여덟 가지는 plan.md M4와 acceptance.md AC-011m이 시험 기준으로 두며, 실제 HTTP 캐시는 M4이고 구현 안 됨·미검증이다. 캐시 없이 저장소와 합성 수준에서 같은 계약을 고정한 시험은 M3에 있다.
 
 ## DD-15 지문 방어
 
 - 매핑은 승인 때 `approvedFingerprint = hash(treatmentCode, procedureCode(s), benefitType, calcClass)`를 저장한다.
 - 계산할 때 현재 게시된 치료 버전의 지문과 다르면, 관리 화면에서 상태 전환이 빠졌더라도 그 매핑을 `MAPPING_UNDER_REREVIEW`로 판정해 보류한다.
 - 가격은 지문에 들어가지 않는다.
+- 재승인(`UNDER_REREVIEW` → `APPROVED`) 때는 새 승인자를 쓰고 `approvedFingerprint`를 현재 게시된 버전의 지문으로 다시 고정한다. 이전 승인자와 지문은 상태 이력에 남고, 규칙 묶음 id와 내용 해시는 바뀌지 않는다(DD-14 "항목 생명주기 상태와 캐시 계약". 구현 기준으로 정합, 2026-10-19, progress.md M3 외부 검토 보완 ②).
+- 공통 기본비용(`CommonBaseFee`)의 매핑도 같은 방식으로 지킨다. 매핑의 `treatmentId`는 기본비용의 안정 식별자 `baseFeeId`이고, 지문은 기본비용의 보장 판단 필드(`code`, `benefitType`)와 `benefitType`에서 유도하는 `calcClass`로 만든다(행위 코드는 없다). 승인, 규칙 묶음 게시의 낡음 검사, 재검토 전환, 엔진 줄 변환이 모두 같은 현재 대상 조회와 같은 지문 함수를 쓴다.
 
 ## DD-16 재검토 기준
 
 - 보장 판단 필드(닫힌 목록): `treatmentCode`, `procedureCode(s)`, `benefitType`, `calcClass`. 이 가운데 하나라도 바뀐 치료 버전이 게시되면 그 치료의 `APPROVED`·`PUBLISHED` 매핑이 `UNDER_REREVIEW`가 되고, 다시 승인될 때까지 그 치료는 보류된다(기획서 §7).
 - 가격만 바뀌면 매핑을 유지하고 새 `CatalogVersion`을 변경 이력과 함께 게시한다.
+- 공통 기본비용의 보장 판단 필드(닫힌 목록): `code`, `benefitType`(`calcClass`는 `benefitType`에서 유도하므로 따로 두지 않는다). 이 가운데 하나라도 바뀐 새 기본비용 버전이 게시되면 그 `baseFeeId`의 `APPROVED`·`PUBLISHED` 매핑이 `UNDER_REREVIEW`가 된다. 가격·표시명·`origin`·병원만 바뀐 새 버전은 지문과 매핑 상태를 바꾸지 않는다.
 - 치료 버전에 새 필드를 추가할 때는 설계 단계에서 보장 판단 필드인지 아닌지를 정한다.
 - 새 치료는 매핑 없이도 가격을 게시할 수 있으며, 그 줄만 `MAPPING_ABSENT`로 보류된다.
 
@@ -858,12 +861,12 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 
 병원 관리자(HA), 보험 기준 검토 담당자(RV), 플랫폼 운영자(PO). 한 사람이 여러 역할을 맡아도 권한은 따로 판정한다(기획서 §7). 아래 업무 분담 가운데 기획서 §7 규칙 관리 업무 1·2·3·5의 배정은 이 SPEC의 제안이다(원문은 나누지 않았다, plan.md §E #30).
 
-### 매핑 작성 주체 (SPEC 결정, plan.md §E #34)
+### 매핑 작성 주체 (소유자 결정 2026-10-16, plan.md §E #34)
 
-- 매핑은 RV가 작성·수정한다.
+- 매핑은 RV(플랫폼의 보험규칙 담당자)가 작성·수정한다. 병원의 치료·가격 관리(HA)와는 따로 둔다. 이는 사업 정책 결정이며 실제 운영 계정·담당자·승인 기록이 등록되었다는 뜻이 아니다. 시험에 쓰는 작성자·승인자 식별자는 모두 `TEST_FIXTURE`다.
 - HA의 "검토 요청"은 병원이 제안한 보장 분류 정보(급여 구분·행위 코드·치료 분류)를 담은 검토 요청 기록(`CoverageReviewRequest`, 상태 `REVIEW_REQUESTED`)을 만든다.
 - RV는 그 요청으로 매핑 초안(`DRAFT`)을 만들고, 검토를 마치면 승인(`APPROVED`)하거나 사유와 함께 반려(`REJECTED`)한다. 요청 기록은 결과와 반려 사유를 담아 닫히며, HA는 이를 읽기 전용으로 본다.
-- RV가 작성하고 승인까지 하면 작성자와 승인자가 같으므로 `selfApproval: true`가 기록된다.
+- 작성자 본인의 승인은 허용하지 않는다(소유자 결정 2026-10-16, plan.md §E #31). 작성자와 승인자는 서로 다른 주체여야 하며, 같은 주체가 승인하려 하면 거절한다.
 
 ### 권한 표
 
@@ -911,8 +914,8 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 | `EXPIRED` | 유효 기간 종료 | — | 아니요 |
 
 - 규칙은 덮어쓰거나 지우지 않고 새 버전을 낸다. 수정자·일시·사유를 남긴다. 게시 전 미리보기를 제공한다. 복구는 이전 버전의 사본을 새 버전으로 게시하는 방식으로 한다(기획서 §7).
-- 작성자와 승인자를 모두 기록한다. 같은 사람의 승인은 처음에는 허용하되 감사 기록에 `selfApproval: true`를 남긴다(SPEC 결정; 금지할지는 plan.md §E #31).
-- 규칙 묶음 단위의 가용성(`ACTIVE` | `SUSPENDED`, DD-14)은 위 표의 항목 생명주기와 따로 움직인다. 묶음을 중지해도 묶음에 든 프로필·매핑·서류 규칙 버전의 상태(위 표)는 바뀌지 않으며, 같은 버전을 담은 다른 묶음은 계속 쓸 수 있다. 항목 자체의 `PUBLISHED → SUSPENDED`는 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 그 영향은 묶음 내용을 캐시한 뒤에도 다음 요청부터 나타난다: 항목의 현재 `state`는 요청마다 새로 읽고 묶음 버전은 바뀌지 않는다(SPEC 제안, 승인 전. DD-14 "항목 생명주기 상태와 캐시 계약"). 묶음 중지는 검토 담당자만 한다(권한 표의 "규칙 묶음 게시·중지" 칸).
+- 작성자와 승인자를 모두 기록한다. 작성자와 승인자는 서로 달라야 하며 같은 주체의 승인은 거절한다. 거절하면 상태·승인자 기록·승인 결과(`APPROVED`·`PUBLISHED`)가 바뀌지 않는다(소유자 결정 2026-10-16, plan.md §E #31). 도메인 서비스는 이 거절을 유형 있는 도메인 오류로 내고(M3), 관리자 API의 HTTP 오류로의 변환은 M7이 한다.
+- 규칙 묶음 단위의 가용성(`ACTIVE` | `SUSPENDED`, DD-14)은 위 표의 항목 생명주기와 따로 움직인다. 묶음을 중지해도 묶음에 든 프로필·매핑·서류 규칙 버전의 상태(위 표)는 바뀌지 않으며, 같은 버전을 담은 다른 묶음은 계속 쓸 수 있다. 항목 자체의 `PUBLISHED → SUSPENDED`는 별개의 명시 동작이고 그 항목을 담은 모든 묶음에 영향을 준다. 그 영향은 묶음 내용을 캐시한 뒤에도 다음 요청부터 나타난다: 항목의 현재 `state`와 승인자·매핑의 `approvedFingerprint`는 요청마다 함께 새로 읽고 묶음 버전은 바뀌지 않는다(SPEC 제안, 승인 전. DD-14 "항목 생명주기 상태와 캐시 계약"). 묶음 중지는 검토 담당자만 한다(권한 표의 "규칙 묶음 게시·중지" 칸).
 - 플랫폼 운영자의 병원별 긴급 중지는 이 SPEC에 두지 않는다. 기획서 §7 6번이 플랫폼 운영자에게 준 권한은 관리자 소속·역할 관리와 규칙 사용 범위 지정 둘뿐이고 긴급 중지는 원문에 없다. 계획 감사 1회차 뒤 요구사항에서 뺐으며 그 제거를 승인한 기록은 없다. 개정 4 요청에서 사용자가 이 범위에 넣지 않도록 지시했다(plan.md §A.5, §F 선택 후속 항목). 플랫폼 운영자의 권한은 위 두 가지에서 늘지 않는다.
 
 ## DD-18 데이터 모델
@@ -926,14 +929,14 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 | `ClinicMembership` | userId, clinicId(PO는 null 가능), role | 사용자 N:N 병원 |
 | `Treatment` | id, clinicId, 정렬 순서, 활성 여부 | 치료의 상위 식별자 (structure.md §11의 빈 자리를 채움) |
 | `TreatmentVersion` | id, treatmentId, 표시명·설명, `benefitType`, 환자 예상 결제액, 금액 적용 조건(환자 유형·가정·기준일), `treatmentCode`, `procedureCode(s)`, `calcClass`, 서류 관련 표시, `origin`(`OPERATING`·`DEMO`·`TEST_FIXTURE`), 게시 상태, 적용일 | Treatment 1:N. 같은 이름의 급여·비급여 판은 별도 Treatment |
-| `CommonBaseFee` | id, clinicId, 표시명, `benefitType`, 금액, 코드, `origin` | 자동 포함 줄(DD-03) |
+| `CommonBaseFee` | id(바꿀 수 없는 버전 id), `baseFeeId`(안정 식별자), clinicId, 표시명, `benefitType`, 금액, 코드, `origin` | 자동 포함 줄(DD-03). `baseFeeId` 하나에 버전이 여럿이다(`Treatment` 1:N `TreatmentVersion`과 같은 모양). 매핑의 `treatmentId`와 엔진 줄의 `treatmentId`는 `baseFeeId`이고 `treatmentVersionId`는 `id`다. 치료와 기본비용은 한 id 공간을 쓰며 `baseFeeId`와 치료 id의 충돌은 저장소와 카탈로그 게시가 거절한다. 보장 판단 필드는 `code`와 `benefitType`이다(DD-16) |
 | `Insurer` | id, 기관 유형, 현재 이름, 과거 이름 별칭, 검증된 연락처 | NH농협손해보험·NH농협생명·과거 농협공제는 각각 별도 행 |
 | `ProductProfile` | id, insurerId, 세대, 상품·담보, 판매 기간, 공제형, 가입 한도 옵션 | Insurer 1:N |
 | `PolicySource` | id, 보험사 원문 식별(URL 또는 파일), 개정일, 조항·페이지, 효력일, 확인자, 확인일 | 운영 규칙에 필수 |
 | `StandardAssumptionProfile` | id, version, generation, insurerType, `groups[]`(각 그룹은 `groupKey`, `deduction`, `limit`, 선택 `sharedLimitPoolKey`; 보장 여부 필드 없음), `groupOrder[]`, `sharedLimitPools[]`, 생명주기 상태, origin, 유효 기간, policySourceIds[], 작성자, 승인자, 내용 해시 | (generation, insurerType) 칸마다 버전 계열 하나. 구조 규칙(키 유일·빈 키 없음, 없는 풀 참조 없음, `groupOrder`가 모든 `groupKey`를 한 번씩, 그룹 1개 이상)은 DD-02 "프로필 구조 검사와 영향 범위" |
 | `CoverageRuleVersion` | 상품·담보 단위의 공제/한도/기간/횟수/제외/집계 단위, 유효 기간, 상태 | ProductProfile 1:N. 개별 상품 규칙을 담는 자리이며, 이번 계산은 표준 가정 프로필만 쓴다 |
 | `CoverageReviewRequest` | id, clinicId, treatmentId, 제안한 보장 분류 정보, 요청자, 요청일, 상태(`REVIEW_REQUESTED` → 결과 `APPROVED`·`REJECTED`), 반려 사유, 결과 매핑 버전 | HA가 생성, RV가 처리 |
-| `TreatmentCoverageMapping` | id, version, clinicId, treatmentId, scope[(generation, insurerType)], decision(`COVERED`·`EXCLUDED`), groupKey, exclusionReason, `approvedFingerprint`, 상태, origin, policySourceIds[], 작성자(RV)·승인자, 유효 기간 | Treatment N:N 프로필 칸. 보장 여부의 유일한 출처이며 필드 규칙은 `COVERED` ⇒ `groupKey` 필수·`exclusionReason` 없음, `EXCLUDED` ⇒ `groupKey` 없음·`exclusionReason` 필수, 두 경우 모두 `policySourceIds` 1개 이상과 승인자 기록(DD-03 "확인된 제외와 줄 상태") |
+| `TreatmentCoverageMapping` | id, version, clinicId, treatmentId, scope[(generation, insurerType)], decision(`COVERED`·`EXCLUDED`), groupKey, exclusionReason, `approvedFingerprint`, 상태, origin, policySourceIds[], 작성자(RV)·승인자, 유효 기간 | Treatment 또는 CommonBaseFee(`treatmentId`가 치료 id 또는 `baseFeeId`) N:N 프로필 칸. 보장 여부의 유일한 출처이며 필드 규칙은 `COVERED` ⇒ `groupKey` 필수·`exclusionReason` 없음, `EXCLUDED` ⇒ `groupKey` 없음·`exclusionReason` 필수, 두 경우 모두 `policySourceIds` 1개 이상과 승인자 기록(DD-03 "확인된 제외와 줄 상태") |
 | `DocumentRuleSet` / `DocumentRule` | 묶음 id·버전·상태·origin·출처·승인자·내용 해시 / documentCode, when, reason, priority | 묶음 1:N 규칙 |
 | `RuleBundleVersion` | id, 포함한 프로필·매핑·서류 규칙 버전 목록, 내용 해시, 게시자, 게시일 | 바꿀 수 없음. 사용 가능 여부는 이 엔티티에 두지 않고 아래 `RuleBundleStatusEvent`가 따로 갖는다. 한 묶음은 (세대, 보험사 형태) 칸마다 프로필을 하나, 매핑 id마다 버전을 하나만 담으며 게시 검증이 이를 어기면 거절한다(DD-03) |
 | `RuleBundleStatusEvent` | bundleId, status(`ACTIVE`·`SUSPENDED`), 수행자(actorId)·역할, 일시, 사유, previousStatus | RuleBundleVersion 1:N, 추가 전용. 게시 트랜잭션이 첫 `ACTIVE` 사건을 함께 기록하고 현재 상태는 마지막 사건이며, 중지(`SUSPENDED`)는 되돌리지 않는다(DD-14) |
@@ -941,9 +944,11 @@ interface DisplayPrefs { largeText: boolean }                           // 세�
 | `ClinicRuleScope` | clinicId, ruleBundleVersionId, 지정자(PO), 지정일 | 병원 1:1(현재 값) + 이력. 묶음 중지로 바뀌지 않으며 중지된 묶음을 계속 가리킨다(DD-14) |
 | `IdlePolicy` | clinicId, 화면 종류별 경고·초기화 초, `completionHoldSeconds` | 병원 1:1 (structure.md §11의 빈 자리를 채움). 저장된 정책이 없으면 읽기 함수가 DD-10 표의 값을 낸다. 키오스크에는 catalog 응답의 `idlePolicy`로 전달된다(DD-19) |
 | `BrandSetting` | 서비스 표시명(기본 "보담") | 플랫폼 1행 |
-| `AuditLog` | id, actorId, role, 동작, 대상, 이전·이후 버전, 사유, 일시, `selfApproval` | 모든 관리 동작 |
+| `AuditLog` | id, actorId, role, 동작, 대상, 이전·이후 버전, 사유, 일시 | 모든 관리 동작 |
 
 SPEC 결정: 표준 가정 프로필은 `CoverageRuleVersion`의 한 종류가 아니라 별도 엔티티로 둔다. 이유는 키가 다르고((세대, 보험사 형태) 대 상품·담보), 계산이 직접 참조하는 단위이며, 승인 표(소유자가 첨부할 표준값 표)도 이 단위로 들어오기 때문이다. 생명주기 상태와 `PolicySource` 참조는 `CoverageRuleVersion`과 같게 둔다(기획서 §8의 열린 질문 해결).
+
+- 프로필·매핑·서류 규칙 묶음의 항목 버전은 둘로 나뉜다. 바뀌지 않는 내용(`content`, `contentHash`, 출처, 약관 출처, 유효 기간, 작성자)과, 따로 쓰고 읽는 상태 기록(`상태`, 승인자, 매핑은 `approvedFingerprint`)이다. 재승인은 상태 기록에 새 승인자와 새 지문을 쓰고 이전 값은 상태 이력에 남기며, 항목 내용과 규칙 묶음 버전은 바꾸지 않는다(DD-14 "항목 생명주기 상태와 캐시 계약", DD-15. 구현 기준으로 정합, 2026-10-19, progress.md M3 외부 검토 보완 ②).
 
 ### 관계도
 
@@ -952,7 +957,7 @@ BrandSetting (1)
 
 Clinic 1 ── N KioskDevice
 Clinic 1 ── N Treatment 1 ── N TreatmentVersion
-Clinic 1 ── N CommonBaseFee
+Clinic 1 ── N CommonBaseFee   (같은 baseFeeId의 버전 계열, 버전마다 id)
 Clinic 1 ── N CatalogVersion ──> {TreatmentVersion, CommonBaseFee}
 Clinic 1 ── 1 IdlePolicy
 Clinic 1 ── 0..1 ClinicRuleScope ──> RuleBundleVersion
@@ -962,7 +967,7 @@ User  N ── N Clinic   (ClinicMembership, role)
 
 Insurer 1 ── N ProductProfile 1 ── N CoverageRuleVersion ──> PolicySource
 StandardAssumptionProfile (generation, insurerType) ──> PolicySource
-TreatmentCoverageMapping ──> Treatment, ──> StandardAssumptionProfile.groupKey, ──> PolicySource
+TreatmentCoverageMapping ──> Treatment 또는 CommonBaseFee(baseFeeId), ──> StandardAssumptionProfile.groupKey, ──> PolicySource
 DocumentRuleSet 1 ── N DocumentRule ──> PolicySource
 RuleBundleVersion ──> {StandardAssumptionProfile, TreatmentCoverageMapping, DocumentRuleSet} 버전들
 
@@ -1230,7 +1235,7 @@ function computeReadiness(
 
 ### 표 M — 치료별 매핑
 
-- 키: 병원 × 게시된 줄 × 칸. 게시된 줄은 그 병원의 현재 `CatalogVersion`에 든 치료와 공통 기본비용 전부다(DD-14). 매핑 자료는 그 병원의 규칙 사용 범위가 가리키는 묶음에 든 매핑이며, 범위가 없으면 빈 집합으로 본다. 묶음의 가용성은 여기서 보지 않는다(표 S가 본다).
+- 키: 병원 × 게시된 줄 × 칸. 게시된 줄은 그 병원의 현재 `CatalogVersion`에 든 치료와 공통 기본비용 전부다(DD-14). 기본비용 줄의 id와 그 줄의 매핑 키는 `baseFeeId`다(DD-18). 매핑 자료는 그 병원의 규칙 사용 범위가 가리키는 묶음에 든 매핑이며, 범위가 없으면 빈 집합으로 본다. 묶음의 가용성은 여기서 보지 않는다(표 S가 본다).
 - `READY`: 줄 판정 `decideLine`이 줄을 쓸 수 있다고 정할 때다. 즉 줄 출처와 분류가 통과하고 `resolveMapping`이 사용 가능한 매핑 하나를 내며, 그 매핑이 사용 가능한 `COVERED`이면 `groupKey`가 칸의 프로필에 있고 그 그룹이 `checkGroupValues`를 통과해야 한다. 사용 가능한 `EXCLUDED` 매핑도 `READY`다. 결과가 확정된 제외로 결정적이기 때문이며 보고에는 `READY (EXCLUDED_CONFIRMED)`로 적는다.
 - `NOT_READY`의 사유(줄 단계 보류 코드): `LINE_ORIGIN_NOT_ACCEPTED`, `CLASSIFICATION_NEEDS_REVIEW`, `MAPPING_ABSENT`, `MAPPING_UNREVIEWED`, `MAPPING_REJECTED`, `MAPPING_UNDER_REREVIEW`(지문 불일치 포함), `MAPPING_INVALID`(모호함 포함), `MAPPING_GROUP_NOT_IN_PROFILE`, 그룹 값 결함의 `PROFILE_SOURCE_INCOMPLETE`·`PROFILE_FORMULA_UNSUPPORTED`·`PROFILE_VALUE_MISSING`·`PROFILE_VALUE_INVALID`. 사용 불가 상태의 `EXCLUDED` 매핑은 제외 확인이 아니라 그 상태의 코드다.
 - 사용 가능한 `COVERED` 매핑인데 그 칸의 프로필이 해석되지 않으면 그룹을 볼 수 없다. 이 행은 `NOT_READY`이고 사유는 표 P(병원 보기)의 같은 칸 사유다.

@@ -1211,6 +1211,1142 @@ After each mutation the edit was reverted by hand; after the last one `git diff 
 - AC-007f, AC-007g, AC-007i and AC-008g are NOT closed by M2.D (AC-008g still has only the `documents = null on a held result` half evidenced). M4 (building `treatments` from validated lines, calling `selectDocumentRuleSet` and `deriveDocuments`) and M6 (kiosk screens) are not started.
 - SPEC wording aligned minimally with the M2.D decisions: design.md DD-06 (input-defect bullet, flag aggregation item 4, publish-validation bullet and item 9), acceptance.md AC-007d and AC-007f, plan.md M2 scope, a new M3 bullet for the `documentRuleSetContent` hash contract (NOT implemented, NOT verified) and one M4 clause. The wording of the earlier M2 decisions 1-15 in design.md / acceptance.md is otherwise not re-aligned. All earlier OPEN items of M1.5 to M2 remain open. Formal SPEC lint and `moai verify` remain UNVERIFIED (no tool). Only Windows 11 and Node 24.19.0 were run, with no CI.
 
+### M3.A 기반 (도메인·정본 해시·지문·저장소), 2026-10-16
+
+**Scope.** M3.A only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` (from M2 tip `2589ce8`, not committed by this step). It builds the foundation every later M3 step uses: domain types (DD-18 entities M3 touches), the typed error style, the production digest, the coverage fingerprint, repository interfaces plus an in-memory implementation with transactions, an audit helper, test doubles, and a server import-boundary test. There is NO lifecycle logic, NO publish validation, NO versioning service, NO readiness, NO HTTP, NO DB. M4 to M7 are not started. **No AC is closed by M3.A** (AC-011a is closed in M3.D).
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/domain/errors.ts` | `DomainError` (stable `code`, message, `defects: {code, path}[]`), closed `DOMAIN_ERROR_CODES` (6 codes so far) |
+| `src/server/domain/actor.ts` | `Actor`, `Role` (`HA`/`RV`/`PO`), `requireRole` (role check only, throws `ROLE_NOT_PERMITTED`) |
+| `src/server/domain/ports.ts` | `Clock`, `IdGenerator` ports |
+| `src/server/domain/items.ts` | `ItemKind`, `ItemVersionRef`, immutable `ItemVersionRecord` (content = engine type minus `state` and `approver`), `ItemStateRecord` / `ItemStateSnapshot`, `StateTransition`, `ItemTransitionInput` |
+| `src/server/domain/entities.ts` | Types for `Clinic`, `Treatment`, `TreatmentVersion`, `CommonBaseFee`, `CatalogVersion`, `Insurer`, `PolicySource`, `CoverageReviewRequest`, `RuleBundleVersion`, `RuleBundleStatusEvent`, `ClinicRuleScope`, `IdlePolicy`, `AuditLogEntry` |
+| `src/server/domain/projection.ts` | `toEngineProfile` / `toEngineMapping` / `toEngineDocumentRuleSet`: cached content + freshly read state -> engine type |
+| `src/server/digest.ts` | `canonicalDigest` (SHA-256 hex, encoding v1 documented in the file header); the ONLY `node:` import in `src/server` |
+| `src/server/fingerprint.ts` | `COVERAGE_JUDGMENT_FIELDS`, `coverageFingerprint`, `coverageFingerprintOf` (DD-15, DD-16) |
+| `src/server/audit.ts` | `appendAudit` |
+| `src/server/repo/interfaces.ts` | `Repository` port (contract in the file header) |
+| `src/server/repo/memory/{memory-repository,store,read-spy}.ts` | In-memory implementation: snapshot/rollback transactions, write-once versions, append-only logs, deep-copy isolation, read spy, `exportState()` |
+| `vitest.config.ts` | `coverage.include` is now `['src/engine/**', 'src/server/**']`; everything else unchanged |
+| `tests/server/{digest,fingerprint,domain,repo-memory,seal-roundtrip}.test.ts`, `tests/boundary/server-imports.test.ts` | New tests (counts below) |
+| `tests/fixtures/server/{actors,clock,entities,errors,items,repo}.fixture.ts` | New fixtures, all `TEST_FIXTURE`; engine content is imported from `tests/fixtures/engine/*` (profile, mapping, document rule set), not duplicated |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/` (existing files) or `tests/fixtures/engine/**` was edited. The new boundary test only imports `tests/boundary/source-scan.ts` read-only. `package.json` is untouched.
+
+| New test file | Tests |
+|---------------|-------|
+| `tests/server/digest.test.ts` | 58 |
+| `tests/server/fingerprint.test.ts` | 29 |
+| `tests/server/domain.test.ts` | 23 |
+| `tests/server/repo-memory.test.ts` | 141 |
+| `tests/server/seal-roundtrip.test.ts` | 23 |
+| `tests/boundary/server-imports.test.ts` | 37 |
+| total | 311 |
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Error style (fixed by the step prompt).** Domain rejections are thrown as `DomainError`; services run inside `repo.transaction`, so a throw rolls back every write including audit and status events. No HTTP concept appears in `src/server`.
+2. **Content vs state split.** `ItemVersionRecord.content` is the engine item type minus `state` AND `approver`; `ItemStateRecord` holds the current `LifecycleState`, the `approver` record, and an append-only transition history (actor id, role, time, reason). `[not in docs]` Moving `approver` to the state side is a decision: the approver exists only after approval, so keeping it in write-once content would force a second write. `projection.ts` fills `state` and `approver` from the freshly read state record and nothing else. `approvedFingerprint` of a mapping stays in content (see OPEN item 1).
+3. **Digest encoding v1** (full text in the `digest.ts` header). UTF-16LE bytes of `"bodam.digest.v1:" + enc(value)`, tagged self-delimiting tokens, object keys sorted (insertion order irrelevant), arrays order-sensitive, `-0`/`NaN`/`Infinity`/`undefined`/holes/`null`/missing key all distinct, no Unicode normalization, lone surrogates preserved, total (cycles and depth > 256 are closed with a marker rather than thrown). `[not in docs]` A key whose value is `undefined` differs from a missing key (injective); typed data cannot produce it under `exactOptionalPropertyTypes`. Known limits (Map, Set, typed arrays, boxed primitives are not distinguished by content) are listed in the header.
+4. **Fingerprint.** `approvedFingerprint = canonicalDigest({ treatmentCode, procedureCodes (code-point-sorted copy), benefitType, calcClass })`. `[not in docs]` DD-15 does not say whether the procedure code list is ordered or may repeat. Order does not matter (sorted copy, engine `compareCodePoints`), duplicates are NOT merged (`[A]` and `[A, A]` differ). The closed list `COVERAGE_JUDGMENT_FIELDS` uses the `TreatmentVersion` field names (`procedureCodes` for the document's `procedureCode(s)`).
+5. **Write-once rule.** Rewriting the same key with an identical record (compared by `canonicalDigest`, whole record including `authorId` and `createdAt`) is an idempotent no-op; any difference is `IMMUTABLE_VERSION`. There is no delete operation; a test scans the repository's method names for delete-like verbs. `[not in docs]` Idempotent-or-reject was left to M3.A by the prompt; idempotent was chosen so retries are safe.
+6. **Transactions.** Synchronous only (a callback returning a Promise is rejected with `TypeError` and rolled back). Every call takes a full-state checkpoint and restores it on throw, so a nested call is a savepoint that joins the outer transaction: an outer throw undoes the inner writes, an inner throw caught by the outer undoes only the inner writes. `[not in docs]` Async transactions are left for the DB adapter (plan.md §E #1 undecided).
+7. **Bundle status chain (repository backstop).** The only accepted chain is `[ACTIVE (previous = null), SUSPENDED (previous = ACTIVE)]`; any other event is `STATE_CONFLICT`, so re-activation is impossible at the repository level (DD-14). The typed service-level rejection and the mandatory suspend reason are M3.D.
+8. **Item state writes.** `recordItemTransition` requires the item version to exist and `from` to equal the current state (`null` for the first write) else `STATE_CONFLICT`. It does NOT check the DD-17 transition table (M3.B). `readItemStates(refs)` takes a list in one call and returns an array of the same length and order, with `null` for a ref that has no state record, and no history.
+9. **References.** Repository writes check that referenced entities exist (`NOT_FOUND`); catalog/bundle membership checks are existence-only. Clinic ownership of catalog entries is a service concern (M3.D). `saveClinic` also rejects a duplicate `slug` (`DUPLICATE_KEY`) and a `currentCatalogVersionId` that is missing (`NOT_FOUND`) or belongs to another clinic (`REF_CONTENT_MISMATCH`).
+10. **Ordering.** Entity lists keyed by id (clinics, treatments per clinic, insurers, policy sources, review requests per clinic) are in code-point order of `id`; version and history lists (item versions, catalog versions, bundles, status events, scope history, audit log) are in write order.
+11. **Entity shapes `[not in docs]`.** DD-18 lists fields but not types. Chosen: `TreatmentVersion` has no mutable "publish status" (it is catalog membership); `CommonBaseFee` is write-once by id (a changed fee gets a new id); `CatalogChangeSummary` is `{addedTreatmentIds, removedTreatmentIds, priceChangedTreatmentIds, baseFeesChanged}`; `ProposedCoverageInfo` is `{benefitType, procedureCodes, calcClass}`; `Clinic.institutionType` is `'CLINIC'`; actor-bearing records use `Actor` (`publishedBy`, `assignedBy`, `requestedBy`) while status events and audit entries use flat `actorId` + `role` as DD-18 lists them. `TreatmentCoverageMapping` has no `clinicId` because the engine type has none (a mapping is scoped by `treatmentId`).
+12. **IdlePolicy.** Type only: `{clinicId, screens: Record<string, {warnSeconds, resetSeconds}>, completionHoldSeconds: number | null}`. The DD-10 default reader is left to M3.D, which will also fix the closed list of screen kinds (the DD-10 table groups screens, it does not name keys).
+13. **Determinism.** `src/server` uses no `Date.now`, `Math.random`, `randomUUID`; time and ids come from the injected `Clock` and `IdGenerator` (test doubles `FixedClock`, `CounterIdGenerator`). The boundary test reuses the engine hazard rules (clock, random, environment, network call, timer, locale) on `src/server`. A fresh-process determinism run of the digest (the `child-run.ts` pattern) was NOT added (the prompt said only if cheap): determinism is evidenced by pure-function tests and the known-answer vectors, not by a second process.
+14. **`exportState()` on the memory class** exists for the `snapshotOf(repo)` test helper (rollback comparisons). It returns a deep copy and does not touch the read spy.
+
+#### Foundation behaviors later steps depend on
+
+- M3.B (lifecycle): `recordItemTransition` (from-check, append-only history with actor id and role), `readItemStates`, `requireRole`, `appendAudit`, `COVERAGE_JUDGMENT_FIELDS`, `coverageFingerprintOf`, `DomainError` and the `STATE_CONFLICT` / `ROLE_NOT_PERMITTED` codes, the transaction rollback guarantee for rejected self-approval.
+- M3.C (publish validation): `DomainError.defects`, `canonicalDigest`, engine structure checks (not wrapped yet).
+- M3.D (versions/bundles): write-once `put*`, `IMMUTABLE_VERSION`, `appendBundleStatusEvent` chain backstop, `assignClinicRuleScope`, `toEngine*` projections, sealing with `canonicalDigest(profileContent(p))` / `canonicalDigest(documentRuleSetContent(s))` (proved to verify through engine `isUsable`, reorder-with-original-hash and change detection in `seal-roundtrip.test.ts` as a SANITY test only; AC-011a ownership stays in M3.D).
+- M3.E (readiness): `readItemStates`, `toEngine*`, `ReadSpy` counters.
+
+#### AC evidence
+
+No AC is closed. Evidence-only support for later closure: AC-011a (digest/seal sanity in `tests/server/seal-roundtrip.test.ts`, describe `프로필: 봉인과 검증이 같은 정규화를 쓴다` and `서류 규칙 묶음: 봉인과 검증이 같은 정규화를 쓴다`); DD-14 read contract (`readItemStates` batch and spy in `tests/server/repo-memory.test.ts`, describe `항목 상태 일괄 읽기` and `읽기 감시 (spy)`); atomic rollback (describe `트랜잭션`).
+
+#### RED before GREEN (exact statement)
+
+Tests and fixtures were written first, with no implementation under `src/server/` yet (the fixtures are typed against the planned module paths). The RED run was a module-resolution failure, not an assertion failure, because no `src/server` module existed:
+
+```
+$ npx vitest run tests/server tests/boundary/server-imports.test.ts --maxWorkers=4   -> exit 1 (RED, red.txt)
+ Test Files  6 failed (6)
+      Tests  no tests
+ e.g. Error: Cannot find module '../../src/server/digest' imported from tests/server/fingerprint.test.ts
+      Error: Cannot find module '../../src/server/repo/memory/memory-repository' imported from tests/server/repo-memory.test.ts
+```
+
+Then the implementation was written and the same command passed on the first run (6 files / 307 tests, exit 0, `first-green.txt`) after `npx tsc --noEmit` exit 0. The known-answer digest vectors were computed once with an independent re-derivation of the encoding spec (a scratch script, not the repo code) and cross-checked for `null` and `"a"` with `printf | iconv -t UTF-16LE | sha256sum`; they were hard-coded in the test before `digest.ts` existed. Four tests were added AFTER the first GREEN (three `brokenFirstEvents` rows and one per-bundle chain test in `repo-memory.test.ts`) because the first coverage run showed one branch of the bundle status chain unexercised; they passed immediately against the existing implementation (test-after for those four; they are not evidence of a RED). Two small source edits followed the first coverage run: an unused `ITEM_KINDS` constant was removed and `ReadSpy.counts` was typed by query name. Final totals are in the next block.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3a/`, gitignored; all vitest runs with `--maxWorkers=4`)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary-post.txt)
+ Test Files  9 passed (9)
+      Tests  517 passed (517)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary-post.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc-post.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server-post.txt)
+ Test Files  5 passed (5)
+      Tests  274 passed (274)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine-post.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Regression baseline: the M2 engine+boundary set was 35 files / 1507 tests; it is now 36 files / 1544 tests = the same 35 files / 1507 tests plus the new boundary file (37 tests). No existing test was modified; no `skip`, `only` or disabled test was added.
+
+Coverage. This vitest version prints only non-100% rows in the text table, so per-file figures were read from `coverage/coverage-summary.json` and summed per directory (`coverage-server-rows-post.txt`, `coverage-engine-rows-post.txt`). Because `coverage.include` now has both folders, the `All files` row of a run that executes only one folder mixes in the other folder at 0%; read the per-folder sums:
+
+```
+src/server (tests/server run):  statements 247/247  branches 132/132  functions 85/85  lines 239/239   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145 lines 606/606  = 100% each (unchanged)
+```
+
+No coverage exclusions and no coverage-only tests. `interfaces.ts`, `ports.ts` and `entities.ts` are type-only (no statements).
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4`; the boundary mutation with the boundary file only; every edit reverted by hand and the restored files compared by sha256 — `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`, and `audit.ts` hash equals its pre-mutation hash)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `digest.ts`: stop sorting object keys | `Test Files  3 failed \| 2 passed (5)`, `Tests  6 failed \| 268 passed (274)` |
+| (b) `digest.ts`: drop the `-0` branch | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (c) `memory-repository.ts`: transaction no longer restores the checkpoint | `Test Files  2 failed \| 3 passed (5)`, `Tests  7 failed \| 267 passed (274)` |
+| (d) `putOnce`: different content overwrites instead of `IMMUTABLE_VERSION` | `Test Files  1 failed \| 4 passed (5)`, `Tests  12 failed \| 262 passed (274)` |
+| (e) `fingerprint.ts`: procedure codes not sorted | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (f) bundle status chain relaxed to `previousStatus === last.status` (re-activation allowed) | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (g) reads return the stored object instead of a copy | `Test Files  1 failed \| 4 passed (5)`, `Tests  8 failed \| 266 passed (274)` |
+| (h) read spy counts once per ref instead of once per `readItemStates` call | `Test Files  1 failed \| 4 passed (5)`, `Tests  2 failed \| 272 passed (274)` |
+| (i) append `Date.now()` and a `tests/fixtures` import to `src/server/audit.ts` | boundary file only: `Test Files  1 failed (1)`, `Tests  2 failed \| 35 passed (37)` |
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Re-approval vs immutable fingerprint (design contradiction, for M3.B).** DD-17 lifecycle table allows `UNDER_REREVIEW -> APPROVED` (re-approval of the same mapping version, design.md:908) while DD-14 lists the mapping's `approvedFingerprint` among the immutable cached content (design.md:827) and DD-15 stores it "at approval" (design.md:844). M3.A keeps `approvedFingerprint` in write-once content. If a re-approval must carry a new fingerprint, M3.B must either require a new mapping version or move the fingerprint into the state record; this was not decided here.
+2. NOT IMPLEMENTED: lifecycle state machine and self-approval rejection (M3.B), publish validation (M3.C), catalog/bundle publish, suspend service and reason check, DD-10 default reader, scope assignment service, recovery (M3.D), readiness tables (M3.E). All their ACs stay open.
+3. NOT VERIFIED: any DB behavior (no DB adapter, §E #1 undecided); asynchronous transactions; behavior of `canonicalDigest` on Map/Set/typed arrays (documented limit); digest determinism across a fresh process (not added).
+4. The digest encoding is versioned by the `bodam.digest.v1:` prefix. Any change to the encoding invalidates every sealed item hash; the `@MX:ANCHOR` on `canonicalDigest` records this.
+
+### M3.B 생명주기 (상태 기계·본인 승인 금지·재검토 전환), 2026-10-16
+
+**Scope.** M3.B only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.A (`f07df7b`), not committed by this step. It adds the lifecycle state machine shared by the three item kinds (DD-17), the authoring and approval services (draft create / edit / next version, submit, approve, reject, item suspend, internal publish / supersede / expire primitives), author != approver enforcement (owner decision #31), mapping fingerprint pinning at approval (DD-15), the re-review trigger (DD-16, unit-level part of AC-009a), the coverage review request flow (owner decision #34), and the engine-integration tests. It also contains the one deliberate change to M3.A decided by the orchestrator: `approvedFingerprint` moved from the immutable mapping content into the item STATE record. There is NO publish validation (M3.C), NO catalog or bundle publishing, bundle suspend, scope assignment (M3.D), NO readiness (M3.E), NO HTTP, NO DB, NO M4-M7 work. **No AC is closed by M3.B** (AC-009a closes in M3.D when catalog publishing calls the trigger in the same transaction; AC-024a and AC-025b close in M7 and only get domain-side evidence here).
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/lifecycle.ts` | NEW. `LIFECYCLE_STATES`, `LIFECYCLE_TRANSITIONS` (frozen data table, 11 allowed pairs), `isTransitionAllowed`, `assertTransition` (`STATE_CONFLICT` with from/to in message and a `TRANSITION_NOT_ALLOWED` defect) |
+| `src/server/deps.ts` | NEW. `ServiceDeps` = `AuditDeps` with the full `Repository` |
+| `src/server/authoring.ts` | NEW. `createDraft`, `editDraft`, `createNextDraft` (RV only; seals `contentHash` with the engine normalizers + `canonicalDigest`) |
+| `src/server/approval.ts` | NEW. `submitForReview`, `approve`, `reject`, `suspendItem`, `markPublished`, `markSuperseded`, `markExpired` |
+| `src/server/re-review.ts` | NEW. `triggerReReview(deps, actor, treatmentVersion)` |
+| `src/server/review-request.ts` | NEW. `createCoverageReviewRequest` (HA), `createMappingDraftFromRequest` (RV), `closeReviewRequestForMapping` (called by approve/reject), HA read helpers `readReviewRequest`, `readClinicReviewRequests` |
+| `src/server/domain/errors.ts` | 5 codes added (additive): `SELF_APPROVAL_FORBIDDEN`, `REASON_REQUIRED`, `TREATMENT_VERSION_ABSENT`, `NOT_ITEM_AUTHOR`, `INVALID_INPUT` (union stays closed, now 11) |
+| `src/server/domain/items.ts` | CHANGED (deliberate): `MappingContent` no longer has `approvedFingerprint`; `ItemStateRecord` / `ItemStateSnapshot` gain `approvedFingerprint`; `ItemTransitionInput` gains `approvedFingerprintAfter`; `StateTransition` gains `approver` and `approvedFingerprint` (the values in force after that transition); new helpers `formatRef`, `isMappingRecord` |
+| `src/server/domain/projection.ts` | CHANGED: `toEngineMapping` takes `approvedFingerprint` from the state snapshot (`null` becomes `''`, which the engine's `isUsable` turns into `INTEGRITY_MISMATCH`) |
+| `src/server/domain/entities.ts` | `CoverageReviewRequest` gains `draftMappingRef` (additive) |
+| `src/server/repo/interfaces.ts`, `repo/memory/memory-repository.ts`, `repo/memory/read-spy.ts` | Added `listTreatmentVersions(treatmentId)`, `reviseDraftItemVersion(record)` (the only content overwrite, DRAFT only), fingerprint handling in `recordItemTransition` / `readItemStates`, `draftMappingRef` existence check, spy name `listTreatmentVersions` |
+| `tests/server/{lifecycle-table,lifecycle-authoring,lifecycle-approval,lifecycle-engine,re-review,review-request,repo-lifecycle}.test.ts` | NEW (counts below) |
+| `tests/fixtures/server/lifecycle.fixture.ts` | NEW (world, content builders, `forceState`, `itemInState`, `adoptTreatmentVersion`); `actors.fixture.ts` (+`TEST_FIXTURE_RV_APPROVER_2`), `entities.fixture.ts` (+`draftMappingRef: null`), `items.fixture.ts` (mapping record has no `approvedFingerprint`), `repo.fixture.ts` (`approvedFingerprintAfter: null`) changed |
+| `tests/server/domain.test.ts`, `tests/server/repo-memory.test.ts` | M3.A tests adjusted for the deliberate change (error-code list, state shape, history shape, spy table, the "no overwrite verbs" test now names `reviseDraftItemVersion` as the one exception) |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched. Sources of truth reused: engine `profileContent` / `documentRuleSetContent` (sealing), `isUsable` / `mappingToRuleItem` (integration tests), M3.A `canonicalDigest`, `coverageFingerprintOf`, `appendAudit`, `requireRole`, repository transactions.
+
+| Test file | Tests |
+|-----------|-------|
+| `lifecycle-table.test.ts` | 88 (81-pair matrix + 7) |
+| `lifecycle-authoring.test.ts` | 134 |
+| `lifecycle-approval.test.ts` | 308 (189-cell service-operation x 9-state matrix inside) |
+| `lifecycle-engine.test.ts` | 13 |
+| `re-review.test.ts` | 34 |
+| `review-request.test.ts` | 19 |
+| `repo-lifecycle.test.ts` | 20 |
+| new total | 616 (M3.A files changed: `domain.test.ts` 23 -> 25, `repo-memory.test.ts` 141 -> 142) |
+
+#### Deliberate change to M3.A: `approvedFingerprint` is an approval-time fact `[not in docs]`
+
+DD-15 stores the fingerprint "at approval" and DD-17 allows `UNDER_REREVIEW -> APPROVED` (re-approval of the SAME version); both hold only if the fingerprint is not part of the immutable content. So, like the approver, it lives in the item state record. It is set on every transition to `APPROVED` (first approval and re-approval), carried unchanged through other transitions, read together with the state on every request (`readItemStates`), and each transition's history entry records the approver and fingerprint in force after it (earlier values stay in the history). `toEngineMapping` fills it from the state snapshot only, so a stale content cache can never serve a stale fingerprint (test: `lifecycle-engine.test.ts`, `내용을 미리 읽어 두었어도(캐시)...`).
+**SPEC wording issue found (not edited):** design.md:827 (DD-14 "항목 생명주기 상태와 캐시 계약", item (1) 내용) lists the mapping's `approvedFingerprint` among the immutable, cacheable content; design.md:844 (DD-15, "승인 때 … 저장") and design.md:908 (DD-17 table, `UNDER_REREVIEW -> APPROVED`) require it to change on re-approval. One of the three sentences has to change; the implementation follows 844 and 908.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Transition table (DD-17).** `DRAFT -> REVIEW_REQUESTED`; `REVIEW_REQUESTED -> APPROVED | REJECTED`; `APPROVED -> PUBLISHED | UNDER_REREVIEW`; `PUBLISHED -> SUSPENDED | SUPERSEDED | UNDER_REREVIEW | EXPIRED`; `UNDER_REREVIEW -> APPROVED | REJECTED`; `REJECTED`, `SUSPENDED`, `SUPERSEDED`, `EXPIRED` have no outgoing transition (the new version is a separate DRAFT, via `createNextDraft`). The table is frozen data; every service calls `assertTransition` before writing. The test matrix of 189 cells (3 kinds x 9 states x 7 service operations) proves that exactly the table's 9 operation-reachable pairs per kind succeed (the other 2 table pairs, `APPROVED/PUBLISHED -> UNDER_REREVIEW`, belong to the re-review trigger).
+2. **Roles.** `RV` for create / edit / next version / submit / approve / reject / item suspend and the internal publish, supersede, expire primitives; `HA` for `createCoverageReviewRequest`; the re-review trigger takes any actor (it is a system effect of publishing, recorded with the publisher's id and role). A mapping draft by `HA` is `ROLE_NOT_PERMITTED` (decision #34); HA has only read helpers.
+3. **Self-approval (decision #31).** `approve` throws `SELF_APPROVAL_FORBIDDEN` when `actor.id === record.authorId`, for first approval and re-approval and for every kind. It runs inside a transaction before any write, so state, approver record, fingerprint, audit log and review request are unchanged (`snapshotOf(repo)` before/after is deep-equal in the tests). Reject does not apply the rule. There is no `selfApproval` flag anywhere (an audit-entry key test still asserts it).
+4. **`[not in docs]` submit by author.** DD-17 says "작성자의 검토 제출"; `submitForReview` therefore requires `actor.id === authorId` (`NOT_ITEM_AUTHOR`) in addition to role `RV`.
+5. **`[not in docs]` editing a DRAFT in place.** Any `RV` may edit a DRAFT (author and `createdAt` never change); the audit entry records editor, time, optional reason and the canonical digests of the content before and after. Because the author is the only identity compared for author != approver, an RV who edited a draft written by someone else may approve it (design is silent on editors).
+6. **`[not in docs]` content seal.** `createDraft`, `editDraft` and `createNextDraft` recompute `contentHash` of profiles and document rule sets from the content with the engine's `profileContent` / `documentRuleSetContent` and `canonicalDigest` (a hash passed by the caller is ignored), so a stored hash always matches the stored content; the next-version copy needs it because the version label is part of the hashed content. Publish-time verification stays M3.C/M3.D.
+7. **`[not in docs]` repository additions.** `reviseDraftItemVersion` (DRAFT only; `NOT_FOUND` / `STATE_CONFLICT` / `REF_CONTENT_MISMATCH` / `IMMUTABLE_VERSION` for author or `createdAt` changes) is the only content overwrite and a test asserts it is the only such method name; `listTreatmentVersions` in write order.
+8. **Fingerprint pinning rule `[not in docs]`.** For a mapping, `approve` pins `coverageFingerprintOf(v)` where `v` is the treatment's version that is a member of its clinic's CURRENT `CatalogVersion` (first match in write order); if the treatment is not in the current catalog (or the clinic has none) it is the treatment's latest version by write order; if the treatment has no version (or does not exist) `TREATMENT_VERSION_ABSENT` and nothing changes. Consequence: a mapping cannot be approved before its treatment has at least one stored version.
+9. **Re-review trigger.** Compares each `APPROVED` / `PUBLISHED` mapping's pinned fingerprint of that treatment with `coverageFingerprintOf(newVersion)` (not with the previous treatment version), so it is idempotent. Moved mappings get a state-history entry (reason `COVERAGE_JUDGMENT_FIELD_CHANGED`, actor = the acting publisher, approver and pinned fingerprint kept) and an `ITEM_REREVIEW` audit entry. `[not in docs]` A mapping without a state record is skipped; an `APPROVED` / `PUBLISHED` mapping with a `null` pinned fingerprint cannot be compared and is moved (fail-safe). The function runs in `repo.transaction`, joins an outer one, and does not store the treatment version.
+10. **Review requests `[not in docs]`.** `CoverageReviewRequest.draftMappingRef` links the request to the single mapping draft RV creates for it (the existing `resultMappingRef` stays "approved result only", null after rejection as documented in M3.A). Approving that mapping closes the request `APPROVED` with `resultMappingRef`; rejecting closes it `REJECTED` with the reason; later re-review, re-approval or re-rejection of the same mapping, mappings created without a request, and profiles / document rule sets never touch requests. A second draft for one request, or a draft for a closed request, is `STATE_CONFLICT`. An RV may also create a mapping draft directly (needed for next versions and not forbidden by DD-17).
+11. **Audit conventions `[not in docs]`.** `beforeVersion` / `afterVersion` carry lifecycle states for state changes (`null` -> `DRAFT` for creation), the canonical digests of the content before/after for a draft edit, and states of the request for request audit entries (`REVIEW_REQUEST_CREATE`, `REVIEW_REQUEST_DRAFT_LINK`, `REVIEW_REQUEST_CLOSE`). Actions: `ITEM_CREATE_DRAFT`, `ITEM_EDIT_DRAFT`, `ITEM_CREATE_NEXT_VERSION`, `ITEM_SUBMIT`, `ITEM_APPROVE`, `ITEM_REJECT`, `ITEM_SUSPEND`, `ITEM_PUBLISH`, `ITEM_SUPERSEDE`, `ITEM_EXPIRE`, `ITEM_REREVIEW`. The target is `KIND/id/version`.
+12. **Reasons.** `reject` and `suspendItem` require a non-empty trimmed reason (`REASON_REQUIRED`, includes whitespace-only and the ideographic space).
+
+#### AC evidence
+
+No AC is closed. Evidence-only mapping (unit level):
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-009a (unit-level part; closes in M3.D) | `re-review.test.ts` : `보장 판단 필드가 바뀐 치료 버전 → ...`, `보장 판단 필드가 아닌 변경은 아무것도 바꾸지 않는다`, `바깥 트랜잭션 안에서 부를 수 있다`; `lifecycle-engine.test.ts` : `재검토 전환과 엔진 판정` | the four guarantee fields each trigger `APPROVED` / `PUBLISHED` -> `UNDER_REREVIEW`; price, display name and 7 other neutral changes leave the repository deep-equal; other states, other treatments, other kinds untouched; rolls back with an outer transaction; the engine reports `MAPPING_UNDER_REREVIEW`; the fingerprint mismatch alone is also caught by the engine |
+| AC-024a, AC-025b (domain side only; M7 closes) | `lifecycle-approval.test.ts` : `[AC-024a·AC-025b 의 도메인 쪽 증거]` tests in `승인 (PROFILE / MAPPING / DOCUMENT_RULE_SET)` | self-approval rejected for first approval and re-approval for every kind with the repository unchanged; a different principal succeeds afterwards |
+| AC-011a (sanity only; M3.D owns it) | `lifecycle-engine.test.ts` : `프로필·서류 규칙 묶음: 서비스가 봉인한 내용 해시가 엔진 무결성 판정을 통과한다` | service-sealed hashes (including after an edit) pass the engine's `isUsable` |
+| DD-14 state/content split | `lifecycle-engine.test.ts`, `domain.test.ts` | state and pinned fingerprint come from freshly read state; cached content cannot serve a stale fingerprint |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the M3.A tests and fixtures touched by the deliberate change, the new fixtures and all seven new test files were written first, with no change under `src/server/` yet; (2) the RED run; (3) the implementation. The RED run was `npx vitest run tests/server tests/boundary --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  9 failed | 7 passed (16)`, `Tests  8 failed | 512 passed (520)`. Seven files could not load (`Cannot find module '../../src/server/approval'`, `.../authoring`, `.../lifecycle`, `.../re-review`; `repo-lifecycle.test.ts` through the fixture import), and 8 assertions failed in two M3.A files: `domain.test.ts` (error-code list; two projection fingerprint tests) and `repo-memory.test.ts` (history shape, `readItemStates` keys, spy table, the one-overwrite-verb test, `listTreatmentVersions is not a function`).
+After the implementation the first run had 1 failure: an M3.A history assertion in `repo-memory.test.ts` that still lacked the new `approver` / `approvedFingerprint` fields (a test I had not updated; fixed in the test, the implementation was correct); the next run was 16 files / 1134 tests green (`first-green.txt`). `npx tsc --noEmit` first reported 4 type errors in two new test files (an import of `ItemUsabilityReason` from the wrong module; readonly array typing) and was exit 0 after test-only fixes. Two tests were added AFTER the first GREEN because the first coverage run showed two uncovered branches (`approval.ts` item without a state record; `review-request.ts` mapping whose treatment is absent): test-after, they passed immediately and are not evidence of a RED. Final totals below.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3b/`, gitignored; all vitest runs with `--maxWorkers=4`)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  16 passed (16)
+      Tests  1136 passed (1136)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged from M3.A)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  12 passed (12)
+      Tests  893 passed (893)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Per-folder coverage (summed from `coverage/coverage-summary.json` with the scratchpad `covsum.mjs`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 429/429  branches 234/234  functions 131/131  lines 417/417   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145  lines 606/606   = 100% each (unchanged)
+```
+
+No coverage exclusions; no coverage-only tests beyond the two noted above (each asserts a real behavior: a stateless item is `NOT_FOUND`, a mapping without a stored treatment can still be rejected). No `skip`, `only` or disabled test.
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4`; every edit reverted by hand and the restored sources compared by sha256: `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`, then `tests/server tests/boundary` again 16 files / 1136 tests green)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `approval.ts`: self-approval check never fires | `Test Files  3 failed \| 9 passed (12)`, `Tests  11 failed \| 882 passed (893)` |
+| (b) `lifecycle.ts`: table also allows `DRAFT -> APPROVED` | `Test Files  2 failed \| 10 passed (12)`, `Tests  5 failed \| 888 passed (893)` |
+| (c) `re-review.ts`: no fingerprint-equality skip (neutral changes also move mappings) | `Test Files  2 failed \| 10 passed (12)`, `Tests  10 failed \| 883 passed (893)` |
+| (d) `approval.ts`: pin the latest version instead of the current-catalog member | `Test Files  1 failed \| 11 passed (12)`, `Tests  1 failed \| 892 passed (893)` |
+| (e) `authoring.ts`: `editDraft` does not re-seal the content hash | `Test Files  2 failed \| 10 passed (12)`, `Tests  3 failed \| 890 passed (893)` |
+| (f) `approval.ts`: re-approval keeps the old approver record | `Test Files  2 failed \| 10 passed (12)`, `Tests  4 failed \| 889 passed (893)` |
+| (g) `memory-repository.ts`: `reviseDraftItemVersion` no longer requires DRAFT | `Test Files  2 failed \| 10 passed (12)`, `Tests  35 failed \| 858 passed (893)` |
+| (h) `approval.ts`: approving a mapping does not close its review request | `Test Files  1 failed \| 11 passed (12)`, `Tests  3 failed \| 890 passed (893)` |
+| (i) `approval.ts`: `approve` without the RV role check | `Test Files  2 failed \| 10 passed (12)`, `Tests  10 failed \| 883 passed (893)` |
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **SPEC wording (see above):** design.md:827 vs :844 / :908 on where `approvedFingerprint` lives. Not edited.
+2. **No trigger for `UNDER_REREVIEW` on profiles and document rule sets.** The table allows `APPROVED` / `PUBLISHED -> UNDER_REREVIEW` for all kinds, but design only names a trigger for mappings (guarantee-field change / fingerprint mismatch). No service moves a profile or document rule set there; tests reach that state with the repository primitive only.
+3. **Editors are not compared with approvers** (decision 5): only the author. If the owner wants editors treated as authors, `approve` needs a second check.
+4. **Publishing is not wired.** `markPublished` / `markSuperseded` / `markExpired` are internal primitives; the catalog-publish call to `triggerReReview` in the same transaction, the bundle publish, bundle suspend with reason, scope assignment, recovery, and the DD-10 default reader are M3.D. Publish validation (structure, ranges, mapping field rules, hash verification at publish) is M3.C. Readiness is M3.E. Their ACs stay open.
+5. **Mapping approval requires at least one stored treatment version** (decision 8); until M3.D publishes catalogs, tests store treatment versions directly with the repository.
+6. NOT VERIFIED: clinic ownership / membership of requests and drafts, 401 / 403, HTTP mapping (M7); any DB behavior; asynchronous transactions.
+
+### M3.C 게시 검증기 (카탈로그·규칙 묶음), 2026-10-16
+
+**Scope.** M3.C only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.B (`6a6cace`), not committed by this step. It adds the PURE publish validators: `validateCatalogPublish` (treatment prices, common base fees, closed enumerations, accepted line origins, duplicates), `validateRuleBundlePublish` (item form, header and seal, mapping field rules, profile structure and value ranges, document rule set structure, bundle cross checks) and `assertNoDefects`. They take everything as arguments (no repository, clock or globals), return `{ code, path }` defects in a fixed order, never throw and never mutate. There is NO publish service, NO transaction, NO status event, NO rollback, NO version write (all M3.D), NO readiness (M3.E), NO HTTP, NO DB. **No AC is closed by M3.C** (the coverage of each AC by the validators and what remains for M3.D is in the AC table below).
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/publish-validate.ts` | NEW. Public facade: re-exports `validateCatalogPublish`, `validateRuleBundlePublish`, the request/config/resolver types, the closed `PUBLISH_DEFECT_CODES` list, and `assertNoDefects(defects)` (throws `DomainError('PUBLISH_VALIDATION_FAILED', ..., defects)`). The file header documents all defect codes and the path conventions |
+| `src/server/validate/shape.ts` | NEW. Guards (`isPlainObject`, `isAbsent`, `isNonEmptyString`), closed enumeration lists written as `Record<EngineType, true>` so an engine enum change breaks compilation, `expectValue` (VALUE_MISSING / VALUE_INVALID), `repeatedPositions` |
+| `src/server/validate/catalog.ts` | NEW. `validateCatalogPublish`, `CatalogPublishConfig`, `CatalogPublishRequest` |
+| `src/server/validate/bundle-form.ts` | NEW. Layer (a): container/item form, ref parsing, resolution through `BundleItemResolver`; `RuleBundlePublishRequest` |
+| `src/server/validate/bundle-header.ts` | NEW. Layer (b): origin, policy sources, approver, seal (`canonicalDigest(profileContent(p))` / `canonicalDigest(documentRuleSetContent(s))`), mapping pinned fingerprint |
+| `src/server/validate/bundle-mapping.ts` | NEW. Layer (c): DD-03 mapping field rules + `scope` shape |
+| `src/server/validate/bundle-profile.ts` | NEW. Layer (d): cell keys, engine `checkProfileStructure`, DD-24 value ranges (mirror of the value half of engine `checkGroupValues`) |
+| `src/server/validate/bundle-docrules.ts` | NEW. Layer (e): engine `checkDocumentRuleSetStructure` with bundle paths |
+| `src/server/validate/bundle-cross.ts` | NEW. Layer (f): group-in-profile, one profile per cell, one version per mapping id |
+| `src/server/validate/bundle.ts` | NEW. `validateRuleBundlePublish` (layer orchestration and order) |
+| `src/server/domain/errors.ts` | CHANGED (additive): code `PUBLISH_VALIDATION_FAILED` (union now 12 codes); no existing code changed |
+| `tests/server/domain.test.ts` | CHANGED: the closed error-code list test now expects the new code (this was the only existing test edited) |
+| `tests/fixtures/server/publish.fixture.ts`, `mutate.fixture.ts` | NEW fixtures: valid catalog request, valid bundle (profile, COVERED + EXCLUDED mapping, document rule set resealed with `canonicalDigest`), ref/resolver builders (the resolver records its calls), `setAt`/`unsetAt`, `deepFreeze`, `reverseKeys`, seeded PRNG. All `TEST_FIXTURE`; engine content is imported from `tests/fixtures/engine/*` |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched.
+
+| New test file | Tests |
+|---------------|-------|
+| `validate-catalog.test.ts` | 113 |
+| `validate-bundle-form.test.ts` | 80 |
+| `validate-bundle-header.test.ts` | 60 |
+| `validate-bundle-mapping.test.ts` | 42 |
+| `validate-bundle-profile.test.ts` | 265 |
+| `validate-bundle-docrules.test.ts` | 36 |
+| `validate-bundle-cross.test.ts` | 26 |
+| `validate-determinism.test.ts` | 14 |
+| `validate-reuse.test.ts` | 17 |
+| total (9 files) | 653 |
+
+#### Exported API (what M3.D calls)
+
+```ts
+// src/server/publish-validate.ts
+validateCatalogPublish(request: unknown, config: { acceptedLineOrigins: readonly Origin[] }): Defect[]
+//   request = { treatmentVersions: TreatmentVersion[]; commonBaseFees: CommonBaseFee[] } (typed loosely as unknown)
+validateRuleBundlePublish(request: unknown, resolver: BundleItemResolver): Defect[]
+//   request = { profiles: ItemVersionRef[]; mappings: ItemVersionRef[]; documentRuleSet: ItemVersionRef | null }
+interface BundleItemResolver {          // pure; the service builds it from repo reads + domain/projection.ts toEngine*
+  profile(ref): StandardAssumptionProfile | null
+  mapping(ref): TreatmentCoverageMapping | null
+  documentRuleSet(ref): DocumentRuleSet | null
+}
+assertNoDefects(defects: readonly Defect[]): void   // throws DomainError('PUBLISH_VALIDATION_FAILED')
+PUBLISH_DEFECT_CODES                                // closed list of this validator's own codes
+```
+
+Defect codes: form `NOT_OBJECT` `NOT_ARRAY` `VALUE_MISSING` (absent or null) `VALUE_INVALID` `REF_UNRESOLVABLE`; catalog `ORIGIN_NOT_ACCEPTED` `DUPLICATE_TREATMENT_ID` `DUPLICATE_ID`; header `POLICY_SOURCES_MISSING` `POLICY_SOURCE_INCOMPLETE` `APPROVER_MISSING` `APPROVER_INCOMPLETE` `INTEGRITY_MISMATCH` `FINGERPRINT_MISSING`; mapping `DECISION_INVALID` `GROUP_KEY_REQUIRED` `GROUP_KEY_FORBIDDEN` `EXCLUSION_REASON_REQUIRED` `EXCLUSION_REASON_FORBIDDEN` `SCOPE_INVALID`; cross `MAPPING_GROUP_NOT_IN_PROFILE` `CELL_PROFILE_DUPLICATE` `MAPPING_ID_DUPLICATE`. Engine structure codes pass through unchanged (12 profile codes such as `EMPTY_PROFILE`, `DUPLICATE_GROUP_KEY`, `UNKNOWN_POOL_REFERENCE`, `GROUP_ORDER_MISSING_KEY`; 8 document-rule codes such as `REASON_INVALID`, `PRIORITY_INVALID`, `WHEN_UNKNOWN_KEY`).
+
+Paths: catalog `treatmentVersions[2].patientAmount`, `commonBaseFees[0].amount`, request-level `catalog`; bundle always starts with `bundle.` (`bundle.profiles[2].groups[0].deduction.rate`, `bundle.profiles[0].sharedLimitPools[0].limit.amount`, `bundle.mappings[0].groupKey`, `bundle.documentRuleSet.rules[3].when.imaging`, `bundle.documentRuleSet.contentHash`, request-level `bundle`).
+
+Fixed order. Catalog: treatment versions (list form, then entries in order; inside an entry id, treatmentId, displayName, benefitType, patientAmount, treatmentCode, procedureCodes, calcClass, documentFlags, origin, accepted origin) -> base fees (same style: id, clinicId, displayName, benefitType, amount, code, origin, accepted origin) -> duplicates (treatmentId, treatment version id, base fee id). Bundle layers: (a) form (profiles, mappings, documentRuleSet) -> (b) header for profiles, mappings, document rule set (origin, policy sources, approver, seal or fingerprint) -> (c) mapping field rules (decision, groupKey, exclusionReason, scope) -> (d) profiles (cell keys, engine structure order, group values, pool values) -> (e) document rule set (engine order) -> (f) cross (group-in-profile by mapping order, cell duplicates by profile order, mapping id duplicates by mapping order). Items are visited in request order; the layers are NOT interleaved per item.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Style.** Validators return `Defect[]` (empty = valid) and are total; `assertNoDefects` is the thin throwing helper (`PUBLISH_VALIDATION_FAILED`, defects copied). Keeping "typed error thrown by the service inside the transaction" consistent with M3.A/B.
+2. **Catalog input.** `request` and every element are accepted as `unknown`. Request not an object -> `NOT_OBJECT @ catalog`; `treatmentVersions` / `commonBaseFees` not arrays (also `undefined`) -> `NOT_ARRAY`. Empty arrays are valid `[not in docs]`. Required (VALUE_MISSING when absent or null): treatment version `id treatmentId displayName benefitType patientAmount treatmentCode procedureCodes calcClass documentFlags origin`; base fee `id clinicId displayName benefitType amount code origin`. `description`, `amountCondition`, `effectiveDate` are not judged `[not in docs]` (the engine does not read them). `displayName` and base fee `code` are checked for being strings only, not for emptiness `[not in docs]`.
+3. **Amounts and flags.** Prices and base fees use the engine `isWon` (so `-0`, `NaN`, `Infinity`, decimals, strings, `MAX_AMOUNT_WON + 1` are `VALUE_INVALID`; `0` and `MAX_AMOUNT_WON` pass). `documentFlags` must be an object with three strict booleans (no coercion).
+4. **`procedureCodes`.** Array of non-empty strings; an empty array and repeated codes are allowed `[not in docs]` (DD-03/DD-15/DD-18 are silent; the fingerprint keeps duplicates).
+5. **Origins (AC-010c).** An `origin` outside the three-value enum is `VALUE_INVALID` and never reaches the acceptance check; an enum value not in `acceptedLineOrigins` is `ORIGIN_NOT_ACCEPTED`. An empty accepted list rejects every origin. Rule items (profile, mapping, document rule set) are only checked against the enum; the accepted-rules-origin policy is the calculation's `isUsable` job and the brief gave the validator no rule-origin configuration.
+6. **Duplicates.** Every member of a duplicate group is reported (not only the later ones) so the result does not depend on array order. Treatment version `id` duplicates (`DUPLICATE_ID`) are an addition beyond the brief's list (integrity, not a business rule) `[not in docs]`. Entries with a malformed key are not counted as duplicates.
+7. **Bundle request and resolver.** The three request fields are refs; the validator never reads a repository. A ref must be an object with `kind` equal to the slot's kind and non-empty string `id` and `version`; only well-formed refs reach the resolver, once each, in the order profiles, mappings, document rule set. A resolver result that is not a plain object is `REF_UNRESOLVABLE`. A resolver that throws is the caller's fault and is not caught. `documentRuleSet: null` means none; a missing or `undefined` field is `VALUE_MISSING` (not assumed to mean none) `[not in docs]`.
+8. **Malformed parts.** A malformed or unresolvable item is reported and read no further; the other items continue through layers (b) to (e). Layer (f) runs only when `profiles` and `mappings` are arrays and every item is well-formed and resolved, because "this cell has no profile" and "this group is missing" are wrong judgments on an incomplete list (tested with a bundle that has all three cross defects and one extra `null`).
+9. **Header (b)** mirrors engine `isUsable`'s criteria: `origin` enum; `policySources` an array with at least one entry and every entry an object with the six `PolicySourceRef` fields as non-empty strings (whitespace-only counts as non-empty, same as the engine); `approver` an object with non-empty `approverId` and `approvedAt`; profile and document rule set `contentHash === canonicalDigest(profileContent(p) | documentRuleSetContent(s))` (a missing, empty or non-string hash is a mismatch; the hash is never repaired); mapping `approvedFingerprint` a non-empty string. Lifecycle `state` and `validity` are not judged here: the service checks item states as a precondition and calculation checks both through `isUsable`. Whether a mapping fingerprint equals the CURRENT treatment version is not checked (no treatment data here). The seal check is tested against `isUsable`'s INTEGRITY verdict on the same variants (reordered groups/pools/rules keep the seal, a changed value, `groupOrder`, rule text, priority or version breaks it).
+10. **Mapping field rules (c).** `decision` outside `COVERED`/`EXCLUDED` -> `DECISION_INVALID` only (the group/reason rules are then skipped); "absent" means `undefined`, exactly as the engine's defensive check (`null` or `''` counts as present). `exclusionReason` / `groupKey` emptiness uses the engine's non-empty-string test (whitespace-only passes). `scope` must be an array of `{generation, insurerType}` from the closed lists (the engine's `resolveMapping` reads it) `[not in docs]`; an empty `scope` is allowed `[not in docs]`.
+11. **Profile values (d).** The value half of engine `checkGroupValues` is mirrored field by field: `fixed`, `amount`, `perUseAmount` (Won), `rate`, `rateBenefit`, `rateNonBenefit` (BasisPoints), plus `rounding` (`TRUNCATE` / `ROUND_HALF_UP`) and a missing `limitBasis`. `rounding` is not in the DD-24 field table but design.md:48 and :254 treat a missing `rounding` as `PROFILE_VALUE_MISSING`, so a profile that publishes must not hit that hold at calculation. Absent or null -> `VALUE_MISSING`; present but invalid -> `VALUE_INVALID`. Formula support is NOT a defect: unknown deduction/limit kinds (including non-objects), `limitBasis` other than `PAYOUT` and `UNLIMITED_DECLARED` without a clause pass publish (tests show the engine holds them with `PROFILE_FORMULA_UNSUPPORTED` / `PROFILE_SOURCE_INCOMPLETE`).
+12. **Pools `[interpretation]`.** Pool limit values are validated whether or not any group uses the pool. acceptance.md:217 says an out-of-range pool amount is rejected "like group values" and also that a pool without members is not rejected; I read the second as a structure statement (design.md:88 rule 3). The engine only sees a memberless pool's value if a group points at it, so publish is intentionally stricter here. The agreement test uses a probe group per pool so the engine itself judges every pool.
+13. **Agreement test.** `validate-bundle-profile.test.ts` generates 800 profiles with fixed seed 20261016 (printed with `console.info`; use `--reporter=verbose` to see it) and checks, per group, per pool and per pool member, that publish numeric verdicts equal the engine's `PROFILE_VALUE_MISSING | PROFILE_VALUE_INVALID` verdicts. The generator avoids unsupported kinds on purpose (the engine returns a single code by priority, so `PROFILE_FORMULA_UNSUPPORTED` would mask a value code); masking is covered by the separate unsupported table. The test asserts it saw more than 100 bad and 100 good groups and more than 30 bad and 30 good pools so it cannot pass vacuously.
+14. **Cross checks (f).** A COVERED mapping is checked against the profiles of its scope cells that passed the engine structure check (a profile with a structure defect has an unreliable group list and is already rejected); it is reported ONCE per mapping at `bundle.mappings[i].groupKey` if any such profile in any of its cells lacks the group; cells without a profile are skipped (not a defect). Cell and mapping-id duplicates report every member. The cell check ignores profiles whose cell keys are not in the closed lists (their `VALUE_INVALID` is already reported).
+15. **Reuse.** The validators import `checkProfileStructure`, `checkDocumentRuleSetStructure`, `profileContent`, `documentRuleSetContent`, `profileHasGroup`, `isWon`, `isBasisPoints` from the engine and `canonicalDigest` from `digest.ts`; `validate-reuse.test.ts` scans the sources to prove the imports are real, that no same-named function is defined anywhere in `src/server`, and that no validator imports `node:crypto`.
+16. **Determinism.** No clock, random or id source is used; the existing server boundary test (hazard rules, import rules) passes over the new files unchanged.
+
+#### AC coverage by the validators (no AC is closed in M3.C)
+
+| AC | Covered by the validators (test file : describe) | Remains for the publish service (M3.D) |
+|----|-----------------------------------------------|---------------------------------------|
+| AC-007f | `validate-bundle-docrules.test.ts` : `거절하지 않는 것`, `구조·when 계약 ...` (one case per engine defect code with `bundle.documentRuleSet.rules[i]...` paths, whitespace-only `reason`, `rules: []`, `when: {}`, priority 0 and `Number.MAX_SAFE_INTEGER`, many injury-only/illness-only lines), `머리 정보 배선`, `봉인` | the typed error out of the service, "nothing stored" (repository before/after equal), previous version intact, publishing the corrected bundle |
+| AC-010c | `validate-catalog.test.ts` : `허용 출처 (AC-010c)` (operating config rejects `DEMO` and `TEST_FIXTURE` treatment versions and base fees, test config accepts all three) | the service rejection with the repository unchanged; "no seed/migration path writes DEMO/TEST_FIXTURE as APPROVED/PUBLISHED" |
+| AC-011h | `validate-catalog.test.ts` : `금액 범위 (DD-24 ...)` (price and base fee, boundaries 0 and `MAX_AMOUNT_WON`, `MAX_AMOUNT_WON + 1`, negative, decimal, NaN, strings); `validate-bundle-profile.test.ts` : `$label 의 값 범위 (DD-24)` for group deduction, group limit and pool limit (rates 0 and 10000 pass, 10001 and -1 fail) with field paths | typed error from the service, nothing stored, previous version intact |
+| AC-011i | mapping field rules: `validate-bundle-mapping.test.ts`; profile structure and pool values: `validate-bundle-profile.test.ts` (12 engine codes, memberless pool allowed); cross checks: `validate-bundle-cross.test.ts`; the `M3 · 미구현` form sub-criterion: `validate-bundle-form.test.ts` (`profiles = null` and `mappings = null` separately, `undefined`, object, string, number, boolean; `null`/`undefined`/primitive/array items; empty arrays valid; no throw for any garbage) | typed error from the service, repository before/after equal, no bundle status event written, previous bundle intact, corrected bundle publishes |
+| AC-011a (seal part only) | `validate-bundle-profile.test.ts` : `봉인 ...`, `validate-bundle-docrules.test.ts` : `봉인 ...` (reorder with the original hash passes, changed values / `groupOrder` / rule content fail, agreement with `isUsable`) | bundle `contentHash`, immutability of published versions through the service, recovery |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixtures, the eight new `validate-*` test files and the `domain.test.ts` code-list edit were written first, with no file under `src/server/validate/`, no `publish-validate.ts` and no `PUBLISH_VALIDATION_FAILED` code; (2) the RED run; (3) the implementation. RED: `npx vitest run <the 8 new files + domain.test.ts> --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  9 failed (9)`, `Tests  1 failed | 24 passed (25)`. Eight files could not load (`Cannot find module '../../src/server/publish-validate'`) and `domain.test.ts` failed on the missing `PUBLISH_VALIDATION_FAILED` code. `npx tsc --noEmit` was exit 0 on the first try and the same command passed on the first run (9 files / 659 tests, exit 0, `first-run.txt`) — no failing iteration between RED and GREEN. Written AFTER the first GREEN (test-after, they passed immediately and are not RED evidence): the non-object-limit row of the unsupported table (the first coverage run showed that line uncovered), `validate-reuse.test.ts` (17 tests), the code-set assertion in the garbage-input test, and the cross-skip test in `validate-bundle-form.test.ts` (added because mutation (i) below survived; it fails under that mutation). Two source refactors followed the first coverage run: `repeatedPositions` replaced `Map.get(...) ?? 0` fallbacks that were unreachable branches (behavior unchanged, tests green before and after). A scratch script, not repo code, applied the mutations.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3c/`, gitignored; all vitest runs with `--maxWorkers=4`)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  25 passed (25)
+      Tests  1789 passed (1789)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged from M3.A/M3.B)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  21 passed (21)
+      Tests  1546 passed (1546)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Baseline before this step (same tree, `baseline-server-boundary.txt`): `tests/server tests/boundary` 16 files / 1136 tests. Now 25 files / 1789 tests = +9 files, +653 tests (the 9 new files; `domain.test.ts` count unchanged at 25). No `skip`, `only` or disabled test.
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 783/783  branches 410/410  functions 191/191  lines 747/747   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145  lines 606/606   = 100% each (unchanged)
+```
+
+No coverage exclusions. `docrules` has no unreachable defensive branch: the engine's `RULE_SET_NOT_OBJECT` cannot occur because only objects pass the form layer (documented in the file).
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4` against the final test set; every edit reverted by the script; `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`, `git status` shows only the intended files; outputs `mut-a.txt` ... `mut-p.txt`)
+
+| Mutation | Result |
+|----------|--------|
+| (a) catalog: accepted-origin check removed | `Test Files  1 failed \| 20 passed (21)`, `Tests  7 failed \| 1539 passed (1546)` |
+| (b) catalog: patient amount accepts any number | `2 failed \| 19 passed`, `12 failed \| 1534 passed` |
+| (c) form: non-object item silently skipped | `1 failed \| 20 passed`, `20 failed \| 1526 passed` |
+| (d) header: seal check disabled | `5 failed \| 16 passed`, `14 failed \| 1532 passed` |
+| (e) mapping: COVERED `exclusionReason` no longer forbidden | `1 failed \| 20 passed`, `5 failed \| 1541 passed` |
+| (f) profile: `rate` checked with `isWon` instead of `isBasisPoints` | `2 failed \| 19 passed`, `12 failed \| 1534 passed` |
+| (g) profile: pool limit values not checked | `1 failed \| 20 passed`, `45 failed \| 1501 passed` |
+| (h) cross: group-not-in-profile never reported | `3 failed \| 18 passed`, `8 failed \| 1538 passed` |
+| (i) bundle: cross checks run despite form defects | first run SURVIVED (`21 passed`, `1545 passed`); after the cross-skip test was added: `1 failed \| 20 passed`, `1 failed \| 1545 passed` |
+| (j) docrules: engine structure result ignored | `1 failed \| 20 passed`, `24 failed \| 1522 passed` |
+| (k) shape: `null` no longer counts as absent | `4 failed \| 17 passed`, `42 failed \| 1504 passed` |
+| (l) form: missing `documentRuleSet` field not flagged | `1 failed \| 20 passed`, `1 failed \| 1545 passed` |
+| (m) shape: duplicates need three occurrences | `3 failed \| 18 passed`, `12 failed \| 1534 passed` |
+| (n) `assertNoDefects` never throws | `1 failed \| 20 passed`, `3 failed \| 1543 passed` |
+| (o) a second `checkProfileStructure` defined in the validators | `1 failed \| 20 passed`, `1 failed \| 1545 passed` |
+| (p) profile seal hashed with `JSON.stringify` instead of `canonicalDigest` | `6 failed \| 15 passed`, `405 failed \| 1141 passed` |
+
+All 16 mutants end up killed with the final tests (one needed an added test, see (i)). The table counts come from the last full mutation run (1546 tests).
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Item lifecycle state is not judged by the validator.** Which states a bundle may include (`APPROVED` to be published by the bundle publish, or already `PUBLISHED`) is a service precondition for M3.D; the validator only sees assembled engine items. `validity` ranges are not judged either (calculation does, `OUTSIDE_VALIDITY`).
+2. **Resolver contract for M3.D.** The service must build resolver results from a fresh state read and the `toEngine*` projections (so `approver`, `state` and a mapping's `approvedFingerprint` come from the state record), and must ensure the resolved item's `id`/`version` equal the ref (the validator does not compare them; `toEngine*` already throws `REF_CONTENT_MISMATCH` for a state/content mismatch).
+3. **Clinic ownership** of base fees (`clinicId` equals the catalog's clinic) and treatment ownership are service concerns; the catalog validator takes no clinic id.
+4. **SPEC wording notes (not edited):** (a) design.md DD-24 field table (design.md:1292-1300) does not list `rounding` although design.md:48 and :254 make a missing `rounding` a value hold; the validator follows the engine. (b) acceptance.md:217 asks both that an out-of-range pool amount be rejected and that a memberless pool not be rejected; see decision 12. (c) acceptance.md:216 names `policySourceIds` while the engine/DD-18 item types carry `policySources` (the validator checks `policySources`).
+5. **Known limit of the agreement test:** it avoids unsupported formulas in the generator because the engine returns one code by priority; masking is covered by example rows, not by the generated set.
+6. NOT IMPLEMENTED: the publish services, transactions, bundle status events, rollback and recovery, scope assignment, DD-10 default reader (M3.D); readiness tables (M3.E). AC-007f, AC-010c, AC-011h, AC-011i (and AC-011a) stay open until M3.D.
+7. NOT VERIFIED: any service-level atomicity ("nothing stored"); any DB behavior; only Windows 11 and Node 24.19.0 were run, with no CI.
+
+### M3.D1 게시 서비스·버전 불변·복구, 2026-10-16
+
+**Scope.** M3.D1 only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.C (`b1c440f`), not committed by this step. It builds the publish SERVICES that call the M3.C pure validators inside repository transactions: the catalog publish service (role `HA`), the rule bundle publish service (role `RV`), immutability of published `CatalogVersion` / `RuleBundleVersion`, the bundle content hash, and recovery (restore an earlier catalog version or rule bundle version as a NEW-id copy through the same pipeline). There is NO bundle suspend, NO suspend reason check, NO `ClinicRuleScope` assignment, NO insurer service, NO `IdlePolicy` reader (all M3.D2), NO readiness tables (M3.E), NO HTTP, NO DB, NO M4-M7 work. Errors are typed `DomainError` thrown inside the transaction (same style as M3.A to M3.C); every rejection leaves the repository deep-equal to its state before the call. **Closed by this step (tests pass): AC-007f, AC-009a, AC-009c, AC-010c, AC-011a, AC-011b, AC-011h, AC-011i.** Not closed: AC-011c, 011d, 011e, 011j, 011k, 011l. AC-024a and AC-025b get no new evidence from this step.
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/catalog-publish.ts` | NEW. `publishCatalog`, `restoreCatalogVersion` |
+| `src/server/bundle-publish.ts` | NEW. `publishRuleBundle`, `restoreRuleBundle`, `computeBundleContentHash`, `bundleContentHashOf` |
+| `src/server/versioning.ts` | NEW. Facade that re-exports the two modules (plan.md file list name); exports no modify/delete verb |
+| `src/server/publish-defects.ts` | NEW. `SERVICE_PUBLISH_DEFECT_CODES` (8 service-level defect codes, documented in the file header) |
+| `src/server/treatment-current.ts` | NEW. `currentTreatmentVersion(repo, treatmentId)`: the one rule that picks a treatment's "current" version (extracted from `approval.ts`) |
+| `src/server/approval.ts` | CHANGED (refactor, behavior preserved): `pinnedFingerprint` now calls `currentTreatmentVersion`. No M3.B test was edited and all still pass |
+| `tests/server/publish-catalog.test.ts` | NEW, 66 tests |
+| `tests/server/publish-bundle.test.ts` | NEW, 189 tests |
+| `tests/server/versioning.test.ts` | NEW, 44 tests |
+| `tests/server/no-seed-paths.test.ts` | NEW, 9 tests |
+| `tests/fixtures/server/versioning.fixture.ts` | NEW fixtures (all `TEST_FIXTURE`): catalog world, bundle world, `validSpec` / `approveSpec`, engine snapshot assembly, `lineOfVersion` |
+
+New tests total 308 (4 files). No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched; no existing test was edited; the existing `repo-memory.test.ts` method-name scan test (no delete-like verbs) still passes because no `Repository` method was added.
+
+#### Public API (what M3.D2 / M3.E / M4 / M7 call)
+
+```ts
+// src/server/catalog-publish.ts (re-exported by src/server/versioning.ts)
+publishCatalog(deps: ServiceDeps, actor: Actor, clinicId: string,
+               request: unknown /* { treatmentVersions: TreatmentVersion[]; commonBaseFees: CommonBaseFee[] } */,
+               config: CatalogPublishConfig /* { acceptedLineOrigins: readonly Origin[] } */): CatalogVersion
+restoreCatalogVersion(deps: ServiceDeps, actor: Actor, sourceCatalogVersionId: string, config: CatalogPublishConfig): CatalogVersion
+// src/server/bundle-publish.ts
+publishRuleBundle(deps: ServiceDeps, actor: Actor,
+                  request: unknown /* { profiles: ItemVersionRef[]; mappings: ItemVersionRef[]; documentRuleSet: ItemVersionRef | null } */): RuleBundleVersion
+restoreRuleBundle(deps: ServiceDeps, actor: Actor, sourceBundleId: string): RuleBundleVersion
+computeBundleContentHash(entries: readonly { ref: ItemVersionRef; contentDigest: string }[]): string
+bundleContentHashOf(repo: Pick<Repository, 'getItemVersion'>, itemRefs: readonly ItemVersionRef[]): string
+// src/server/treatment-current.ts
+currentTreatmentVersion(repo, treatmentId: string): TreatmentVersion | null
+```
+
+All four services throw `DomainError`: `ROLE_NOT_PERMITTED` (wrong role, nothing read), `NOT_FOUND` (missing clinic / restore source), `PUBLISH_VALIDATION_FAILED` with `{ code, path }` defects (validator defects first, then service-level defects), or a repository error (`IMMUTABLE_VERSION`, `STATE_CONFLICT`, `DUPLICATE_KEY`) which rolls the whole transaction back. D2 can write its suspend through `appendBundleStatusEvent` (repository) and read the current ACTIVE/SUSPENDED state with `getBundleStatus`; a restored bundle is always a new ACTIVE bundle, even when the source is SUSPENDED (DD-14 recovery path).
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Catalog publish pipeline (one transaction).** `HA` role -> clinic exists (`NOT_FOUND`) -> `validateCatalogPublish` + `assertNoDefects` -> service ownership checks -> new id from the injected generator (called only after validation, so a rejection does not consume ids) -> `putTreatmentVersion` / `putCommonBaseFee` / `putCatalogVersion` -> `saveClinic` with the new `currentCatalogVersionId` -> `triggerReReview` for EVERY treatment version in the catalog -> audit. `[not in docs]` Calling the trigger for every version (not only "changed" ones) is idempotent because it compares the mapping's pinned fingerprint with the version's fingerprint; a price-only change and an unchanged treatment move nothing (AC-009a, AC-009c).
+2. **Ownership checks (validator contract: "the service's job"), reported after the validator's defects and only when the validator found none.** A treatment version whose treatment is absent -> `TREATMENT_ABSENT` @ `treatmentVersions[i].treatmentId`; whose treatment belongs to another clinic -> `TREATMENT_CLINIC_MISMATCH` (same path); a common base fee whose `clinicId` differs -> `BASE_FEE_CLINIC_MISMATCH` @ `commonBaseFees[i].clinicId`. `[not in docs]` Because the ownership phase runs only on a validator-clean request, a request with both a value defect and an ownership defect reports only the value defect first.
+3. **Change summary** (`CatalogChangeSummary`) is computed against the clinic's previous CURRENT catalog: added / removed treatment ids, treatment ids whose `patientAmount` differs (display name and other fields are not price changes), all sorted by code point; `baseFeesChanged` = the set of base fee ids differs (base fees are write-once by id, so a changed fee has a new id). No previous catalog = everything is "added" and `baseFeesChanged` is true only if the new catalog has base fees. `CatalogVersion.treatmentVersionIds` / `baseFeeIds` keep request order.
+4. **Which item states a bundle may contain (DD-17).** DD-17 lists the only incoming transition of `PUBLISHED` as "규칙 묶음 게시", and a bundle's items must be usable (`PUBLISHED`). So a bundle may contain `APPROVED` items (the publish moves them to `PUBLISHED` in the same transaction, via `markPublished`, with actor, time and audit entry; approver and pinned fingerprint are carried unchanged) and items that are already `PUBLISHED` (published by another bundle; DD-14 expressly allows a second bundle to contain the same item version; no transition, no new history entry). Every other state (`DRAFT`, `REVIEW_REQUESTED`, `REJECTED`, `UNDER_REREVIEW`, `SUSPENDED`, `SUPERSEDED`, `EXPIRED`) is rejected with `ITEM_STATE_NOT_PUBLISHABLE` @ `bundle.profiles[i].state` (`bundle.mappings[i].state`, `bundle.documentRuleSet.state`). A 27-cell matrix (3 kinds x 9 states) proves exactly `APPROVED` and `PUBLISHED` publish.
+5. **`[not in docs]` Publishing a bundle does NOT supersede older versions of the same item.** DD-17 names "새 버전 게시" as the trigger of `SUPERSEDED`, but item state is read on every calculation request (DD-14), so superseding the previous version at bundle publish would make the previous bundle (still the clinics' current scope) unusable before `ClinicRuleScope` is reassigned. `SUPERSEDED` stays the explicit `markSuperseded` action. Flagged for the owner (OPEN item 2).
+6. **`[not in docs]` Validity precondition.** Both dates must be calendar `YYYY-MM-DD` dates, `from <= to`, and `to` must not be earlier than the publish date (the injected clock's date), so an item that is already over cannot be published; a validity that starts in the future IS publishable (items can be published ahead of their effective date). Defect `OUTSIDE_VALIDITY` @ `<item>.validity`. The date check is a small local helper (`isCalendarDate`) because the engine's `isIsoDate` is private; it is not a same-named copy of an engine function. The usability verdict at calculation time (`isUsable` with `at`) is unchanged.
+7. **Ref-content equality.** The resolver result's `id` / `version` must equal the requested ref (`ITEM_REF_MISMATCH` @ the item path). The memory repository already guarantees it on write, so the check is a backstop for other repository implementations; it is exercised through a `Proxy` repository that lies about the stored version.
+8. **Stale mapping pin.** A mapping's pinned `approvedFingerprint` (from the state record) must equal `coverageFingerprintOf(currentTreatmentVersion(treatmentId))`: `FINGERPRINT_STALE` @ `bundle.mappings[i].approvedFingerprint`; no version at all -> `TREATMENT_VERSION_ABSENT` @ `bundle.mappings[i].treatmentId`. A missing pin (empty) is left to the validator's `FINGERPRINT_MISSING`. "Current treatment version" is the version in the clinic's current catalog, else the latest by write order; this is the same rule `approve` uses and now lives in one function (`treatment-current.ts`).
+9. **Bundle contentHash (definition v1).** `canonicalDigest({ format: 'bodam.rule-bundle.v1', items })`, `items` = one `{ kind, id, version, contentDigest }` per item sorted by `(kind, id, version)` in code-point order, `contentDigest = canonicalDigest(stored item content)`. Inputs that are NOT part of it: request order, bundle id, publish time, publisher, current item states, mappings' pinned fingerprints (state-side). Consequences tested: independent of the order of `itemRefs` in the request (two worlds, reversed arrays, same hash and same stored `itemRefs`), recomputing it later from the repository gives the same value even after an item was suspended, two bundles with the same item versions have the same hash, a restored copy has the source's hash, a different item set or a next item version changes it. `RuleBundleVersion.itemRefs` is stored in the same canonical `(kind, id, version)` order. Changing the definition would invalidate comparison with already published bundles, hence the format marker.
+10. **Bundle publish pipeline (one transaction).** `RV` role -> resolver built from repository reads (`getItemVersion` + `readItemStates` + `toEngineProfile/Mapping/DocumentRuleSet`; one `readItemStates` call per distinct ref, not one batch for the whole bundle) -> `validateRuleBundlePublish` -> service preconditions (ref equality, state, validity, mapping pin; reported after the validator's defects, in request order profiles -> mappings -> document rule set) -> `assertNoDefects` -> new bundle id (after validation) -> `putRuleBundleVersion` -> first `ACTIVE` event (previous status null, actor id / role / time, reason null) -> `markPublished` for `APPROVED` items -> audit `BUNDLE_PUBLISH` (target `BUNDLE/<id>`, before null, after the id). The empty bundle (`[]`, `[]`, `null`) is valid and publishes (`[]` is not a form defect, AC-011i).
+11. **Recovery (AC-011b).** `restoreCatalogVersion` (HA) rebuilds the request from the source's stored treatment versions and base fees and publishes it through the same `publishNew` path with the CURRENT config (so an old catalog with `TEST_FIXTURE` origin cannot be restored under an operating config); `restoreRuleBundle` (RV) rebuilds the ref request from the source's `itemRefs`. The new record gets a new id, `publishedBy` / `publishedAt` of the restoring actor / clock, and a change summary relative to the clinic's current catalog (catalog). Audit entries use action `CATALOG_RESTORE` / `BUNDLE_RESTORE` and reason `RESTORE_OF:<source id>`. `[not in docs]` Restoring a catalog re-runs the re-review trigger for its treatment versions, so restoring an older version whose coverage fields differ from an approved mapping's pinned fingerprint moves that mapping to `UNDER_REREVIEW` (tested). The source and every other earlier version, event and history entry are untouched (deep-equal tests). The restored catalog belongs to the source's clinic: M7 must check the actor's membership of that clinic.
+12. **Immutability (AC-011a).** No service modifies or deletes a published version; the facade exports only publish / restore / hash functions (a test rejects any export name matching delete / remove / update / edit / modify / overwrite / revise / drop). Repository-level rewrite with different content is `IMMUTABLE_VERSION` (catalog and bundle, several mutated fields each). Service-level attempt: an id generator that replays an existing catalog or bundle id (the id is the only way a service could target an existing version) makes the second, different publish fail with `IMMUTABLE_VERSION` and the repository stays deep-equal; the same-content replay of a bundle fails at the status-event chain (`STATE_CONFLICT`). A failure in the LAST step (an occupied audit id) rolls back every earlier write of a publish or a restore (catalog and bundle).
+13. **Seal contract (AC-011a, real publish).** The bundle is published through the service; the published profile / document rule set records are then read back and assembled with `toEngine*`, and the engine `isUsable` (with `canonicalDigest`) is run: the sealed hash verifies; reordered `groups` / `sharedLimitPools` / `rules` and reversed object key order still verify with the hash computed from the original (non-sorted) order; changed values (fixed, limit, pool limit), changed `groupOrder`, group key, version label, generation (profile) and changed rule reason / priority / document code / removed rule / version label (rule set) give `INTEGRITY_MISMATCH`. Only `profileContent`, `documentRuleSetContent` and `canonicalDigest` are used (the sealing is done by the M3.B authoring service); no second normalization exists.
+14. **AC-010c "no seed / migration path" claim, exactly what is supported** (`tests/server/no-seed-paths.test.ts`, token scan of `src/server`, comments ignored): (1) no module or identifier named seed / migrate / bootstrap / import / loader / fixture / demo / sample exists; (2) the origin names `DEMO` / `TEST_FIXTURE` appear only in `validate/shape.ts` (closed enumeration used for validation), never as a value written to a record; (3) the only non-repository code calling `putTreatmentVersion` / `putCommonBaseFee` / `putCatalogVersion` is `catalog-publish.ts`, and it calls the validator and `assertNoDefects` before its first write; (4) the only non-repository callers of `recordItemTransition` are `authoring.ts`, `approval.ts` and `re-review.ts`; the publish services never write a state themselves (they call `markPublished`). NOT claimed: anything about code outside `src/server` (none exists), a DB adapter (none), or that an operating database is empty.
+15. **Determinism.** The services use no clock, random or id source of their own; a scenario of publishes and restores run in two fresh worlds yields deep-equal repository state (audit log and status events included). The server boundary test (hazard rules, imports) passes over the new files unchanged.
+
+#### AC evidence (test file -> describe -> what is checked)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-007f | `publish-bundle.test.ts` : `AC-007f 서류 규칙 묶음 게시: 구조 결함은 엔진 결함 경로와 함께 거절되고 아무것도 저장되지 않는다` | 10 rows (whitespace-only and empty `reason`, unknown document code, negative / unsafe `priority`, unknown `when` key, non-`true` flag, non-object `when`, non-object rule entry, non-array `rules`): typed `PUBLISH_VALIDATION_FAILED`, defect `bundle.documentRuleSet.rules[i]...`, repository before/after deep-equal incl. no status event, previous bundle and its items intact, corrected bundle publishes; `rules: []` publishes; several injury-only / illness-only lines publish; a valid `reason` is stored verbatim |
+| AC-009a | `publish-catalog.test.ts` : `AC-009a ...` | through `publishCatalog`, each of `treatmentCode`, `procedureCodes`, `benefitType`, `calcClass` changed separately moves an `APPROVED` and a `PUBLISHED` mapping to `UNDER_REREVIEW` (8 cases; history reason `COVERAGE_JUDGMENT_FIELD_CHANGED`, actor = the HA publisher, audit `ITEM_REREVIEW`); 7 neutral changes (price, display name, description, amount condition, document flags, effective date, procedure code order) x 2 states move nothing; other treatments' mappings and a DRAFT mapping untouched; a rejected publish does not move the mapping |
+| AC-009c | `publish-catalog.test.ts` : `AC-009c ...` | real engine `estimate()`: line `ESTIMATED` at 10,000; after a price-only publish (new `CatalogVersion`, `changeSummary.priceChangedTreatmentIds = [T1]`, earlier version unchanged, mapping still `PUBLISHED`) the line is `ESTIMATED` at the NEW price 25,000 with no hold reasons; contrast: a coverage-field change gives `ON_HOLD` / `MAPPING_UNDER_REREVIEW` |
+| AC-010c | `publish-catalog.test.ts` : `AC-010c ...`; `no-seed-paths.test.ts` | operating config (`['OPERATING']`) rejects `DEMO` and `TEST_FIXTURE` treatment versions and base fees with `ORIGIN_NOT_ACCEPTED` @ `...origin`, repository unchanged; mixed requests are rejected as a whole; test config accepts both; an empty accepted list rejects everything; the scan test states the supported claim (decision 14) |
+| AC-011a | `versioning.test.ts` : `AC-011a ...` (immutability, profile seal, rule set seal); `publish-bundle.test.ts` : `묶음 내용 해시` | immutability and seal as in decisions 9, 12, 13; hash recomputation equal, order independence |
+| AC-011b | `versioning.test.ts` : `AC-011b 카탈로그 복구`, `AC-011b 규칙 묶음 복구` | new id, same membership / same hash, current catalog / ACTIVE event, older versions, events and item histories deep-equal, audit names the source, role rules (HA / RV), `NOT_FOUND`, old content failing today's rules (operating config; suspended / superseded / expired item) -> typed rejection and repository unchanged, restoring a SUSPENDED bundle gives a new ACTIVE one |
+| AC-011h | `publish-catalog.test.ts` : `AC-011h 카탈로그 ...`; `publish-bundle.test.ts` : `AC-011h 규칙 묶음 게시 ...` | catalog price and base fee: negative, decimal, NaN, string, `MAX_AMOUNT_WON + 1` -> `VALUE_INVALID` with field path, nothing stored, previous catalog current; bundle: 4 Won fields (group deduction `fixed`, group limit `amount`, `perUseAmount`, pool limit `amount`) x 5 bad values and 4 rate fields (`rate`, capped `rate`, `rateBenefit`, `rateNonBenefit`) x 5 bad values (below 0, above 10000, decimal, NaN, string), field path `bundle.profiles[0].groups[0]...`, repository unchanged, previous bundle intact, corrected bundle publishes; boundaries 0 / `MAX_AMOUNT_WON` (rates 0 / 10000) publish |
+| AC-011i | `publish-bundle.test.ts` : `AC-011i ...` (mapping field rules, profile structure, bundle cross checks, item form) | 9 mapping rows, 10 profile structure rows (incl. out-of-range pool amount), 3 cross rows, and the form sub-criterion (`profiles` / `mappings` = null, undefined, object, string, number, boolean separately; null, undefined, number, string, boolean, array items; missing `documentRuleSet`; unresolvable and wrong-kind refs): typed error with paths, repository before/after deep-equal, no status event for the next bundle id, previous bundle intact, corrected bundle publishes; memberless pool and a mapping scoped to a cell without a profile publish; `[]` is valid; unsupported formula kinds are not a publish defect |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixture `versioning.fixture.ts` and the four test files were written first, with no `catalog-publish.ts`, `bundle-publish.ts`, `versioning.ts`, `publish-defects.ts` or `treatment-current.ts` yet; (2) the RED run; (3) the implementation. RED: `npx vitest run <the 4 new files> --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  4 failed (4)`, `Tests  5 failed | 4 passed (9)`. Three files could not load (`Cannot find module '../../src/server/bundle-publish'` for `publish-bundle.test.ts`, `.../catalog-publish` for `publish-catalog.test.ts`, `.../versioning` for `versioning.test.ts`); the scan test file ran its 9 tests with 5 failing (for example `expected [] to deeply equal [ 'src/server/catalog-publish.ts' ]`). Two expectations in the scan test were corrected AFTER the RED run because they were my own mistakes, not behavior (the file-count threshold `> 30` was above the 29 source files that existed at RED time, and `approval.ts` also writes `REJECTED` and `REVIEW_REQUESTED` through `to:`); a third (call order of `validateCatalogPublish` / `assertNoDefects`) was fixed before the first GREEN run.
+After the implementation `npx tsc --noEmit` was exit 0 and the first run (`first-run.txt`) was `Test Files  2 failed | 2 passed (4)`, `Tests  7 failed | 295 passed (302)`; all 7 failures were defects in my new tests (a request that mixed rejected and accepted origins, a DEMO republish of an existing id, an id-replay helper that restarted its audit counter), fixed in the tests only; the implementation was not changed between `first-run.txt` and the green `second-run.txt` (4 files / 302 tests). Test-after additions that passed immediately and are NOT RED evidence: three coverage-driven tests (an item with no state record, `bundleContentHashOf` on a missing item, restoring a bundle without a document rule set; the first coverage run showed one statement and two branches of `bundle-publish.ts` uncovered) and the atomicity group of 3 tests (added because mutation (k) below survived; it fails under that mutation). The `approval.ts` refactor and `treatment-current.ts` were written with the implementation (existing M3.B tests as safety net, unchanged and green).
+
+#### Evidence (outputs saved under `.moai/state/verify/m3d1/`, gitignored; all vitest runs with `--maxWorkers=4`, run sequentially on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  29 passed (29)
+      Tests  2097 passed (2097)          (M3.C baseline 25 files / 1789 tests + 4 files / 308 tests)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  25 passed (25)
+      Tests  1854 passed (1854)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 944/944  branches 490/490  functions 249/249  lines 890/890   = 100% each
+src/engine (tests/engine run):  statements 652/652  branches 558/558  functions 145/145  lines 606/606   = 100% each (unchanged)
+```
+
+No coverage exclusions, no `skip` / `only` / disabled tests.
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4` after a scripted one-spot edit; the script restored the file from a backup each time; `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt` (49 files); outputs `mut-<id>.txt`; totals were 1851 tests for (a), (b), (d)-(j), (l), (m) and 1854 for (c), (k), (n) because the atomicity tests were added in between)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `catalog-publish.ts`: re-review trigger no longer called | `Test Files  2 failed \| 23 passed (25)`, `Tests  10 failed \| 1841 passed (1851)` |
+| (b) `catalog-publish.ts`: validator always given all three origins (config ignored) | `3 failed \| 22 passed`, `8 failed \| 1843 passed (1851)` |
+| (c) `catalog-publish.ts`: transaction wrapper replaced by a plain call (no rollback) | `1 failed \| 24 passed`, `2 failed \| 1852 passed (1854)` (an earlier faulty mutant that returned an uncalled function was discarded) |
+| (d) `bundle-publish.ts`: item state precondition never fires | `2 failed \| 23 passed`, `24 failed \| 1827 passed (1851)` |
+| (e) `bundle-publish.ts`: first `ACTIVE` status event not written | `3 failed \| 22 passed`, `108 failed \| 1743 passed (1851)` |
+| (f) `bundle-publish.ts`: `computeBundleContentHash` no longer sorts its entries | `1 failed \| 24 passed`, `1 failed \| 1850 passed (1851)` |
+| (g) `bundle-publish.ts`: stored `itemRefs` in request order instead of canonical order | `1 failed \| 24 passed`, `4 failed \| 1847 passed (1851)` |
+| (h) `bundle-publish.ts`: stale pinned fingerprint never reported | `1 failed \| 24 passed`, `1 failed \| 1850 passed (1851)` |
+| (i) `bundle-publish.ts`: `APPROVED` items not moved to `PUBLISHED` | `3 failed \| 22 passed`, `129 failed \| 1722 passed (1851)` |
+| (j) `bundle-publish.ts`: validity precondition always true | `1 failed \| 24 passed`, `18 failed \| 1833 passed (1851)` |
+| (k) `bundle-publish.ts`: transaction wrapper replaced by a plain call | first run SURVIVED (`25 passed`, `1851 passed`); after the atomicity tests were added: `1 failed \| 24 passed`, `1 failed \| 1853 passed (1854)` |
+| (l) `catalog-publish.ts`: treatment of another clinic not reported | `1 failed \| 24 passed`, `2 failed \| 1849 passed (1851)` |
+| (m) `treatment-current.ts`: current catalog membership ignored (always latest version) | `1 failed \| 24 passed`, `1 failed \| 1850 passed (1851)` |
+| (n) `bundle-publish.ts`: restore audit reason no longer names the source | `1 failed \| 24 passed`, `1 failed \| 1853 passed (1854)` |
+
+All 14 mutants end up killed with the final tests. (f), (h), (m) and (n) are killed by a single test each.
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Bundle content hash input is a decision of this step** (decision 9): design.md DD-14 / DD-18 only say "내용 해시". If the owner wants the mapping's pinned fingerprint or the item states in the hash, the definition (and the format marker) must change.
+2. **`SUPERSEDED` is not triggered by bundle publish** (decision 5). If the owner wants "new version publish supersedes the previous version", the previous bundle's items become unusable at once and the DD-14 recovery sequencing (publish, then reassign scopes) needs a rule for the gap.
+3. **Validity precondition at publish is `[not in docs]`** (decision 6); the inclusion of the publish date and the allowance for future-starting validity are my choice.
+4. **Ownership check order**: service-level (ownership) defects are reported only when the validator finds none (decision 2).
+5. **Resolver reads**: one `readItemStates` call per distinct ref at publish (the DD-14 "one read per request" contract is for the calculation path, M4).
+6. **Restoring a catalog re-runs the re-review trigger** (decision 11); and the restore copies the source's clinic, so M7 must check membership of that clinic.
+7. NOT IMPLEMENTED (M3.D2): bundle suspend and its mandatory reason, re-activation rejection at service level, `ClinicRuleScope` assignment (PO), insurer separation, `IdlePolicy` default reader; AC-011d and AC-011e stay open. NOT IMPLEMENTED (M3.E): readiness tables; AC-011c, 011j, 011k, 011l stay open. M4 to M7, DB adapter, HTTP, deployment, merging and commits are not started.
+8. NOT VERIFIED: any DB behavior; asynchronous transactions; behavior under real concurrency (two sessions publishing at once); the SPEC lint (`moai` CLI absent); only Windows 11 and Node 24.19.0 were run, with no CI. AC-024a / AC-025b receive no new evidence here.
+9. SPEC wording notes (not edited): acceptance.md:207 (AC-011a) says "service-level attempts" to modify or delete are rejected, but no modify or delete service exists to attempt; the replayed-id test is the closest service-level attempt. acceptance.md:216 names `policySourceIds` while the engine / DD-18 item types carry `policySources` (also noted in M3.C).
+
+### M3.D2 묶음 중지·범위·보험사·무조작 정책, 2026-10-16
+
+**Scope.** M3.D2 only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.D1 (`2b408b1`), not committed by this step. It builds four small services over the existing repository interface (no `Repository` method was added or changed): rule bundle suspend (role `RV`), `ClinicRuleScope` assignment (role `PO`), insurer institution records (role `RV`), and the clinic idle policy save (role `HA`) plus its default reader. Errors are typed `DomainError` thrown inside the transaction (same style as M3.A to M3.D1); every rejection leaves the repository deep-equal to its state before the call. **Closed by this step (tests pass): AC-011d, AC-011e.** The scope service and the idle policy close no AC by themselves (they are supporting scope for AC-011f / M4 / M5 / M7). Not closed: AC-011c, 011j, 011k, 011l (M3.E). NO readiness tables, NO HTTP, NO DB, NO estimate path, NO M4-M7 work.
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/bundle-status.ts` | NEW. `suspendRuleBundle` (the only export; there is deliberately no reactivation function) |
+| `src/server/rule-scope.ts` | NEW. `assignRuleScope`, `readClinicRuleBundle`, `findAffectedClinics` |
+| `src/server/insurer.ts` | NEW. `saveInsurerRecord` |
+| `src/server/idle-policy.ts` | NEW. `saveClinicIdlePolicy`, `readIdlePolicy`, `IDLE_SCREEN_KINDS`, `DEFAULT_IDLE_THRESHOLDS`, `MIN_IDLE_LEAD_SECONDS` |
+| `src/server/audit.ts` | CHANGED (additive): `AuditInput.affectedClinicCount?`; the entry gets the key only when it is passed, so every other audit entry keeps its 9 keys (the existing key-list test still passes) |
+| `src/server/domain/entities.ts` | CHANGED (additive): `AuditLogEntry.affectedClinicCount?: number` |
+| `tests/server/bundle-suspend.test.ts` | NEW, 34 tests |
+| `tests/server/rule-scope.test.ts` | NEW, 13 tests |
+| `tests/server/insurer.test.ts` | NEW, 42 tests |
+| `tests/server/idle-policy.test.ts` | NEW, 70 tests |
+| `tests/fixtures/server/governance.fixture.ts` | NEW fixtures (all `TEST_FIXTURE`): scope world with clinics 1-4 and one ACTIVE bundle, second bundle of the same items, three synthetic insurers |
+
+New tests total 159 (4 files). No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched; no existing test was edited; `versioning.ts` (the exact-export-list facade) was not touched; the repository method-name scan test and the AC-010c no-seed scan test still pass (the new modules contain no seed / migrate / bootstrap identifiers and no `TEST_FIXTURE` / `DEMO` token).
+
+#### Public API (what M3.E / M4 / M7 call)
+
+```ts
+// src/server/bundle-status.ts
+suspendRuleBundle(deps: ServiceDeps, actor: Actor, bundleId: string, reason: string):
+  { event: RuleBundleStatusEvent; affectedClinics: { clinicId: string; slug: string }[] }
+// src/server/rule-scope.ts
+assignRuleScope(deps, actor /* PO */, clinicId: string, bundleId: string): ClinicRuleScope
+readClinicRuleBundle(repo, clinicId): { ruleBundleVersionId: string | null; ruleBundleStatus: 'ACTIVE' | 'SUSPENDED' | null }
+findAffectedClinics(repo, bundleId): { clinicId: string; slug: string }[]      // id order, current scope only
+// src/server/insurer.ts
+saveInsurerRecord(deps, actor /* RV */, input: unknown): Insurer
+// src/server/idle-policy.ts
+saveClinicIdlePolicy(deps, actor /* HA */, clinicId: string, request: unknown /* { screens, completionHoldSeconds } */): IdlePolicy
+readIdlePolicy(repo, clinicId): { clinicId; screens: Record<IdleScreenKind, { warnSeconds; resetSeconds }>; completionHoldSeconds: number | null }
+```
+
+Reading the calculation-time facts needs no new method: `repo.getClinicRuleScope(clinicId)` + `repo.getBundleStatus(bundleId)` (or `readClinicRuleBundle`, which does both and is read fresh on every call), and `repo.readItemStates(bundle.itemRefs)` for item states. Suspend errors: `ROLE_NOT_PERMITTED`, `REASON_REQUIRED` (defect `{code:'EMPTY', path:'reason'}`), `NOT_FOUND`, `STATE_CONFLICT` (already suspended or no availability record), repository `DUPLICATE_KEY` on an occupied audit id (whole transaction rolled back).
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **Suspend pipeline (one transaction).** role `RV` -> reason check -> bundle exists (`NOT_FOUND`) -> current availability must be `ACTIVE` (`STATE_CONFLICT` otherwise: already `SUSPENDED`, or no availability record at all) -> append the `SUSPENDED` event (actor id / role, time from the injected clock, reason, `previousStatus = ACTIVE`) -> compute affected clinics -> audit `BUNDLE_SUSPEND` (target `BUNDLE/<id>`, before `ACTIVE`, after `SUSPENDED`, reason, affected count). The role is checked before the reason, so a non-RV with an empty reason gets `ROLE_NOT_PERMITTED`. The reason must be a string with a non-blank trim (`undefined`, `null`, numbers, objects, `''`, whitespace-only all give `REASON_REQUIRED`); it is stored verbatim, not trimmed. `REASON_REQUIRED` / path `reason` reuses the M3.B code and defect shape.
+2. **No reactivation function exists.** DD-14 says "다시 활성으로 돌리는 동작은 없다", so `bundle-status.ts` exports only `suspendRuleBundle` (a test checks the export list for activate / resume / restore verbs). The two "reactivation attempt" proofs are therefore: (a) repository level, `appendBundleStatusEvent(ACTIVE, previousStatus = SUSPENDED | ACTIVE | null)` on a suspended bundle -> `STATE_CONFLICT`, nothing stored; (b) service level, the closest real attempt: a second `publishRuleBundle` of the same items at the same clock time with an id generator that replays the suspended bundle's id (the bundle record write is idempotent, the ACTIVE event is not) -> `STATE_CONFLICT`, repository deep-equal. A second suspend is also `STATE_CONFLICT` (no second `SUSPENDED` event). Same limitation as D1 decision 12 / OPEN item 9: acceptance.md:211 speaks of a service-level rejection but no reactivation service exists to attempt.
+3. **Affected clinics = clinics whose CURRENT `ClinicRuleScope` points at the bundle id** (DD-14, design.md:828), computed with `listClinics` + `getClinicRuleScope`, returned as `{ clinicId, slug }` in clinic id order; earlier scope history and clinics on another bundle are not counted.
+4. **`[not in docs]` Audit entry carries the affected-clinic count in a new OPTIONAL field `affectedClinicCount`.** design.md:828 requires the count in the suspend audit entry, but the DD-18 `AuditLog` field list (design.md:944) has no place for it. An optional field was the smallest additive change (no existing audit entry gains the key; the 9-key test still passes). M7's audit query should read the count from it.
+5. **Scope assignment (PO).** `assignRuleScope` checks role `PO`, clinic exists, bundle exists (`NOT_FOUND`), appends to the history through `assignClinicRuleScope` and audits `CLINIC_SCOPE_ASSIGN` (target `CLINIC/<id>`, before = previous bundle id or null, after = new bundle id). `[not in docs]` Assigning a SUSPENDED bundle is ALLOWED: DD-14 only says the scope keeps pointing at a suspended bundle, and adding a rejection rule would be the bigger behavior; the calculation then holds with `RULE_BUNDLE_SUSPENDED`. Assigning the bundle that is already current appends another history entry (no de-duplication rule was invented). Suspending a bundle never touches any scope (tested on current value and history of all four clinics).
+6. **Insurer records (RV).** An insurer is identified by `id` only. Input is validated field by field with fixed defect order (`id`, `insurerType`, `currentName`, `formerNames[i]`, `verifiedContact`): `id` / names must be strings with a non-blank trim (`EMPTY`), `insurerType` must be one of `NON_LIFE | LIFE | MUTUAL_AID` (the engine's closed list, via `validate/shape.ts`; absent -> `VALUE_MISSING`, other -> `VALUE_INVALID`), `formerNames` an array, `verifiedContact` a string or an explicit `null` (`undefined` -> `VALUE_MISSING`, no silent default). Only the known fields are stored (extra keys such as a `selfApproval` flag are dropped); names are stored verbatim (no trim, no Unicode normalization). Nothing looks up or merges records by name or alias: same name + different type, an alias equal to another record's current name, and same name + same type with a different id all stay separate records (tested). `[not in docs]` The `insurerType` of an EXISTING id cannot change (`STATE_CONFLICT`, defect `INSURER_TYPE_CHANGE` @ `insurerType`): changing it would turn one institution into another, which is the merge AC-011d forbids. Audit: `INSURER_SAVE`, target `INSURER/<id>`, before / after = `canonicalDigest` of the previous / new record (same convention as `editDraft`).
+7. **Real names are not seeded.** AC-011d names NH농협손해보험, NH농협생명 and 과거 농협공제. Following brief §3 (no real insurer data), the tests use three visibly synthetic records `TEST_FIXTURE_INSURER_NONLIFE` (`NON_LIFE`), `TEST_FIXTURE_INSURER_LIFE` (`LIFE`), `TEST_FIXTURE_INSURER_FORMER_MUTUAL` (`MUTUAL_AID`), each with its own name and alias list. A test asserts that the fixtures carry the `TEST_FIXTURE` marker and none of the real names. The property proven is "institutions of different type are separate records that never merge", not those specific names.
+8. **Idle policy role = `HA`.** design.md:875 (authority table: 무조작 정책·`completionHoldSeconds` 조회·수정 is `O` only in the HA column, RV / PO are `—`) and design.md:1142 (`GET/PUT …/idle-policy` -> HA). Brief §5 does not list this operation. Role only; clinic ownership is M7.
+9. **Closed screen kinds (M3.A item 12 left this to D2).** Five keys taken from the DD-19 `catalog` response example (design.md:995-1002, 1010): `INPUT`, `RESULT`, `BASIS_AND_DOCUMENTS`, `HOLD_RESULT`, `NOTICE_PROGRESS_ERROR` (K00_Start and K06_Complete have no timer and no key). Defaults encoded from the DD-10 table (design.md:742-749): `INPUT` 100/120, `RESULT` 160/180, `BASIS_AND_DOCUMENTS` 160/180, `HOLD_RESULT` 160/180, `NOTICE_PROGRESS_ERROR` 100/120 (warn/reset seconds). `completionHoldSeconds` default is `null` (design.md:1011: no default until plan.md §E #12 is decided; plan.md B4 ① only proposes 10 s, which is NOT encoded).
+10. **Idle policy save validation.** Order: role -> clinic exists (`NOT_FOUND`) -> request check (`INVALID_INPUT` with `{code, path}` defects) -> write -> audit `IDLE_POLICY_SAVE` (target `CLINIC/<id>/IDLE_POLICY`, before / after = `canonicalDigest` of the previous stored policy (null if none) / the new one). `screens` is required (object; may be empty), keys must be in the closed list (`SCREEN_UNKNOWN` @ `screens.<key>`), each entry a plain object whose `warnSeconds` / `resetSeconds` are safe integers >= 0 (`VALUE_MISSING` for absent / null, `VALUE_INVALID` otherwise), and `resetSeconds - warnSeconds >= 20` (`LEAD_TIME_TOO_SHORT` @ `screens.<key>.resetSeconds`; this covers equal and reversed values). The 20-second floor is design.md:754 (DD-10, "잠정, SPEC 결정", plan.md §E #16, owner confirmation pending) and lives in one constant `MIN_IDLE_LEAD_SECONDS`; it does NOT apply to `completionHoldSeconds`. `completionHoldSeconds` must be explicitly `null` or a safe integer >= 1 (`undefined` -> `VALUE_MISSING`, 0 / negative / decimal / NaN / string -> `VALUE_INVALID`; design.md:1011 "양의 정수"). All defects are reported together in the order: screen names in code-point order (per screen: warn, reset, gap), then `completionHoldSeconds`, independent of the order the keys were written. `[not in docs]` Save is a full replacement (PUT): screens not in the request read back as defaults.
+11. **Idle policy reader.** `readIdlePolicy` returns all five screens always: the stored value for a stored screen, the DD-10 default otherwise (design.md:1010 "저장하지 않은 화면 종류는 DD-10 표의 값"); `completionHoldSeconds` = stored value or `null`. It never mutates the repository and returns a fresh copy each call (mutating the result changes neither the next read nor the default table). Keys outside the closed list that someone wrote straight into the repository are not returned. `[not in docs]` An unknown clinic gives `NOT_FOUND` (the M4 catalog route checks the clinic first anyway).
+12. **No new `DomainErrorCode`.** The existing `domain.test.ts` enumerates the closed code list exactly, so the services reuse existing codes (`ROLE_NOT_PERMITTED`, `REASON_REQUIRED`, `NOT_FOUND`, `STATE_CONFLICT`, `INVALID_INPUT`); the new strings are defect codes only (`SCREEN_UNKNOWN`, `LEAD_TIME_TOO_SHORT`, `INSURER_TYPE_CHANGE`; `EMPTY` / `VALUE_MISSING` / `VALUE_INVALID` are existing ones).
+13. **Determinism.** The services use no clock, random or id source of their own; the suspend scenario run in two fresh worlds yields deep-equal repository state (audit log and status events included). The server boundary test (hazard rules, imports) passes over the new files unchanged.
+
+#### AC evidence (test file -> describe -> what is checked)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011d | `insurer.test.ts` : `AC-011d 종류가 다른 보험사는 서로 다른 기관 기록이다` | three records of three different `insurerType` values stay three records, each readable by its own id with its own type / name / aliases; all 6 save orders give the same list; saving or editing one leaves the others deep-equal and the alias lists per record; equal names / aliases across types and equal name + type with different ids do not merge; changing an existing id's type is rejected (`[not in docs]`); audit hashes |
+| AC-011d | `insurer.test.ts` : `보험사 저장 서비스의 역할·입력 검사`, `실제 기관명을 시드하지 않는다` | role `RV` only; 18 field-level bad inputs and 5 non-object inputs -> `INVALID_INPUT` with paths and repository deep-equal; fixed defect order; unknown fields dropped; isolation; verbatim names; audit-id collision rolls back; fixtures are `TEST_FIXTURE` only |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 게시는 ACTIVE 가용성 기록을 같은 트랜잭션에 쓴다` | publish writes exactly one `ACTIVE` event (publisher id / role / time, `previousStatus` null); a rejected publish leaves no bundle and no event |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 중지는 SUSPENDED 기록을 덧붙이고 앞의 기록을 지우지 않는다` | the appended event has actor id / role / time / reason / `previousStatus = ACTIVE`, the earlier `ACTIVE` event is deep-equal, reason stored verbatim, audit entry has actor / role / action / target / before / after / reason / time / affected count (2, and 0 with no clinics) |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 중지는 묶음 기록만 바꾼다` | bundle record, `contentHash`, `itemRefs` unchanged and the hash recomputes from stored item content; profile / mapping / document rule set state records (history included) and contents unchanged and still `PUBLISHED`; only `auditLog` and `bundleEvents` differ in the full repository snapshot; scope current value and history of four clinics unchanged; engine `isBundleUsable` on the stored snapshot flips from usable to `BUNDLE_SUSPENDED` |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 같은 항목 버전을 담은 두 번째 묶음은 계속 사용할 수 있다` | second bundle (same item refs, same hash) keeps its `ACTIVE` status, its events and record are untouched, its items are `PUBLISHED`, engine says usable while the first is not |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 같은 묶음 id 를 다시 활성으로 돌리려는 시도는 거절된다` | repository `STATE_CONFLICT` for `ACTIVE` after `SUSPENDED` with 3 `previousStatus` values; service-level id replay -> `STATE_CONFLICT`; second suspend -> `STATE_CONFLICT`; export list has no reactivation verb; recovery path (restore as new id, `ACTIVE`, PO reassigns the affected clinics, history `[old, new]`, old stays `SUSPENDED`) |
+| AC-011e | `bundle-suspend.test.ts` : `AC-011e 사유가 비었거나 없는 중지는 …` | 7 reason values (`''`, whitespace, tab / newline, `undefined`, `null`, number, object) -> `REASON_REQUIRED` with `[{EMPTY, reason}]`, full repository snapshot (audit log, status events) deep-equal, status still `ACTIVE`; the same call with a valid reason afterwards succeeds |
+| (support) | `bundle-suspend.test.ts` : `중지의 역할·대상 거절`, `영향을 받는 병원`, `중지 서비스의 결정성` | `HA` / `PO` -> `ROLE_NOT_PERMITTED` (role before reason), unknown bundle `NOT_FOUND`, no availability record `STATE_CONFLICT`, audit-id collision rolls back; affected clinics = current scope only, id order; two-world determinism |
+| (support) | `rule-scope.test.ts` | PO assignment, history and current value, audit before / after, roles `HA` / `RV` rejected, unknown clinic / bundle `NOT_FOUND`, suspended bundle assignable `[not in docs]`, only `auditLog` and `scopeHistory` change, rollback; `readClinicRuleBundle` (null / ACTIVE / SUSPENDED, read-only, copy); `findAffectedClinics` |
+| (support) | `idle-policy.test.ts` | defaults equal the DD-10 table, reader read-only and copy, partial stored screens merged over defaults, PUT replacement, per-clinic isolation, unknown stored keys dropped, audit hashes; role `HA` only; gap boundary 19 / 20 (and equal, reversed, 0 / 20); 2 x 9 number cases; unknown screen / bad entry / bad `screens` / non-object request; 12 `completionHoldSeconds` cases (no 20 s floor on it); combined defect order independent of key order; rejection keeps the stored policy |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixture `governance.fixture.ts` and the four test files were written first, with no `bundle-status.ts`, `rule-scope.ts`, `insurer.ts`, `idle-policy.ts` yet; (2) the RED run; (3) the implementation (the two additive audit edits and the four new modules). RED: `npx vitest run <the 4 new files> --maxWorkers=4` -> exit 1 (`red.txt`): `Test Files  4 failed (4)`, `Tests  no tests`, every file failing to load (`Cannot find module '../../src/server/bundle-status'` for `bundle-suspend.test.ts` and `rule-scope.test.ts`, `.../idle-policy`, `.../insurer`). So the RED state is "module absent", not failing assertions. After the implementation `npx tsc --noEmit` was exit 0 and the first run (`first-run.txt`) was `Test Files  4 passed (4)`, `Tests  159 passed (159)`: no test and no implementation line was changed after the RED run. Two test-authoring slips were corrected BEFORE the RED run (a nonsensical assertion in `idle-policy.test.ts`, a stray test removed from `bundle-suspend.test.ts`). The value of the tests as behavior detectors is shown by the mutation table below, not by a failing-assertion RED.
+
+#### Evidence (outputs saved under `.moai/state/verify/m3d2/`, gitignored; all vitest runs with `--maxWorkers=4`, run sequentially on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4          -> exit 0   (vitest-server-boundary.txt)
+ Test Files  33 passed (33)
+      Tests  2256 passed (2256)          (M3.D1 baseline 29 files / 2097 tests + 4 files / 159 tests)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4          -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (unchanged)
+$ npx tsc --noEmit                                                   -> exit 0   (tsc.txt)
+$ npx vitest run --coverage tests/server --maxWorkers=4              -> exit 0   (coverage-server.txt)
+ Test Files  29 passed (29)
+      Tests  2013 passed (2013)
+$ npx vitest run --coverage tests/engine --maxWorkers=4              -> exit 0   (coverage-engine.txt)
+ Test Files  32 passed (32)
+      Tests  1301 passed (1301)
+```
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`; `coverage-server-rows.txt`, `coverage-engine-rows.txt`):
+
+```
+src/server (tests/server run):  statements 1086/1086  branches 590/590  functions 271/271  lines 1028/1028  = 100% each
+src/engine (tests/engine run):  statements 652/652    branches 558/558  functions 145/145   lines 606/606    = 100% each (unchanged)
+```
+
+No coverage exclusions, no `skip` / `only` / disabled tests.
+
+#### Mutation spot checks (each run with `npx vitest run tests/server --maxWorkers=4` after a scripted one-spot edit of the final tree; the script restored the file from memory each time; `src-hashes-before-mutation.txt` equals `src-hashes-after-mutation.txt`; the baseline of that run is 29 files / 2013 tests; outputs `mut-<id>.txt`, rows in `mutation-rows.txt`)
+
+| Mutation | Result |
+|----------|--------|
+| (a) `bundle-status.ts`: reason check removed | `Test Files  1 failed \| 28 passed (29)`, `Tests  8 failed \| 2005 passed (2013)` |
+| (b) `memory-repository.ts`: bundle event chain accepts any event after the first (reactivation backstop removed) | `3 failed \| 26 passed`, `8 failed \| 2005 passed (2013)` |
+| (c) `rule-scope.ts`: affected clinics = every clinic that has any scope | `2 failed \| 27 passed`, `2 failed \| 2011 passed (2013)` |
+| (d) `bundle-status.ts`: suspend also moves the contained items to `SUSPENDED` | `2 failed \| 27 passed`, `6 failed \| 2007 passed (2013)` |
+| (e) `insurer.ts`: insurer type change guard removed | `1 failed \| 28 passed`, `1 failed \| 2012 passed (2013)` |
+| (f) `insurer.ts`: record keyed by name (merges same-named institutions) | `1 failed \| 28 passed`, `14 failed \| 1999 passed (2013)` |
+| (g) `idle-policy.ts`: minimum lead 20 -> 10 | `1 failed \| 28 passed`, `2 failed \| 2011 passed (2013)` |
+| (h) `idle-policy.ts`: reader ignores stored screens | `1 failed \| 28 passed`, `6 failed \| 2007 passed (2013)` |
+| (i) `bundle-status.ts`: suspend runs without a transaction | `1 failed \| 28 passed`, `1 failed \| 2012 passed (2013)` |
+| (j) `rule-scope.ts`: scope assignment role check removed | `1 failed \| 28 passed`, `2 failed \| 2011 passed (2013)` |
+| (k) `bundle-status.ts`: audit entry no longer records the affected clinic count | `1 failed \| 28 passed`, `3 failed \| 2010 passed (2013)` |
+| (l) `idle-policy.ts`: idle policy save role check removed | `1 failed \| 28 passed`, `2 failed \| 2011 passed (2013)` |
+
+All 12 mutants are killed (no survivor). (b) also fails two existing M3.A repository tests, which confirms the backstop is covered at both levels. (e), (i) are killed by a single test each.
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Assigning a SUSPENDED bundle is allowed** (decision 5). If the owner wants it rejected, that is a new rule (`STATE_CONFLICT` at assignment) and it affects the DD-14 recovery sequencing only slightly (recovery always assigns the NEW bundle).
+2. **Insurer type of an existing id is immutable** (decision 6) is my addition to make "never merge" enforceable; the docs do not state it.
+3. **`affectedClinicCount` is a new optional audit field** (decision 4); DD-18 should list it if the owner agrees.
+4. **Idle policy: role `HA` (decision 8), 20-second floor (decision 10, §E #16 pending), five screen keys (decision 9) and `completionHoldSeconds` with no default (decision 9)** are taken from the docs as written; plan.md B4 ① proposes a 10-second hold default that the design says does not exist yet. Nothing here decides §E #12 / #16.
+5. **No reactivation service exists** (decision 2): AC-011e's "service rejects reactivation" is proven through the repository backstop and the id-replay publish, not through a reactivation function.
+6. NOT IMPLEMENTED (M3.E): readiness tables; AC-011c, 011j, 011k, 011l stay open. M4 to M7, DB adapter, HTTP, clinic ownership / membership checks (AC-022a), the HTTP 400 mapping of the suspend rejection (AC-025f / AC-021f), deployment, merging and commits are not started.
+7. NOT VERIFIED: any DB behavior; asynchronous transactions; behavior under real concurrency (two sessions suspending or assigning at once); the SPEC lint (`moai` CLI absent); only Windows 11 and Node 24.19.0 were run, with no CI.
+8. SPEC wording notes (not edited): design.md:828 asks for the affected-clinic count in the audit entry while design.md:944 (DD-18 `AuditLog`) has no field for it; the brief §5 role list omits the idle policy operation, design.md:875 / 1142 give `HA`; design.md:754 / plan.md B4 ⑤ present the 20-second floor as provisional; acceptance.md:211 (AC-011e) speaks of a service-level rejection of reactivation although DD-14 defines no reactivation action.
+
+### M3.E 운영 준비 상태 (표 P·M·D·S, calculationReady·documentReady), 2026-10-19
+
+**Scope.** M3.E only (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` on top of M3.D2 (`3a307a7`), not committed by this step. The readiness module (`src/server/readiness.ts`) and its first six test files were written by an EARLIER session that ended before any verification, progress record or commit; this session treated them as unverified work of another author, audited every Given/When/Then clause of AC-011c, 011j, 011k, 011l against them, added tests for the clauses that were missing or only weakly asserted, and ran the verification and the mutation checks. **Closed by this step (tests pass): AC-011c, AC-011j, AC-011k, AC-011l** (unit level; the open items below stay open). NO HTTP, NO DB, NO estimate service, NO M4-M7 work.
+
+#### What exists (provenance is stated per row)
+
+| File | Provenance | Notes |
+|------|-----------|-------|
+| `src/server/readiness.ts` | EARLIER session (533 lines), UNCHANGED this session (`git hash-object` 9c2ac1e8… before and after) | `computeReadiness`, `loadReadinessSnapshot`, `readReadiness`, `renderReadinessReport`, `operatingReadinessContext`, `READINESS_CELLS`, `INSURER_TYPES`, row types |
+| `src/server/domain/projection.ts` | EARLIER session (uncommitted diff), UNCHANGED this session (hash 181daf76…) | adds `toEnginePublishedLine`, `toEngineBaseFeeLine` |
+| `tests/fixtures/server/readiness.fixture.ts` | EARLIER session; this session APPENDED the operating-origin world helpers (`operatingProfiles`, `operatingLines`, `operatingBaseFeeLines`, `operatingBundleOf`, `operatingClinicOf`) | all `TEST_FIXTURE` values; "OPERATING" is only an origin label so a single item can be flipped to `TEST_FIXTURE` under an OPERATING-only configuration |
+| `tests/server/readiness-{derived,mappings,profiles,repo,reuse,scope-documents}.test.ts` | EARLIER session, 285 tests; this session added ONE assertion to `readiness-derived.test.ts` (matrix: total line amount per trial `< MAX_AMOUNT_WON / 1000`, AC-003h clearance) and its import; nothing else changed or removed | |
+| `tests/server/readiness-profile-defects.test.ts` | NEW this session, 50 tests | AC-011c |
+| `tests/server/readiness-mapping-defects.test.ts` | NEW this session, 58 tests | AC-011j |
+| `tests/server/readiness-documents-derived.test.ts` | NEW this session, 104 tests | AC-011k, AC-011l (1), (4) |
+| `tests/server/readiness-reuse-identity.test.ts` | NEW this session, 31 tests | AC-011l (6), function-object level |
+| `tests/server/readiness-repo-readonly.test.ts` | NEW this session, 9 tests | AC-011l (5), read-only proof |
+
+This session added 252 tests in 5 files (50 + 58 + 104 + 31 + 9). No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**` or `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched; no `src/**` file was changed by this session at all (the readiness code needed no fix); no test was deleted or weakened. The earlier session's verification files in `.moai/state/verify/m3e/` (`red.txt`, `mut1..7.txt`, …, dated 2026-10-16) were NOT relied on; this session's evidence files carry the prefix `s2-`.
+
+#### Public API (unchanged, from the earlier session)
+
+```ts
+computeReadiness(snapshot: ReadinessSnapshot, ctx: ReadinessContext, functions?: Partial<ReadinessFunctions>): ReadinessReport   // pure, no throw on data
+loadReadinessSnapshot(repo: ReadinessReads): ReadinessSnapshot     // read-only, items' states + bundle availability read fresh per call
+readReadiness(repo, ctx, functions?): ReadinessReport              // load + compute
+renderReadinessReport(report): string                              // calculationReady one line per cell, documentReady one line per clinic
+operatingReadinessContext(at): ReadinessContext                    // rules + lines accept OPERATING only, digest = canonicalDigest
+```
+
+`ReadinessReport` = `platformProfiles[15]` (table P platform view) + per clinic `{ scope (S), profiles[15] (P clinic view), mappings (M, line id order x cell order), documents (D), calculationReady[15], documentReady }`. NOT_READY carries the blocked stage (S, P, TREATMENT, M, D) and the code.
+
+#### Audit result: clause checklist (acceptance.md:209, :220, :221, :222; design.md DD-23 at :1194-1271)
+
+| AC | Clauses checked | Asserted before this session | Missing or weak, closed this session |
+|----|-----------------|------------------------------|--------------------------------------|
+| AC-011c | 15: empty repo platform / clinic reasons; origin DEMO; origin `TEST_FIXTURE` under OPERATING-only; 8 states; outside validity; 6 policy-source items; approver missing; hash mismatch; structural defects (AC-008a row); two profiles in one cell; bundle `SUSPENDED`; no spill to other cells; platform view with 2+ candidates (any-usable READY, fixed priority, array-order independence); table P READY alone is not `calculationReady` | 13 | (a) `TEST_FIXTURE` one cell at a time under an OPERATING-only configuration with every other item usable (before: only "whole bundle TEST_FIXTURE", which proves nothing about spill); (b) the AC-008a structural row: before 5 shapes, now all 9 named defects plus 7 non-object `groups` entries, 7 non-object `sharedLimitPools` entries, 7 non-array `sharedLimitPools` containers, each at all 15 cells |
+| AC-011j | 5 groups: (1) per-line state list (absent, scope without the cell, unreviewed, rejected, under re-review + fingerprint mismatch, 4 invalid kinds, two usable incl. COVERED + EXCLUDED, stored field-rule breaks, group not in profile, line origin, needs review, 4 group value defects, pool defect hitting only member lines); (2) `READY (EXCLUDED_CONFIRMED)` vs unusable EXCLUDED; (3) unresolved profile -> table P reason; (4) independence of lines / cells / array order; (5) no scope | all groups present, but (2) used 6 of 13 unusable kinds, mapping origin was tested only as `DEMO`, pool defect only as one kind, multi-candidate unusable priority and empty `scope` untested | (a) unusable EXCLUDED with all 13 kinds x 2 lines; (b) mapping origin `TEST_FIXTURE` under OPERATING-only (COVERED and EXCLUDED); (c) all 13 x 13 ordered pairs of unusable candidates equal `estimate()` and are order independent; (d) 6 pool defect kinds x 15 target cells; (e) `scope: []` and single-cell scopes for the base-fee line |
+| AC-011k | tables S and D: origin, 8 states, `OUTSIDE_VALIDITY`, `SOURCE_INCOMPLETE`, `APPROVER_MISSING`, `INTEGRITY_MISMATCH`, set absent, scope absent, bundle suspended; reason always `RULES_UNAVAILABLE` + detail; agreement with `deriveDocuments()`; per-clinic independence | all listed states present; 1 of 6 source fields, no empty approver id, no calendar-invalid validity; agreement with `deriveDocuments()` was a forced `ESTIMATED`, never fed from a real `estimate()` state and never the `ON_HOLD` side | (a) all 6 source fields, empty approver id, calendar-invalid dates, `DEMO`, structure defect, each x (usable bundle / `SUSPENDED` bundle -> `BUNDLE_SUSPENDED` first); (b) single `TEST_FIXTURE` rule set under OPERATING-only -> only `documentReady` flips; (c) real `estimate()` state -> `deriveDocuments()`: `RULES_UNAVAILABLE` when not `ON_HOLD`, `null` when `ON_HOLD`, for 23 rule-set conditions at 15 cells |
+| AC-011l | 6: (1) separate values, no merged phrase in any output string; (2) table P READY alone never makes a cell ready; (3) seeded equivalence matrix; (4) documents-only unavailability flips only `documentReady`; (5) empty repository; (6) no second implementation | (2), (3), (5) solid; (1) 4 worlds with a short regex over the render; (4) 3 states; (6) import scan + injected spies; amounts of the matrix not asserted | (1) 200 seeded states x render text and every string/key of the report object, with a regex proven to catch 9 merged phrases; (4) all 23 rule-set conditions; (3) amount clearance asserted; (5) one repository-level test with a published catalog and no scope (platform, S, D, M, both conditions, no new codes); (6) module-mock identity test (below) |
+
+Reuse proof audit (the brief's question): `readiness-reuse.test.ts` had three layers: (a) import / no-redefinition scan, (b) no status / origin / validity comparison scan, (c) injected spies. Layer (c) only reaches a function when the TEST injects it, so a behaviour-identical local copy wired into the default `REAL_FUNCTIONS` passed all of it: mutation (M) below survived all 285 earlier tests. The new identity file wraps the engine MODULES with `vi.mock` (delegating `vi.fn`) so the default path (no injection) must hit the very exports `estimate()` uses; it also swaps each of the eight functions and checks that `estimate()` and the readiness tables follow, and it widens the "second definition" scan to arrow-valued properties, method shorthand, `class`, and alias import / export. `selectDocumentRuleSet` is not used by `estimate()` (the document path calls it), so the identity test expects readiness to call exactly `estimate()`'s seven functions plus it.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. (Earlier session, audited) Table M never looks at bundle availability (design.md:1233); when the cell's profile does not resolve, a usable COVERED row takes `resolveProfile`'s code, not the table P clinic-view code. `[not in docs]` The two differ only for a `SUSPENDED` bundle (table P clinic view says `RULE_BUNDLE_SUSPENDED`, design.md:1236 / acceptance.md:220 (3) say "table P clinic-view reason"); the reported `calculationReady` stops at stage S first, so the reported reason is the same. Test: `readiness-mappings.test.ts` "표 M 은 묶음의 가용성을 보지 않는다". Recorded as spec ambiguity 2 below.
+2. (Earlier session, audited) Report-only display values, not hold codes: `NO_PUBLISHED_TREATMENT` (stage TREATMENT), `RULES_UNAVAILABLE` details `SET_ABSENT` and `SET_STRUCTURE_INVALID` `[not in docs]` (DD-23 names no detail for a structure defect). A test walks every `code` in the reports and allows only the DD-03 hold codes plus `RULES_UNAVAILABLE` and `NO_PUBLISHED_TREATMENT` (`readiness-derived.test.ts`, `readiness-repo-readonly.test.ts`).
+3. (Earlier session, audited) Base-fee lines: `toEngineBaseFeeLine` sets class from `benefitType` (`BENEFIT` -> `GENERAL_BENEFIT`, else `GENERAL_NON_BENEFIT`), all document flags `false`, line id = version id = base-fee id, fingerprint = `coverageFingerprint({ treatmentCode: fee.code, procedureCodes: [], benefitType, calcClass })`. This choice is documented in the `@MX:NOTE` at `projection.ts:64-67` and asserted in `readiness-repo.test.ts` "공통 기본비용 줄 [문서에 없음]". `toEnginePublishedLine` and `toEngineBaseFeeLine` are both covered (100% statements / branches / functions / lines for `projection.ts` and `readiness.ts`, from `coverage-summary.json`).
+4. (This session) The OPERATING-only one-item-flip worlds label items `OPERATING` because the origin is header information outside the content hash (`profileContent` omits it), so flipping one item to `TEST_FIXTURE` changes nothing else; no operating data was created.
+5. (This session) Test-side oracle: expected hold codes are never typed by hand; every new row-level assertion compares with the code `estimate()` gives the same line / cell on the same input (the earlier convention), except the fixed platform priority list and the `isUsable` reason for table D details, both of which DD-23 itself fixes.
+
+#### AC evidence (test file -> describe -> what is checked)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011c | `readiness-profiles.test.ts`: `AC-011c 운영 데이터가 없는 저장소`, `… 15칸` | 15 cells in order; empty repository: platform `PROFILE_ABSENT`, clinic view `CLINIC_RULE_SCOPE_ABSENT` (no scope) or `PROFILE_ABSENT` (scope without profile); non-array `profiles` does not throw |
+| AC-011c | `readiness-profiles.test.ts`: `… 칸 하나의 프로필 기록만 어긋나게 하면 …`, `… 묶음이 SUSPENDED 이면 …` | DEMO origin, 8 states, validity (2), source (empty list + 6 fields), approver (2), hash (2), 5 structure shapes, two profiles in a cell, each at 15 cells: only that cell `NOT_READY`, code equals the one code `estimate()` gives all 4 lines, no spill; bundle `SUSPENDED` -> `RULE_BUNDLE_SUSPENDED` |
+| AC-011c | `readiness-profile-defects.test.ts`: `… 출처 TEST_FIXTURE 를 운영 허용 출처 …` (NEW) | 15 cells, one `TEST_FIXTURE` profile among 14 `OPERATING`: that cell `PROFILE_DEMO` in both views and stage P, the other 14 READY and `estimate()` not `ON_HOLD`; same data READY under a TEST_FIXTURE-accepting configuration |
+| AC-011c | `readiness-profile-defects.test.ts`: `… AC-008a 의 구조 결함 행 전부 …` (NEW) | 9 named defects + 21 non-object / non-array shapes x 15 cells: `PROFILE_INVALID`, equal to `estimate()`, never throws; `[]` pools control READY; structure-defect candidate ranks `PROFILE_INVALID` in the platform priority |
+| AC-011c | `readiness-profiles.test.ts`: `… 플랫폼 보기: 후보가 여럿이면 …` | 7 candidate kinds individually equal `estimate()`; all 120 subsets of size >= 2 x 3 orders (given + 2 shuffles, seed 20261016): code = highest priority present, independent of order; usable candidate anywhere -> READY with only the usable bundle ids; candidate without the cell's profile is not a candidate |
+| AC-011j | `readiness-mappings.test.ts`: `AC-011j (1) …` | per-line variants (13 unusable kinds, two usable, COVERED + EXCLUDED, 5 field-rule breaks, group not in profile, line origin, classification, 4 group value defects, pool value defect) on the treatment line and the base-fee line: row = `estimate()` hold or READY, other lines unchanged; `scope` missing exactly one cell, per cell |
+| AC-011j | `readiness-mappings.test.ts`: `(3)`, `(4)`, `(5)`, `표 M 은 묶음의 가용성을 보지 않는다` | unresolved profile (5 kinds) -> profile code, EXCLUDED stays `READY (EXCLUDED_CONFIRMED)`; shuffled arrays (seed 20261016, 20 rounds) leave the report deep-equal; no-scope clinic -> `MAPPING_ABSENT` for lines passing origin and class; availability does not change table M |
+| AC-011j | `readiness-mapping-defects.test.ts` (NEW) | 13 unusable kinds as EXCLUDED x 2 lines -> never `EXCLUDED_CONFIRMED`; mapping `TEST_FIXTURE` under OPERATING-only (COVERED, EXCLUDED) -> `MAPPING_INVALID`, OPERATING control READY; 169 ordered pairs of unusable candidates equal `estimate()` and are order independent; 6 pool defect kinds x 15 cells hit only member-group lines; empty / single-cell `scope` |
+| AC-011k | `readiness-scope-documents.test.ts`: `AC-011k 표 S`, `표 D …`, `병원마다 독립이다` | table S values (`SCOPE_ABSENT`, `BUNDLE_SUSPENDED` with id and hash kept, `ACTIVE` with id and hash); table D READY only if S ACTIVE and set usable; 15 listed conditions -> `RULES_UNAVAILABLE` + detail (= `isUsable` reason); `deriveDocuments` -> `RULES_UNAVAILABLE`; bundle-suspension isolation between clinics |
+| AC-011k | `readiness-documents-derived.test.ts`: `AC-011k 표 D …`, `… deriveDocuments() …` (NEW) | 23 rule-set conditions (6 source fields, empty approver id, calendar-invalid dates, `DEMO`, structure defect included): detail = `isUsable` reason; under a `SUSPENDED` bundle the detail is `BUNDLE_SUSPENDED` and `documentReady` is stage S; one `TEST_FIXTURE` rule set under OPERATING-only flips only `documentReady`; real `estimate()` state fed to `deriveDocuments()`: `RULES_UNAVAILABLE` when not `ON_HOLD`, `null` when `ON_HOLD` |
+| AC-011k | `readiness-repo.test.ts`: `서비스가 바꾼 상태가 다음 호출에 바로 반영되고 …` | through the real services: bundle suspension, item suspension (profile / mapping / document rule set), re-review after a coverage-affecting catalog change, per-clinic isolation, all equal to the independently assembled engine input |
+| AC-011l (1) | `readiness-derived.test.ts`: `AC-011l (1) …` | 4 worlds: separate keys, render has 15 `calculationReady` lines + 1 `documentReady` line, never both on a line |
+| AC-011l (1) | `readiness-documents-derived.test.ts`: `AC-011l (1) 출력 문자열 …` (NEW) | seed 20261019, 200 states (scope none / ACTIVE / SUSPENDED x profile faults x mapping kinds x rule-set faults x 0-3 treatments): no merged phrase in the render text or any string / key of the report object (regex verified to catch 9 merged phrases); NOT_READY lines carry stage and code; all four (calc, doc) combinations occur (distribution printed) |
+| AC-011l (2) | `readiness-profiles.test.ts` last describe; `readiness-derived.test.ts`: `AC-011l (2) …` | platform READY + no scope -> stage S; P READY + one blocked line -> stage M with all blocked lines; no published treatment (also with base fees only) -> TREATMENT, `estimate()` rejects with `NO_TREATMENT_SELECTED`; stage order S -> P -> TREATMENT -> M; cell independence |
+| AC-011l (3) | `readiness-derived.test.ts`: `AC-011l (3) 고정 시드 동치 행렬 (seed=20261016, 시행 300회)` | 300 trials, seed and trial count in the test name and printed with `console.info`; per trial and cell `calculationReady == READY` iff `estimate()` over all published treatments and base fees is not `ON_HOLD`; S / P codes equal what `estimate()` gives every line; stage M (line, code) set equals `holdReasons[]`; zero-treatment clinics only NOT_READY; amounts per trial `< MAX_AMOUNT_WON / 1000` (NEW assertion); printed distribution `{"READY":308,"S":1245,"P":516,"TREATMENT":688,"M":1743,"docReady":157,"docBlocked":143}` (cell level) |
+| AC-011l (4) | `readiness-derived.test.ts`: `AC-011l (4) …`; `readiness-documents-derived.test.ts`: `AC-011l (4) …` (NEW) | 3 + 1 earlier, now all 23 rule-set conditions: only `documentReady` NOT_READY (stage D), `calculationReady`, `profiles`, `mappings`, `scope` deep-equal the good-rule-set report; the reverse direction (calculation blocked, `documentReady` READY) |
+| AC-011l (5) | `readiness-derived.test.ts`: `AC-011l (5) …`; `readiness-repo.test.ts`: `AC-011l (5) …`; `readiness-repo-readonly.test.ts`: `AC-011l (5) …` (NEW) | S `SCOPE_ABSENT`, D `RULES_UNAVAILABLE`, M all `MAPPING_ABSENT` (60 rows with a published catalog), P platform 15 `PROFILE_ABSENT`, both conditions NOT_READY at stage S, no code outside the DD-03 list plus the two display values |
+| AC-011l (6) | `readiness-reuse.test.ts` (earlier) + `readiness-reuse-identity.test.ts` (NEW) | import / no-redefinition / no-comparison scans and injected spies (earlier); NEW: engine modules wrapped by `vi.mock`, `computeReadiness` without injection calls all 8 wrapped functions, the set it calls = the 7 `estimate()` calls + `selectDocumentRuleSet`; swapping each of 8 engine functions changes both `estimate()` and the matching readiness table; widened definition scan (arrow-valued properties, method shorthand, class, alias) over `src/server` for 15 names; `REAL_FUNCTIONS` holds only shorthand entries |
+| (read-only, DD-14) | `readiness-repo.test.ts` + `readiness-repo-readonly.test.ts` (NEW) | full `exportState()` deep-equal before / after (audit log and bundle events included); a `Proxy` that throws on any property outside the 9 `ReadinessReads` methods gives the same report and touches exactly those 9; `readItemStates` count doubles over two calls; a suspension between two calls changes only the second report and a third call equals the second |
+
+#### RED before GREEN (exact statement)
+
+The E code and its first six test files (285 tests) PRE-EXISTED from the earlier session; this session did not write them test-first and cannot vouch for their order. On this exact tree they passed on arrival: `npx vitest run <the 6 files> --maxWorkers=4` -> exit 0, `Test Files  6 passed (6)`, `Tests  285 passed (285)` (`s2-baseline-readiness.txt`).
+
+For what THIS session added: order = audit the earlier files against the acceptance text -> write the five new test files (and the fixture append) -> run them against the UNCHANGED readiness code -> no implementation change was needed. Because the implementation already satisfied the new clauses, the new tests were GREEN on the first complete run; there is NO failing-assertion RED against a missing implementation, and I do not claim one. The first runs that did fail were test-authoring defects, corrected in the tests (never in `src/**`): `readiness-mapping-defects.test.ts` first run 6 failed | 52 passed (the pool-defect world gave the non-target cells no member groups; `s2-mapping-defects-run1.txt`); `readiness-reuse-identity.test.ts` first run 2 failed | 23 passed (the definition scan matched a ternary branch and the `resolveMapping` dependency adapter that delegates to `fns.resolveMapping`; `s2-reuse-identity-run1.txt`); `readiness-repo-readonly.test.ts` first run 1 failed | 8 passed (a world without base fees never calls `getCommonBaseFee`; `s2-repo-readonly-run1.txt`); `npx tsc --noEmit` once failed with 1 error (`TS2322` in `readiness-profile-defects.test.ts`, `noUncheckedIndexedAccess`; `s2-tsc-run1.txt`).
+
+The substitute for RED is mutation evidence that the new tests have teeth: three mutants (M second implementation, N read path calls a write method, P merged phrase in the render) SURVIVED all 285 earlier tests and are KILLED by the new files (table below).
+
+#### Evidence (outputs under `.moai/state/verify/m3e/`, gitignored; every vitest run with `--maxWorkers=4`, sequential, on the final tree; `src/server/readiness.ts` hash 9c2ac1e8… and `projection.ts` hash 181daf76… equal to the start of the session)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4     -> exit 0   (s2-final-server-boundary.txt)
+ Test Files  44 passed (44)
+      Tests  2793 passed (2793)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4     -> exit 0   (s2-final-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, unedited)
+$ npx tsc --noEmit                                              -> exit 0   (s2-final-tsc.txt, empty output)
+$ npx vitest run --coverage --maxWorkers=4                      -> exit 0   (s2-final-coverage.txt)
+ Test Files  76 passed (76)
+      Tests  4094 passed (4094)          (start of session: 71 files / 3842 tests as observed by the orchestrator; +5 files, +252 tests)
+$ node .moai/state/m3/covsum.mjs coverage/coverage-summary.json (s2-final-covsum.txt)
+ engine: statements 652/652, branches 558/558, functions 145/145, lines 606/606
+ server: statements 1237/1237, branches 685/685, functions 319/319, lines 1165/1165
+```
+
+`src/server/readiness.ts` and `src/server/domain/projection.ts`: 100% statements / branches / functions / lines each (`coverage-summary.json`). No coverage exclusions, no `skip` / `only` / disabled tests, no coverage-only test added (each new test asserts an AC clause). The seeds and trial counts are printed with `console.info` (shown with the verbose reporter: `s2-seed-output-verbose.txt`): `seed=20261016, 300` (equivalence matrix), `seed=20261019, 200` (output strings), `seed=20261016` (array order, candidate order).
+
+#### Mutation spot checks (scripted one-spot edit of `src/server/readiness.ts`, test run, restore from a backup, hash check after each; the baseline of the 11 readiness files is 537 tests = 285 earlier + 252 new; outputs `s2-mut<id>.txt` (all 11 files) and `s2-mut<id>old.txt` (the 6 earlier files only))
+
+| Mutation | All 11 readiness files | Earlier 6 files only |
+|----------|------------------------|----------------------|
+| (A) table P ignores bundle `SUSPENDED` | 10 failed \| 527 passed | 8 failed \| 277 passed |
+| (B) `calculationReady` ignores table S | 11 failed \| 526 passed | 9 failed \| 276 passed |
+| (C) `documentReady` merged with `calculationReady` (needs a READY cell) | 5 failed \| 532 passed | 2 failed \| 283 passed |
+| (D) unusable EXCLUDED (unreviewed / rejected) reported `READY (EXCLUDED_CONFIRMED)` | 26 failed \| 511 passed | 15 failed \| 270 passed |
+| (E) platform priority replaced by the first code seen (depends on candidate array order) | 3 failed \| 534 passed | 2 failed \| 283 passed |
+| (F) platform view READY only if ALL candidates usable | 3 failed \| 534 passed | 3 failed \| 282 passed |
+| (G) no-published-treatment check removed | 4 failed \| 533 passed | 4 failed \| 281 passed |
+| (H) default `isUsable` replaced by a local always-usable lambda | 171 failed \| 366 passed | 98 failed \| 187 passed |
+| (I) table M line sort removed (array-order dependent) | 3 failed \| 534 passed | 3 failed \| 282 passed |
+| (J) `documentReady` ignores table D | 97 failed \| 440 passed | 24 failed \| 261 passed |
+| (K) item states cached in a module-level map (DD-14 violation) | 8 failed \| 529 passed | 5 failed \| 280 passed |
+| (L) `EXCLUDED_CONFIRMED` shown as `confirmedExclusion: false` | 9 failed \| 528 passed | 8 failed \| 277 passed |
+| (M) behaviour-identical COPY of `checkGroupValues` (renamed, in a new `src/server` file) wired into `REAL_FUNCTIONS` | 4 failed \| 533 passed (`readiness-reuse-identity.test.ts`) | **0 failed \| 285 passed — survivor of the earlier suite** |
+| (N) `readReadiness` calls the write method `transaction` (writes nothing) | 1 failed \| 536 passed (`readiness-repo-readonly.test.ts`) | **0 failed \| 285 passed — survivor of the earlier suite** |
+| (P) render appends the line `clinic is ready for service` | 3 failed \| 534 passed (`readiness-documents-derived.test.ts`) | **0 failed \| 285 passed — survivor of the earlier suite** |
+
+15 mutants, 0 survivors against the final suite; 12 were also killed by the earlier six files alone. After every run the file was restored and compared with the backup (`복원 후 해시 원본과 같다` printed after each run); the temporary `src/server/zz-groupvalues-copy.ts` of (M) was deleted (`ls src/server | grep -c zz-` = 0).
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **SPEC AMBIGUITY (blocks real use of base-fee lines): a mapping that points at a common base fee cannot be approved or published.** design.md:157 and design.md:318 say a base-fee line goes through the same mapping judgement as a treatment and shares the `treatmentId` id space, and DD-23 table M counts base fees as lines. But `approve()` pins the TREATMENT version's fingerprint: `approval.ts:112` -> `pinnedFingerprint` (`approval.ts:87-93`) -> `currentTreatmentVersion` (`treatment-current.ts:15-21`) looks up `getTreatment(<base fee id>)`, which does not exist, and throws `TREATMENT_VERSION_ABSENT`; `bundle-publish.ts:120-123` would reject such a mapping at publish for the same reason. Proof test: `readiness-repo.test.ts` "공통 기본비용 줄에는 지금 매핑을 승인할 길이 없다" (observed `TREATMENT_VERSION_ABSENT`). Consequence: through the real services, a clinic whose current catalog holds any common base fee can never reach `calculationReady = READY` (its base-fee rows stay `MAPPING_ABSENT`); only the engine-level fixtures reach READY with base fees. The comment at `projection.ts:67` ("스펙 모호점으로 progress.md 에 올렸다") is correct; this item is that record. Needs an owner decision on how a base-fee mapping fixes its fingerprint (for example the base-fee code fingerprint `toEngineBaseFeeLine` already computes). Not changed here (scope: M3.E, approval / publish are closed D1 code).
+2. **SPEC AMBIGUITY: unresolved profile on a `SUSPENDED` bundle.** acceptance.md:220 (3) and design.md:1236 ("표 P(병원 보기)의 같은 칸 사유") versus design.md:1233 ("묶음의 가용성은 여기서 보지 않는다") disagree for a suspended bundle: table P clinic view says `RULE_BUNDLE_SUSPENDED`, the implementation (resolving the profile directly) gives `resolveProfile`'s code. The reported `calculationReady` and `documentReady` are identical either way (stage S comes first). If the owner wants the literal reading, table M would have to consult availability, contradicting the sentence at :1233.
+3. **Known limitation (not an acceptance gap): a bundle with a `null` profile entry makes readiness throw even when the bundle is `SUSPENDED`.** Observed with a throw-away probe (deleted): `estimate()` returns `RULE_BUNDLE_SUSPENDED` without reading items, while `computeReadiness` throws `TypeError` from the platform candidate scan (`isCandidate`) and from the table M profile resolution (`resolveProfile`, same `TypeError` as the engine gives an `ACTIVE` bundle, acceptance.md:103 AC-006i (i)). Unreachable through the repository path (`toEngineProfile` always returns objects); the M4 structural check on a loaded bundle (AC-006i) should also run before readiness if a raw snapshot can ever reach it. No test pins the throw.
+4. `calculationReady` is judged over ALL published lines (design.md:1257): a patient who picks only some treatments can be calculable while the cell is `NOT_READY`. By design.
+5. `CALC_RANGE_EXCEEDED` and `INVALID_NUMERIC_INPUT` are outside readiness (DD-24); the matrix amounts are kept small (asserted `< MAX_AMOUNT_WON / 1000` per trial).
+6. NOT IMPLEMENTED: the M4 HTTP 500 mapping of readiness-adjacent input errors and any real API / route integration of readiness; M7 permissions for reading readiness (design adds no admin API for it); M8's gate that consumes the pair.
+7. NOT VERIFIED: any DB adapter behaviour; behaviour under real concurrency (a readiness read while a suspension commits); the formal SPEC lint (the `moai` CLI is absent); CI. Only Windows 11 with Node v24.19.0 were run. `renderReadinessReport` is a human-readable report only; its wording is not an acceptance contract beyond "no merged phrase", "one line per cell", "stage and code on NOT_READY lines".
+8. The readiness CLI / report command and a persistence of reports are not part of M3.E and do not exist.
+
+### M3.F 최종 검증과 M3 종결 기록, 2026-10-19
+
+**Scope.** Closing record of milestone M3 (data model, lifecycle, repository interface with in-memory implementation, versions, publish validation, readiness). Branch `feature/SPEC-REIMBURSEMENT-001-m3-data`, created from the M2 tip `2589ce8`; Draft PR #1 (M1, head `b27bf38`) and Draft PR #2 (M2, head `2589ce8`) were read through GitHub REST before work resumed and were not changed. This section adds no code. Its inputs are the orchestrator's own runs on the final tree, the per-step sections M3.A to M3.E above, and the status-wording update of plan.md / acceptance.md (six stale `구현 안 됨` / `M3 · 미구현` markers and one M3 status line; nothing else in those files).
+
+**Owner decisions applied (2026-10-16, recorded in plan.md §E.10 and design DD-17 / DD-18).** #34 mapping authors are the platform insurance-rule staff (role `RV`), separate from hospital staff (`HA`). #31 an author may not approve their own work (typed domain error, state unchanged). #1 the database product stays deferred; M3 ships repository interfaces plus an in-memory implementation only. These are policy decisions, not the registration of real accounts, staff or approval records. Every id, name and approver in tests and fixtures is `TEST_FIXTURE`; no operating data exists anywhere in `src/` or `tests/`.
+
+#### Final verification (run by the orchestrator on the final tree; HEAD at run time `f4744e9` plus uncommitted plan.md / acceptance.md wording edits, which no test reads; always `--maxWorkers=4`; outputs under `.moai/state/verify/m3f/`, gitignored)
+
+```
+$ npx tsc --noEmit                                           -> exit 0 (empty output)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4  -> exit 0
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, no test file of M1/M2 edited)
+$ npx vitest run tests/server tests/boundary --maxWorkers=4  -> exit 0
+ Test Files  44 passed (44)
+      Tests  2793 passed (2793)
+$ npx vitest run --coverage --maxWorkers=4                   -> exit 0
+ Test Files  76 passed (76)
+      Tests  4094 passed (4094)
+```
+
+Per-folder coverage (`covsum.mjs` over `coverage/coverage-summary.json`):
+
+```
+src/engine: statements 652/652  branches 558/558  functions 145/145  lines 606/606   (unchanged from M2)
+src/server: statements 1237/1237  branches 685/685  functions 319/319  lines 1165/1165
+```
+
+No coverage exclusions, no `skip` / `only` / disabled tests. Compared with the M2 tip `2589ce8`: `src/engine/**`, `tests/engine/**`, `tests/fixtures/engine/**`, `package.json` and every existing file under `tests/boundary/**` are unchanged. Two deliberate changes outside `src/server/`, both from M3.A: `vitest.config.ts` (coverage now includes `src/server/**`) and one NEW file `tests/boundary/server-imports.test.ts` (server import boundary; added, no existing boundary test edited).
+
+#### Closing ACs by step (evidence tables are in the named sections; this table only locates them)
+
+| AC | Closed in | Level |
+|----|-----------|-------|
+| AC-007f, AC-009a, AC-009c, AC-010c, AC-011a, AC-011b, AC-011h, AC-011i | M3.D1 (publish services, versions, recovery), on the validators of M3.C | unit, in-memory repository |
+| AC-011d, AC-011e | M3.D2 (insurers, bundle suspend, rule scope, idle policy) | unit, in-memory repository |
+| AC-011c, AC-011j, AC-011k, AC-011l | M3.E (readiness tables P / M / D / S, `calculationReady`, `documentReady`) | unit, in-memory repository |
+
+These 14 ACs are the ones plan.md assigns to M3; no other AC is marked closed. AC-024a and AC-025b received evidence-only support from the domain self-approval rejection (M3.B) and stay open for M7. AC-007g, AC-007i, AC-008g are not M3 ACs and stay open.
+
+#### Contract points named by the owner, and where they are proven
+
+| Contract | Proven in |
+|----------|-----------|
+| Reorder of `groups` / `sharedLimitPools` / document `rules` with the ORIGINAL hash passes; a real content change is detected as `INTEGRITY_MISMATCH` | `tests/server/seal-roundtrip.test.ts` (profile and document rule set; hash input is the engine's `profileContent` / `documentRuleSetContent`, sealed with `canonicalDigest`) |
+| `profiles = null` and `mappings = null` rejected separately; bad container entries rejected; nothing stored | `tests/server/validate-bundle-form.test.ts` (describe "profiles · mappings 가 배열이 아닌 묶음 (각각 따로)"), `tests/server/publish-bundle.test.ts` (reject table rows `profiles = null`, `mappings = null`, item rows; each row compares the repository before and after and publishes the corrected bundle) |
+| Whitespace-only document reason rejected; empty `rules: []` allowed | `tests/server/publish-bundle.test.ts`, `tests/server/validate-bundle-docrules.test.ts` |
+| `calculationReady` and `documentReady` separate, equivalent to engine verdicts | M3.E section: `tests/server/readiness-derived.test.ts` (seeded matrix), `readiness-documents-derived.test.ts`, `readiness-reuse-identity.test.ts` |
+| M1 / M2 shared judgement, structure and hash-input functions reused, no second implementation | `tests/server/readiness-reuse-identity.test.ts`, `tests/server/readiness-reuse.test.ts`, server boundary scan |
+
+#### Not done (unchanged by M3)
+
+- M4: HTTP layer, HTTP 500 mapping, read-path structure check (AC-006i), real API integration, estimate service. NOT IMPLEMENTED, NOT VERIFIED.
+- M5 to M8, M7 permissions (clinic ownership, membership, 401 / 403), any database adapter or driver (DB product still deferred, §E #1), deployment, paid services.
+- Formal SPEC lint, `moai verify`, model profile resolution, session registry and handoff save: the `moai` CLI is absent on this machine, so these were not run. CI: none; only Windows 11 and Node v24.19.0 were run.
+- No full-SPEC audit was run in M3; the last audit result (iteration 5, FAIL 0.89, MP-7) is untouched and `plan_status` is unchanged.
+
+#### OPEN items collected from M3.B to M3.E (each needs an owner decision or later work; none is resolved here)
+
+1. **Common base fee lines cannot get an approved mapping.** Approval pins the TREATMENT version's fingerprint (`approval.ts` -> `pinnedFingerprint` -> `treatment-current.ts`), so a mapping that points at a common base fee id fails with `TREATMENT_VERSION_ABSENT`, and bundle publish rejects it for the same reason, while design.md:157 and :318 say base-fee lines go through the same mapping judgement. Through the real services a clinic whose catalog holds any common base fee therefore cannot reach `calculationReady = READY`. Evidence: M3.E section and `readiness-repo.test.ts` "공통 기본비용 줄에는 지금 매핑을 승인할 길이 없다". Needs an owner decision (how a base fee pins a fingerprint).
+2. **Self-approval compares the approver only with the version's author** (M3.B). A different `RV` who merely edited a draft may approve it. Kept because the owner's wording was "author != approver".
+3. **AC-011a "수정·삭제 시도 거절".** Immutability is proven at the repository (write-once, `IMMUTABLE_VERSION`, no delete operation, scanned by method name) and by the id-replay publish test. No service-level modify / delete function exists, so there is no separate service-level rejection test (M3.D1 note 9). The hash-contract part of AC-011a is proven as in the table above.
+4. Assigning a SUSPENDED bundle to a clinic scope is allowed `[not in docs]` (M3.D2 decision 5); insurer type of an existing id is immutable `[not in docs]` (decision 6); `affectedClinicCount` is an optional audit field that DD-18 does not list (decision 4).
+5. Table M on a SUSPENDED bundle: design.md:1233 says table M ignores availability, acceptance.md:220 (3) and design.md:1236 say to use the table P clinic-view reason. They differ only in the reason shown for an unresolved profile on a suspended bundle; the reported `calculationReady` / `documentReady` are identical because stage S comes first (M3.E).
+6. `computeReadiness` throws `TypeError` for a bundle containing a `null` profile entry even when the bundle is SUSPENDED, whereas `estimate()` returns `RULE_BUNDLE_SUSPENDED` without reading items. Unreachable through the repository path (publish rejects such bundles); M4's structure check (AC-006i) should run before readiness if a raw snapshot can ever reach it. No test pins the throw.
+7. Idle policy: role `HA`, 20-second floor (§E #16 pending), five screen keys, `completionHoldSeconds` without a default are taken from the documents as written; nothing here decides §E #12 / #16.
+8. The M3.E module and its first six test files were written by an earlier session; M3.E added tests and mutation evidence but there is no failing-assertion RED for them (stated in the M3.E section). Three mutants survived the first 285 tests and are killed by the final suite.
+
+#### Branch and PR hygiene
+
+M3 changes live only on `feature/SPEC-REIMBURSEMENT-001-m3-data`. Draft PR #1 and #2 were not edited and not merged; `main` was not touched; nothing was deployed; no paid service was used. The M3 pull request is separate, with the M2 branch as its base, so only M3 changes show.
+
+### M3 외부 검토 보완 ① 공통 기본비용 매핑 승인·게시 경로, 2026-10-19
+
+**Scope.** External-review item 1 for Draft PR #3 (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` at `9bc0b4a`, not committed by this step. Defect accepted as an M3 gap by the owner review: `approve()` (`approval.ts` `pinnedFingerprint` -> `treatment-current.ts`) and the rule-bundle publish stale check (`bundle-publish.ts`) looked up only treatments, so a mapping whose `treatmentId` was a common base fee id failed with `TREATMENT_VERSION_ABSENT` and a clinic whose catalog holds a base fee could never reach `calculationReady = READY` through the real services. The business decision is NOT open (plan.md §E #8 "정정 수용", design.md:157): a base fee gets the same coverage-mapping judgement as a treatment, the base fee is ALWAYS part of the hospital payment T, and a missing / unusable mapping keeps the existing hold contract on the benefit side only. This section completes the M3 path for that contract. **It closes NO new AC and adds NO AC id**; it gives additional evidence to AC-009a, AC-009c, AC-011b, AC-011j, AC-011l (AC-011c only indirectly, see the evidence table). **Supersedes the earlier text** in M3.B (line 1391), M3.D1 (line 1672), M3.E (line 2017) and M3.F OPEN item 1 (line 2085) saying "common base fee lines cannot get an approved mapping" / `TREATMENT_VERSION_ABSENT` for base fee mappings: that statement is no longer true as of this section (the old text is intentionally not edited; line numbers are those of the file before this section was inserted). Owner decisions #31 / #34 / #1 are intact (author != approver, `RV` authors mappings, in-memory repository only). NO M4 (HTTP, caching, 500 mapping, API) and NO M7 (permissions) work.
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `src/server/domain/entities.ts` | CHANGED. `CommonBaseFee.baseFeeId: string` (stable identity); `id` stays the immutable version id |
+| `src/server/fingerprint.ts` | CHANGED (additive). `COMMON_BASE_FEE_JUDGMENT_FIELDS = ['code','benefitType']`, `calcClassOfBaseFee`, `coverageFingerprintOfBaseFee` (built on the existing `coverageFingerprint`, `procedureCodes: []`) |
+| `src/server/coverage-target.ts` | NEW. `currentCoverageTarget(repo, targetId)` + `CoverageTarget`: the ONE "current coverage target" lookup (treatment first, base fee second, else `null`) |
+| `src/server/treatment-current.ts` | CHANGED. The selection rule is extracted as `pickCurrentVersion` (shared by treatments and base fees); `currentTreatmentVersion` behaves exactly as before |
+| `src/server/approval.ts` | CHANGED. `pinnedFingerprint` uses only `currentCoverageTarget`; same error code `TREATMENT_VERSION_ABSENT`, message says "치료 또는 공통 기본비용" |
+| `src/server/bundle-publish.ts` | CHANGED. The stale-fingerprint precondition uses only `currentCoverageTarget` (defect codes `TREATMENT_VERSION_ABSENT` / `FINGERPRINT_STALE` unchanged) |
+| `src/server/re-review.ts` | CHANGED. Shared body `triggerReReviewForTarget(deps, actor, targetId, fingerprint)`; `triggerReReview(deps, actor, version)` keeps its signature and delegates; NEW entry `triggerReReviewForBaseFee(deps, actor, fee)` |
+| `src/server/catalog-publish.ts` | CHANGED. Ownership step: two new typed defects per base fee; after the writes the re-review trigger runs for EVERY base fee version in the catalog (as for treatment versions) |
+| `src/server/validate/catalog.ts`, `src/server/publish-validate.ts` | CHANGED. `baseFeeId` non-empty string check (field path), duplicate `baseFeeId` in one catalog -> `DUPLICATE_BASE_FEE_ID` (added to `PUBLISH_DEFECT_CODES`) |
+| `src/server/publish-defects.ts` | CHANGED. `BASE_FEE_ID_COLLIDES_WITH_TREATMENT`, `BASE_FEE_ID_CLINIC_MISMATCH` added to `SERVICE_PUBLISH_DEFECT_CODES` |
+| `src/server/domain/projection.ts` | CHANGED. `toEngineBaseFeeLine`: `treatmentId = baseFeeId`, `treatmentVersionId = fee.id`, `calcClass = calcClassOfBaseFee(...)`, `coverageFingerprint = coverageFingerprintOfBaseFee(fee)`; the inline fingerprint and the inline derivation are removed |
+| `src/server/repo/interfaces.ts`, `repo/memory/memory-repository.ts`, `repo/memory/read-spy.ts` | CHANGED. `listCommonBaseFeeVersions(baseFeeId)` (write order, copies, empty when none, counted by the read spy); one id space enforced at the backstop: `putCommonBaseFee` rejects a `baseFeeId` equal to an existing treatment id, `saveTreatment` rejects an id equal to an existing `baseFeeId` (`DUPLICATE_KEY`, repository unchanged) |
+| `src/server/readiness.ts` | NOT CHANGED (it builds base fee lines from `catalog.baseFeeIds` through `toEngineBaseFeeLine`; verified working with the new line shape, see tests) |
+| `tests/fixtures/server/base-fee.fixture.ts` | NEW (all `TEST_FIXTURE`): clinic world with a base fee, base fee version factory, COVERED / EXCLUDED / no mapping through approve -> bundle publish -> PO scope, independent engine-input builder for the base fee line, estimate helpers |
+| `tests/server/base-fee-mapping-path.test.ts` | NEW, 12 tests (test group B) |
+| `tests/server/base-fee-versions.test.ts` | NEW, 16 tests (test group C) |
+| `tests/server/base-fee-identity.test.ts` | NEW, 22 tests (test group D) |
+| `tests/server/base-fee-fingerprint.test.ts` | NEW, 28 tests (test group E) |
+
+Existing files touched, with the reason (no assertion weakened or removed; no skipped test):
+
+| Existing file | Why |
+|---------------|-----|
+| `tests/fixtures/server/entities.fixture.ts` | `makeCommonBaseFee` must return the new required `baseFeeId`; it defaults to the version `id`, so every existing test that passes only `id` keeps its meaning |
+| `tests/server/readiness-repo.test.ts` | Test group A. The test "공통 기본비용 줄에는 지금 매핑을 승인할 길이 없다..." (asserted the defect as if it were the contract) is REPLACED by a test of the normal capability (a base fee mapping approves and pins the base fee fingerprint) plus a new describe with the real failure conditions (neither-treatment-nor-base-fee target at approve and at bundle publish -> `TREATMENT_VERSION_ABSENT`, nothing stored; self-approval -> `SELF_APPROVAL_FORBIDDEN`; stale pinned fingerprint at publish -> `FINGERPRINT_STALE`, then re-review + re-approval + publish). Five imports added |
+| `tests/server/repo-memory.test.ts` | One table row for the new read method: a test enumerates every `get*` / `list*` / `read*` method of the repository and the read-spy counter per name |
+
+No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**`, `tests/fixtures/engine/**` was edited; `package.json` and `vitest.config.ts` are untouched; `design.md` / `acceptance.md` / `plan.md` / `spec*.md` / `research.md` are untouched. New tests total 78 in 4 files; with +4 in `readiness-repo.test.ts` and +1 in `repo-memory.test.ts` the suite grew by 83 tests (4094 -> 4177 in the full run).
+
+#### Public API (new or changed)
+
+```ts
+// src/server/fingerprint.ts
+COMMON_BASE_FEE_JUDGMENT_FIELDS: readonly ['code', 'benefitType']
+calcClassOfBaseFee(benefitType: BenefitType): CalcClass            // BENEFIT -> GENERAL_BENEFIT, NON_BENEFIT -> GENERAL_NON_BENEFIT (the only place)
+coverageFingerprintOfBaseFee(fee: CommonBaseFee): string
+// src/server/coverage-target.ts
+type CoverageTarget = { kind: 'TREATMENT'; version: TreatmentVersion; fingerprint: string } | { kind: 'BASE_FEE'; fee: CommonBaseFee; fingerprint: string }
+currentCoverageTarget(repo, targetId: string): CoverageTarget | null   // approval, bundle publish and every other caller use ONLY this
+// src/server/re-review.ts
+triggerReReviewForTarget(deps, actor, targetId, fingerprint): ItemVersionRef[]
+triggerReReview(deps, actor, version: TreatmentVersion): ItemVersionRef[]      // signature unchanged, delegates
+triggerReReviewForBaseFee(deps, actor, fee: CommonBaseFee): ItemVersionRef[]
+// Repository
+listCommonBaseFeeVersions(baseFeeId: string): CommonBaseFee[]
+```
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **`[not in docs]` Stable identity `baseFeeId`.** DD-18 (design.md:929) lists the `CommonBaseFee` fields as "id, clinicId, 표시명, `benefitType`, 금액, 코드, `origin`" and the code comment said a changed price is issued under a NEW id. A mapping keyed by that id would be orphaned by a price-only change, which confuses a price change with a coverage-judgement change. So `CommonBaseFee` mirrors the treatment model: `id` = immutable VERSION id (like `TreatmentVersion.id`, engine line `treatmentVersionId`), `baseFeeId` = stable identity (like `treatmentId`; a base fee mapping's `treatmentId` is the `baseFeeId`; engine line `treatmentId`). The line shape change is internal: a base fee line's `coverageFingerprint` is byte-identical to the earlier inline computation for the same fee (same input to the same function), only `treatmentId` changed from the version id to `baseFeeId`.
+2. **`[not in docs]` Coverage-judgement fields of a base fee (closed list): `code` and `benefitType`.** DD-16 lists judgement fields for treatment versions only. `calcClass` is DERIVED from `benefitType` (`calcClassOfBaseFee`, one place, used by the fingerprint and by the engine line; there is no `NEEDS_REVIEW` for base fees). `amount`, `displayName`, `origin`, `clinicId`, `id`, `baseFeeId` are NOT judgement fields. A test lists every key of a base fee version and requires it to be a judgement field or a known non-judgement field, so a new field forces a decision.
+3. **One fingerprint function per target kind, one target lookup.** `coverageFingerprintOfBaseFee` is used by `currentCoverageTarget` (approval and bundle publish), `triggerReReviewForBaseFee` and `toEngineBaseFeeLine`. Selection of the "current version" is one function (`pickCurrentVersion`): the version listed in the clinic's current catalog version, else the latest written, else none. A base fee's clinic is read from its first-written version (catalog publish guarantees all versions share one clinic). Treatment is looked up first, base fee second; the repository id space makes this unambiguous.
+4. **Error and defect names unchanged.** `TREATMENT_VERSION_ABSENT` (error at approve, defect at bundle publish) and `FINGERPRINT_STALE` keep their codes; only the approve message wording says "치료 또는 공통 기본비용". The domain error list test passes unchanged. New defect codes only where needed: validator `DUPLICATE_BASE_FEE_ID`; service `BASE_FEE_ID_COLLIDES_WITH_TREATMENT`, `BASE_FEE_ID_CLINIC_MISMATCH`. Per base fee the ownership defects are reported in the order `BASE_FEE_CLINIC_MISMATCH` -> `BASE_FEE_ID_COLLIDES_WITH_TREATMENT` -> `BASE_FEE_ID_CLINIC_MISMATCH`; validator order inside a base fee entry is `id` -> `baseFeeId` -> `clinicId` -> ..., duplicates after `DUPLICATE_ID`.
+5. **`[not in docs]` Id-space backstop at the repository** (design.md:318 says treatment and base fee lines share one id space and ids do not overlap; design.md:171 (c) says the engine does not check a `treatmentId` present in both `lines` and `baseFeeLines`, a server guarantee left to M4). This step makes the STORED data safe: a `baseFeeId` equal to a treatment id, or a treatment id equal to a `baseFeeId`, is `DUPLICATE_KEY` and atomic. The M4 request-time check (c) is still M4. Not enforced (by choice): a base fee VERSION id vs a treatment id (they are different spaces; only `baseFeeId` reaches the engine as `treatmentId`), and "all versions of one `baseFeeId` share a clinic" at the repository (catalog publish enforces it with `BASE_FEE_ID_CLINIC_MISMATCH`).
+6. **Re-review for base fees uses the pinned fingerprint, not the previous version.** Same body as treatments (`triggerReReviewForTarget`): only `APPROVED` / `PUBLISHED` mappings of the target whose pinned fingerprint differs from the new version's fingerprint move to `UNDER_REREVIEW`, with reason `COVERAGE_JUDGMENT_FIELD_CHANGED`, history and audit entries by the publishing actor; approver and pinned fingerprint are kept until re-approval. A price-only / `displayName` / `origin`-only version moves nothing and records nothing. A catalog that omits a base fee does not touch its mappings.
+7. **Restore.** `restoreCatalogVersion` needed no change: it republishes copies of stored base fee versions, which now carry `baseFeeId`, through the same ownership and re-review path. Observed behaviour (tested, same as treatments): restoring an earlier catalog after a price-only change keeps the mapping `PUBLISHED` and puts T back; restoring after a judgement-field change leaves an already `UNDER_REREVIEW` mapping where it is until a different RV re-approves (the re-approval then pins the restored version's fingerprint); restoring a catalog whose base fee fingerprint differs from a current pin moves the mapping to `UNDER_REREVIEW`.
+8. **After a re-approval the mapping is `APPROVED`, not yet usable.** Readiness shows `MAPPING_UNREVIEWED` until a new bundle containing it is published (`APPROVED -> PUBLISHED`) and the PO assigns the scope. This is the existing lifecycle, asserted in the version tests, not a new rule.
+9. **HA review requests stay treatment-only** (`closeReviewRequestForMapping` already returns early for an id that is not a treatment); RV authors base fee mappings directly (#34).
+
+#### AC evidence (additional evidence only; no AC is closed or added by this section)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011j | `base-fee-mapping-path.test.ts`: `기본비용 줄: 준비 상태와 계산이 줄 단위로 같다` | Through approve (a different RV) -> bundle publish -> PO scope -> `readReadiness`: base fee row `READY`, `READY` with `confirmedExclusion` (EXCLUDED), `MAPPING_ABSENT`, `MAPPING_UNDER_REREVIEW`, and (versions file) `MAPPING_UNREVIEWED`; each row equals the hold code / state the independent `estimate()` gives that line at the READY cell |
+| AC-011l | same describe + `it.each` over COVERED / EXCLUDED / NONE | `calculationReady` equals the `estimate()` verdict for all 15 cells (`expectCalculationAgrees` plus an explicit "READY only at the profile cell and only when the base fee mapping exists"); `estimate()` input assembled independently of the service (`independentClinicInput`) |
+| AC-011j / AC-011l (T contract) | same file | `hospitalPayment` = treatments + base fee in all of: mapping present, absent (hold on that line only, `expectedInsurancePayout` null), `UNDER_REREVIEW`, EXCLUDED; `baseFeeIncluded` `INCLUDED` when registered, `NOT_REGISTERED` after a catalog without it |
+| AC-009a | `base-fee-versions.test.ts`: `보장 판단 필드(code, benefitType)가 바뀐 새 버전` ; `base-fee-fingerprint.test.ts` | Each judgement field alone (`code`, `benefitType`) moves the PUBLISHED mapping to `UNDER_REREVIEW` with history + audit; fingerprint differs; non-judgement fields never move it; trigger compares with the pinned fingerprint (a version 3 written without version 2 still moves it) and is idempotent; shared body for treatments and base fees |
+| AC-009c | `base-fee-versions.test.ts`: `가격만 바뀐 새 기본비용 버전` | Same `baseFeeId`, new version id, new amount: same fingerprint, mapping state record deep-equal, no `ITEM_REREVIEW` audit, readiness `READY`, `estimate()` T changes by exactly the price delta |
+| AC-011b | `base-fee-versions.test.ts`: `카탈로그 게시의 그 밖의 경로` | Restoring an earlier catalog version publishes a new-id copy including base fees, results stay consistent with the engine (3 scenarios above in decision 7) |
+| AC-011c | indirect only | Table P is untouched; in every scenario the single profile cell stays the only `READY` cell (`calculationReady` over 15 cells) |
+| (supporting, DD-15 / design.md:318) | `base-fee-identity.test.ts`, `base-fee-fingerprint.test.ts`, `readiness-repo.test.ts` | One id space and ownership (repository + catalog publish, full snapshot before / after, corrected request publishes); shared lookup rules; reuse proof (module-wrapped spies prove `approve`, `publishRuleBundle`, `toEngineBaseFeeLine` and the catalog re-review call the shared functions; source scans prove the single definitions and that `approval.ts` / `bundle-publish.ts` do not import `currentTreatmentVersion` or a fingerprint function) |
+
+#### RED before GREEN (exact statement)
+
+Order: (1) the fixture change (`baseFeeId` default), the new fixture `base-fee.fixture.ts`, the four new test files, the replacement test group A in `readiness-repo.test.ts` and the read-spy table row were written FIRST, with no change under `src/` (the repository had no `listCommonBaseFeeVersions`, no `coverage-target.ts`, no `baseFeeId`); (2) the RED run; (3) the implementation. RED run: `npx vitest run tests/server --maxWorkers=4` -> exit 1 (`red-server.txt`): `Test Files  6 failed | 38 passed (44)`, `Tests  50 failed | 2555 passed (2605)`. The six files: `base-fee-mapping-path`, `base-fee-versions`, `base-fee-identity`, `readiness-repo`, `repo-memory` (assertion failures / missing methods) and `base-fee-fingerprint` (failed to load: `Cannot find module '/src/server/coverage-target'`, so its 28 tests have only load-failure RED, no per-assertion RED). The behavioural RED that motivated the step is visible: the replaced test failed because `approve()` threw `TREATMENT_VERSION_ABSENT` from `pinnedFingerprint` (`approval.ts:90`), and 20+ service-path tests failed at `approveSpec` -> `approve` for the same reason. The group A tests that assert PRESERVED guards (neither-treatment-nor-base-fee target at approve and at publish, self-approval) passed before the implementation by design; they are the "real failure conditions still reject" half and are made meaningful by the mutation table (M1 breaks 34 tests including them). After the implementation: `npx tsc --noEmit` exit 0, and the first GREEN run was `Test Files  44 passed (44)`, `Tests  2633 passed (2633)` (`green-iter1.txt`). No test was changed between the RED run and the GREEN run. Test-authoring slips corrected BEFORE the RED run: a convoluted assertion in the 15-cell test was simplified, one bogus re-approve test was dropped, an unused import merged. No implementation was written before its failing test.
+
+#### Evidence (outputs under `.moai/state/verify/m3g1/`, gitignored; every vitest run with `--maxWorkers=4`, sequential, on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4     -> exit 0   (vitest-server-boundary.txt)
+ Test Files  48 passed (48)
+      Tests  2876 passed (2876)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4     -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, unedited)
+$ npx tsc --noEmit                                              -> exit 0   (tsc.txt, empty output)
+$ npx vitest run --coverage --maxWorkers=4                      -> exit 0   (vitest-coverage.txt)
+ Test Files  80 passed (80)
+      Tests  4177 passed (4177)          (before this step: 76 files / 4094 tests)
+$ node .moai/state/m3/covsum.mjs coverage/coverage-summary.json (covsum.txt)
+ engine: statements 652/652, branches 558/558, functions 145/145, lines 606/606
+ server: statements 1266/1266, branches 701/701, functions 330/330, lines 1191/1191
+```
+
+Engine stays at 100% (652/558/145/606) and `src/server` at 100% for what was added (before this step: 1237/685/319/1165). No coverage-only tests were added; no unreachable-by-design lines. No `skip` / `only` / disabled tests. `git -C <worktree> diff --check` printed only the LF-to-CRLF autocrlf warnings (the same warning every existing LF working-copy file produces) and no whitespace-error line.
+
+#### Mutation spot checks (scripted one-spot edit of the final tree, `npx vitest run tests/server --maxWorkers=4` each; baseline 2633 tests; the script restored every file from its in-memory original; `src-hashes-before.txt` equals `src-hashes-after.txt` over every `src/server/**` file; outputs `mutations/M*.txt`, rows in `mutations/summary.json`)
+
+| Mutation | Result (failed tests / files) |
+|----------|-------------------------------|
+| M1 `coverage-target.ts`: base fee branch skipped (approval / publish ignore base fees again) | 34 / 4 |
+| M2 `coverage-target.ts`: base fee version picked as latest written instead of the current-catalog version | 2 / 2 |
+| M3 `fingerprint.ts`: `amount` leaks into the base fee fingerprint (price-only change moves the mapping) | 17 / 4 |
+| M4 `fingerprint.ts`: `code` ignored in the base fee fingerprint (judgement change does NOT move the mapping) | 20 / 4 |
+| M5a `memory-repository.ts`: `putCommonBaseFee` accepts a `baseFeeId` equal to a treatment id | 1 / 1 |
+| M5b `memory-repository.ts`: `saveTreatment` accepts an id equal to a `baseFeeId` | 2 / 1 |
+| M6 `projection.ts`: engine base fee line computes its own fingerprint | 16 / 4 |
+| M7 `projection.ts`: base fee line amount forced to 0 (hospital payment loses the base fee) | 3 / 3 |
+| M8 `catalog-publish.ts`: re-review trigger skipped for base fees | 8 / 2 |
+| M9 `bundle-publish.ts`: stale fingerprint check disabled | 2 / 2 |
+| M10 `catalog-publish.ts`: other-clinic `baseFeeId` no longer rejected | 2 / 1 |
+| M11 `projection.ts`: engine line `treatmentId` = version id instead of `baseFeeId` | 16 / 3 |
+
+All 12 mutants are killed. Limit: "the engine excludes a held base fee from T" cannot be mutated here because `src/engine/**` is out of bounds for this step; M7 is the projection-level analogue and the T-invariance tests assert the engine behaviour (T = 25 000 in all four mapping states).
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Spec wording to update by the document owner (not edited here).** design.md:929 (DD-18 `CommonBaseFee` field list) should add `baseFeeId` and say `id` is the version id; DD-16 (judgement fields) and DD-15 should add the base fee judgement fields (`code`, `benefitType`; `calcClass` derived); design.md:157 / :318 / :1233 should say a base fee mapping's `treatmentId` is the `baseFeeId`. plan.md §E #8 text is consistent with the implementation; the M3.B / M3.D1 / M3.E / M3.F texts saying base fee mappings cannot be approved are superseded by this section.
+2. **M4 still owns design.md:171 (c)** (the same `treatmentId` in both `lines` and `baseFeeLines` of an estimate request). This step only guarantees that stored treatment ids and `baseFeeId`s cannot collide; request-level validation and the HTTP 500 mapping are NOT IMPLEMENTED.
+3. **Catalog `changeSummary.baseFeesChanged`** still compares version ids, so a price-only new base fee version reports `true` (a change of the catalog's base fee set). Left as is `[not in docs]`; no priceChangedBaseFeeIds list exists in DD-14.
+4. NOT IMPLEMENTED: M4 to M7, DB adapter, HTTP, clinic ownership / membership checks (AC-022a), deployment, merging, committing. NOT VERIFIED: any DB behaviour; asynchronous transactions; real concurrency; lint (no lint script and no `moai` CLI on this machine); CI; only Windows 11 and the local Node were run.
+
+### M3 외부 검토 보완 ② 재승인 정보와 캐시 계약 회귀 시험, 2026-10-19
+
+**Scope.** External-review item 2 (code side) for Draft PR #3 (cycle_type = tdd), on branch `feature/SPEC-REIMBURSEMENT-001-m3-data` at `76646d3`, not committed by this step. Review finding: `ItemStateSnapshot` carries `state`, `approver` and `approvedFingerprint`; they live in the item STATE record (`repo.readItemStates`), not in the immutable item content (`repo.getItemVersion`), and `domain/projection.ts` composes immutable content plus freshly read state into the engine snapshot. A re-approval (`UNDER_REREVIEW -> APPROVED`, `approval.ts` `approve`) writes a NEW approver and re-pins a NEW fingerprint, while the rule bundle version (`id`, `itemRefs`, `contentHash`) and every item content stay unchanged. design.md DD-14 still lists approver and fingerprint as immutable / cacheable content; the document owner corrects the wording separately (this step does not edit design.md, acceptance.md, plan.md, spec*.md or research.md). **This step is a regression proof in code only. It changes NO production code, closes NO new AC and adds NO AC id.** The implementation already matched the corrected contract; the new tests pin it. NO M4 work (no HTTP, no cache layer, no routes, no 500 mapping). Owner decisions #31 / #34 / #1 are intact.
+
+The contract the tests pin:
+
+| Kind | Items | Cache rule |
+|------|-------|------------|
+| Immutable, cacheable | item version content (`content`, `contentHash`, header fields such as `origin`, `validity`, `policySources`, author), rule bundle version (`id`, `itemRefs`, `contentHash`) | may be served from a cache keyed by (bundle id, `contentHash`) |
+| Read fresh on every composition, composed TOGETHER | `state`, `approver`, `approvedFingerprint` (item level), plus bundle availability `status` | never cached; one `readItemStates` per composition |
+
+#### What was built
+
+| File | Change |
+|------|--------|
+| `tests/server/reapproval-cache-contract.test.ts` | NEW, 32 tests per target x 2 targets = 64 tests (`describe.each` over a treatment mapping and a common base fee mapping) |
+| `tests/fixtures/server/reapproval.fixture.ts` | NEW (all `TEST_FIXTURE`): the two targets, the test-side "cache" (`cacheBundle` = a deep copy of one `getRuleBundleVersion` + `getItemVersion` read), `composeFromCache` (cached content + `readItemStates` + `getBundleStatus` through `projection.ts`; reads NO content), step helpers `stepOne / stepTwo / stepThree / stepFive`, engine verdict helpers |
+
+No file under `src/**` was edited (hash proof below). No file under `src/engine/**`, `tests/engine/**`, `tests/boundary/**`, `tests/fixtures/engine/**` was edited; `package.json`, `vitest.config.ts`, design.md, acceptance.md, plan.md, spec*.md and research.md are untouched. Existing fixtures are reused unchanged (`publishedBaseFeePath`, `base-fee.fixture.ts`, `governance.fixture.ts`, `versioning.fixture.ts`).
+
+#### Scenario S (every step goes through the services; no direct repository state injection)
+
+Principals: author `TEST_FIXTURE_RV_AUTHOR`, first approver A1 = `TEST_FIXTURE_RV_APPROVER`, re-approver A2 = `TEST_FIXTURE_RV_APPROVER_2` (a test asserts the three differ), bundle publisher `TEST_FIXTURE_RV_PUBLISHER`, catalog publisher `TEST_FIXTURE_HA_1`, scope `TEST_FIXTURE_PO_1`, suspender `TEST_FIXTURE_RV_SUSPENDER`. Path: catalog publish -> author -> submit -> approve (A1) -> bundle publish (X) -> PO scope -> readiness `READY`.
+
+| Step | What the tests do and assert |
+|------|------------------------------|
+| 1 | Read bundle X first and keep a deep copy of what a cache would hold (bundle record + the content records of all its items). Negative control: a deep copy of the state snapshots read at that time (mapping `PUBLISHED`, A1, F1). Assert content records have no `state` / `approver` / `approvedFingerprint` key (3 item kinds), the bundle record keys are exactly `id, itemRefs, contentHash, publishedBy, publishedAt`, and the stale copy equals `{PUBLISHED, A1, F1}` |
+| 2 | HA publishes a catalog with a new version whose coverage-judgement field changed (treatment: `treatmentCode`; base fee: `code`). Fresh state read: `UNDER_REREVIEW`, approver and fingerprint still A1 / F1. X `id` / `contentHash` / `itemRefs` deep-equal the cached copy, `bundleContentHashOf` recomputed from storage equals it, cached content deep-equals a fresh `getItemVersion` read, readiness row and `estimate()` both give `MAPPING_UNDER_REREVIEW` |
+| 3 | A2 re-approves. Fresh read: `APPROVED`, approver `{A2, 2026-10-20T09:00:00.000Z}`, fingerprint F2 != F1 and equal to the fingerprint of the NEW current version. X unchanged vs the cache, content unchanged (and content has no `approver` / `approvedFingerprint`). History keeps the A1 / F1 rows and appends `APPROVED, A2, F2` (full tuple list asserted); audit shows `ITEM_APPROVE(A1)`, `ITEM_REREVIEW(HA_1)`, `ITEM_APPROVE(A2)` in that order |
+| 4 | Compose the engine snapshot two ways. (a) cached content + FRESH state: mapping `APPROVED`, A2, F2. (b) cached content + the stale copy: `PUBLISHED`, A1, F1. Engine verdicts differ: (a) `MAPPING_UNREVIEWED`, (b) `MAPPING_UNDER_REREVIEW` (the stale F1 no longer equals the line's fingerprint). The readiness loader's bundle deep-equals composition (a) (one composition path). Key-shape assertion: composed keys = content keys + `state, approver, approvedFingerprint`. Planting fake `state` / `approver` / `approvedFingerprint` values into the cached content changes nothing in the composed result (they come only from the state record) |
+| 5 | Lifecycle continuation, see "Observed semantics" below |
+| 6 | Read spy: composing from the cache calls `readItemStates` exactly once per composition and `getItemVersion` / `getRuleBundleVersion` zero times; the readiness loader calls `readItemStates` once per bundle per load (second load doubles it); one cache object composed three times across `UNDER_REREVIEW -> APPROVED -> PUBLISHED` returns the new state / approver / fingerprint each time, the cache object stays deep-equal to its pre-sequence copy, and no invalidation call exists or is needed |
+| 7 | Suspend bundle X: item states, approvers, fingerprints and item histories are unchanged (deep-equal before / after), X's record equals the cached copy, composition shows `status SUSPENDED` read fresh while the mapping is still `PUBLISHED, A2, F2`; the clinic scoped to X reads `RULE_BUNDLE_SUSPENDED`, and after the PO scopes it to X2 it is `READY` for the same items |
+
+#### Observed semantics of step 5 (plain words; read from `bundle-publish.ts` / `lifecycle.ts` and confirmed by tests, nothing invented)
+
+1. After the re-approval the mapping is `APPROVED`, which the engine does not accept: while bundle X is still `ACTIVE` and the clinic still points at X, the line is held with `MAPPING_UNREVIEWED`. Bundle X itself is not touched by the re-approval.
+2. The only way back to `PUBLISHED` is publishing a bundle that contains the item: `publishRuleBundle` moves every `APPROVED` item of the request to `PUBLISHED`. There is no operation that "re-publishes" X (a published bundle is write-once); publishing the same item refs gives a NEW bundle X2 (new id).
+3. X2's `contentHash` EQUALS X's (the hash is defined over the sorted item refs and the digests of the stored item content; it does not read state, approver, fingerprint, bundle id, time or publisher). X2's `itemRefs` equal X's. X's record is unchanged and X stays `ACTIVE`. The publish does not mark any earlier item version `SUPERSEDED` (the existing `@MX:NOTE` in `bundle-publish.ts`).
+4. Item state is shared across bundles. So after X2 is published, bundle X becomes usable again WITHOUT any action on X: a clinic whose scope still points at X reads `READY` (scope bundle id is still X) and the engine estimates the line. The mapping now carries A2 and F2. A clinic scoped to X2 sees the identical item states; composing X and X2 from their caches differs only in the bundle id.
+5. Consequence worth knowing: nothing forces anyone to publish X2. Until some RV publishes a bundle containing the re-approved mapping, every bundle with that item stays held for that line, and publishing ANY bundle that contains it (not only a copy of X) also returns it to `PUBLISHED`.
+6. A stale fingerprint alone blocks even a `PUBLISHED` item: after step 5, the composition with the stale state copy (`PUBLISHED`, A1, F1) is held with `MAPPING_UNDER_REREVIEW` while the fresh composition estimates the line. This is the concrete reason `state`, `approver` and `approvedFingerprint` must be read fresh and together.
+
+History after step 5 (asserted): `DRAFT, REVIEW_REQUESTED, APPROVED(A1,F1), PUBLISHED(A1,F1), UNDER_REREVIEW(A1,F1), APPROVED(A2,F2), PUBLISHED(A2,F2)`.
+
+#### Decisions and assumptions (`[not in docs]` = design / acceptance are silent)
+
+1. **`[not in docs]` The "cache" is test-side only.** There is no cache layer in `src/`. `cacheBundle` is a deep copy of repository reads and `composeFromCache` is the composition an M4 server would do from such a cache; the readiness loader (the real composition path) is compared to it by deep equality. Content reads may be repeated or cached; the tests do not require a cache.
+2. **`[not in docs]` One judgement field per target.** Treatment: `treatmentCode`; base fee: `code`. The other judgement fields (`procedureCodes`, `benefitType`, `calcClass`) are covered by `re-review.test.ts`, `base-fee-versions.test.ts` and `base-fee-fingerprint.test.ts`; `calcClass: NEEDS_REVIEW` was deliberately not used here because it adds an unrelated classification hold to the verdicts.
+3. **`[not in docs]` Composition ignores unknown keys planted in content for kinds that do not have the field.** `state` and `approver` are always taken from the state record for all three kinds, and a mapping's `approvedFingerprint` always from the state record (a planted value is overridden). A planted `approvedFingerprint` key on a PROFILE or DOCUMENT_RULE_SET content record is not an engine field and passes through as an unknown content key; it cannot be produced through the services. My first version of the planting test planted it on every kind and failed on that (2 of 64 tests); the test was narrowed to plant the mapping-only field only on mappings. This is a test-authoring correction, not a production defect, and no `src/` file was changed.
+4. **Audit sequence is part of the contract check** (step 3): the re-approval is a second `ITEM_APPROVE` entry rather than an edit of the first; nothing is overwritten silently.
+5. **Document wording left to the document owner:** design.md DD-14 / DD-15 / DD-17 text that treats approver and `approvedFingerprint` as immutable cacheable content; the corrected statement is the table at the top of this section. Already noted in `items.ts`'s header comment from M3.B.
+
+#### AC evidence (additional evidence only; no AC is closed or added by this section)
+
+| AC | Test file / describe | What is checked |
+|----|----------------------|-----------------|
+| AC-011a | `reapproval-cache-contract.test.ts`: steps 1, 2, 3, 5 | The bundle content hash is unchanged by approver / fingerprint / state changes and recomputes equal from storage; X2 over the same item refs has the same hash as X; bundle record is write-once and equal to the cached copy |
+| AC-009a | same: steps 2, 3 | Judgement field change -> `UNDER_REREVIEW` (history + audit), re-approval by a different RV re-pins the fingerprint to the new current version and writes the new approver, the old values stay in the history |
+| AC-011m / AC-011n (data-layer part only, M3) | same: steps 4, 5, 6 | Cached content + freshly read state reflects `UNDER_REREVIEW` / `APPROVED` / `PUBLISHED` on the next composition with no invalidation and the same bundle id / hash; the HTTP 200 / 409 behaviour is M4 |
+| AC-011p (data-layer part only, M3) | same: step 5 | Item state is shared by two bundles containing the same item version; bundle X and X2 compose to the same item states |
+| AC-011e (additional) | same: step 7 | Suspension is a bundle-level availability read fresh, item-level state / approver / fingerprint unchanged |
+
+#### RED before GREEN (exact statement)
+
+Order: the fixture and the test file were written FIRST; no change under `src/` was made at any time. The contract was already implemented (`projection.ts`, `approval.ts`, `re-review.ts`, `bundle-publish.ts`, the memory repository), so there was no failing run caused by missing production behaviour and **no behavioural RED exists for this step**. The first run (`first-run.txt`) was `Tests  2 failed | 62 passed (64)`: the 2 failures were my own over-broad planting assertion (decision 3), fixed in the test; 62 tests passed on their first run. Because passing-on-first-run says nothing about teeth, the proof that the tests can fail is the mutation table below (11 production mutants, all killed, each by the new file). No implementation was written before a failing test because no implementation was written.
+
+#### Evidence (outputs under `.moai/state/verify/m3g2/`, gitignored; every vitest run with `--maxWorkers=4`, sequential, on the final tree)
+
+```
+$ npx vitest run tests/server tests/boundary --maxWorkers=4     -> exit 0   (vitest-server-boundary.txt)
+ Test Files  49 passed (49)
+      Tests  2940 passed (2940)         (before this step: 48 files / 2876 tests; +1 file, +64 tests)
+$ npx vitest run tests/engine tests/boundary --maxWorkers=4     -> exit 0   (vitest-engine-boundary.txt)
+ Test Files  36 passed (36)
+      Tests  1544 passed (1544)          (M1/M2 regression, unedited)
+$ npx tsc --noEmit                                              -> exit 0   (tsc.txt, empty output)
+$ npx vitest run --coverage --maxWorkers=4                      -> exit 0   (vitest-coverage.txt)
+ Test Files  81 passed (81)
+      Tests  4241 passed (4241)          (before this step: 80 files / 4177 tests)
+$ node .moai/state/m3/covsum.mjs coverage/coverage-summary.json (covsum.txt)
+ engine: statements 652/652, branches 558/558, functions 145/145, lines 606/606
+ server: statements 1266/1266, branches 701/701, functions 330/330, lines 1191/1191
+```
+
+Coverage is unchanged (no `src/` change). No coverage-only tests; no `skip` / `only` / disabled tests.
+
+#### Mutation spot checks (scripted one-spot edit of the final tree, `npx vitest run tests/server --maxWorkers=4` each; baseline 2940 tests; the script restored every file from its in-memory original; `src-hashes-before.txt` equals `src-hashes-after.txt` over all 40 `src/server/**` files; outputs `mutations/M*.txt`, rows in `mutations/summary.json`, script `.moai/state/m3/mutate-m3g2.mjs`)
+
+| Mutation | Failed tests total / files | Failed in the new file (of 64) |
+|----------|----------------------------|--------------------------------|
+| M1 `projection.ts`: `approver` taken from the content record | 351 / 14 | 64 |
+| M2 `projection.ts`: mapping `approvedFingerprint` taken from the content record | 341 / 13 | 64 |
+| M3 `projection.ts`: `state` taken from the content record | 32 / 7 | 12 |
+| M4 `memory-repository.ts`: `readItemStates` result cached per repository instance | 143 / 15 | 56 |
+| M5 `approval.ts`: `approve()` does not re-pin the fingerprint on re-approval | 36 / 6 | 28 |
+| M6 `approval.ts`: `approve()` keeps the old approver on re-approval | 22 / 4 | 16 |
+| M7 `bundle-publish.ts`: bundle `contentHash` recomputed to include item state | 18 / 4 | 8 |
+| M8 `re-review.ts`: the re-review transition clears the approver | 12 / 2 | 8 |
+| M9 `readiness.ts`: loader reuses the states of an earlier load of the same bundle | 8 / 4 | 2 |
+| M10 `bundle-publish.ts`: publish does not move `APPROVED` items back to `PUBLISHED` | 185 / 9 | 26 |
+| M11 `memory-repository.ts`: the state history entry loses the approver | 19 / 7 | 4 |
+
+All 11 mutants are killed, and each is killed by the new file. Limits: the mutants are one-spot edits of the in-memory implementation; they do not prove the absence of other cache bugs. The planted-content test (decision 3) is the only guard against a mutant that reads a planted content key for kinds other than the mutated one; a mutant that takes `approvedFingerprint` for a PROFILE from content would not be caught because the field does not exist on profiles.
+
+#### M4 cache-hit test criteria to carry forward (for the document owner to link into the specification; testable sentences, NOT implemented or verified here)
+
+1. Item content (`content`, `contentHash`, header fields) and the rule bundle version (`id`, `itemRefs`, `contentHash`) may be served from a cache keyed by (bundle id, `contentHash`). A cache hit never changes the response for a request whose state has not changed.
+2. `state`, `approver`, `approvedFingerprint` and the bundle availability `status` are read on every request and composed together into the engine snapshot; none of the four is ever served from the content cache.
+3. A cache hit for content still triggers exactly one `readItemStates` call per request (per bundle used) and one availability read; a request that served content from the cache and skipped the state read is a failure.
+4. After a re-approval (`UNDER_REREVIEW -> APPROVED`, then publication of a bundle containing the mapping) the next request returns HTTP 200 and the response carries the same `ruleBundleVersion` id and `contentHash` as before when the clinic's scope still points at the original bundle, with NO 409 and no cache invalidation call; the engine uses the new approver and the new `approvedFingerprint`.
+5. Between the re-approval and the publication of a bundle containing the mapping, the next request returns HTTP 200 with the line `ON_HOLD` and `MAPPING_UNREVIEWED` (state `APPROVED`), again with the unchanged bundle id and hash and no 409.
+6. Serving a state snapshot older than the request (stale state, stale approver or stale fingerprint) is a failure: with a cached content and a state copy from before the re-approval, a request must not return the result that stale copy would give (the stale `PUBLISHED, A1, F1` copy gives `MAPPING_UNDER_REREVIEW` after a judgement-field change, the fresh state gives `ESTIMATED`).
+7. Two bundles containing the same item version return the same item state to their clinics; changing the state through the domain service is reflected for both on their next request.
+8. Suspending a bundle changes only that bundle's availability: item state / approver / fingerprint are unchanged and a clinic scoped to another bundle with the same items is unaffected.
+
+#### OPEN items / NOT IMPLEMENTED / NOT VERIFIED
+
+1. **Spec wording to update by the document owner (not edited here):** DD-14 (cache contract) should say approver and `approvedFingerprint` are item STATE read per request, not cacheable content; DD-15 / DD-17 should say a re-approval writes a new approver and re-pins the fingerprint, and the bundle `contentHash` does not change; acceptance wording for AC-011m..p may reference the M4 criteria above.
+2. **Owner may want a rule for the `APPROVED`-but-unpublished gap** (observed semantics 5): today re-approval does not republish anything, so a bundle stays held for that line until some RV publishes a bundle containing the item. Not changed here (no document requires otherwise).
+3. NOT IMPLEMENTED: M4 caching, HTTP, routes, 500 mapping; M5 to M7; DB adapter; clinic ownership / membership; deployment; merging; committing. NOT VERIFIED: any real cache behaviour, concurrency (a state change between the content read and the state read), a DB; lint (no lint script and no `moai` CLI on this machine); CI; only Windows 11 and the local Node were run. The case of a re-approval that lands between two requests is the same as step 6 of the scenario; races inside a single request are not modelled by the synchronous memory repository.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_
