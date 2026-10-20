@@ -3004,6 +3004,183 @@ The two sentences that follow-up 1 left unchanged ("Other stale wording noticed 
 5. DD-14 items 2-7 of "구현 선택, 소유자 확인 필요 (M4)" are still open (six items). AC-019c and AC-021d are still evidence only and not closed.
 6. The correction of the two stale sentences rests on reading the code and tests and on one two-file vitest run in this step; the DB-backed publish path, production data and other platforms are not verified and are stated as such in the corrected sentences.
 
+### M5 키오스크 세션 저장소와 상태 기계 (M5.A~M5.D), 2026-10-20
+
+**Scope.** The screenless kiosk state machine: session store, screens and transitions, overlays, idle timers, input-change invalidation, display settings, return context, the calculation-request lifecycle and the catalog/options refresh lifecycle. Branch `feature/SPEC-REIMBURSEMENT-001-m5-kiosk-state`, worktree `bodam-wt-m5`. No screen is rendered; rendering is M6. Everything is verified at unit and integration level on a fake clock and a fake transport; the only real server code exercised is the M4 Route Handlers called in-process (200, 409, and 422 TREATMENT_NOT_PUBLISHED round trips). This record was written before the M5 commit, from the final working tree.
+
+#### Stage records
+
+| Stage | What it built |
+|-------|---------------|
+| M5.A | A pure `reduce(state, event, env)` in `machine.ts` with an `EVENT_SPECS` table, `selectors.ts`, the imperative shell `controller.ts`, and `idle.ts` (idle schedule). Covers screens and transitions, overlays (ResetConfirm, TimeoutDialog), idle timers, input-change invalidation, display settings and return context. |
+| M5.B | `request.ts`: the pure request lifecycle, where `settleRequest` is the only place that sets `activeRequest` to null. `request-effects.ts`: the shell with an `AbortController` and a timer. DD-19 outcome mapping; the six-field request body; `requestId` exists only in memory. |
+| M5.C | `refresh.ts` and `refresh-effects.ts`: `refreshState`, `activeRefresh`, `settleRefresh`, atomic apply only after both GETs (catalog and options) have arrived, two GETs under one 15 s timer, `refreshNotice`, and the `RETRY_REFRESH` event. |
+| M5.D | Fixes from the independent review (see the review section): F1 timer delays clamped to 2^31-1 ms through `timerDelay` in `deps.ts`; F2 strict validation of the amounts in a 200 body; F3 `START` creates a fresh empty session but keeps display settings; F6 the boundary-scan exemption narrowed to `src/app/kiosk/state/deps.ts`; F8 the default transport uses `credentials: 'omit'` and `cache: 'no-store'`. |
+
+**Source files (15, all under `src/app/kiosk/state/`):** `api-types.ts`, `controller.ts`, `defaults.ts`, `deps.ts`, `display.ts`, `events.ts`, `idle.ts`, `machine.ts`, `refresh-effects.ts`, `refresh.ts`, `request-effects.ts`, `request.ts`, `selectors.ts`, `session-store.ts`, `steps.ts`.
+
+**Tests:** 27 files under `tests/kiosk/state/`, of which 26 are test files and one (`refresh-helpers.ts`) is a shared helper; plus 3 fixture files under `tests/fixtures/kiosk/` (`clinic.fixture.ts`, `state.fixture.ts`, `transport.fixture.ts`). Counts are from a Glob of the tree in this documentation step.
+
+#### Tracked-file edits outside the kiosk folders
+
+`git diff` (read in this step) shows two tracked files changed, 4 insertions and 2 deletions in total: `tests/boundary/engine-module-identity.test.ts` and `tests/boundary/estimate-surface.test.ts`. Each got one Korean comment and one changed line. The server-side outbound-call scan (`appFiles`) now excludes only `src/app/kiosk/state/deps.ts`, because the kiosk default transport legitimately uses `fetch`. The kiosk-side request-static and purity tests restrict `fetch` to `deps.ts`. M7's closure of AC-021d must treat `src/app/kiosk` the same way (exempt `deps.ts` only, nothing else under `src/app/kiosk`).
+
+#### M5 AC trace table
+
+Source: `.moai/state/verify/m5c/ac-evidence.md`, refreshed after M5.D. Common caveats for every row: time is a vitest fake clock, so real browser timer throttling is unobserved; touch and key input are modelled as the `INTERACTION` event and named button events, so no DOM listener is exercised; the transport is an injected fake (or the real Route Handlers in-process), never a browser `fetch`; orientation exists only as a state value. All test files are under `tests/kiosk/state/`. Test names are shortened.
+
+**(A) The 21 AC that plan.md assigns to M5 as closing**
+
+| AC | Main test files / cases | What remains unverified |
+|----|-------------------------|-------------------------|
+| AC-012g | machine-transitions (K03 previous returns to K02b with selection kept; steps 2-4 keep earlier values) | common caveats only |
+| AC-014a | invalidation (changing the generation clears derived data and bumps inputRevision; result screens unreachable until a new confirm; exhaustive reachable-screen search); DD-08 row table | the search covers input-phase events only; server-side recomputation is not part of this AC |
+| AC-014b | invalidation (adding or removing a treatment clears derived data) | none |
+| AC-014d | invalidation (same-value reselect, page change, large-text toggle keep the result) | none |
+| AC-015a | idle-timers (AC-015a block); idle-policy-integration (AC-015i cycle checks) | real browser timers |
+| AC-015b | idle-timers (AC-015b block; result, not-covered, hold, basis, documents screens in both orientations; never K06) | orientation is a state value only |
+| AC-015c | idle-timers (AC-015c block); request-overlays (AC-015p cases for the request-driven path) | the AC-015c block reaches Calculating and KXX by constructed state |
+| AC-015d | idle-timers (AC-015d block); event-classes; request-overlays and refresh-overlays (`lastInteractionAt` unchanged by server outcomes) | real touch and key listeners (M6); non-button touches modelled only as INTERACTION |
+| AC-015h | idle-timers (AC-015h block: K00 has no timer, K06 with null hold stays) | none |
+| AC-015i | idle-policy-integration (real catalog handler idlePolicy drives the timers); idle-policy; refresh-lifecycle (AC-020d) | admin API and the 20 s floor validation (AC-023d, M7) |
+| AC-016h | request-lifecycle (a late result of attempt A changes nothing while retry B runs) | none |
+| AC-016i | request-lifecycle (cancel protected by requestId even when abort is a no-op: 4 reset ways plus expiry, 6 late outcomes) | input-change cancellation is exercised from a constructed state; "new patient session" is the PAGE_RESTORED/START path |
+| AC-016j | request-lifecycle (15 endings leave nothing behind; replacement by input change or a new attempt); request-static (settleRequest is the only place that releases `activeRequest`; screen changes from outcomes live only in request.ts); request-settle (pure guards, 200-body amount validation); refresh-lifecycle (AC-020g for item 8) | item 7 asks for a recorded call order of settleRequest; it is not implemented as a spy (no test-only hooks), and listener-visible state, timer and abort counts are asserted instead |
+| AC-016k | request-lifecycle (requestId absent from body, headers, URL); request-static; request-integration (six-field body accepted by the real handler); default-transport (stubbed `fetch`: no marker, credentials omit, cache no-store) | no real browser network tap; the injected transport and a lexical `fetch` restriction stand in for it |
+| AC-016l | request-lifecycle (logs and analytics carry no requestId and only stage-level anonymous fields, with a count>0 control); request-static | the default log sink is a no-op, so no real console or error-reporting adapter was tested |
+| AC-016o | refresh-lifecycle (refreshId absent from GET URLs, headers, bodies, logs, analytics, with a control group); request-static; purity | item 4 is a lexical scan (aliasing is not caught); browser storage dumps are AC-016m (M6) |
+| AC-020c | refresh-lifecycle (no calculation request while a refresh is needed: RUNNING and FAILED, KXX retry, several treatments) | the rendered button is M6; "active value" is the state-derived `canRequestEstimate` |
+| AC-020d | refresh-lifecycle (apply only after both responses, one subscriber notification; removed treatments, price and options-version changes; notice cleared on next input change); refresh-settle | the loading indicator and removal wording are M6; they exist as `refreshState` and `refreshNotice` |
+| AC-020e | refresh-lifecycle (14 failure shapes change nothing; first failure wins; inline retry with a new refreshId; no calculation request) | inline notice and retry are the `selectRefresh` flags, not rendered; timeout value is still plan.md §E #21 |
+| AC-020f | refresh-lifecycle (late results of refresh A cannot touch refresh B; idempotent settle); refresh-settle | the literal scenario "A timed out, retry, then four late calls" is the union of two tests, not one scenario |
+| AC-020g | refresh-lifecycle (reset and input-change races with a refresh: 4 reset ways, direct add/remove, PREV then change, dispose); refresh-overlays | item 3 wording (treatment cards and previous disabled on screen, AC-020i) is M6; the machine exposes `selectRefresh().locked` and does not reject the events |
+
+**(B) The 24 evidence-only AC, closed in M6**
+
+| AC | What the M5 tests show | What only M6 or e2e can show |
+|----|------------------------|------------------------------|
+| AC-012a | display-and-selectors (K01 right after start, step indicator 1/4..4/4); machine-transitions (start creates a new empty session); start-session (M5.D: fresh session, derived data, return context, refresh state and notice, and page position cleared; pending request and refresh cancelled) | clinic name and service name on the start screen, step-label wording, rendering; START keeps large text and orientation (owner to confirm) |
+| AC-012b | display-and-selectors and machine-transitions (next and confirm availability rules) | disabled buttons rendered |
+| AC-012e | machine-transitions (card touch, repeated touch does not add quantity, next page); display-and-selectors; selectors-edge | page buttons, cards and the 2-per-page large-text layout |
+| AC-012f | display-and-selectors (selection summary through the engine's `sumLineAmounts`); request-integration and refresh-integration (preview total equals server hospitalPayment) | immediate display at the screen bottom |
+| AC-012i | display-and-selectors (no date events; generation set only by SELECT_GENERATION) | no date input element on any screen |
+| AC-014c | invalidation (changing only the cause clears derived data, keeps the treatment selection) | byte-identical amounts and newly derived documents through a rendered flow |
+| AC-014e | display-and-selectors; machine-transitions (return from documents or basis, 6 combinations) | landscape and large-text result layouts on return |
+| AC-014g | machine-transitions (6 combinations of document entry) | the document screens themselves |
+| AC-014h | display-and-selectors (large text toggled on document screens; `activeRequest` stays null) | that no request leaves the browser (network tap); rendered large text |
+| AC-014i | display-and-selectors (orientation change both directions, including documents) | real viewport rotation and layouts |
+| AC-015e | home-and-overlays (home button inside TimeoutDialog); idle-timers | dialog rendering, six result actions visible behind the dialog |
+| AC-015f | idle-timers (completion hold, null never auto-returns); machine-transitions (finish clears the session before K06) | K06 rendering; "before painted" is shown only as "the first notified state already has an empty session" |
+| AC-015g | home-and-overlays; idle-timers (ResetConfirm first, cancel behavior) | ResetConfirm rendering |
+| AC-015j | home-and-overlays (screens without input reset directly); idle-timers | the button on screen 1 |
+| AC-015k | home-and-overlays; idle-timers (7 tests on overlay ordering and fixed `resetAt`) | overlays rendered one at a time |
+| AC-015l | request-overlays (ResetConfirm against 11 outcomes, both arrival orders) | e2e-app: the screen the patient sees |
+| AC-015m | request-overlays (3 reset ways against late outcomes, abort mocked to no-op) | e2e-app |
+| AC-015n | request-overlays (200 under TimeoutDialog; `resetAt` unchanged) | e2e-app |
+| AC-015o | request-overlays (both orders, thresholds 160/180 after continue) | e2e-app |
+| AC-015p | request-overlays (timeout against warn and reset thresholds) | e2e-app |
+| AC-016a | purity and request-static (forbidden identifiers; `fetch` only in `deps.ts`); tests/boundary engine-module-identity and estimate-surface (scan exempts only `deps.ts`); default-transport (credentials omit, cache no-store) | runtime storage watching and a service-worker check in a browser |
+| AC-016c | request-lifecycle (reset before the response, next patient starts, late response ignored); the AC-016i tests | e2e-app |
+| AC-020b | request-lifecycle (409 and 422 TREATMENT_NOT_PUBLISHED go to K03 and start a refresh in the same transition); refresh-lifecycle; refresh-integration (real handlers, 409 round trip with new versions, 422 with the unpublished treatment dropped and a notice); request-settle (a late 409 of a non-active attempt starts nothing) | on-screen removal notice |
+| AC-020h | refresh-overlays (ResetConfirm and TimeoutDialog against success, failure, connection failure, expiry, both arrival orders; `resetAt` unchanged) | e2e-app: inline notice and button visuals |
+
+**Rows that need rendering are not closed by M5.** AC-012a..AC-020h rows in table (B) stay open until M6. AC-019c and AC-021d remain evidence-only and are not closed.
+
+**Things M5 does not get at all**
+
+- Anything needing pixels (every "e2e-app" half), real tab and timer throttling, real browser `fetch`, CORS and cookies, `Cache-Control` of the kiosk document, service workers (runtime parts of AC-016a and AC-016m).
+- AC-016m browser storage dumps (M6, e2e). AC-016n is covered by the M4 server tests, not by any kiosk test.
+- M7 items referenced by these AC (admin policy API, the 20 s floor).
+- Request and refresh timeout values: plan.md §E #21 stays open; tests inject them, defaults are 15 000 ms each.
+- AC-016j item 7, the recorded call order of settleRequest.
+
+#### Evidence
+
+Run by the orchestrator on the final tree. The author of this documentation step did not re-run them. The files live under `.moai/state/verify/` (gitignored, local only).
+
+| Check | Result |
+|-------|--------|
+| Baseline before M5 (non-kiosk) | 105 files / 4833 tests |
+| Full `npx vitest run --maxWorkers=4` on the final tree | 131 files / 5624 tests pass |
+| Full-suite progression | 124 files / 5450 tests after M5.B; 128 / 5583 after M5.C; 131 / 5624 after M5.D |
+| `npx tsc --noEmit` | exit 0 |
+| `npx vitest run tests/kiosk --coverage --coverage.include='src/app/kiosk/**'` | 26 files / 791 tests; statements 444/444, branches 429/429, functions 161/161, lines 360/360 (100%) |
+| `npx next build` | exit 0; routes are `/_not-found` and the three API routes only (no kiosk page yet) |
+| `tests/kiosk` + `tests/boundary` after M5.D | 34 files / 1117 tests pass |
+
+**Agent-run mutation checks** (M5.B 6, M5.C 10, M5.D 7 mutations; all detected, all restored). Failing-test counts are given where known.
+
+| Mutation | Failing tests |
+|----------|---------------|
+| refresh guard dropped | 4 |
+| outcomes classified as PATIENT | 4 |
+| second GET replaced | 51 |
+| refresh timer left armed | 21 |
+| estimate allowed during a FAILED refresh | 35 |
+| failure routed to KXX | 30 |
+| resetSession not cancelling the refresh | 9 |
+| removal not bumping inputRevision | 5 |
+| applyInputs not cancelling the refresh | 6 |
+| stale derived data kept | 1 |
+| controller delay not clamped | 2 |
+| request timeout not clamped | 1 |
+| amounts check loosened | 9 |
+| START keeps the old session | 6 |
+| START resets display settings | 1 |
+| default transport drops options | 2 |
+| stray `fetch` in another kiosk file | 3 |
+
+These are one-spot edits; they do not prove the absence of other defects. The per-stage totals (6, 10, 7) and the failing-test counts are taken from the orchestrator's brief; which stage each mutation belongs to is not recorded here.
+
+#### Independent review
+
+One read-only sync-auditor pass over the uncommitted tree: a fuzz of about 240 000 reducer steps and a controller fuzz with fake timers. Invariants checked: `activeRequest` set exactly when the screen is Calculating; `activeRefresh` set exactly when refresh is RUNNING; no Calculating while a refresh is needed; stale ids return the same state reference; `TimeoutDialog.resetAt` never moves; SYSTEM events never move `lastInteractionAt`; a direct REQUEST_ESTIMATE is rejected while `refreshState` is not NONE; timer count equals idle plus request plus refresh timers.
+
+| # | Finding | Disposition |
+|---|---------|-------------|
+| F1 | timer delay could exceed the 32-bit timer limit | Fixed in M5.D (clamp to 2^31-1 ms via `timerDelay`) |
+| F2 | 200-body amounts not strictly validated | Fixed in M5.D |
+| F3 | START kept the old session contents | Fixed in M5.D: START creates a fresh empty session; it keeps large text and orientation by choice, flagged for the owner |
+| F4 | the reducer does not itself enforce an overdue `resetAt`: a "계속 사용할게요" tap arriving after `resetAt` but before the late TICK is accepted | NOT fixed; low, relies on timers firing first |
+| F5 | a FAILED refresh does not abort the sibling GET | NOT fixed; spec-literal, its late result is discarded |
+| F6 | boundary-scan exemption too wide | Fixed in M5.D (only `src/app/kiosk/state/deps.ts`) |
+| F7 | `createKioskControllerFromState` is an exported seam for tests and screen assembly; no static check forbids using it as a restore path | NOT fixed; M6 must not use it that way |
+| F8 | default transport sent default credentials and cache behavior | Fixed in M5.D (`credentials: 'omit'`, `cache: 'no-store'`) |
+
+Informational: PREV is accepted while a refresh is RUNNING (the lock is a view concern exposed by `selectRefresh().locked`; M6 must wire AC-020i); `crypto.randomUUID` needs a secure context.
+
+The review did not cover real browser behavior, M6 wiring, e2e, lint, MX tags, or the accuracy of Korean comments.
+
+#### Decisions and deviations
+
+- (a) Pure reducer plus `EVENT_SPECS` plus an imperative controller shell. The controller and timeout handles live in the effects shells, not in state. This deviates from the DD-09 field-list wording (`controller`, `timeoutHandle`): state keeps data-only `ActiveRequest {requestId, sessionId, inputRevision}` and `ActiveRefresh {refreshId, sessionId, inputRevision, reason}`.
+- (b) The reducer does NOT reject TOGGLE_TREATMENT or PREV while a refresh is RUNNING, because AC-020g(3) and DD-09 rule 5 require a direct input change to cancel the refresh and move it to FAILED. The lock is exposed as `selectRefresh().locked` for M6.
+- (c) A successful refresh always clears derived data and return context (DD-08 refresh row) and bumps `inputRevision` only when a treatment was removed. `refreshNotice` carries removed treatments with their OLD display names.
+- (d) 409 and 422 TREATMENT_NOT_PUBLISHED: `settleRequest` only releases the request and moves to K03; `settleOnEvent` then calls `beginRefresh` in the same reduce step (one notification). A late non-matching 409 starts nothing.
+- (e) A refresh failure keeps K03_Treatments, never KXX, and sends no calculation request. Inline retry is a new refresh with reason RETRY.
+- (f) Abort is issued only for EXPIRED and CANCELLED-family outcomes.
+- (g) Analytics and log output carry outcome kinds and screen names only. Screen names in analytics SCREEN events are a policy question for the owner.
+- (h) Request and refresh timeouts are injectable defaults of 15 000 ms; plan.md §E #21 stays open. An injected value above 2^31-1 ms expires at 2^31-1 ms.
+- (i) The selection total uses the engine's `sumLineAmounts` (AC-019c evidence note).
+- (j) START keeps display settings (flag for the owner).
+
+#### Not done / unverified / open
+
+- Nothing was run in a browser; no real device, orientation or timer throttling.
+- No e2e.
+- The default `fetch` path and CORS are untested against a real network; the credentials and cache init are asserted through a stubbed `fetch` only.
+- Screens and the Pencil design are M6.
+- `derived.basis` is never populated here (M6 fills it).
+- Real server 5xx, ON_HOLD and exclusion outcomes are exercised only through the fake transport; the real handlers are exercised for 200, 409 and 422 TREATMENT_NOT_PUBLISHED round trips.
+- AC-016a runtime storage watching, AC-016m and AC-016n are not covered by kiosk tests.
+- AC-016j item 7 call order is structural, not a spy.
+- No `moai` CLI, formal SPEC lint or CI run; there is no lint tool in the repo; platform only Windows 11 with Node 24.
+- Model-profile injection (`moai model profile`) was skipped because the CLI is absent.
+- The whole-SPEC audit status is unchanged (`plan_status: fail`); earlier FAIL records are history.
+- M7, M8, the DB adapter and operating data are untouched.
+- M4 follow-ups are unchanged and still open, and M5 did not touch them: `priceChanged` ownership for the past catalog in `src/server/api/estimate-versions.ts`, the `silentLog` production sink, the cache eviction policy, and the DD-14 owner-confirmation items.
+- Open owner confirmations (plan.md §E #12, #13, #14, #15, #17, #20, #21, #36 and others) were taken as the accepted §E.9 values and not reopened. The START display-retention and analytics screen-name choices are flagged for the owner.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

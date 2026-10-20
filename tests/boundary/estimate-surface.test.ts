@@ -66,7 +66,8 @@ describe('계산 라우트는 얇다', () => {
 });
 
 describe('바깥 호출이 없다', () => {
-  const checked = [...ESTIMATE_PATH_FILES.map((path) => serverFiles.find((file) => file.path === path)), ...appFiles];
+  // 이 검사에서 빼는 파일은 키오스크의 기본 전송을 만드는 src/app/kiosk/state/deps.ts 하나뿐이다(전역 fetch 를 부르는 유일한 곳). 나머지 키오스크 파일은 그대로 이 검사를 받는다. deps.ts 가 fetch 를 이 파일에만 두는 것은 tests/kiosk/state/request-static.test.ts 가 지킨다.
+  const checked = [...ESTIMATE_PATH_FILES.map((path) => serverFiles.find((file) => file.path === path)), ...appFiles.filter((file) => file.path !== 'src/app/kiosk/state/deps.ts')];
   const NETWORK_NAMES = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon'];
   const NETWORK_MODULES = /^(node:)?(http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster)$/;
 
