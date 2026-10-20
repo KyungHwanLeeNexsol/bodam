@@ -59,7 +59,8 @@ describe('AC-019c 증거(서버 쪽): 계산 API 는 src/engine 의 판정 함�
 describe('AC-021d 증거(서버 쪽): 묶음 내용 캐시를 포함한 서버 API 와 운영 연결에 바깥 호출이 없다', () => {
   const NETWORK_NAMES = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon'];
   const NETWORK_MODULES = /^(node:)?(http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster|fs|fs\/promises)$/;
-  const checked = [...serverFiles.filter((file) => file.path.startsWith('src/server/api/') || file.path === 'src/server/composition.ts'), ...appFiles];
+  // 이 검사에서 빼는 파일은 키오스크의 기본 전송을 만드는 src/app/kiosk/state/deps.ts 하나뿐이다(전역 fetch 를 부르는 유일한 곳). 나머지 키오스크 파일은 그대로 이 검사를 받는다. deps.ts 가 fetch 를 이 파일에만 두는 것은 tests/kiosk/state/request-static.test.ts 가 지킨다.
+  const checked = [...serverFiles.filter((file) => file.path.startsWith('src/server/api/') || file.path === 'src/server/composition.ts'), ...appFiles.filter((file) => file.path !== 'src/app/kiosk/state/deps.ts')];
 
   it('검사 대상에 캐시 모듈이 들어 있다 (빈 검사 방지)', () => {
     expect(checked.some((file) => file.path === 'src/server/api/bundle-content-cache.ts')).toBe(true);
