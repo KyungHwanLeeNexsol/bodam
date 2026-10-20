@@ -12,7 +12,7 @@ import type { KioskState } from './session-store';
 // 갱신 식별자(refreshId)는 상태의 activeRefresh 와 이 모듈의 결말 사건에만 있다. 두 GET 의 주소·헤더는 buildRefreshUrls(상태)가 식별자 없이 만든다.
 
 export interface RefreshEffects {
-  /** 사건을 적용한 뒤 부른다. `previous` 는 컨트롤러가 켜질 때의 첫 호출에서만 null 이다. `event` 는 상태를 바꾼 사건(첫 호출은 null). */
+  /** 사건을 적용한 뒤 부른다. `previous` 는 컨트롤러가 켜질 때의 첫 호출에서만 null 이다. `event` 는 상태를 바꾼 사건. 첫 호출과 세션이 끝난 전이(만료 초기화 등: 컨트롤러가 취소로 넘긴다)는 null. */
   sync(previous: KioskState | null, next: KioskState, event: KioskEvent | null): void;
   /** 진행 중인 갱신이 있으면 타이머를 치우고 취소한다. */
   dispose(): void;

@@ -3019,7 +3019,7 @@ The two sentences that follow-up 1 left unchanged ("Other stale wording noticed 
 
 **Source files (15, all under `src/app/kiosk/state/`):** `api-types.ts`, `controller.ts`, `defaults.ts`, `deps.ts`, `display.ts`, `events.ts`, `idle.ts`, `machine.ts`, `refresh-effects.ts`, `refresh.ts`, `request-effects.ts`, `request.ts`, `selectors.ts`, `session-store.ts`, `steps.ts`.
 
-**Tests:** 27 files under `tests/kiosk/state/`, of which 26 are test files and one (`refresh-helpers.ts`) is a shared helper; plus 3 fixture files under `tests/fixtures/kiosk/` (`clinic.fixture.ts`, `state.fixture.ts`, `transport.fixture.ts`). Counts are from a Glob of the tree in this documentation step.
+**Tests:** 29 files under `tests/kiosk/state/`, of which 28 are test files and one (`refresh-helpers.ts`) is a shared helper (two of the test files, `idle-expiry.test.ts` and `idle-expiry-controller.test.ts`, come from the F4 follow-up below; counts checked with `ls tests/kiosk/state` on the working tree); plus 3 fixture files under `tests/fixtures/kiosk/` (`clinic.fixture.ts`, `state.fixture.ts`, `transport.fixture.ts`). Counts are from a Glob of the tree in this documentation step.
 
 #### Tracked-file edits outside the kiosk folders
 
@@ -3037,23 +3037,23 @@ Source: `.moai/state/verify/m5c/ac-evidence.md`, refreshed after M5.D. Common ca
 | AC-014a | invalidation (changing the generation clears derived data and bumps inputRevision; result screens unreachable until a new confirm; exhaustive reachable-screen search); DD-08 row table | the search covers input-phase events only; server-side recomputation is not part of this AC |
 | AC-014b | invalidation (adding or removing a treatment clears derived data) | none |
 | AC-014d | invalidation (same-value reselect, page change, large-text toggle keep the result) | none |
-| AC-015a | idle-timers (AC-015a block); idle-policy-integration (AC-015i cycle checks) | real browser timers |
-| AC-015b | idle-timers (AC-015b block; result, not-covered, hold, basis, documents screens in both orientations; never K06) | orientation is a state value only |
-| AC-015c | idle-timers (AC-015c block); request-overlays (AC-015p cases for the request-driven path) | the AC-015c block reaches Calculating and KXX by constructed state |
-| AC-015d | idle-timers (AC-015d block); event-classes; request-overlays and refresh-overlays (`lastInteractionAt` unchanged by server outcomes) | real touch and key listeners (M6); non-button touches modelled only as INTERACTION |
-| AC-015h | idle-timers (AC-015h block: K00 has no timer, K06 with null hold stays) | none |
-| AC-015i | idle-policy-integration (real catalog handler idlePolicy drives the timers); idle-policy; refresh-lifecycle (AC-020d) | admin API and the 20 s floor validation (AC-023d, M7) |
+| AC-015a | idle-timers (AC-015a block); idle-policy-integration (AC-015i cycle checks); idle-expiry and idle-expiry-controller (F4 timer-delay boundary: 6 scenes × 3 overlays × every event kind at exactly `resetAt` and `resetAt`+1 ms reset first; reviewer repros 1 and 2 on the real controller; 1 ms before `resetAt` changes nothing) | real browser timers, including real throttling that makes callbacks late |
+| AC-015b | idle-timers (AC-015b block; result, not-covered, hold, basis, documents screens in both orientations; never K06); idle-expiry (K04_Result in the event matrix; K07/hold thresholds only through the `idleResetAt` unit case; a 120 s Calculating screen that becomes a result screen keeps the unchanged `lastInteractionAt` and uses the 180 s threshold) | orientation is a state value only |
+| AC-015c | idle-timers (AC-015c block); request-overlays (AC-015p cases for the request-driven path); idle-expiry (Calculating in the event matrix; the KXX threshold only through the `idleResetAt` unit case) | the AC-015c block reaches Calculating and KXX by constructed state; the generation-help screen is not covered by the new F4 tests |
+| AC-015d | idle-timers (AC-015d block); event-classes; request-overlays and refresh-overlays (`lastInteractionAt` unchanged by server outcomes); idle-expiry-controller (a valid response under an open TimeoutDialog before `resetAt` leaves `lastInteractionAt` and the dialog `resetAt` unchanged; an expiry reset starts the fresh session clock at the reset time) | real touch and key listeners (M6); non-button touches modelled only as INTERACTION |
+| AC-015h | idle-timers (AC-015h block: K00 has no timer, K06 with null hold stays); idle-expiry and idle-expiry-controller (very late events at K00_Start and K06_Complete are not expiries; K06 with a positive hold returns only through its own timer) | none |
+| AC-015i | idle-policy-integration (real catalog handler idlePolicy drives the timers); idle-policy; refresh-lifecycle (AC-020d); idle-expiry (`idleResetAt` reads the hospital policy: INPUT 50/70 s unit case) | admin API and the 20 s floor validation (AC-023d, M7) |
 | AC-016h | request-lifecycle (a late result of attempt A changes nothing while retry B runs) | none |
-| AC-016i | request-lifecycle (cancel protected by requestId even when abort is a no-op: 4 reset ways plus expiry, 6 late outcomes) | input-change cancellation is exercised from a constructed state; "new patient session" is the PAGE_RESTORED/START path |
-| AC-016j | request-lifecycle (15 endings leave nothing behind; replacement by input change or a new attempt); request-static (settleRequest is the only place that releases `activeRequest`; screen changes from outcomes live only in request.ts); request-settle (pure guards, 200-body amount validation); refresh-lifecycle (AC-020g for item 8) | item 7 asks for a recorded call order of settleRequest; it is not implemented as a spy (no test-only hooks), and listener-visible state, timer and abort counts are asserted instead |
-| AC-016k | request-lifecycle (requestId absent from body, headers, URL); request-static; request-integration (six-field body accepted by the real handler); default-transport (stubbed `fetch`: no marker, credentials omit, cache no-store) | no real browser network tap; the injected transport and a lexical `fetch` restriction stand in for it |
+| AC-016i | request-lifecycle (cancel protected by requestId even when abort is a no-op: 4 reset ways plus expiry, 6 late outcomes); idle-expiry-controller (an idle-expiry reset caused by a late outcome ends the attempt as cancelled: `abort()`, timer cleared, CANCELLED analytics; with `abort` a no-op, an old response after the reset changes nothing) | input-change cancellation is exercised from a constructed state; "new patient session" is the PAGE_RESTORED/START path |
+| AC-016j | request-lifecycle (15 endings leave nothing behind; replacement by input change or a new attempt); request-static (settleRequest is the only place that releases `activeRequest`; screen changes from outcomes live only in request.ts); request-settle (pure guards, 200-body amount validation); refresh-lifecycle (AC-020g for item 8); idle-expiry-controller (an idle-expiry reset caused by a late outcome leaves no timer, no loading and no active request or refresh; stale timer callbacks after the reset change nothing) | item 7 asks for a recorded call order of settleRequest; it is not implemented as a spy (no test-only hooks), and listener-visible state, timer and abort counts are asserted instead |
+| AC-016k | request-lifecycle (requestId absent from body, headers, URL); idle-expiry-controller (same on the expiry paths, with a late 200/409/422/failure); request-static; request-integration (six-field body accepted by the real handler); default-transport (stubbed `fetch`: no marker, credentials omit, cache no-store) | no real browser network tap; the injected transport and a lexical `fetch` restriction stand in for it |
 | AC-016l | request-lifecycle (logs and analytics carry no requestId and only stage-level anonymous fields, with a count>0 control); request-static | the default log sink is a no-op, so no real console or error-reporting adapter was tested |
 | AC-016o | refresh-lifecycle (refreshId absent from GET URLs, headers, bodies, logs, analytics, with a control group); request-static; purity | item 4 is a lexical scan (aliasing is not caught); browser storage dumps are AC-016m (M6) |
 | AC-020c | refresh-lifecycle (no calculation request while a refresh is needed: RUNNING and FAILED, KXX retry, several treatments) | the rendered button is M6; "active value" is the state-derived `canRequestEstimate` |
 | AC-020d | refresh-lifecycle (apply only after both responses, one subscriber notification; removed treatments, price and options-version changes; notice cleared on next input change); refresh-settle | the loading indicator and removal wording are M6; they exist as `refreshState` and `refreshNotice` |
 | AC-020e | refresh-lifecycle (14 failure shapes change nothing; first failure wins; inline retry with a new refreshId; no calculation request) | inline notice and retry are the `selectRefresh` flags, not rendered; timeout value is still plan.md §E #21 |
 | AC-020f | refresh-lifecycle (late results of refresh A cannot touch refresh B; idempotent settle); refresh-settle | the literal scenario "A timed out, retry, then four late calls" is the union of two tests, not one scenario |
-| AC-020g | refresh-lifecycle (reset and input-change races with a refresh: 4 reset ways, direct add/remove, PREV then change, dispose); refresh-overlays | item 3 wording (treatment cards and previous disabled on screen, AC-020i) is M6; the machine exposes `selectRefresh().locked` and does not reject the events |
+| AC-020g | refresh-lifecycle (reset and input-change races with a refresh: 4 reset ways, direct add/remove, PREV then change, dispose); refresh-overlays; idle-expiry-controller (a late REFRESH_RESOLVED/FAILED/EXPIRED after an idle-expiry reset cannot write the new session or the clinic data: GET signals aborted, refresh timer cleared, REFRESH_OUTCOME CANCELLED; `abort` as a no-op is still safe) | item 3 wording (treatment cards and previous disabled on screen, AC-020i) is M6; the machine exposes `selectRefresh().locked` and does not reject the events |
 
 **(B) The 24 evidence-only AC, closed in M6**
 
@@ -3069,14 +3069,14 @@ Source: `.moai/state/verify/m5c/ac-evidence.md`, refreshed after M5.D. Common ca
 | AC-014g | machine-transitions (6 combinations of document entry) | the document screens themselves |
 | AC-014h | display-and-selectors (large text toggled on document screens; `activeRequest` stays null) | that no request leaves the browser (network tap); rendered large text |
 | AC-014i | display-and-selectors (orientation change both directions, including documents) | real viewport rotation and layouts |
-| AC-015e | home-and-overlays (home button inside TimeoutDialog); idle-timers | dialog rendering, six result actions visible behind the dialog |
+| AC-015e | home-and-overlays (home button inside TimeoutDialog); idle-timers; idle-expiry (CONTINUE_USING 1 ms before `resetAt` continues the session, at `resetAt` it does not) | dialog rendering, six result actions visible behind the dialog |
 | AC-015f | idle-timers (completion hold, null never auto-returns); machine-transitions (finish clears the session before K06) | K06 rendering; "before painted" is shown only as "the first notified state already has an empty session" |
 | AC-015g | home-and-overlays; idle-timers (ResetConfirm first, cancel behavior) | ResetConfirm rendering |
 | AC-015j | home-and-overlays (screens without input reset directly); idle-timers | the button on screen 1 |
-| AC-015k | home-and-overlays; idle-timers (7 tests on overlay ordering and fixed `resetAt`) | overlays rendered one at a time |
+| AC-015k | home-and-overlays; idle-timers (7 tests on overlay ordering and fixed `resetAt`); idle-expiry (the frozen dialog `resetAt` beats the underlying screen policy; an open ResetConfirm does not extend the deadline) | overlays rendered one at a time |
 | AC-015l | request-overlays (ResetConfirm against 11 outcomes, both arrival orders) | e2e-app: the screen the patient sees |
 | AC-015m | request-overlays (3 reset ways against late outcomes, abort mocked to no-op) | e2e-app |
-| AC-015n | request-overlays (200 under TimeoutDialog; `resetAt` unchanged) | e2e-app |
+| AC-015n | request-overlays (200 under TimeoutDialog; `resetAt` unchanged); idle-expiry-controller (reviewer repro 3: a valid 200 arriving after `resetAt` with the reset TICK not yet run is not stored) | e2e-app |
 | AC-015o | request-overlays (both orders, thresholds 160/180 after continue) | e2e-app |
 | AC-015p | request-overlays (timeout against warn and reset thresholds) | e2e-app |
 | AC-016a | purity and request-static (forbidden identifiers; `fetch` only in `deps.ts`); tests/boundary engine-module-identity and estimate-surface (scan exempts only `deps.ts`); default-transport (credentials omit, cache no-store) | runtime storage watching and a service-worker check in a browser |
@@ -3107,6 +3107,9 @@ Run by the orchestrator on the final tree. The author of this documentation step
 | `npx vitest run tests/kiosk --coverage --coverage.include='src/app/kiosk/**'` | 26 files / 791 tests; statements 444/444, branches 429/429, functions 161/161, lines 360/360 (100%) |
 | `npx next build` | exit 0; routes are `/_not-found` and the three API routes only (no kiosk page yet) |
 | `tests/kiosk` + `tests/boundary` after M5.D | 34 files / 1117 tests pass |
+| After the F4 follow-up (implementer run, see the F4 section for paths): full suite | 133 files / 7833 tests pass |
+| After the F4 follow-up: kiosk coverage | 28 files / 3000 tests; statements 454/454, branches 441/441, functions 163/163, lines 360 → 368/368 (100%) |
+| After the F4 follow-up: `tests/kiosk` + `tests/boundary`, tsc, next build | 36 files / 3326 tests pass; tsc exit 0; build exit 0 |
 
 **Agent-run mutation checks** (M5.B 6, M5.C 10, M5.D 7 mutations; all detected, all restored). Failing-test counts are given where known.
 
@@ -3141,15 +3144,75 @@ One read-only sync-auditor pass over the uncommitted tree: a fuzz of about 240 0
 | F1 | timer delay could exceed the 32-bit timer limit | Fixed in M5.D (clamp to 2^31-1 ms via `timerDelay`) |
 | F2 | 200-body amounts not strictly validated | Fixed in M5.D |
 | F3 | START kept the old session contents | Fixed in M5.D: START creates a fresh empty session; it keeps large text and orientation by choice, flagged for the owner |
-| F4 | the reducer does not itself enforce an overdue `resetAt`: a "계속 사용할게요" tap arriving after `resetAt` but before the late TICK is accepted | NOT fixed; low, relies on timers firing first |
+| F4 | the reducer does not itself enforce an overdue `resetAt`: a "계속 사용할게요" tap arriving after `resetAt` but before the late TICK is accepted | Historical disposition "NOT fixed; low, relies on timers firing first" is superseded: the PR #5 external review reproduced it and the owner decided to fix it. Resolved in the F4 follow-up section below |
 | F5 | a FAILED refresh does not abort the sibling GET | NOT fixed; spec-literal, its late result is discarded |
 | F6 | boundary-scan exemption too wide | Fixed in M5.D (only `src/app/kiosk/state/deps.ts`) |
 | F7 | `createKioskControllerFromState` is an exported seam for tests and screen assembly; no static check forbids using it as a restore path | NOT fixed; M6 must not use it that way |
 | F8 | default transport sent default credentials and cache behavior | Fixed in M5.D (`credentials: 'omit'`, `cache: 'no-store'`) |
 
-Informational: PREV is accepted while a refresh is RUNNING (the lock is a view concern exposed by `selectRefresh().locked`; M6 must wire AC-020i); `crypto.randomUUID` needs a secure context.
+Informational: PREV is accepted while a refresh is RUNNING (the lock is a view concern exposed by `selectRefresh().locked`; M6 must wire AC-020i); `crypto.randomUUID` needs a secure context. M6 verification item: "갱신 중 화면 잠금(`selectRefresh().locked`, 화면이 건다)과 직접 입력 변경 시 갱신 취소(AC-020g 3, 상태 기계)는 서로 다른 계약이며 M6가 화면 잠금을 검증한다".
 
 The review did not cover real browser behavior, M6 wiring, e2e, lint, MX tags, or the accuracy of Korean comments.
+
+#### F4 follow-up: idle-expiry priority when the TICK callback is late (PR #5 external review, 2026-10-20)
+
+The original F4 row above is kept as history; this section supersedes its disposition. Everything below was run by the implementing agent on the working tree and is to be re-run by the orchestrator.
+
+**Defect.** The idle-reset deadline was enforced only when a TICK event ran. If the timer callback was late, any other event arriving after `now >= resetAt` was applied to the expired session. The reviewer reproduced it on the real controller with timer callbacks and the injected clock moved independently: (1) last interaction at t=0 on an input-phase screen, TICK at 100 s opens TimeoutDialog (`resetAt` 120 s), the reset TICK is not run, the clock moves to 120.001 s, CONTINUE_USING: before the fix the session was extended; (2) neither the warn nor the reset TICK run, clock at 120.001 s, INTERACTION: old inputs kept and `lastInteractionAt` refreshed; (3) a long injected request timeout, TimeoutDialog opened at 100 s, no reset TICK, a valid 200 estimate for the active request at 120.001 s: the old request result was stored in the result screen.
+
+**Second trap in the effects layer.** `request-effects.ts` and `refresh-effects.ts` decide abort, log and analytics from the triggering event (`outcomeOfEvent(event)`, `outcomeOfRefreshEvent(event, previous)`). When an expiry reset is triggered by a 200 or REFRESH_RESOLVED event, the effects layer would read a success: no `abort()`, a SUCCEEDED analytics outcome, although the state machine had actually cancelled the attempt.
+
+**Owner decision (not reopened).** Decide expiry from the injected clock, not from whether a TICK callback ran. The reset deadline of the state before applying the event is the frozen `resetAt` of an open TimeoutDialog, otherwise `lastInteractionAt` + the reset time of the current screen kind (an open ResetConfirm does not extend it); K00_Start and K06_Complete never expire this way (K06 keeps its `completionHoldSeconds` return). When `now >= resetAt`, an expiry reset takes priority over every event, including system outcomes (200, 409, 422, failures, expiries, refresh outcomes) and TICK. Strictly before the deadline nothing changes. ORIENTATION_CHANGED is an observation of the device, so an expiry reset it triggers still carries the newly observed orientation.
+
+**Fix (3 production files plus 2 comment-only edits).**
+
+- `idle.ts`: new pure `idleResetAt(state): number | null` (frozen dialog `resetAt`, else `lastInteractionAt` + the reset time of the current screen kind, null for K00_Start and K06_Complete). `nextSchedule` is unchanged and remains the single source of the timer schedule.
+- `machine.ts`: the first lines of `reduce` call `idleResetAt(state)` and, if `env.now >= resetAt`, return `expire(...)` (a call of the existing `resetSession(…, 'K00_Start')`, which cancels the active request and refresh and issues the new session id through `env.newSessionId`; for ORIENTATION_CHANGED the new orientation is applied through `changeOrientation`). The gate sits before the overlay-allowed check. `tick` no longer has its own overdue branch (the gate already covers it); it opens the TimeoutDialog with `idleResetAt` or resets for the K06 return. `EVENT_SPECS` is unchanged.
+- `controller.ts`: in `dispatch`, if `state.sessionId !== previous.sessionId` the cause event passed to `requests.sync` and `refreshes.sync` is `null`, which both effects layers already map to CANCELLED. Reason for this approach over editing the effects modules: every transition that ends a session (confirm, finish, page restore, start, expiry) is by definition a cancellation of the attempts of the old session, and no outcome event can legitimately change the session id, so the one-line session check is exact, keeps `outcomeOfEvent` and `outcomeOfRefreshEvent` untouched, and keeps the single clock read per dispatch (`deps.now()` is read once for the env). Doc comments in `request-effects.ts` and `refresh-effects.ts` now say that the event is null for a session-ending transition.
+- Not touched: F5 (a FAILED refresh not aborting the sibling GET), F7 (`createKioskControllerFromState`), the M4 follow-ups, and the screen-lock versus input-change-cancels-refresh distinction.
+
+**Tests (2 new files, 2209 tests, no existing test modified).**
+
+- `tests/kiosk/state/idle-expiry.test.ts` (2183 tests, pure `reduce`): 6 scenes (input screen with input, K03 with items, a 180 s result screen, Calculating with an active request, K03 refresh RUNNING with an active refresh, K03 refresh FAILED) × 3 overlays (none, ResetConfirm, TimeoutDialog) × every event kind with valid current ids, at exactly `resetAt` and `resetAt`+1 ms (everything must give the fresh K00_Start session: empty inputs, revision 0, empty derived data, large text off, no active request or refresh, no new request or refresh id issued, clinic data kept); a differential check that each event 1 ms before `resetAt` gives the same result as the same event right after the last interaction; K00_Start and K06_Complete never expire; late 409/422 start no refresh; stale ids after an expiry change nothing; frozen dialog `resetAt` versus the underlying screen policy in both directions; ResetConfirm does not extend; orientation kept for an ORIENTATION_CHANGED expiry; `idleResetAt` unit cases; a check that the event list covers every event type.
+- `tests/kiosk/state/idle-expiry-controller.test.ts` (26 tests, real `createKioskController`; the clock is a variable and `setTimeout` only records callbacks, so the test decides whether and when each runs; the transport ignores the abort signal): the 3 reviewer reproductions; late 200/200-hold/409/422 NOT_PUBLISHED/422 NO_TREATMENT/500/connection failure/request-timeout callback after the reset deadline (state fresh, no transport call added, no refresh started, signal aborted, request timer cleared, analytics CANCELLED only, no log, no leak of request or refresh ids); late REFRESH_RESOLVED/FAILED/EXPIRED (clinic data not written, GET signals aborted, refresh timer cleared, CANCELLED); abort mocked to a no-op with an old response after the reset; stale timer callbacks after the reset; stale request id events rejected; ORIENTATION_CHANGED expiry; subscribers notified once with the fresh state and one new session id issued; pre-deadline regressions (CONTINUE_USING 1 ms before `resetAt`, a valid response under an open dialog before the deadline, K06 positive hold, K06 null hold, K00).
+
+**Baseline-red evidence** (new tests against the unmodified production code, `.moai/state/verify/m5f4/`):
+
+| File | Result on the baseline | Path |
+|------|------------------------|------|
+| `idle-expiry.test.ts` | 1320 failed, 863 passed (of 2183), exit 1 | `red-pure.txt` |
+| `idle-expiry-controller.test.ts` | 21 failed, 5 passed (of 26), exit 1 | `red-controller.txt` |
+
+All of the reviewer's 3 cases and the effects-layer misreport case fail on the baseline. The 863 + 5 that pass on the baseline are the pre-deadline and never-expiring regression checks (766 pure + 5 controller), 96 cells of the expiry matrix where the baseline already reset (for example PAGE_RESTORED, TICK, CONFIRM_RESET under ResetConfirm), and the event-list coverage check. The effects-layer SUCCEEDED misreport cannot be shown in isolation on the baseline because the missing gate fails the same tests first; mutation (c) below isolates it.
+
+**Final verification on the working tree** (`.moai/state/verify/m5f4/`):
+
+| Check | Result | Path |
+|-------|--------|------|
+| the two new test files | 2209 passed, exit 0 | `dev-new.txt` |
+| `tests/kiosk` + `tests/boundary` | 36 files / 3326 tests pass, exit 0 | `green-kiosk-boundary.txt` |
+| `npx vitest run --maxWorkers=4` | 133 files / 7833 tests pass, exit 0 | `green-full.txt` |
+| `npx tsc --noEmit` | exit 0, no output | `green-tsc.txt` |
+| `npx vitest run tests/kiosk --coverage --coverage.include='src/app/kiosk/**'` | 28 files / 3000 tests; statements 454/454, branches 441/441, functions 163/163, lines 368/368 (100%), exit 0 | `green-coverage.txt` |
+| `npx next build` | exit 0; routes unchanged (`/_not-found` and the three API routes) | `green-build.txt` |
+
+**Mutation checks** (each restored; the tree was diffed against a backup after the last one):
+
+| Mutation | Failing new tests | Caught by |
+|----------|-------------------|-----------|
+| (a) expiry gate removed from `reduce` | 1360 | the matrix, the 3 reviewer reproductions and the late-arrival tests |
+| (b) expiry uses the underlying-screen policy instead of the frozen dialog `resetAt` | 3 | the `idleResetAt` frozen case, the pure scenario test, the controller test of a response under an open dialog followed by a late event |
+| (c) the controller passes the triggering event instead of `null` when the session id changed | 13 | reviewer repro 3 and the late-arrival tests (analytics SUCCEEDED/VERSION_MISMATCH instead of CANCELLED, abort not called) |
+| (d) the gate uses `>` instead of `>=` | 671 | the "exactly `resetAt`" cells |
+| (e) the ORIENTATION_CHANGED re-application dropped | 38 | the ORIENTATION_CHANGED cells of the matrix, the pure orientation test, the controller orientation test |
+
+These are one-spot edits; they do not prove the absence of other defects.
+
+**Orchestrator re-run (independent of the implementer, same tree; outputs in `.moai/state/verify/m5f4-orch/`).** `npx vitest run --maxWorkers=4`: 133 files / 7833 tests pass, exit 0. `npx tsc --noEmit`: exit 0. `npx vitest run tests/kiosk --coverage --coverage.include='src/app/kiosk/**'`: 28 files / 3000 tests, statements 454/454, branches 441/441, functions 163/163, lines 368/368, exit 0. `npx next build`: exit 0, routes unchanged. Baseline-red re-observed by restoring the pre-fix `src/` for one run (then restored byte-identical): 1341 failed / 868 passed of 2209, matching the implementer (1320 + 21 failed); the three reviewer reproductions fail there. Mutations (b), (c), (d), (e) were re-run by the orchestrator and fail 3, 13, 671 and 38 tests respectively; (a) was not repeated separately because the baseline run covers the absence of the whole gate. This re-run is still injected-clock only; nothing was run in a browser.
+
+**Behavior worth knowing.** The gate precedes the id match, so an event with a stale request or refresh id that arrives after `resetAt` also ends the expired session (the session was expired regardless of which event noticed it); an event with a stale id on the fresh session is rejected. A late event on K06_Complete is not an expiry; only the `completionHoldSeconds` timer returns from K06.
+
+**Not verified.** Nothing was run in a browser or on a device. The clock in these tests is injected and the timer callbacks are recorded by a stub, so real browser timer throttling (background tabs, device sleep, and how the default `performance.now()` clock behaves during them) is untested. AC-016h and AC-020e were considered for the trace table and not cited because the new tests do not cover them. No AC was moved into or out of the closing set.
 
 #### Decisions and deviations
 
@@ -3167,6 +3230,7 @@ The review did not cover real browser behavior, M6 wiring, e2e, lint, MX tags, o
 #### Not done / unverified / open
 
 - Nothing was run in a browser; no real device, orientation or timer throttling.
+- F4 follow-up: the late-timer behavior is verified only with an injected clock and recorded timer callbacks; real browser timer throttling and sleep behavior are unobserved.
 - No e2e.
 - The default `fetch` path and CORS are untested against a real network; the credentials and cache init are asserted through a stubbed `fetch` only.
 - Screens and the Pencil design are M6.

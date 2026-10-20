@@ -104,8 +104,11 @@ export function createKioskControllerFromState(partialDeps: Partial<KioskDeps>, 
     const previous = state;
     state = reduce(previous, event, { now: deps.now(), newSessionId: deps.newSessionId, newRequestId: deps.newRequestId, newRefreshId: deps.newRefreshId });
     if (state !== previous) {
-      requests.sync(previous, state, event);
-      refreshes.sync(previous, state, event);
+      // 세션이 끝난 전이(만료·처음으로·이용 완료·새로고침)는 옛 요청·갱신을 취소로 푼다. 만료 초기화는 결말 사건(응답·오류·시간 초과)이 일으킬 수 있는데,
+      // 그 사건을 원인으로 넘기면 효과 계층이 성공 결말로 읽어 abort() 를 빼먹고 성공 분석을 낸다. 그래서 세션 식별자가 바뀌었으면 원인 사건 없음(취소)으로 넘긴다.
+      const cause = state.sessionId === previous.sessionId ? event : null;
+      requests.sync(previous, state, cause);
+      refreshes.sync(previous, state, cause);
     }
     syncTimer();
     if (state === previous) return 'IGNORED';

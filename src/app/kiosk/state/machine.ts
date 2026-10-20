@@ -1,6 +1,6 @@
 import { changeOrientation, toggleLargeText } from './display';
 import type { KioskEvent, KioskEventType } from './events';
-import { idleDeadlines, idleScreenKindOf, nextSchedule } from './idle';
+import { idleResetAt, idleScreenKindOf, nextSchedule } from './idle';
 import { beginRefresh, canRetryRefresh, settleRefreshOnEvent } from './refresh';
 import { beginRequest, settleOnEvent } from './request';
 import { selectTreatmentPage } from './selectors';
@@ -66,15 +66,23 @@ function requestHome(state: KioskState, env: Env): KioskState | null {
   return state.overlay.kind === 'TIMEOUT_DIALOG' || !hasPatientInput(state.inputs) ? resetSession(state, env, 'K00_Start') : { ...state, overlay: { kind: 'RESET_CONFIRM' } };
 }
 
-// 시계 사건: 일정(nextSchedule)이 지금 도래했을 때만 받는다. 경고는 TimeoutDialog 를 열되(ResetConfirm 이 열려 있으면 그것을 대신한다),
-// 늦게 돌아 초기화 시각까지 지났다면 겹침창 없이 한 번에 초기화한다. 열릴 때 정한 초기화 시각은 이후 바뀌지 않는다 (DD-07 규칙 4).
+// 시계 사건: 일정(nextSchedule)이 지금 도래했을 때만 받는다. 경고는 TimeoutDialog 를 열되(ResetConfirm 이 열려 있으면 그것을 대신한다), 이용 완료 화면의 자동 복귀는 초기화한다.
+// 초기화 기한이 지난 뒤의 TICK 은 여기 오기 전에 reduce 의 만료 관문이 이미 초기화했다(경고와 초기화 시각이 모두 지났어도 겹침창 없이 한 번에 초기화된다).
+// 열릴 때 정한 초기화 시각은 이후 바뀌지 않는다 (DD-07 규칙 4).
 function tick(state: KioskState, env: Env): KioskState | null {
   const schedule = nextSchedule(state);
   if (schedule === null || env.now < schedule.at) return null;
-  const deadlines = schedule.kind === 'WARN' ? idleDeadlines(state) : null;
-  return deadlines === null || env.now >= deadlines.resetAt
-    ? resetSession(state, env, 'K00_Start')
-    : { ...state, overlay: { kind: 'TIMEOUT_DIALOG', openedAt: env.now, resetAt: deadlines.resetAt } };
+  const resetAt = schedule.kind === 'WARN' ? idleResetAt(state) : null;
+  return resetAt === null ? resetSession(state, env, 'K00_Start') : { ...state, overlay: { kind: 'TIMEOUT_DIALOG', openedAt: env.now, resetAt } };
+}
+
+// 무조작 만료: 사건을 적용하기 전 상태의 초기화 시각이 지났으면 어떤 사건보다 먼저 세션을 지우고 K00_Start 를 연다 (DD-07 규칙 4, DD-10).
+// TICK 콜백이 늦어도(타이머 지연·절전) 만료가 TICK 에만 걸려 있지 않다: 환자 조작·계산/갱신 결말·방향 관찰·시계 사건 모두 같은 기한을 본다. 기한 직전(지금 < 초기화 시각)에는 아무것도 달라지지 않는다.
+// 활성 요청·갱신은 resetSession 이 CANCELLED 로 풀고, 늦게 온 409·422 는 갱신을 시작하지 못한다(관문이 settleOnEvent 보다 앞이다).
+// 방향 관찰(ORIENTATION_CHANGED)은 세션이 아니라 기기의 관찰이라, 그 사건이 만료를 일으켜도 새 세션은 새로 관찰한 방향을 가진다.
+function expire(state: KioskState, event: KioskEvent, env: Env): KioskState {
+  const fresh = resetSession(state, env, 'K00_Start');
+  return event.type === 'ORIENTATION_CHANGED' ? (changeOrientation(fresh, event.orientation) ?? fresh) : fresh;
 }
 
 export const EVENT_SPECS: { readonly [T in KioskEventType]: EventSpec<T> } = {
@@ -185,8 +193,11 @@ export const EVENT_SPECS: { readonly [T in KioskEventType]: EventSpec<T> } = {
 // @MX:REASON: 겹침창 허용 목록과 마지막 조작 시각 갱신이 여기 한 곳에서만 적용되어야 환자 사건과 시스템 사건의 구분(AC-015d)이 사건마다 흩어지지 않는다.
 /**
  * 사건 하나를 적용한다. 거절하면 같은 `state` 참조를, 받아들이면 새 상태를 돌려준다. PATIENT 사건은 받아들이는 순간 마지막 조작 시각을 `env.now` 로 바꾼다.
+ * 단 초기화 기한이 이미 지났으면(`env.now >= idleResetAt(state)`) 사건의 종류와 겹침창에 상관없이 먼저 만료 초기화한다.
  */
 export function reduce(state: KioskState, event: KioskEvent, env: Env): KioskState {
+  const resetAt = idleResetAt(state);
+  if (resetAt !== null && env.now >= resetAt) return expire(state, event, env);
   // 사건 종류별 분류표를 합집합 사건 하나로 부르기 위한 좁힘이다. EventSpec.apply 는 메서드라 매개변수를 느슨하게 비교한다.
   const spec = EVENT_SPECS[event.type] as EventSpec<KioskEventType>;
   if (!spec.overlays.includes(state.overlay.kind)) return state;

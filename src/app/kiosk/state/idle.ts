@@ -87,6 +87,20 @@ export function idleDeadlines(state: KioskState): { readonly warnAt: number; rea
   return { warnAt: state.lastInteractionAt + threshold.warnSeconds * 1000, resetAt: state.lastInteractionAt + threshold.resetSeconds * 1000 };
 }
 
+// @MX:NOTE: [AUTO] 무조작 만료(초기화 기한)를 가르는 단일 출처. 상태 기계의 만료 관문(machine.ts reduce)과 TICK 이 모두 이 값으로 기한을 본다. 기한이 TICK 콜백에만 걸려 있으면
+// 타이머가 늦을 때 기한이 지난 세션이 환자 조작이나 서버 결말로 되살아난다. nextSchedule 의 RESET 시각과 같은 규칙으로 유지한다.
+/**
+ * 사건을 적용하기 전 상태의 초기화 시각(deps.now() 기준 밀리초). 무조작 타이머가 없는 화면(K00_Start·K06_Complete)이면 null — 그 화면은 이 방식으로 만료되지 않는다
+ * (K06_Complete 의 자동 복귀는 completionHoldSeconds 일정이 따로 맡는다).
+ * 열린 TimeoutDialog 는 열릴 때 정해 둔 초기화 시각이다(화면 종류나 마지막 조작이 바뀌어도 움직이지 않는다, DD-07 규칙 4). 그 밖(겹침창 없음, 또는 ResetConfirm: 그 시간이
+ * 초기화를 늦추지 않는다)에는 마지막 환자 조작 + 현재 화면 종류의 초기화 시간이다.
+ */
+export function idleResetAt(state: KioskState): number | null {
+  const deadlines = idleDeadlines(state);
+  if (deadlines === null) return null;
+  return state.overlay.kind === 'TIMEOUT_DIALOG' ? state.overlay.resetAt : deadlines.resetAt;
+}
+
 // @MX:ANCHOR: [AUTO] 모든 타이머 일정(경고·초기화·이용 완료 자동 복귀)의 단일 출처. 컨트롤러의 타이머 칸 하나가 이 함수의 값만 따라간다.
 // @MX:REASON: 일정이 상태 밖에서 따로 계산되면 환자 조작·화면 종류 변화·겹침창과 어긋난다. DD-10 의 모든 규칙(마지막 환자 조작에서 세기, 화면 종류가 바뀌어도 경과 유지,
 // 열린 TimeoutDialog 의 초기화 시각 고정, ResetConfirm 이 초기화를 늦추지 않음)이 여기 한 곳에 있다.
