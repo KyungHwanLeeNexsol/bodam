@@ -1,0 +1,126 @@
+name: Security Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays 10:17 Asia/Seoul (01:17 UTC)
+    - cron: "17 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-audit:
+    name: Dependency audit (high/critical)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect lockfile
+        id: packages
+        shell: bash
+        run: |
+          if [[ ! -f package.json ]]; then
+            echo "manager=none" >> "$GITHUB_OUTPUT"
+          elif [[ -f pnpm-lock.yaml ]]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [[ -f package-lock.json ]]; then
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=missing-lockfile" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup patched Node.js LTS for the scanner
+        if: steps.packages.outputs.manager == 'pnpm' || steps.packages.outputs.manager == 'npm'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pnpm from packageManager
+        if: steps.packages.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Audit full dependency graph (including dev dependencies)
+        shell: bash
+        env:
+          MANAGER: ${{ steps.packages.outputs.manager }}
+        run: |
+          set -uo pipefail
+          case "$MANAGER" in
+            pnpm)
+              pnpm audit --audit-level high
+              result=$?
+              ;;
+            npm)
+              npm audit --audit-level=high
+              result=$?
+              ;;
+            none)
+              echo "No root package.json: dependency audit not applicable on this branch."
+              result=0
+              ;;
+            *)
+              echo "::error::package.json exists without a supported lockfile; cannot perform a reproducible dependency audit."
+              result=1
+              ;;
+          esac
+
+          {
+            echo "### Dependency audit"
+            echo "- Package manager: \`$MANAGER\`"
+            echo "- Scope: all dependencies, high and critical advisories"
+            echo "- Result: \`$result\` (0 = passed)"
+            if [[ "$MANAGER" == "none" ]]; then
+              echo "- NOT SCANNED: this ref has no root JavaScript dependency manifest."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$result"
+
+  codeql:
+    name: CodeQL (JavaScript / TypeScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect JavaScript or TypeScript source
+        id: source
+        shell: bash
+        run: |
+          if [[ -d src || -d app || -d pages || -f tsconfig.json ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "### CodeQL" >> "$GITHUB_STEP_SUMMARY"
+            echo "NOT SCANNED: no JavaScript/TypeScript app on this ref." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Initialize CodeQL
+        if: steps.source.outputs.enabled == 'true'
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          build-mode: none
+
+      - name: Analyze
+        if: steps.source.outputs.enabled == 'true'
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"
