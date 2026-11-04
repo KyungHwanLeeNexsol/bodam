@@ -1,3 +1,4 @@
+import type { Origin } from '../../engine/types';
 import type { ApiServices } from '../api/services';
 import type { ServiceDeps } from '../deps';
 import type { Clock, IdGenerator } from '../domain/ports';
@@ -13,6 +14,8 @@ export interface AdminServices {
   readonly api: ApiServices;
   readonly deps: ServiceDeps;
   readonly authenticator: AdminAuthenticator;
+  /** 초안 게시로 새로 만들어지는 치료 버전에 붙는 출처. 운영 구성은 OPERATING 이다(기본값). */
+  readonly newTreatmentOrigin: Origin;
 }
 
 export interface AdminServicesParts {
@@ -20,9 +23,16 @@ export interface AdminServicesParts {
   clock: Clock;
   ids: IdGenerator;
   authenticator: AdminAuthenticator;
+  /** 새 치료의 출처. 생략하면 OPERATING. 시험 구성만 시험 자료 출처를 넘긴다(운영 구성은 넘기지 않는다: composition.ts). */
+  newTreatmentOrigin?: Origin;
 }
 
 /** 관리자 서비스를 만든다. 운영 경로는 이 함수를 직접 부르지 않고 composition.ts 의 createOperatingAdminServices 를 부른다(인증기가 고정이다). */
 export function createAdminServices(parts: AdminServicesParts): AdminServices {
-  return Object.freeze({ api: parts.api, deps: { repo: parts.api.repo, clock: parts.clock, ids: parts.ids }, authenticator: parts.authenticator });
+  return Object.freeze({
+    api: parts.api,
+    deps: { repo: parts.api.repo, clock: parts.clock, ids: parts.ids },
+    authenticator: parts.authenticator,
+    newTreatmentOrigin: parts.newTreatmentOrigin ?? 'OPERATING',
+  });
 }

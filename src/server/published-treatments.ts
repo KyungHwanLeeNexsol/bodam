@@ -1,3 +1,4 @@
+import { compareCodePoints } from '../engine/validate';
 import type { CatalogVersion, Treatment, TreatmentVersion } from './domain/entities';
 import type { Repository } from './repo/interfaces';
 
@@ -58,4 +59,12 @@ export function selectPublishedTreatments(
     }
   }
   return published;
+}
+
+/**
+ * 표시 순서의 단일 정의: 노출 순서(sortOrder) 오름차순이고 같으면 치료 id 의 코드 포인트 순. 입력 배열을 제자리에서 정렬하고 같은 배열을 돌려준다.
+ * 공개 카탈로그(api/published-catalog.ts)와 카탈로그 초안의 "기본 순서"(catalog-structure.ts)가 같은 정의를 쓴다: 둘이 다르면 "순서를 바꾸지 않았다"가 화면에서는 바뀐 것이 된다.
+ */
+export function sortForDisplay(list: PublishedTreatment[]): PublishedTreatment[] {
+  return list.sort((a, b) => a.treatment.sortOrder - b.treatment.sortOrder || compareCodePoints(a.treatment.id, b.treatment.id));
 }

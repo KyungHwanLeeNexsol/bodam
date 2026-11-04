@@ -2,11 +2,11 @@ import { priceConditionOf } from '../api/catalog';
 import { guarded } from '../api/integrity';
 import { readPublishedCatalog } from '../api/published-catalog';
 import { discardCatalogDraft, publishCatalogDraft, saveCatalogDraft } from '../catalog-draft';
-import { canonicalDigest } from '../digest';
+import { structureDefects } from '../catalog-structure';
 import type { Actor } from '../domain/actor';
 import type { CatalogDraft, Clinic } from '../domain/entities';
 import { DomainError } from '../domain/errors';
-import { issuePublishConfirmation, PUBLISH_CONFIRMATION_PATTERN } from '../publish-confirmation';
+import { draftContentDigest, issuePublishConfirmation, PUBLISH_CONFIRMATION_PATTERN } from '../publish-confirmation';
 import { isPlainObject } from '../validate/shape';
 import { actorForClinic, normalizeIdentity } from './auth';
 import type { AdminIdentity } from './auth';
@@ -18,9 +18,9 @@ import type { AdminServices } from './services';
 //
 //   GET    /api/admin/session                                   — 로그인한 신원(사용자 id·소속). 인증이 없으면 401.
 //   GET    /api/admin/clinics/{clinicId}/treatments             — 현재 게시 치료·가격과 초안(있으면)
-//   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 가격 수정을 초안으로 저장(덮어씀)
+//   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 초안 전체를 저장(덮어씀): { priceEdits?, additions?, deactivations?, order? } = 가격 수정 · 새 치료 · 숨김 · 표시 순서. 이전 모양 { priceEdits } 도 그대로 받는다
 //   DELETE /api/admin/clinics/{clinicId}/catalog/draft          — 초안 버리기
-//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 계산 대상에 초안이 가격을 바꾼 치료가 모두 들어 있고 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다
+//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 계산 대상에 초안이 가격을 바꾼 치료가 모두 들어 있고 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다. 가격 수정이 없는 초안은 계산 없이(before·after null) 목록·변경 목록만 낸다
 //   POST   /api/admin/clinics/{clinicId}/catalog/publish        — 본문 { publishConfirmation }: 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줬을 때 발급한 값이어야 게시한다
 //   GET    /api/admin/clinics/{clinicId}/catalog/versions       — 게시 이력
 //
@@ -63,10 +63,15 @@ async function readJson(request: Request): Promise<{ ok: true; body: unknown } |
 const draftView = (draft: CatalogDraft, currentCatalogVersion: string | null) => ({
   baseCatalogVersionId: draft.baseCatalogVersionId,
   priceEdits: draft.priceEdits.map((edit) => ({ treatmentId: edit.treatmentId, patientAmount: edit.patientAmount })),
+  /** 새 치료 초안(요청에 적은 표시 필드만). 분류·출처·치료 id 는 서버가 게시 때 정하므로 없다. */
+  additions: draft.additions.map((addition) => structuredClone(addition)),
+  deactivations: [...draft.deactivations],
+  /** null 이면 기본 순서(남는 기존 치료는 지금 순서 그대로, 새 치료는 뒤에). */
+  order: draft.order === null ? null : [...draft.order],
   updatedAt: draft.updatedAt,
   updatedBy: draft.updatedBy.id,
-  /** 가격 목록의 지문. 화면이 "저장된 초안이 그대로인가"를 비교하는 상태 표지일 뿐 게시 권한이 아니다(누구나 이 응답에서 얻는다). 게시는 미리보기가 준 publishConfirmation 으로만 한다. */
-  draftDigest: canonicalDigest(draft.priceEdits),
+  /** 초안 내용 전체(가격·새 치료·숨김·순서)의 지문. 화면이 "저장된 초안이 그대로인가"를 비교하는 상태 표지일 뿐 게시 권한이 아니다(누구나 이 응답에서 얻는다). 게시는 미리보기가 준 publishConfirmation 으로만 한다. */
+  draftDigest: draftContentDigest(draft),
   /** 초안이 근거한 카탈로그가 지금의 현재 카탈로그와 다르면 true: 이 초안은 게시할 수 없다. */
   stale: draft.baseCatalogVersionId !== currentCatalogVersion,
 });
@@ -119,16 +124,20 @@ const postPreview: Handler = async (services, request, actor, clinic) => {
   if (published.catalog === null || published.catalog.id !== draft.baseCatalogVersionId) {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
+  // 저장한 뒤 치료 기록이 바뀌어(숨길 치료가 이미 비활성이 되는 등) 초안의 구조가 현재 게시 치료와 맞지 않으면 낡은 초안처럼 다룬다: 게시도 같은 이유로 거절하므로 확인값을 내지 않는다.
+  if (structureDefects(services.api.repo, published.treatments, draft).length > 0) {
+    return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
+  }
   const parsed = parsePreviewRequest(body.body, draft);
   if (!parsed.ok) {
     return invalidRequest(parsed.defects);
   }
-  const preview = buildPreview(services.api, clinic, published, draft, parsed.request);
+  const preview = buildPreview(services.api, clinic, published, draft, parsed.request, services.newTreatmentOrigin);
   if (preview === null) {
     return invalidRequest([{ code: 'TREATMENT_NOT_IN_CATALOG', path: 'request.treatmentIds' }]);
   }
   // 계산이 성공했을 때만 게시 확인값을 싣는다. 이 요청을 한 관리자·이 병원·이 기준 카탈로그·이 초안(저장 한 번)에 묶인 값이다.
-  return ok({ ...preview, draftDigest: canonicalDigest(draft.priceEdits), publishConfirmation: issuePublishConfirmation(draft, actor.id) });
+  return ok({ ...preview, draftDigest: draftContentDigest(draft), publishConfirmation: issuePublishConfirmation(draft, actor.id) });
 };
 
 const postPublish: Handler = async (services, request, actor, clinic) => {
@@ -150,7 +159,7 @@ const postPublish: Handler = async (services, request, actor, clinic) => {
     return invalidRequest(defects);
   }
   // 초안 존재·낡음·확인값 일치는 게시 트랜잭션 안에서, 아무것도 쓰기 전에 서비스가 가린다(DRAFT_ABSENT·DRAFT_STALE·PREVIEW_REQUIRED → 409).
-  const catalog = publishCatalogDraft(services.deps, actor, clinic.id, confirmation, { acceptedLineOrigins: services.api.acceptedOrigins.lines });
+  const catalog = publishCatalogDraft(services.deps, actor, clinic.id, confirmation, { acceptedLineOrigins: services.api.acceptedOrigins.lines }, services.newTreatmentOrigin);
   return ok({ catalogVersion: catalog.id, publishedAt: catalog.publishedAt, changeSummary: catalog.changeSummary });
 };
 

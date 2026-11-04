@@ -30,7 +30,7 @@ export function buildHarness(): Harness {
   publishSecondClinicCatalog(world);
   const services = createTestServices({ repo: world.repo });
   const authenticator = new TestAdminAuthenticator();
-  const admin = createAdminServices({ api: services, clock: world.clock, ids: world.ids, authenticator });
+  const admin = createAdminServices({ api: services, clock: world.clock, ids: world.ids, authenticator, newTreatmentOrigin: 'TEST_FIXTURE' });
   return { services, admin, authenticator };
 }
 
