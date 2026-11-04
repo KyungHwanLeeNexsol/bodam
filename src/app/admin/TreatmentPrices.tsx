@@ -28,6 +28,7 @@ function failureMessage(result: Api<unknown>): string {
   if (result.status === 400) {
     const codes = (failure.defects ?? []).map((defect) => defect.code);
     if (codes.includes('ORIGIN_NOT_ACCEPTED')) return COPY.errors.originNotAccepted;
+    if (codes.includes('CHANGED_TREATMENT_NOT_INCLUDED')) return COPY.errors.changedNotIncluded;
     if (codes.includes('NO_PRICE_CHANGE')) return COPY.errors.noChange;
     if (codes.includes('TREATMENT_NOT_IN_CATALOG')) return COPY.errors.notInCatalog;
     if (codes.includes('VALUE_INVALID') || codes.includes('VALUE_MISSING')) return COPY.errors.amount;
@@ -98,6 +99,8 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
     [parsed],
   );
   const draft = data?.draft ?? null;
+  /** 저장된 초안이 가격을 바꾼 치료. 미리보기 계산에서 빠질 수 없어 선택이 고정된다(서버도 빠지면 거절한다). */
+  const requiredIds = useMemo(() => new Set((draft?.priceEdits ?? []).map((edit) => edit.treatmentId)), [draft]);
   const savedMatches = useMemo(() => {
     if (draft === null || draft.priceEdits.length !== edits.length) return false;
     const saved = new Map(draft.priceEdits.map((edit) => [edit.treatmentId, edit.patientAmount]));
@@ -150,11 +153,14 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
 
   const runPreview = (): Promise<void> =>
     run(async () => {
-      const selected = Object.entries(picked).filter(([, on]) => on).map(([id]) => id);
-      const body = { ...condition, ...(selected.length > 0 ? { treatmentIds: selected } : {}) };
+      // 계산 대상 = 가격을 바꾼 치료(고정) + 사용자가 더 고른 치료. 목록 순서를 따른다.
+      const selected = rows.filter((row) => requiredIds.has(row.treatmentId) || picked[row.treatmentId] === true).map((row) => row.treatmentId);
+      const body = { ...condition, treatmentIds: selected };
       const result = await request<PreviewResponse>('POST', `${base}/catalog/preview`, body);
       if (result.status !== 200) {
         setMessage({ kind: 'error', text: failureMessage(result) });
+        // 화면의 초안이 서버와 달라 변경 치료가 빠졌다고 서버가 알려 주면 서버 상태를 다시 읽는다.
+        if ((result.body as ApiFailure).defects?.some((defect) => defect.code === 'CHANGED_TREATMENT_NOT_INCLUDED')) await refresh();
         return;
       }
       setPreview(result.body as PreviewResponse);
@@ -324,13 +330,23 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
             ))}
             <div className="admin-checks" role="group" aria-label={COPY.previewTreatments}>
               <span className="admin-label-text">{COPY.previewTreatments}</span>
-              {rows.map((row) => (
-                <label key={row.treatmentId} className="admin-check">
-                  <input type="checkbox" checked={picked[row.treatmentId] ?? false} onChange={(event) => { setPicked((current) => ({ ...current, [row.treatmentId]: event.target.checked })); setPreview(null); }} />
-                  {row.displayName}
-                </label>
-              ))}
+              {rows.map((row) => {
+                const required = requiredIds.has(row.treatmentId);
+                return (
+                  <label key={row.treatmentId} className="admin-check" data-admin-pick={row.treatmentId} data-required={required}>
+                    <input
+                      type="checkbox"
+                      checked={required || (picked[row.treatmentId] ?? false)}
+                      disabled={required}
+                      onChange={(event) => { setPicked((current) => ({ ...current, [row.treatmentId]: event.target.checked })); setPreview(null); }}
+                    />
+                    {row.displayName}
+                    {required ? <span className="admin-sub2"> · {COPY.previewRequiredPick}</span> : null}
+                  </label>
+                );
+              })}
             </div>
+            <p className="admin-hint">{COPY.previewTreatmentsNote}</p>
           </fieldset>
           <div className="admin-actions">
             <button type="button" className="admin-btn" disabled={!canPreview} onClick={() => void runPreview()}>

@@ -34,6 +34,9 @@ export type PreviewParse = { ok: true; request: EstimateRequest } | { ok: false;
 /**
  * 미리보기 요청 본문 `{ generation, insurerType, cause, treatmentIds? }` 읽기. 다른 키는 UNKNOWN_FIELD 로 거절한다. treatmentIds 를 생략하면 초안이 바꾼 치료 전부다.
  * 값의 검사는 공개 계산 요청과 같은 함수(parseEstimateRequest)다: 형식·열거값 위반은 INVALID_REQUEST, 지원하지 않는 세대는 UNSUPPORTED_GENERATION, 빈 선택은 NO_TREATMENT_SELECTED 코드의 결함이다.
+ * 게시 확인값은 미리보기가 성공해야 나가므로, 계산 대상에는 초안이 가격을 바꾼 치료가 **모두** 들어 있어야 한다. 명시한 treatmentIds 에 하나라도 빠지면
+ * CHANGED_TREATMENT_NOT_INCLUDED 로 거절한다(변경 안 한 치료만 고른 경우도 같다). 정상적인 추가 선택(변경 치료 전부 + 다른 치료)은 허용한다.
+ * 판단은 파싱을 마친 계산 요청(실제 계산에 쓰이는 값)에 대해 한다.
  */
 export function parsePreviewRequest(body: unknown, draft: CatalogDraft): PreviewParse {
   if (!isPlainObject(body)) {
@@ -51,7 +54,14 @@ export function parsePreviewRequest(body: unknown, draft: CatalogDraft): Preview
     cause: body.cause,
     treatmentIds: body.treatmentIds === undefined ? draft.priceEdits.map((edit) => edit.treatmentId) : body.treatmentIds,
   });
-  return parsed.ok ? { ok: true, request: parsed.request } : { ok: false, defects: [{ code: parsed.error, path: 'request' }] };
+  if (!parsed.ok) {
+    return { ok: false, defects: [{ code: parsed.error, path: 'request' }] };
+  }
+  const calculated = new Set(parsed.request.treatmentIds);
+  if (draft.priceEdits.some((edit) => !calculated.has(edit.treatmentId))) {
+    return { ok: false, defects: [{ code: 'CHANGED_TREATMENT_NOT_INCLUDED', path: 'request.treatmentIds' }] };
+  }
+  return { ok: true, request: parsed.request };
 }
 
 export interface PriceChangeRow {

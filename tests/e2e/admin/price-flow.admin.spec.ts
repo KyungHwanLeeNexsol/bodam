@@ -13,6 +13,7 @@ test.describe.configure({ mode: 'serial' });
 const CLINIC_ID = 'TEST_FIXTURE_CLINIC_1';
 const KIOSK = '/kiosk/test-fixture-clinic-1';
 const T1 = 'TEST_FIXTURE_TREATMENT_1';
+const T2 = 'TEST_FIXTURE_TREATMENT_2';
 /** 형식(소문자 16진수 64자)은 맞지만 서버가 발급한 적 없는 게시 확인값. */
 const NOT_ISSUED = 'a'.repeat(64);
 const SHOTS = path.resolve('.moai/state/shots/m7-admin');
@@ -24,6 +25,9 @@ const shoot = async (page: Page, name: string): Promise<void> => {
 const row = (page: Page, treatmentId: string) => page.locator(`[data-admin-row="${treatmentId}"]`);
 const priceInput = (page: Page, treatmentId: string) => row(page, treatmentId).locator('input');
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
+/** 미리보기 "계산할 치료" 체크박스. */
+const pick = (page: Page, treatmentId: string) => page.locator(`[data-admin-pick="${treatmentId}"] input`);
+const previewRequest = (page: Page) => page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/catalog/preview'));
 
 async function login(page: Page, account: string): Promise<void> {
   await page.goto('/__harness/login');
@@ -138,7 +142,16 @@ test('미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보
   await expect(page.locator('[data-admin-draft="saved"]')).toBeVisible();
   await expect(button(page, '게시')).toBeDisabled();
   await expect(page.getByLabel('세대')).toBeVisible();
-  await button(page, '미리보기 계산').click();
+  // 가격을 바꾼 치료(T1)는 선택된 채 고정되고(해제 불가) 표시가 붙는다. 나머지(T2)만 고르거나 해제할 수 있다.
+  const requiredPick = pick(page, T1);
+  await expect(requiredPick).toBeChecked();
+  await expect(requiredPick).toBeDisabled();
+  await expect(page.locator(`[data-admin-pick="${T1}"]`)).toContainText('가격 변경 · 항상 포함');
+  const extraPick = pick(page, T2);
+  await expect(extraPick).toBeEnabled();
+  await expect(extraPick).not.toBeChecked();
+  const [firstRequest] = await Promise.all([previewRequest(page), button(page, '미리보기 계산').click()]);
+  expect((firstRequest.postDataJSON() as { treatmentIds: string[] }).treatmentIds).toEqual([T1]);
   const preview = page.locator('[data-admin-preview]');
   await expect(preview).toBeVisible();
   await expect(preview.locator(`[data-admin-change="${T1}"]`)).toContainText('10,000원 → 12,000원');
@@ -149,6 +162,16 @@ test('미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보
   expect(await preview.innerText()).not.toMatch(/\b0원/);
   await expect(button(page, '게시')).toBeEnabled();
   await shoot(page, '4-preview');
+  // 변경하지 않은 치료를 더 고르면 미리보기를 다시 봐야 하고, 요청에는 변경 치료(T1)와 추가 치료(T2)가 함께 간다. 해제도 된다.
+  await extraPick.check();
+  await expect(page.locator('[data-admin-preview]')).toHaveCount(0);
+  await expect(button(page, '게시')).toBeDisabled();
+  const [secondRequest] = await Promise.all([previewRequest(page), button(page, '미리보기 계산').click()]);
+  expect((secondRequest.postDataJSON() as { treatmentIds: string[] }).treatmentIds).toEqual([T1, T2]);
+  await expect(page.locator('[data-admin-preview]')).toBeVisible();
+  await expect(button(page, '게시')).toBeEnabled();
+  await extraPick.uncheck();
+  await expect(page.locator('[data-admin-preview]')).toHaveCount(0);
   // 입력을 바꾸면 미리보기를 다시 봐야 한다(초안과 입력이 다르면 게시할 수 없다).
   await priceInput(page, T1).fill('13000');
   await expect(button(page, '게시')).toBeDisabled();
@@ -238,4 +261,50 @@ test('초안 버리기: 저장한 초안을 버려도 키오스크 가격은 그
   await expect(page.locator('[data-admin-draft="none"]')).toBeVisible();
   await expect(priceInput(page, 'TEST_FIXTURE_TREATMENT_2')).toHaveValue('10000');
   expect(await kioskCatalogPrices(page)).toEqual(pricesBefore);
+});
+
+test('치료 두 개의 가격을 바꾸면 둘 다 계산 대상에 고정되고, 미리보기 → 게시 → 키오스크에 두 가격이 모두 반영된다 (일부만 계산하는 길은 서버가 막는다)', async ({ page, browser }) => {
+  await login(page, 'ha-clinic-1');
+  await expect(page.locator('[data-admin-draft="none"]')).toBeVisible();
+  await priceInput(page, T1).fill('13000');
+  await priceInput(page, T2).fill('9000');
+  await button(page, '초안 저장').click();
+  await expect(page.locator('[data-admin-draft="saved"]')).toBeVisible();
+
+  // 가격을 바꾼 두 치료 모두 선택된 채 고정되어 빠질 수 없다.
+  for (const id of [T1, T2]) {
+    await expect(pick(page, id)).toBeChecked();
+    await expect(pick(page, id)).toBeDisabled();
+    await expect(page.locator(`[data-admin-pick="${id}"]`)).toContainText('가격 변경 · 항상 포함');
+  }
+  await shoot(page, '4c-two-changes-required');
+
+  // 화면을 거치지 않고 API 로 하나만 계산하려 해도 서버가 400 으로 거절하고 확인값을 주지 않는다. 키오스크 가격은 그대로다.
+  for (const ids of [[T1], [T2]]) {
+    const partial = await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/preview`, { data: { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: ids } });
+    expect(partial.status()).toBe(400);
+    const body = (await partial.json()) as { defects: Array<{ code: string; path: string }>; publishConfirmation?: string };
+    expect(body.defects).toContainEqual({ code: 'CHANGED_TREATMENT_NOT_INCLUDED', path: 'request.treatmentIds' });
+    expect(body.publishConfirmation).toBeUndefined();
+  }
+  expect(await kioskCatalogPrices(page)).toEqual([12_000, 10_000]);
+
+  // 화면의 미리보기는 두 치료를 모두 계산 대상으로 보낸다.
+  const [request] = await Promise.all([previewRequest(page), button(page, '미리보기 계산').click()]);
+  expect((request.postDataJSON() as { treatmentIds: string[] }).treatmentIds).toEqual([T1, T2]);
+  const preview = page.locator('[data-admin-preview]');
+  await expect(preview.locator(`[data-admin-change="${T1}"]`)).toContainText('12,000원 → 13,000원');
+  await expect(preview.locator(`[data-admin-change="${T2}"]`)).toContainText('10,000원 → 9,000원');
+  await shoot(page, '4d-two-changes-preview');
+
+  await button(page, '게시').click();
+  await expect(page.locator('[data-admin-message="ok"]')).toContainText('게시했습니다');
+  await expect(row(page, T1).locator('[data-admin-current]')).toHaveText('13,000원');
+  await expect(row(page, T2).locator('[data-admin-current]')).toHaveText('9,000원');
+  expect(await kioskCatalogPrices(page)).toEqual([13_000, 9_000]);
+
+  const kioskContext = await browser.newContext({ viewport: { width: 1080, height: 1920 }, locale: 'ko-KR' });
+  const kiosk = await kioskContext.newPage();
+  expect(await kioskHospitalPayment(kiosk)).toBe('18,000원'); // 치료 13,000 + 공통 기본비용 5,000
+  await kioskContext.close();
 });

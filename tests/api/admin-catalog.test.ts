@@ -11,6 +11,7 @@ import { CLINIC_1_SLUG, publishSecondClinicCatalog } from '../fixtures/server/ap
 import { T1, T2 } from '../fixtures/server/base-fee.fixture';
 import { buildWorld } from '../fixtures/server/estimate-world.fixture';
 import { CounterIdGenerator, FixedClock } from '../fixtures/server/clock.fixture';
+import { makeTreatment, makeTreatmentVersion } from '../fixtures/server/entities.fixture';
 import { OTHER_CLINIC_ID, OTHER_CLINIC_TREATMENT_ID } from '../fixtures/server/versioning.fixture';
 
 // 관리자 API (M7 첫 기능): 인증 401, 권한·병원 소속 403, 잘못된 입력 400, 충돌 409, 그리고 가격 수정 → 초안 저장 → 미리보기 → 게시 → 공개 카탈로그·계산 반영의 한 바퀴.
@@ -350,7 +351,11 @@ describe('400: 잘못된 입력은 어긋난 필드 경로와 함께 거절되�
       [{ generation: 'GEN4_C4', insurerType: 'BANK', cause: 'UNKNOWN' }, 'INVALID_REQUEST'],
       [{ generation: 'GEN9', insurerType: 'NON_LIFE', cause: 'UNKNOWN' }, 'UNSUPPORTED_GENERATION'],
       [{ generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: [] }, 'NO_TREATMENT_SELECTED'],
-      [{ generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: [OTHER_CLINIC_TREATMENT_ID] }, 'TREATMENT_NOT_IN_CATALOG'],
+      // 변경 치료(T1)는 포함하고 다른 병원의 치료를 더한다: 포함 규칙은 통과하고 "현재 카탈로그에 없는 치료" 로 거절된다.
+      [{ generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: [T1, OTHER_CLINIC_TREATMENT_ID] }, 'TREATMENT_NOT_IN_CATALOG'],
+      // 변경 치료가 빠진 선택은 어떤 치료로 채워도 거절된다.
+      [{ generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: [T2] }, 'CHANGED_TREATMENT_NOT_INCLUDED'],
+      [{ generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: [OTHER_CLINIC_TREATMENT_ID] }, 'CHANGED_TREATMENT_NOT_INCLUDED'],
     ];
     for (const [body, code] of cases) {
       const response = await call(world.admin, 'POST', `${CLINIC}/catalog/preview`, body);
@@ -638,6 +643,183 @@ describe('미리보기 없이는 게시할 수 없다: 서버가 미리보기 �
     // 감사 기록에도 열쇠(revision)와 확인값이 남지 않는다.
     expect(JSON.stringify(world.world.repo.listAuditLog())).not.toContain(revision);
     expect(JSON.stringify(world.world.repo.listAuditLog())).not.toContain(confirmation);
+  });
+});
+
+describe('미리보기 계산 대상: 가격이 바뀐 치료를 모두 포함해야 게시 확인값을 받는다', () => {
+  const T3 = 'TEST_FIXTURE_TREATMENT_3';
+  const NOT_INCLUDED = { code: 'CHANGED_TREATMENT_NOT_INCLUDED', path: 'request.treatmentIds' };
+  const saveBoth = (admin: AdminOf): Promise<Response> => call(admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }, { treatmentId: T2, patientAmount: 9_000 }] });
+  const previewOf = (admin: AdminOf, treatmentIds?: unknown, condition: Record<string, unknown> = PREVIEW_BODY): Promise<Response> =>
+    call(admin, 'POST', `${CLINIC}/catalog/preview`, { ...condition, ...(treatmentIds === undefined ? {} : { treatmentIds }) });
+  const pricesOf = async (world: ReturnType<typeof setup>): Promise<number[]> => (await publicCatalog(world)).treatments.map((row: Json) => row.patientAmount);
+
+  /** 병원 1 에 치료 셋(T1·T2 와, 이 시험에서 가격을 바꾸지 않을 T3)이 게시된 세계. T3 는 승인된 매핑이 없다. */
+  async function setupThree(): Promise<ReturnType<typeof setup>> {
+    const world = setup('ha-clinic-1');
+    world.world.repo.saveTreatment(makeTreatment({ id: T3, sortOrder: 3 }));
+    const { publishCatalog } = await import('../../src/server/catalog-publish');
+    const current = world.world.repo.getClinicCurrentCatalogVersion(TEST_FIXTURE_CLINIC_ID)!;
+    const versions = current.treatmentVersionIds.map((id) => world.world.repo.getTreatmentVersion(id)!);
+    publishCatalog(
+      world.world.deps,
+      { id: 'TEST_FIXTURE_HA_CLINIC_1', role: 'HA' },
+      TEST_FIXTURE_CLINIC_ID,
+      {
+        treatmentVersions: [...versions, makeTreatmentVersion({ id: 'TEST_FIXTURE_TV_3', treatmentId: T3, displayName: 'TEST_FIXTURE 치료 3', patientAmount: 11_000 })],
+        commonBaseFees: current.baseFeeIds.map((id) => world.world.repo.getCommonBaseFee(id)!),
+      },
+      { acceptedLineOrigins: ['OPERATING', 'TEST_FIXTURE', 'DEMO'] },
+    );
+    return world;
+  }
+
+  /** 거절된 미리보기의 공통 확인: 400, 어긋난 필드, 확인값·지문 없음, 저장소 전체와 초안이 호출 전과 같다. */
+  async function expectRejected(world: ReturnType<typeof setup>, response: Response, before: unknown, name: string): Promise<void> {
+    expect(response.status, name).toBe(400);
+    const body = await json(response);
+    expect(body.error, name).toBe('INVALID_REQUEST');
+    expect(JSON.stringify(body), name).not.toContain('publishConfirmation');
+    expect(JSON.stringify(body), name).not.toMatch(/[0-9a-f]{64}/);
+    expect(world.world.repo.exportState(), name).toEqual(before);
+    expect(world.world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID), name).not.toBeNull();
+  }
+
+  it('치료 두 개의 가격을 바꾸고 treatmentIds 를 생략하면 변경 치료 전체가 계산되고 확인값이 나온다 (기존 동작)', async () => {
+    const world = setup('ha-clinic-1');
+    await saveBoth(world.admin);
+    const response = await previewOf(world.admin);
+    expect(response.status).toBe(200);
+    const body = await json(response);
+    expect(body.request.treatmentIds).toEqual([T1, T2]);
+    expect(body.priceChanges.map((row: Json) => row.treatmentId)).toEqual([T1, T2]);
+    expect(body.publishConfirmation).toMatch(/^[0-9a-f]{64}$/);
+    expect((await publish(world.admin, { publishConfirmation: body.publishConfirmation })).status).toBe(200);
+    expect(await pricesOf(world)).toEqual([12_000, 9_000]);
+  });
+
+  it.each<[string, string[]]>([
+    ['변경한 치료 중 T1 하나만', [T1]],
+    ['변경한 치료 중 T2 하나만', [T2]],
+  ])('두 치료를 바꾸고 %s 선택하면 400 CHANGED_TREATMENT_NOT_INCLUDED, 확인값 없음, 저장소 불변', async (name, ids) => {
+    const world = setup('ha-clinic-1');
+    await saveBoth(world.admin);
+    const before = world.world.repo.exportState();
+    const response = await previewOf(world.admin, ids);
+    await expectRejected(world, response, before, name);
+    // (response 본문은 한 번만 읽을 수 있으므로 결함은 새 요청으로 본다)
+    expect((await json(await previewOf(world.admin, ids))).defects).toContainEqual(NOT_INCLUDED);
+    expect(await pricesOf(world)).toEqual([10_000, 10_000]);
+  });
+
+  it('변경하지 않은 치료만 선택하면 400 이다 (T1·T2 를 바꾸고 T3 만 / T1 만 바꾸고 T2·T3 만)', async () => {
+    const world = await setupThree();
+    await saveBoth(world.admin);
+    let before = world.world.repo.exportState();
+    expect((await json(await previewOf(world.admin, [T3]))).defects).toContainEqual(NOT_INCLUDED);
+    await expectRejected(world, await previewOf(world.admin, [T3]), before, 'T3 만');
+
+    await saveT1(world.admin);
+    before = world.world.repo.exportState();
+    expect((await json(await previewOf(world.admin, [T2, T3]))).defects).toContainEqual(NOT_INCLUDED);
+    await expectRejected(world, await previewOf(world.admin, [T2, T3]), before, 'T2·T3 만');
+  });
+
+  it('변경 전체를 명시하면(순서가 달라도) 200 이고 확인값으로 게시된다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveBoth(world.admin);
+    const response = await previewOf(world.admin, [T2, T1]);
+    expect(response.status).toBe(200);
+    const body = await json(response);
+    expect([...body.request.treatmentIds].sort()).toEqual([T1, T2]);
+    expect((await publish(world.admin, { publishConfirmation: body.publishConfirmation })).status).toBe(200);
+    expect(await pricesOf(world)).toEqual([12_000, 9_000]);
+  });
+
+  it('변경 전체와 변경하지 않은 추가 치료를 함께 선택하면 200 이고 추가 치료도 계산된다 (정상적인 추가 선택)', async () => {
+    const world = await setupThree();
+    await saveBoth(world.admin);
+    const response = await previewOf(world.admin, [T1, T2, T3]);
+    expect(response.status).toBe(200);
+    const body = await json(response);
+    expect(body.request.treatmentIds).toEqual([T1, T2, T3]);
+    expect(body.priceChanges.map((row: Json) => row.treatmentId)).toEqual([T1, T2]); // 가격 변경 내역은 초안의 변경뿐이다
+    expect(body.publishConfirmation).toMatch(/^[0-9a-f]{64}$/);
+    expect((await publish(world.admin, { publishConfirmation: body.publishConfirmation })).status).toBe(200);
+    expect(await pricesOf(world)).toEqual([12_000, 9_000, 11_000]);
+
+    // 변경이 하나뿐인 초안에서도 추가 선택은 된다.
+    await saveT1(world.admin, 13_000);
+    const single = await previewOf(world.admin, [T1, T3]);
+    expect(single.status).toBe(200);
+    expect((await json(single)).request.treatmentIds).toEqual([T1, T3]);
+  });
+
+  it('중복·빈 선택·형식 오류로 포함 규칙을 우회할 수 없다: 모두 400 이고 확인값이 없다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveBoth(world.admin);
+    const before = world.world.repo.exportState();
+    const cases: Array<[string, unknown]> = [
+      ['같은 치료를 두 번', [T1, T1]],
+      ['빈 선택', []],
+      ['문자열 하나', T1],
+      ['null', null],
+      ['치료 id 가 아닌 값이 섞임', [T1, 7]],
+      ['대소문자만 다른 id', [T1.toLowerCase(), T2]],
+      ['앞뒤 공백이 붙은 id', [` ${T1}`, T2]],
+    ];
+    for (const [name, ids] of cases) {
+      const response = await previewOf(world.admin, ids);
+      expect(response.status, name).toBe(400);
+      expect(JSON.stringify(await json(response)), name).not.toContain('publishConfirmation');
+    }
+    expect(world.world.repo.exportState()).toEqual(before);
+  });
+
+  it('보류(ON_HOLD)가 나오는 보험 조건의 기존 동작은 그대로다: 변경 치료를 모두 포함하면 200 + 확인값(보류 결과), 빠지면 400', async () => {
+    const world = setup('ha-clinic-1');
+    await saveBoth(world.admin);
+    const held = { generation: 'GEN3_C3', insurerType: 'NON_LIFE', cause: 'UNKNOWN' };
+    const response = await previewOf(world.admin, [T1, T2], held);
+    expect(response.status).toBe(200);
+    const body = await json(response);
+    expect(body.before.result.state).toBe('ON_HOLD');
+    expect(body.after.result.state).toBe('ON_HOLD');
+    expect(body.publishConfirmation).toMatch(/^[0-9a-f]{64}$/);
+    expect((await previewOf(world.admin, undefined, held)).status).toBe(200); // 생략도 그대로
+    const before = world.world.repo.exportState();
+    expect((await previewOf(world.admin, [T1], held)).status).toBe(400);
+    expect(world.world.repo.exportState()).toEqual(before);
+  });
+
+  it('권한 검사는 포함 규칙보다 먼저다: 인증 없음 401, 다른 병원 HA·RV·PO 403 (선택이 불완전해도 400 이 아니다), 저장소 불변', async () => {
+    for (const [account, status] of [[null, 401], ['ha-clinic-2', 403], ['rv-1', 403], ['po-1', 403]] as const) {
+      const world = setup(account);
+      const before = world.world.repo.exportState();
+      const response = await previewOf(world.admin, [T3]);
+      expect(response.status, String(account)).toBe(status);
+      expect(JSON.stringify(await json(response)), String(account)).not.toContain('publishConfirmation');
+      expect(world.world.repo.exportState(), String(account)).toEqual(before);
+    }
+  });
+
+  it('거절된 미리보기 뒤에 변경 전체를 포함해 다시 하면 확인값을 받아 게시한다. 확인값의 결합·무효화는 그대로다 (초안을 다시 저장하면 이전 확인값은 못 쓴다)', async () => {
+    const world = await setupThree();
+    await saveBoth(world.admin);
+    expect((await previewOf(world.admin, [T1])).status).toBe(400);
+    const accepted = (await json(await previewOf(world.admin, [T1, T2, T3]))).publishConfirmation as string;
+    expect(accepted).toMatch(/^[0-9a-f]{64}$/);
+
+    await saveBoth(world.admin); // 같은 가격으로 다시 저장
+    const before = world.world.repo.exportState();
+    const rejected = await publish(world.admin, { publishConfirmation: accepted });
+    expect(rejected.status).toBe(409);
+    expect(await json(rejected)).toEqual({ error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' });
+    expect(world.world.repo.exportState()).toEqual(before);
+
+    const fresh = (await json(await previewOf(world.admin, [T2, T1]))).publishConfirmation as string;
+    expect(fresh).not.toBe(accepted);
+    expect((await publish(world.admin, { publishConfirmation: fresh })).status).toBe(200);
   });
 });
 

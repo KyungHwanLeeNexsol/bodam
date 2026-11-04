@@ -20,7 +20,7 @@ import type { AdminServices } from './services';
 //   GET    /api/admin/clinics/{clinicId}/treatments             — 현재 게시 치료·가격과 초안(있으면)
 //   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 가격 수정을 초안으로 저장(덮어씀)
 //   DELETE /api/admin/clinics/{clinicId}/catalog/draft          — 초안 버리기
-//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다
+//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 계산 대상에 초안이 가격을 바꾼 치료가 모두 들어 있고 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다
 //   POST   /api/admin/clinics/{clinicId}/catalog/publish        — 본문 { publishConfirmation }: 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줬을 때 발급한 값이어야 게시한다
 //   GET    /api/admin/clinics/{clinicId}/catalog/versions       — 게시 이력
 //

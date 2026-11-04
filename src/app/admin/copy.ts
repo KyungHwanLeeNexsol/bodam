@@ -45,6 +45,8 @@ export const ADMIN_COPY = {
   insurerType: '보험사 형태',
   cause: '치료 원인',
   previewTreatments: '계산할 치료',
+  previewTreatmentsNote: '가격을 바꾼 치료는 모두 계산에 포함되어야 게시할 수 있어서 항상 선택된 채로 고정됩니다. 나머지 치료는 함께 확인하고 싶을 때만 고르세요.',
+  previewRequiredPick: '가격 변경 · 항상 포함',
   runPreview: '미리보기 계산',
   before: '현재 게시본',
   after: '초안 적용 시',
@@ -70,6 +72,7 @@ export const ADMIN_COPY = {
     server: '서버 오류로 처리하지 못했습니다. 아무것도 바뀌지 않았습니다.',
     noChange: '현재 가격과 다른 항목이 없습니다.',
     notInCatalog: '현재 게시된 치료가 아닌 항목이 있습니다.',
+    changedNotIncluded: '가격을 바꾼 치료가 계산 대상에서 빠져 미리보기를 만들지 않았습니다. 화면의 초안이 서버와 달랐을 수 있어 새로 불러왔으니 다시 미리보기를 실행해 주세요. 아무것도 게시되지 않았습니다.',
     amount: '가격은 0 이상의 정수(원)여야 합니다.',
   },
 } as const;
