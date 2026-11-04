@@ -17,7 +17,7 @@ import { CounterIdGenerator, FixedClock } from '../fixtures/server/clock.fixture
 import { buildWorld } from '../fixtures/server/estimate-world.fixture';
 import type { World } from '../fixtures/server/lifecycle.fixture';
 import type { MemoryRepository } from '../../src/server/repo/memory/memory-repository';
-import { OTHER_CLINIC_ID } from '../fixtures/server/versioning.fixture';
+import { OTHER_CLINIC_ID, OTHER_CLINIC_TREATMENT_ID } from '../fixtures/server/versioning.fixture';
 
 // 관리자 API 의 구조 편집 (M7): 새 치료 추가 · 숨김 · 표시 순서를 같은 초안 → 미리보기 → 게시 흐름으로 다룬다. 모두 handleAdmin 을 지난다.
 // 세계: 병원 1 에 치료 셋(T1·T2·T3, 표시 순서 T1·T2·T3)과 공통 기본비용·승인된 매핑(T1·T2)·게시된 규칙 묶음. T3 에는 매핑이 없다. 병원 2 는 따로 있다.
@@ -168,6 +168,14 @@ describe('PUT draft: 구조 편집 저장', () => {
     expect(readReadiness(world.world.repo, READINESS_CTX)).toEqual(readinessBefore);
     expect(await publicEstimate(world, [T1, T2, T3])).toEqual(estimateBefore);
     expect(await publicOrder(world)).toEqual([[T1, 10_000, 1], [T2, 10_000, 1], [T3, 11_000, 3]]);
+  });
+
+  it('draftKey 가 다른 병원의 치료 id 여도 저장된다: 같은 병원 안의 충돌만 거절하므로 다른 병원 치료의 존재가 응답으로 드러나지 않는다', async () => {
+    const world = setup('ha-clinic-1');
+    const response = await putDraft(world.admin, { additions: [additionBody(OTHER_CLINIC_TREATMENT_ID)] });
+    expect(response.status).toBe(200);
+    expect((await json(response)).draft.additions.map((row: Json) => row.draftKey)).toEqual([OTHER_CLINIC_TREATMENT_ID]);
+    // 같은 병원의 치료 id 와 겹치면 여전히 거절한다 (아래 BAD 표의 'draftKey 가 기존 치료 id').
   });
 
   const BAD: Array<[string, unknown, string, string]> = [

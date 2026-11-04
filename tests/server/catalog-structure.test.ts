@@ -120,7 +120,6 @@ describe('초안 저장 (구조 편집): 거절은 INVALID_INPUT 이고 저장�
     ['없는 치료를 숨김', { deactivations: ['NO_SUCH_TREATMENT'] }, 'TREATMENT_NOT_IN_CATALOG', 'deactivations[0]'],
     ['다른 병원 치료를 숨김 (없는 치료와 같은 코드)', { deactivations: [OTHER_CLINIC_TREATMENT_ID] }, 'TREATMENT_NOT_IN_CATALOG', 'deactivations[0]'],
     ['draftKey 가 기존 치료 id 와 같음', { additions: [additionBody(T1)] }, 'DRAFT_KEY_COLLIDES', 'additions[0].draftKey'],
-    ['draftKey 가 다른 병원 치료 id 와 같음', { additions: [additionBody(OTHER_CLINIC_TREATMENT_ID)] }, 'DRAFT_KEY_COLLIDES', 'additions[0].draftKey'],
     ['draftKey 가 공통 기본비용의 안정 식별자와 같음', { additions: [additionBody(makeBaseFeeVersion(1).baseFeeId)] }, 'DRAFT_KEY_COLLIDES', 'additions[0].draftKey'],
     ['순서에 빠진 항목 (새 치료 누락)', { additions: [additionBody(A)], order: [T1, T2, T3] }, 'ORDER_INCOMPLETE', 'order'],
     ['순서에 빠진 항목 (기존 치료 누락)', { order: [T1, T3] }, 'ORDER_INCOMPLETE', 'order'],
@@ -147,6 +146,33 @@ describe('초안 저장 (구조 편집): 거절은 INVALID_INPUT 이고 저장�
     expect(error.defects).toContainEqual({ code, path });
     expect(world.repo.exportState()).toEqual(before);
     expect(world.ids.next('CATALOG_DRAFT_REVISION')).toBe('TEST_FIXTURE_CATALOG_DRAFT_REVISION_2');
+  });
+
+  // draftKey 는 초안 안에서만 쓰는 이름표다(진짜 치료 id 는 게시 때 서버가 만든다). 같은 병원 안에서만 겹침을 가리고, 다른 병원의 치료·기본비용 존재는 드러내지 않는다.
+  it('draftKey 가 다른 병원의 치료 id 와 같아도 저장된다 (다른 병원의 치료 존재를 드러내지 않는다)', () => {
+    const world = threeTreatmentWorld();
+    addOtherClinic(world.repo);
+    const draft = save(world, { additions: [additionBody(OTHER_CLINIC_TREATMENT_ID)] });
+    expect(draft.additions.map((addition) => addition.draftKey)).toEqual([OTHER_CLINIC_TREATMENT_ID]);
+    // 게시되면 새 치료는 이 병원 몫의 새 id 를 받고, 다른 병원의 치료 기록은 그대로다.
+    publish(world);
+    expect(displayed(world)).toEqual([T1, T2, T3, ADDED_1]);
+    expect(world.repo.getTreatment(OTHER_CLINIC_TREATMENT_ID)).toMatchObject({ clinicId: OTHER_CLINIC_ID, active: true });
+  });
+
+  it('draftKey 가 다른 병원의 공통 기본비용 식별자와 같아도 저장된다', () => {
+    const world = threeTreatmentWorld();
+    addOtherClinic(world.repo);
+    const otherFeeId = 'TEST_FIXTURE_OTHER_CLINIC_BASE_FEE';
+    world.repo.putCommonBaseFee(makeBaseFeeVersion(7, { clinicId: OTHER_CLINIC_ID, baseFeeId: otherFeeId }));
+    expect(save(world, { additions: [additionBody(otherFeeId)] }).additions.map((addition) => addition.draftKey)).toEqual([otherFeeId]);
+  });
+
+  it('draftKey 가 같은 병원의 비활성 치료 id 와 같으면 거절한다 (숨긴 치료도 이 병원의 치료다)', () => {
+    const world = threeTreatmentWorld();
+    world.repo.saveTreatment({ ...world.repo.getTreatment(T3)!, active: false });
+    const error = rejectionOf(() => save(world, { additions: [additionBody(T3)] }));
+    expect(error.defects).toContainEqual({ code: 'DRAFT_KEY_COLLIDES', path: 'additions[0].draftKey' });
   });
 
   it('거절된 저장은 식별자 생성기를 쓰지 않는다 (새 치료 id 는 게시 때만 만든다)', () => {

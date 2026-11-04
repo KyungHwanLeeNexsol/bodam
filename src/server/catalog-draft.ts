@@ -76,7 +76,7 @@ export function saveCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: stri
       throw new DomainError('INVALID_INPUT', `초안 요청이 형식을 어겼다 (결함 ${parsed.defects.length}건)`, parsed.defects);
     }
     const { priceEdits, additions, deactivations, order } = parsed.request;
-    const defects: Defect[] = structureDefects(deps.repo, treatments, { priceEdits, additions, deactivations, order });
+    const defects: Defect[] = structureDefects(deps.repo, clinicId, treatments, { priceEdits, additions, deactivations, order });
     const priceOf = new Map(treatments.map(({ treatment, version }) => [treatment.id, version.patientAmount]));
     const changed = priceEdits.filter((edit) => priceOf.has(edit.treatmentId) && priceOf.get(edit.treatmentId) !== edit.patientAmount);
     const storedOrder = defects.length === 0 ? canonicalOrder(treatments, { priceEdits, additions, deactivations, order }) : order;
@@ -99,8 +99,7 @@ export function saveCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: stri
       updatedAt: deps.clock.now(),
     };
     const before = deps.repo.getCatalogDraft(clinicId);
-    deps.repo.saveCatalogDraft(draft);
-    appendAudit(deps, actor, {
+    deps.repo.saveCatalogDraft(draft);    appendAudit(deps, actor, {
       action: 'CATALOG_DRAFT_SAVE',
       target: `CATALOG_DRAFT/${clinicId}`,
       beforeVersion: before === null ? null : draftContentDigest(before),
@@ -160,7 +159,7 @@ export function publishCatalogDraft(
       throw conflict('PREVIEW_REQUIRED', `병원 '${clinicId}' 의 현재 초안에 대해 이 행위자에게 발급된 미리보기 확인값이 아니다`);
     }
     // 방어: 초안을 저장한 뒤 치료 기록이 바뀌어(숨김 대상이 이미 비활성이거나 순서가 현재 목록과 맞지 않는 등) 구조가 어긋났으면 낡은 초안처럼 거절한다. 아직 아무것도 쓰지 않았다.
-    if (structureDefects(deps.repo, treatments, draft).length > 0) {
+    if (structureDefects(deps.repo, clinicId, treatments, draft).length > 0) {
       throw conflict('DRAFT_STALE', `병원 '${clinicId}' 의 초안이 현재 게시 치료와 맞지 않는다`);
     }
     // 1) 임시 id 로 먼저 검증한다(거절이 id 생성기를 쓰지 않게). 새 치료의 출처가 게시 구성에 허용되지 않으면 여기서 ORIGIN_NOT_ACCEPTED 로 거절된다.

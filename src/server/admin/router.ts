@@ -125,7 +125,7 @@ const postPreview: Handler = async (services, request, actor, clinic) => {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
   // 저장한 뒤 치료 기록이 바뀌어(숨길 치료가 이미 비활성이 되는 등) 초안의 구조가 현재 게시 치료와 맞지 않으면 낡은 초안처럼 다룬다: 게시도 같은 이유로 거절하므로 확인값을 내지 않는다.
-  if (structureDefects(services.api.repo, published.treatments, draft).length > 0) {
+  if (structureDefects(services.api.repo, clinic.id, published.treatments, draft).length > 0) {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
   const parsed = parsePreviewRequest(body.body, draft);

@@ -55,11 +55,12 @@ export function canonicalOrder(published: readonly PublishedTreatment[], parts: 
  * 초안을 병원의 현재 게시 치료(활성, P)와 맞춰 본 결함. 읽기만 한다. 순서는 가격 수정 → 숨김 → 새 치료 → 표시 순서다.
  *  - 가격 수정: P 에 없으면 TREATMENT_NOT_IN_CATALOG, 숨김 대상이면 PRICE_EDIT_ON_DEACTIVATED.
  *  - 숨김: P 에 없으면 TREATMENT_NOT_IN_CATALOG. 다른 병원 치료와 없는 치료는 같은 코드라 다른 병원의 존재를 드러내지 않는다.
- *  - 새 치료: draftKey 가 어떤 치료 id(어느 병원이든)나 공통 기본비용의 안정 식별자와 겹치면 DRAFT_KEY_COLLIDES.
+ *  - 새 치료: draftKey 는 초안 안에서만 쓰는 이름표다(진짜 치료 id 는 게시 때 서버가 만든다). 그래서 같은 병원 안의 충돌만 본다 —
+ *    이 병원의 치료 id(비활성 포함)나 이 병원의 공통 기본비용 안정 식별자와 겹치면 DRAFT_KEY_COLLIDES. 다른 병원의 치료·기본비용과 겹치는 것은 거절하지 않는다(거절하면 다른 병원의 존재가 드러난다).
  *  - 순서: F = (P − 숨김) + 새 치료의 draftKey 의 정확한 순열이어야 한다. F 에 없는 항목(숨긴 치료·다른 병원 치료 포함)은 ORDER_UNKNOWN_ENTRY, F 의 항목이 빠지면 ORDER_INCOMPLETE.
  *    항목 중복(DUPLICATE_ORDER_ENTRY)은 형식 검사(parseDraftRequest)가 이미 거른다. 직접 만든 초안을 넘기는 호출에 대비해 여기서도 한 번 더 본다.
  */
-export function structureDefects(repo: StructureReads, published: readonly PublishedTreatment[], parts: DraftParts): Defect[] {
+export function structureDefects(repo: StructureReads, clinicId: string, published: readonly PublishedTreatment[], parts: DraftParts): Defect[] {
   const defects: Defect[] = [];
   const publishedIds = new Set(published.map(({ treatment }) => treatment.id));
   const hidden = new Set(parts.deactivations);
@@ -76,7 +77,8 @@ export function structureDefects(repo: StructureReads, published: readonly Publi
     }
   });
   parts.additions.forEach((addition, index) => {
-    if (repo.getTreatment(addition.draftKey) !== null || repo.listCommonBaseFeeVersions(addition.draftKey).length > 0) {
+    const sameName = repo.getTreatment(addition.draftKey);
+    if ((sameName !== null && sameName.clinicId === clinicId) || repo.listCommonBaseFeeVersions(addition.draftKey).some((fee) => fee.clinicId === clinicId)) {
       defects.push({ code: 'DRAFT_KEY_COLLIDES', path: `additions[${index}].draftKey` });
     }
   });
