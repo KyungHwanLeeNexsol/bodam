@@ -90,12 +90,14 @@ describe('실제 운영 진입점', () => {
     }
   });
 
-  it('모든 route.ts 의 서비스 취득은 한 곳(src/app/services.ts 의 getApiServices)뿐이다', () => {
+  it('모든 route.ts 의 서비스 취득은 한 곳뿐이다: 공개 API 는 src/app/services.ts 의 getApiServices, 관리자 API(M7)는 src/app/admin-services.ts 의 getAdminServices(그 함수도 getApiServices 의 저장소를 쓴다)', () => {
     for (const path of appFiles.filter((entry) => entry.endsWith('/route.ts'))) {
       const text = readSourceFiles(APP_DIR, 'src/app').find((file) => file.path === path)!.text;
       const specifiers = extractModuleRefs(tokenize(text)).map((ref) => ref.specifier);
       expect(specifiers.filter((specifier) => /services$/.test(specifier ?? '')), path).toHaveLength(1);
-      expect(text.match(/getApiServices\(\)/g), path).toHaveLength(1);
+      const isAdmin = path.startsWith('src/app/api/admin/');
+      expect(text.match(isAdmin ? /getAdminServices\(\)/g : /getApiServices\(\)/g), path).toHaveLength(1);
+      expect(text.match(isAdmin ? /getApiServices\(\)/g : /getAdminServices\(\)/g), path).toBeNull();
     }
   });
 });

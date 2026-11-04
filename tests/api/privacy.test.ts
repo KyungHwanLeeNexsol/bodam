@@ -384,5 +384,6 @@ describe('AC-016n 키오스크 시도 requestId (본문·헤더 x-request-id·�
     }
     expect(files.length).toBeGreaterThan(40);
     expect(scannedValues).toBeGreaterThan(20); // 빈 검사 방지: 함수가 아닌 내보내기(상수 표 등)를 실제로 훑었다
-  });
+    // 시간 한도(M7): src 의 모든 모듈을 하나씩 불러오는 시험이라 관리자 모듈이 늘면서 전체 시험을 커버리지와 함께 돌릴 때 기본 5초를 넘긴 적이 있다(단독 실행은 통과). 검사 내용은 그대로다.
+  }, 30_000);
 });

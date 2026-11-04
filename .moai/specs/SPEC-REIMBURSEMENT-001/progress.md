@@ -3417,6 +3417,77 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 - 보험 문구 최종 승인(§E #18·#22·#23·#24·#32·#35)은 여전히 열려 있다.
 - 실제 콘솔 Ctrl+C 확인은 이 Windows 11 기계에서 한 번이다. 다른 OS·터미널에서의 종료는 확인하지 않았다. `test:e2e` 의 `global-setup` 서버는 `-H 127.0.0.1` 을 주지 않았다(미리보기만 고쳤다).
 
+### M7 첫 기능: 병원 관리자 치료 가격 수정 → 초안 저장 → 미리보기 → 게시 → 키오스크 반영 (2026-11-04)
+
+**범위와 기준.** PR #7(`feature/SPEC-REIMBURSEMENT-001-m6-kiosk-ui`, `a5f777d`) 위의 별도 브랜치 `feature/SPEC-REIMBURSEMENT-001-m7-admin-price`, 작업 트리 `bodam-wt-m7`. 시작 전에 원격·작업 트리·기존 M7 브랜치와 PR 이 없음을 확인했다. **M7 전체가 아니라 첫 기능 하나만이다.** M6 문구가 승인되었다는 기록도 아니다(§E #18·#22·#23·#24·#32·#35 는 그대로 열려 있다). 이 절의 모든 시험은 시험 자료(`TEST_FIXTURE`)를 쓴 시험 자료 점검이며 운영 자료 검증이 아니다.
+
+#### 만든 것
+
+| 영역 | 파일 | 내용 |
+|------|------|------|
+| 저장소 | `domain/entities.ts`, `repo/interfaces.ts`, `repo/memory/*` | `CatalogDraft`(병원마다 하나, 가변 기록: 치료별 새 가격만)와 `saveCatalogDraft`·`getCatalogDraft`·`closeCatalogDraft`. 초안은 치료 버전·카탈로그 버전·병원의 현재 카탈로그를 쓰지 않는다. 불변 기록에는 삭제 동작을 추가하지 않았다(기존 "삭제·초기화 이름 없음" 시험을 약화하지 않으려고 `close` 로 이름 지었다) |
+| 도메인 서비스 | `server/catalog-draft.ts`, `catalog-draft-request.ts` | `saveCatalogDraft`(검증: 가격 범위·형식·중복·현재 카탈로그의 활성 치료·변경 있음), `discardCatalogDraft`, `publishCatalogDraft`(초안 → 가격만 다른 새 치료 버전 → **기존 `publishCatalog` 한 경로**로 새 카탈로그 게시 → 초안 닫기). 낡은 초안(DRAFT_STALE)·초안 없음(DRAFT_ABSENT)은 STATE_CONFLICT |
+| 계산 재사용 | `server/api/estimate.ts`(`calculate` 내보냄), `server/admin/catalog-preview.ts` | 미리보기는 공개 계산과 **같은 함수**로 현재 게시본과 초안 적용 카탈로그를 두 번 계산해 나란히 보인다(읽기만, 식별자·저장 없음). 두 번째 계산 구현은 없다 |
+| 인증·권한 경계 | `server/admin/auth.ts` | `AdminAuthenticator`(서버가 검증한 `userId` + 병원 소속 목록), `UNCONNECTED_ADMIN_AUTHENTICATOR`(운영: 아무도 인증하지 않음), 신원 모양 정규화(공급자 결함 → 인증 안 됨), `actorForClinic`(병원 id 와 역할이 정확히 같은 소속만 HA 로 인정) |
+| 관리자 API | `server/admin/router.ts`, `http.ts`, `services.ts`, `src/app/api/admin/[...path]/route.ts` | 아래 "API" 표. 처리 순서: 인증(401) → 경로·메서드(404·405) → 소속·역할(403) → 병원 존재(404) → 본문(400) → 서비스. 모든 응답 `no-store` |
+| 운영 연결 | `server/composition.ts`(`createOperatingAdminServices`), `src/app/admin-services.ts`, `src/app/clock.ts` | 인증기를 받지 않고 UNCONNECTED 로 고정. 시계·식별자(UUID)는 src/server 가 만들 수 없어 `src/app` 이 주입한다. 모듈 수준 상태 없음 |
+| 화면 | `src/app/admin/**`, `next.config.mjs` | `/admin`(입구), `/admin/{clinicId}/treatments`(가격 표·초안·미리보기·게시·이력). 서버가 준 값만 보이고, 네트워크 출구는 `transport.ts` 하나(같은 출처 상대 경로). 관리자 문서도 `no-store`. 화면 값(입력·결과)은 저장소·주소로 내보내지 않는다 |
+| 시험 환경 | `tests/fixtures/server/admin.fixture.ts`, `tests/e2e/harness/{world,server,login}.ts` | 시험 계정 4개(병원 1 HA·병원 2 HA·RV·PO), `TestAdminAuthenticator`(서버의 세션 표 + HttpOnly 쿠키), 시험 로그인 화면. **tests/ 에만 있다.** 앞단 서버는 관리자·공개 API 를 같은 저장소의 실제 핸들러로 처리한다 |
+
+**API (DD-19 관리자 API (제안)의 부분집합).** `GET /api/admin/session` · `GET /api/admin/clinics/{id}/treatments` · `PUT·DELETE …/catalog/draft` · `POST …/catalog/preview` · `POST …/catalog/publish`(본문 `{ draftDigest }`: 사람이 미리보기에서 본 초안과 게시하는 초안이 같음을 보장, 다르면 409 DRAFT_CHANGED) · `GET …/catalog/versions`. 초안 요청 본문은 `{ priceEdits: [{ treatmentId, patientAmount }] }` 뿐이고 **다른 키는 모두 400(UNKNOWN_FIELD)** 이다: 급여 구분·행위 코드·치료 코드·분류·묶음 관련 필드를 보낼 길이 없다.
+
+#### 지킨 약속과 그 증거
+
+| 약속 | 증거 |
+|------|------|
+| 초안은 공개 가격에 영향을 주지 않는다 | `tests/server/catalog-draft.test.ts`: 초안 저장 뒤 저장소 전체(초안·감사 기록 제외)가 저장 전과 같다. `tests/api/admin-catalog.test.ts`·`tests/e2e/admin/price-flow.admin.spec.ts`: 초안 저장 뒤에도 공개 catalog 의 버전·가격과 키오스크 계산(15,000원)이 그대로 |
+| 게시 뒤에만 새 가격이 반영된다 | 같은 시험: 게시 뒤 새 catalog 버전·가격, 새 계산이 미리보기와 같은 금액(17,000원/브라우저 18,000원), 옛 버전을 본 요청은 409 `priceChanged=true` |
+| 가격 수정은 보장 매핑 승인·규칙 묶음 변경으로 이어지지 않는다 | `catalog-draft.test.ts`: 게시 전후로 매핑 상태(APPROVED·PUBLISHED)·묶음 목록·묶음 가용성 사건·규칙 사용 범위 이력·검토 요청 기록이 같고 재검토 감사 기록이 없다. 새 치료 버전은 가격(과 id)만 다르다. **변이 점검**: 새 버전의 `treatmentCode` 를 일부러 바꾸자 이 시험 둘이 실패했다(되돌림). 정적: `tests/boundary/admin-surface.test.ts` 4번(초안 서비스·관리자 코드가 불변 기록·매핑·묶음·범위를 쓰는 동작을 직접 부르지 않고, 저장소에 쓰는 것은 초안 저장·닫기·감사뿐) |
+| 인증 없으면 401, 권한·병원 소속이 맞지 않으면 403, 저장 상태 불변 | `admin-catalog.test.ts`: 모든 경로 7개 × (401 / 다른 병원 HA·RV·PO 403) 에서 응답과 **저장소 전체 비교**. 없는 병원도 소속이 없으면 403(존재를 알리지 않음). 브라우저: RV·PO·병원 2 HA 가 화면에서 권한 없음 안내, API 쓰기 시도 403, 키오스크 가격 그대로 |
+| 역할·병원·사용자를 헤더·쿼리·본문으로 정할 수 없다 | `admin-catalog.test.ts` 위조 시도(`x-role`·`x-clinic-id`·`authorization`·쿠키·쿼리·본문의 역할): 인증 없음 → 401, RV 가 `x-role: HA` → 403. 정적: 관리자 서버·진입 코드에 `headers`·`cookie`·`searchParams` 식별자가 없고 요청에서 읽는 것은 `method`·`json()` 뿐 |
+| 시험 로그인·기본 관리자는 운영 구성에 없다 | `admin-surface.test.ts` 2번(운영 구성은 UNCONNECTED 하나, 시험 인증기·계정 이름이 src 에 없음), `tests/api/admin-catalog.test.ts`(운영 구성 관리자 서비스는 시험 쿠키·헤더를 줘도 7개 경로 모두 401), 브라우저 운영 구성(`unavailable.production.spec.ts`): 문서 200·API 401·시험 로그인 404·가격 입력·단추 없음 |
+| 운영 인증 어댑터가 연결되기 전에는 관리자 기능을 운영에서 쓸 수 없다 | 위와 같다: 운영의 인증기가 아무도 인증하지 않으므로 모든 관리자 API 가 401 이고 화면은 안내만 보인다 |
+| 잘못된 가격·다른 병원 치료 id 는 거절되고 저장되지 않는다 | 도메인·API·브라우저: 음수·소수·범위 밖·문자열·없는 치료·다른 병원의 치료·변경 없음·알 수 없는 키 → 400 과 어긋난 필드 경로, 저장소 전체 비교 불변 |
+| 게시 거절 시 데이터 불변 | 운영 허용 출처(OPERATING)로 시험 자료 줄을 게시하면 400(ORIGIN_NOT_ACCEPTED)이고 카탈로그·치료 버전·초안·감사 기록이 그대로이며 식별자 생성기도 쓰지 않았다(도메인·API 시험). 낡은 초안·바뀐 초안 digest·초안 없음은 409 이고 불변 |
+| 가격 수정에 보장 판단 필드 변경을 섞을 수 없다 | `UNKNOWN_FIELD` 거절 시험(도메인·API·브라우저 API 호출) |
+
+#### 직접 실행한 검증 (2026-11-04, 이 작업 트리, Windows 11, Node 24, 설치된 Chrome)
+
+| 확인 | 결과 |
+|------|------|
+| `npx tsc --noEmit` | 종료 0 |
+| `next build` | 종료 0. 경로에 `/admin`, `/admin/[clinicId]/treatments`, `/api/admin/[...path]` 가 더해졌다 |
+| 단위 전체 `vitest run --coverage` | 165 파일 / 8516 통과. 새 모듈 커버리지: `catalog-draft.ts` 99%(문장), `admin/auth.ts` 95%, `admin/router.ts` 92%. 전체 문장 90.4% |
+| 새 시험 | `tests/server/catalog-draft.test.ts` 36, `tests/api/admin-catalog.test.ts` 57, `tests/boundary/admin-surface.test.ts` 26 |
+| 기존 시험 보정 | 운영 구성 내보내기 목록(`production-composition`), 전송 파일 예외(`estimate-surface`·`engine-module-identity`), route 의 서비스 취득(`production-no-fixtures`), 저장소 읽기 감시 표(`repo-memory`)에 이번 추가분을 반영했다. 규칙(운영에 시험 자료 없음, 모듈 수준 상태 없음, 시계는 clock.ts, 바깥 호출은 전송 파일 둘뿐)은 약화하지 않았다. `privacy.test.ts` 의 한 시험은 src 모듈을 모두 불러오는 시험이라 시간 한도를 30초로 늘렸다(전체를 커버리지와 함께 돌릴 때 5초를 한 번 넘음; 검사 내용 그대로) |
+| 브라우저 (Playwright, `--workers=1`) | 관리자 흐름 `admin` 7, 운영 구성 `production` 10(관리자 4 + 키오스크 6), 실제 핸들러 `real` 세로·가로 27+27, 미리보기 `preview` 세로·가로 6+6(관리자 화면 안내 띠 시험 추가). 합계 83 통과, 24 건너뜀(`SHOTS=1` 일 때만 도는 사진 시험) |
+| `npm run preview:kiosk` 를 빌드부터 실제 실행 | 리스닝 `127.0.0.1:3201`·`3202` 뿐. 실제 Chrome 으로 로그인 전 안내 → 권한 없는 계정(RV) 안내 → 병원 1 관리자로 기존 가격 10,000원 확인 → 키오스크 계산 15,000원 → 13,000원으로 수정·초안 저장 → 키오스크 여전히 15,000원 → 미리보기 15,000원 → 18,000원 → 게시(새 카탈로그 버전) → 키오스크 18,000원, 운영 구성(`:3201`)의 관리자 화면은 문서 200·API 401·안내만. 매 단계 고정 시험 데이터 띠 확인 |
+| Ctrl+C 뒤 | 실제 콘솔 Ctrl+C 를 보낸 뒤 3201·3202 리스닝 0, 이 프로젝트의 node 프로세스 0 |
+
+층 구분: 위 관리자 브라우저 시험과 미리보기 실행은 **실제 HTTP 왕복**이다(`page.route` 가로채기 없음). 시험 로그인과 시험 인증기는 시험 앞단의 것이다. 도메인·API 시험(단위 층)은 핸들러를 `Request` 객체로 직접 부른다. 반복하지 않은 것: 키오스크 가로채기 층(I, 756+757)과 사진 156장, 개발 서버 Strict Mode 시험(3) — 이번 변경은 키오스크 화면·상태 기계를 건드리지 않았다(`src/app/kiosk/**` 변경 없음).
+
+#### M7 수용 기준 상태 (닫지 않았다)
+
+| AC | 이번 기능에서 본 것 | 못 본 것 |
+|----|--------------------|----------|
+| AC-021f (관리자 오류 표) | 401·403·400(수치·게시 검증 위반, 어긋난 필드 경로)이 가격 초안·게시 경로에서 | 규칙 묶음 게시·중지 경로, 사유 없는 중지, 도메인 거절 변환(`AC-011e`·`AC-011h`·`AC-011i`) 전부 |
+| AC-022a (권한 표 전체) | HA 의 카탈로그 초안·미리보기·게시·이력 칸과, 그 칸에 대한 RV·PO·다른 병원 HA 의 403, 인증 없음 401 | 권한 표의 나머지 자원·동작 전부(병원 설정·무조작 정책·기본비용·검토 요청·규칙 데이터·묶음·범위·소속·감사 기록) |
+| AC-022b (병원 격리) | 병원 2 HA 가 병원 1 가격을 읽거나 바꾸려 하면 403, 병원 1 게시가 병원 2 카탈로그를 바꾸지 않음 | 목록 응답에 다른 병원 데이터가 섞이지 않는다는 점은 병원별 경로라서 해당 사례가 없다(병원 목록 API 없음) |
+| AC-022c (여러 역할) | 시험 안 함(인증기의 소속 목록은 여러 역할을 담을 수 있게 만들었으나 시험하지 않았다) | 전부 |
+| AC-016f, AC-021d | `admin-surface.test.ts` 5번: 키오스크 코드가 admin 모듈을 가져오지 않고 `/admin` 문자열을 담지 않는다(이전 증거). AC-021d 는 `src/` 전체 검사가 아직 아니다 | 숨은 터치 진입이 없다는 렌더링 증거, `src/` 전체의 가져오기·바깥 호출 검사 |
+| AC-023·024·025 | 해당 없음(구현하지 않음) | 전부 |
+
+#### 열린 결정과 하지 않은 것 (다음 결정으로 기록)
+
+1. **관리자 인증 공급자(§E #2)와 소속의 출처.** 지금은 인증기 포트뿐이다. 공급자가 정해지면 (a) 공급자 클레임으로 소속을 줄지, (b) `ClinicMembership` 저장소(DD-18)로 둘지, (c) 세션 쿠키 설계, (d) **CSRF 방어**를 정해야 한다. 지금 관리자 본문은 `Content-Type` 과 무관하게 JSON 으로 읽으므로(헤더를 읽지 않기로 한 경계 때문) 쿠키 인증을 연결할 때 `application/json` 요구·출처 검사·SameSite 설정을 함께 넣어야 한다. 시험 인증기는 쿠키를 쓰지만 시험 앞단 전용이다.
+2. **가격 기준일 정책.** 가격만 바뀐 새 치료 버전은 `amountCondition.referenceDate`·`effectiveDate` 를 원본 그대로 옮긴다. 가격을 바꿀 때 기준일을 갱신해야 하는지는 사업 판단이다(환자 화면의 `priceCondition` 문구에 기준일이 나온다).
+3. **초안 규칙.** 병원마다 초안 하나, 마지막 저장이 이긴다. 그 사이 게시가 있으면 게시 거절(DRAFT_STALE), 초안이 바뀌면 거절(DRAFT_CHANGED). 초안 보관 기한·여러 관리자의 동시 편집 표시·변경 사유 입력은 정하지 않았다.
+4. **DD-19 관리자 API 표 갱신 필요.** 구현한 경로가 제안과 다르다: `PUT …/catalog/draft`(제안은 `PATCH …/treatments/{id}`), 게시 본문의 `draftDigest`, 오류 코드 409 `CONFLICT`(reason: DRAFT_STALE·DRAFT_CHANGED·DRAFT_ABSENT·CATALOG_ABSENT)·404 `NOT_FOUND`·405 는 오류 표에 없다. SPEC 본문은 이번에 고치지 않았다.
+5. **디자인 대조 미실시.** 이번 세션에서 Pencil MCP 로 `design.pen` 의 A02~A04 를 열지 못했다(앱을 띄운 뒤에도 MCP 가 파일을 열린 것으로 보지 않았다). `design-requirements.md` 의 기록(변경 규칙: 금액만 바꾸면 승인 매핑 유지·새 가격 버전, 분류 변경은 검토 요청)만 따랐고 시안과의 시각 대조는 하지 않았다. 관리자 화면 문구(`src/app/admin/copy.ts`)는 최종 승인이 아니다.
+6. **하지 않은 기능**: 치료 추가·비활성·순서 변경, 공통 기본비용 수정, 이전 게시 버전 복구 화면(`restoreCatalogVersion` 서비스는 있으나 화면·API 없음), 감사 기록 조회, 검토 요청(보장 분류 변경), 병원 설정·무조작 정책, 소속·역할 관리, 규칙 사용 범위, 기기-병원 연결.
+7. **시험 한계**: 시험 앞단의 시계는 고정 값이라 게시 이력의 시각이 모두 같다. 관리자 화면은 Chrome 한 가지, PC 화면 크기(1280)에서만 봤다. 시험 자료의 두 치료 이름이 같아(`TEST_FIXTURE 시험 치료`) 화면에서 치료 id 를 함께 보이게 했다.
+8. 작업 트리 `src/app/kiosk/state/machine.ts` 는 줄바꿈 표시(CRLF) 때문에 새 작업 트리에서 정적 시험 두 개가 실패해 작업 트리에서만 LF 로 바꿨고 **커밋하지 않았다**(M6 작업 트리와 같은 상태).
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

@@ -3,6 +3,7 @@ import { canonicalDigest } from '../../digest';
 import type {
   AuditLogEntry,
   BundleAvailability,
+  CatalogDraft,
   CatalogVersion,
   Clinic,
   ClinicRuleScope,
@@ -235,6 +236,38 @@ export class MemoryRepository implements Repository {
   listCatalogVersions(clinicId: string): CatalogVersion[] {
     this.spy.record('listCatalogVersions');
     return [...this.store.catalogVersions.values()].filter((catalog) => catalog.clinicId === clinicId).map(deepCopy);
+  }
+
+  // ───────────────────────── 카탈로그 초안 (M7, 가변 기록) ─────────────────────────
+
+  saveCatalogDraft(draft: CatalogDraft): void {
+    this.requireClinic(draft.clinicId);
+    const base = this.store.catalogVersions.get(draft.baseCatalogVersionId);
+    if (base === undefined) {
+      throw notFound('카탈로그 버전', draft.baseCatalogVersionId);
+    }
+    if (base.clinicId !== draft.clinicId) {
+      throw new DomainError('REF_CONTENT_MISMATCH', `카탈로그 버전 '${base.id}' 은(는) 병원 '${draft.clinicId}' 의 것이 아니다`);
+    }
+    for (const edit of draft.priceEdits) {
+      const treatment = this.store.treatments.get(edit.treatmentId);
+      if (treatment === undefined) {
+        throw notFound('치료', edit.treatmentId);
+      }
+      if (treatment.clinicId !== draft.clinicId) {
+        throw new DomainError('REF_CONTENT_MISMATCH', `치료 '${treatment.id}' 은(는) 병원 '${draft.clinicId}' 의 것이 아니다`);
+      }
+    }
+    this.store.catalogDrafts.set(draft.clinicId, deepCopy(draft));
+  }
+
+  getCatalogDraft(clinicId: string): CatalogDraft | null {
+    this.spy.record('getCatalogDraft');
+    return this.read(this.store.catalogDrafts, clinicId);
+  }
+
+  closeCatalogDraft(clinicId: string): void {
+    this.store.catalogDrafts.delete(clinicId);
   }
 
   // ───────────────────────── 보험사·약관 ─────────────────────────

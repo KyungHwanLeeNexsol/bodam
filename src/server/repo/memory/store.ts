@@ -1,5 +1,6 @@
 import type {
   AuditLogEntry,
+  CatalogDraft,
   CatalogVersion,
   Clinic,
   ClinicRuleScope,
@@ -24,6 +25,7 @@ export interface Store {
   treatmentVersions: Map<string, TreatmentVersion>;
   baseFees: Map<string, CommonBaseFee>;
   catalogVersions: Map<string, CatalogVersion>;
+  catalogDrafts: Map<string, CatalogDraft>;
   insurers: Map<string, Insurer>;
   policySources: Map<string, PolicySource>;
   reviewRequests: Map<string, CoverageReviewRequest>;
@@ -43,6 +45,7 @@ export function emptyStore(): Store {
     treatmentVersions: new Map(),
     baseFees: new Map(),
     catalogVersions: new Map(),
+    catalogDrafts: new Map(),
     insurers: new Map(),
     policySources: new Map(),
     reviewRequests: new Map(),

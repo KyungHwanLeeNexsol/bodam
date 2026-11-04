@@ -49,7 +49,7 @@ export interface CatalogResponse {
  * 금액 적용 조건(환자 유형·가정·기준일)을 한 줄 문구로 만든다. [문서에 없음] DD-19 는 `priceCondition` 이 문자열이라고만 정한다.
  * 저장된 세 값을 가운뎃점으로 이어 붙이고 기준일에만 라벨을 붙인다. 값을 해석하거나 바꾸지 않는다.
  */
-function priceConditionOf(condition: { patientType: string; assumption: string; referenceDate: string }): string {
+export function priceConditionOf(condition: { patientType: string; assumption: string; referenceDate: string }): string {
   return `${condition.patientType} · ${condition.assumption} · 기준일 ${condition.referenceDate}`;
 }
 

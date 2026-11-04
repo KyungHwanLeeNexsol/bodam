@@ -1,6 +1,9 @@
 import { CLINIC_1_SLUG, CLINIC_2_SLUG, createTestServices, publishSecondClinicCatalog } from '../../fixtures/server/api-composition.fixture';
 import { buildWorld } from '../../fixtures/server/estimate-world.fixture';
+import type { AdminServices } from '../../../src/server/admin/services';
+import { createAdminServices } from '../../../src/server/admin/services';
 import type { ApiServices } from '../../../src/server/api/services';
+import { TestAdminAuthenticator } from '../../fixtures/server/admin.fixture';
 
 // 시험 자료(TEST_FIXTURE). 브라우저 시험의 "실제 핸들러" 층이 쓰는 세계: 서비스 경로로 게시한 두 병원이다. 운영 자료가 아니다. src/ 는 이 파일을 가져오지 않는다(tests/boundary/production-no-fixtures.test.ts).
 //  - 병원 1: 계산 요청 통합 시험(tests/api)과 같은 세계다. 치료 둘(급여 10,000 · 비급여 10,000)과 공통 기본비용(급여 5,000)을 게시하고, 4세대(C4) · 손해보험사 칸의 표준 가정과
@@ -12,8 +15,25 @@ import type { ApiServices } from '../../../src/server/api/services';
 export const HARNESS_CLINIC_SLUG = CLINIC_1_SLUG;
 export const HARNESS_HOLD_CLINIC_SLUG = CLINIC_2_SLUG;
 
-export function buildHarnessServices(): ApiServices {
+export interface Harness {
+  /** 공개 API(키오스크)가 쓰는 서비스. */
+  services: ApiServices;
+  /** 관리자 API 가 쓰는 서비스. 저장소는 위 서비스와 같은 것이다: 관리자가 게시한 가격이 키오스크에 바로 보인다(M7 첫 기능). */
+  admin: AdminServices;
+  /** 시험 로그인이 세션을 만드는 시험 인증기(tests/ 에만 있다). 운영 구성에는 없다. */
+  authenticator: TestAdminAuthenticator;
+}
+
+/** 두 병원의 세계 하나와 그 위의 공개 서비스·관리자 서비스. 같은 저장소·시계·식별자 생성기를 쓴다. */
+export function buildHarness(): Harness {
   const { world } = buildWorld();
   publishSecondClinicCatalog(world);
-  return createTestServices({ repo: world.repo });
+  const services = createTestServices({ repo: world.repo });
+  const authenticator = new TestAdminAuthenticator();
+  const admin = createAdminServices({ api: services, clock: world.clock, ids: world.ids, authenticator });
+  return { services, admin, authenticator };
+}
+
+export function buildHarnessServices(): ApiServices {
+  return buildHarness().services;
 }

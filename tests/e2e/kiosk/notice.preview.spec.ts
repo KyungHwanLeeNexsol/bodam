@@ -175,6 +175,25 @@ test.describe('시험 데이터 안내는 처음부터 끝까지 같은 자리�
     await expectNoticeFixed(page, await noticeGeometry(page), '병원 없음');
   });
 
+  test('관리자 화면(시험 로그인 뒤 가격 관리)에서도 안내 띠가 같은 자리에 고정되고, 앱 틀 안에서 관리자 화면이 쿠키 로그인으로 동작한다', async ({ page, browser }) => {
+    await page.goto('/__harness/login');
+    await expect(notice(page)).toHaveText(TEST_NOTICE);
+    await page.locator('[data-test-account="ha-clinic-1"]').click();
+    await expect(page).toHaveURL(/\/admin\/TEST_FIXTURE_CLINIC_1\/treatments$/);
+    const baseline = await noticeGeometry(page);
+    await expectNoticeFixed(page, baseline, '관리자 화면');
+    await expect(app(page).locator('[data-admin-state="ready"]')).toBeVisible();
+    await expect(app(page).locator('[data-admin-clinic]')).toHaveText('TEST_FIXTURE 시험 의원');
+    // 로그인하지 않은 새 맥락에서는 같은 주소가 로그인 필요 안내이고 띠는 그대로다.
+    const origin = new URL(page.url()).origin;
+    const other = await browser.newContext({ viewport: page.viewportSize() as { width: number; height: number } });
+    const anonymous = await other.newPage();
+    await anonymous.goto(`${origin}/admin/TEST_FIXTURE_CLINIC_1/treatments`);
+    await expect(anonymous.frameLocator('iframe.preview-app').locator('[data-admin-state="unauthenticated"]')).toBeVisible();
+    await expect(anonymous.locator('[data-test-notice]')).toHaveText(TEST_NOTICE);
+    await other.close();
+  });
+
   test('앞단은 브라우저 화면 이동에만 틀을 씌운다: 스크립트·curl 같은 요청은 앱 문서를 그대로 받고 응답 헤더는 no-store 다', async ({ page, request }) => {
     // 틀 안 앱 문서의 요청(같은 주소, iframe 요청)을 따로 잡는다.
     const innerDocument = page.waitForResponse((response) => response.url().endsWith(PATH) && response.request().frame() !== page.mainFrame());

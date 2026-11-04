@@ -51,7 +51,8 @@ describe('운영 구성: 허용 출처', () => {
   });
 
   it('허용 출처를 바꾸는 매개변수나 덮어쓰는 훅이 없다: 모듈이 내보내는 것은 둘뿐이고, 인자로 허용 출처를 넘겨도 쓰이지 않는다', () => {
-    expect(Object.keys(compositionModule).sort()).toEqual(['OPERATING_ACCEPTED_ORIGINS', 'createOperatingServices']);
+    // M7: 관리자 서비스의 운영 구성(createOperatingAdminServices)이 셋째다. 그 함수는 인증기를 받지 않는다(아래 시험과 tests/boundary/admin-surface.test.ts).
+    expect(Object.keys(compositionModule).sort()).toEqual(['OPERATING_ACCEPTED_ORIGINS', 'createOperatingAdminServices', 'createOperatingServices']);
     const services = createOperatingServices({ repo: createMemoryRepository(), log: silentLog, today: fixedToday, acceptedOrigins: TEST_ACCEPTED_ORIGINS } as Parameters<typeof createOperatingServices>[0]);
     expect(services.acceptedOrigins).toEqual({ rules: ['OPERATING'], lines: ['OPERATING'] });
   });

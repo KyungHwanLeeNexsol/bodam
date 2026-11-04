@@ -15,3 +15,18 @@ export function seoulDate(instant: Date): string {
 export function systemToday(): string {
   return seoulDate(new Date());
 }
+
+// 관리자 서비스(M7)가 쓰는 운영 시계와 식별자 생성기. src/server 는 시계·난수를 읽지 않으므로(tests/boundary/server-imports.test.ts) 바깥인 이 폴더가 만든다.
+// 상태가 없다: 시계는 부를 때마다 시스템 시각을 읽고, 식별자는 접두어에 무작위 UUID 를 붙인다(모듈 수준 카운터가 없다).
+
+/** 지금(시스템 시계)의 ISO 8601 시각. */
+export const systemClock = { now: (): string => new Date().toISOString() };
+
+/** `<접두어>_<UUID>` 식별자. */
+export const systemIds = { next: (prefix: string): string => `${prefix}_${crypto.randomUUID()}` };
+
+/** ISO 시각을 한국 표준시 `YYYY-MM-DD HH:MM` 으로 보인다(관리자 게시 이력 표시). 해석할 수 없으면 입력을 그대로 돌려준다. */
+export function formatSeoulMinute(iso: string): string {
+  const instant = new Date(iso);
+  return Number.isNaN(instant.getTime()) ? iso : new Date(instant.getTime() + KST_OFFSET_MS).toISOString().slice(0, 16).replace('T', ' ');
+}

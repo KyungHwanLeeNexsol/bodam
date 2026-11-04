@@ -113,7 +113,8 @@ function usedMappingOrigins(result: EstimateResult, inputLines: readonly Publish
   });
 }
 
-function calculate(services: ApiServices, clinic: Clinic, request: EstimateRequest, published: PublishedCatalog, bundleRef: BundleRef): EstimateResponse {
+// 관리자 미리보기(M7, admin/catalog-preview.ts)가 같은 함수를 부른다: 초안 가격으로 만든 게시 카탈로그를 넘겨 "게시하면 이 계산이 나온다"를 같은 엔진·같은 줄 조립·같은 묶음 읽기로 보인다. 두 번째 계산 구현은 없다.
+export function calculate(services: ApiServices, clinic: Clinic, request: EstimateRequest, published: PublishedCatalog, bundleRef: BundleRef): EstimateResponse {
   const at = services.today();
   const acceptedOrigins = { rules: [...services.acceptedOrigins.rules], lines: [...services.acceptedOrigins.lines] };
 
