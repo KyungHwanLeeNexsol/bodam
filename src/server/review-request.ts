@@ -6,6 +6,7 @@ import type { Actor } from './domain/actor';
 import type { CoverageReviewRequest, ProposedCoverageInfo } from './domain/entities';
 import { DomainError } from './domain/errors';
 import type { ItemVersionRecordOf, ItemVersionRef, MappingContent } from './domain/items';
+import { selectPublishedTreatments } from './published-treatments';
 import type { Repository } from './repo/interfaces';
 
 // 매핑 작성 주체와 검토 요청 기록 (design.md DD-17 "매핑 작성 주체", DD-18 CoverageReviewRequest, 소유자 결정 #34).
@@ -13,6 +14,7 @@ import type { Repository } from './repo/interfaces';
 //  - RV 가 그 요청으로 매핑 초안을 만든다. 매핑 승인은 요청을 APPROVED 로, 반려는 REJECTED(+사유)로 닫는다.
 //  - HA 는 요청을 읽기만 한다: 이 파일에 HA 가 요청이나 매핑을 고치는 쓰기 서비스는 없다.
 // 병원 소유(자기 병원인지)·소속 확인은 M7(AC-022a)이며, 여기서는 넘어온 clinicId 를 그대로 믿고 치료가 그 병원의 것인지만 본다.
+// 관리자 API 는 createCoverageReviewRequest 를 직접 부르지 않고 submitCoverageReviewRequest 를 부른다: 병원의 현재 게시 치료인지와 열린 요청이 이미 있는지까지 한 트랜잭션에서 본다.
 
 export interface ReviewRequestInput {
   clinicId: string;
@@ -49,6 +51,38 @@ export function createCoverageReviewRequest(deps: ServiceDeps, actor: Actor, inp
     deps.repo.saveCoverageReviewRequest(request);
     appendAudit(deps, actor, { action: 'REVIEW_REQUEST_CREATE', target: request.id, beforeVersion: null, afterVersion: 'REVIEW_REQUESTED', reason: null });
     return request;
+  });
+}
+
+/**
+ * 관리자 API 의 검토 요청 제출 (HA, M7). 한 트랜잭션에서 (1) 병원이 있는지, (2) 치료가 그 병원의 현재 게시 카탈로그에 있는 활성 치료인지, (3) 그 치료에 열린 요청(REVIEW_REQUESTED)이 없는지를 보고
+ * createCoverageReviewRequest 로 요청 기록과 감사 기록을 쓴다. 거절하면 아무것도 쓰지 않는다. 요청은 제안 기록일 뿐이라 치료·치료 버전·카탈로그·매핑·규칙 묶음을 바꾸지 않는다.
+ *  - 병원이 없으면 NOT_FOUND.
+ *  - 없는 치료 id, 다른 병원의 치료 id, 숨긴(active=false) 치료, 게시한 적 없는 병원은 모두 같은 INVALID_INPUT `TREATMENT_NOT_IN_CATALOG`(path `treatmentId`)다: 다른 병원 자료의 존재를 드러내지 않는다.
+ *    "현재 게시 치료" 의 정의는 공개 카탈로그·준비 상태와 같은 selectPublishedTreatments 하나다.
+ *  - 열린 요청이 이미 있으면 STATE_CONFLICT `REVIEW_ALREADY_REQUESTED`(소유자 결정: 같은 치료에 열린 요청은 하나). 승인·반려로 닫힌 뒤에는 새 요청을 낼 수 있다.
+ *  - 현재 카탈로그의 참조가 저장소와 맞지 않으면(서버 데이터 결함) STATE_CONFLICT + 결함 코드(path `catalog`)다. 관리자 라우터는 이것을 500 으로 낸다.
+ */
+export function submitCoverageReviewRequest(deps: ServiceDeps, actor: Actor, clinicId: string, treatmentId: string, proposed: ProposedCoverageInfo): CoverageReviewRequest {
+  requireRole(actor, 'HA');
+  return deps.repo.transaction(() => {
+    if (deps.repo.getClinic(clinicId) === null) {
+      throw new DomainError('NOT_FOUND', `병원 '${clinicId}' 이(가) 없다`);
+    }
+    const catalog = deps.repo.getClinicCurrentCatalogVersion(clinicId);
+    const published =
+      catalog === null
+        ? []
+        : selectPublishedTreatments(deps.repo, clinicId, catalog, (defect) => {
+            throw new DomainError('STATE_CONFLICT', `현재 카탈로그의 참조가 저장소와 맞지 않는다 (${defect.code})`, [{ code: defect.code, path: 'catalog' }]);
+          });
+    if (!published.some(({ treatment }) => treatment.id === treatmentId)) {
+      throw new DomainError('INVALID_INPUT', '치료가 병원의 현재 게시 카탈로그에 없다', [{ code: 'TREATMENT_NOT_IN_CATALOG', path: 'treatmentId' }]);
+    }
+    if (deps.repo.listCoverageReviewRequests(clinicId).some((request) => request.treatmentId === treatmentId && request.status === 'REVIEW_REQUESTED')) {
+      throw new DomainError('STATE_CONFLICT', '이 치료에는 열린 검토 요청이 이미 있다', [{ code: 'REVIEW_ALREADY_REQUESTED', path: 'treatmentId' }]);
+    }
+    return createCoverageReviewRequest(deps, actor, { clinicId, treatmentId, proposed });
   });
 }
 

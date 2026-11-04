@@ -7,8 +7,11 @@ import type { Actor } from '../domain/actor';
 import type { CatalogDraft, Clinic } from '../domain/entities';
 import { DomainError } from '../domain/errors';
 import { draftContentDigest, issuePublishConfirmation, PUBLISH_CONFIRMATION_PATTERN } from '../publish-confirmation';
+import { parseReviewRequestBody } from '../review-request-parse';
+import { readClinicReviewRequestViews, readReviewQueue, reviewRequestView } from '../review-request-read';
+import { submitCoverageReviewRequest } from '../review-request';
 import { isPlainObject } from '../validate/shape';
-import { actorForClinic, normalizeIdentity } from './auth';
+import { actorForClinic, actorForPlatformRole, normalizeIdentity } from './auth';
 import type { AdminIdentity } from './auth';
 import { buildPreview, parsePreviewRequest } from './catalog-preview';
 import { adminError, invalidRequest, ok } from './http';
@@ -23,15 +26,22 @@ import type { AdminServices } from './services';
 //   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 계산 대상에 초안이 가격을 바꾼 치료가 모두 들어 있고 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다. 가격 수정이 없는 초안은 계산 없이(before·after null) 목록·변경 목록만 낸다
 //   POST   /api/admin/clinics/{clinicId}/catalog/publish        — 본문 { publishConfirmation }: 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줬을 때 발급한 값이어야 게시한다
 //   GET    /api/admin/clinics/{clinicId}/catalog/versions       — 게시 이력
+//   POST   /api/admin/clinics/{clinicId}/treatments/{treatmentId}/review-requests — 검토 요청 제출(HA 자기 병원, 본문 { proposed: { benefitType, procedureCodes, calcClass } }). 요청은 제안 기록일 뿐이라 치료·분류·매핑·규칙 묶음·카탈로그·키오스크 계산을 바꾸지 않는다. 치료가 병원의 현재 게시 활성 치료가 아니면 400, 열린 요청이 이미 있으면 409
+//   GET    /api/admin/clinics/{clinicId}/review-requests        — 병원 관리자의 읽기 전용 요청 목록(최신순). DD-19 표에는 없고 권한 표(HA 는 자기 병원 검토 요청의 상태·결과·반려 사유를 읽는다)에서 더한 경로다
+//   GET    /api/admin/review-queue                              — 검토 담당자(RV, 플랫폼 단위 소속)가 보는 모든 병원의 열린 요청(오래된 순). 병원 경로가 없다
 //
 // 처리 순서(앞선 거절이 이기고 응답 하나만 나간다): 인증(401) → 경로·메서드(404·405) → 병원 소속과 역할(403) → 병원 존재(404) → 본문 읽기(400) → 도메인 서비스.
 // 인증·권한 거절은 저장소를 읽기 전에 나가므로 저장 상태가 그대로이고, 병원이 존재하는지도 알리지 않는다(소속이 없으면 없는 병원도 403).
 // 신원·역할·병원은 AdminAuthenticator 가 검증한 값에서만 온다. 요청의 헤더·쿼리·본문에서는 읽지 않는다.
-// 역할은 HA 만 허용한다(권한 표: 카탈로그 초안 저장·미리보기·게시·이력 조회는 HA 자기 병원). RV·PO 는 이 경로에서 403 이다.
+// 병원 경로의 역할은 HA 만 허용한다(권한 표: 카탈로그 초안 저장·미리보기·게시·이력 조회·검토 요청 제출과 읽기는 HA 자기 병원). RV·PO 는 이 경로에서 403 이다.
+// 대기열은 반대로 플랫폼 단위 RV 만 허용한다(HA·PO·병원에 매인 RV 는 403). 승인·반려·닫기·매핑 수정 경로는 이 라우터에 없다: 병원 관리자의 쓰기는 초안·게시와 검토 요청 제출뿐이다.
 
-type Handler = (services: AdminServices, request: Request, actor: Actor, clinic: Clinic) => Promise<Response> | Response;
+/** 경로의 `:이름` 조각이 잡은 (디코딩된) 값. */
+type RouteParams = Readonly<Record<string, string>>;
 
-const CONFLICT_REASONS: readonly string[] = ['DRAFT_STALE', 'DRAFT_ABSENT', 'CATALOG_ABSENT', 'PREVIEW_REQUIRED'];
+type Handler = (services: AdminServices, request: Request, actor: Actor, clinic: Clinic, params: RouteParams) => Promise<Response> | Response;
+
+const CONFLICT_REASONS: readonly string[] = ['DRAFT_STALE', 'DRAFT_ABSENT', 'CATALOG_ABSENT', 'PREVIEW_REQUIRED', 'REVIEW_ALREADY_REQUESTED'];
 
 /** 도메인 오류를 관리자 응답으로 바꾼다. 요청 쪽 거절만 바꾸고, 서버 데이터 결함은 null 이라 호출한 쪽이 다시 던져 500 이 된다. */
 function responseFromDomainError(error: DomainError): Response | null {
@@ -172,9 +182,25 @@ const getVersions: Handler = (services, _request, _actor, clinic) => {
   return ok({ versions });
 };
 
+const getReviewRequests: Handler = (services, _request, _actor, clinic) => ok({ reviewRequests: readClinicReviewRequestViews(services.api.repo, clinic.id) });
+
+const postReviewRequest: Handler = async (services, request, actor, clinic, params) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  const parsed = parseReviewRequestBody(body.body);
+  if (!parsed.ok) {
+    return invalidRequest(parsed.defects);
+  }
+  // 치료가 병원의 현재 게시 활성 치료인지·열린 요청이 이미 있는지는 서비스가 한 트랜잭션에서 본다(400 TREATMENT_NOT_IN_CATALOG · 409 REVIEW_ALREADY_REQUESTED). 요청자는 검증된 신원(actor)이다.
+  const created = submitCoverageReviewRequest(services.deps, actor, clinic.id, params.treatmentId ?? '', parsed.proposed);
+  return ok({ reviewRequest: reviewRequestView(services.api.repo, created) });
+};
+
 interface Route {
   method: string;
-  /** 병원 id 를 뺀 나머지 경로. */
+  /** 병원 id 를 뺀 나머지 경로. `:이름` 조각은 어떤 비어 있지 않은 값이든 잡아 handler 의 params 로 넘긴다. */
   tail: readonly string[];
   handler: Handler;
 }
@@ -186,6 +212,8 @@ const CLINIC_ROUTES: readonly Route[] = [
   { method: 'POST', tail: ['catalog', 'preview'], handler: postPreview },
   { method: 'POST', tail: ['catalog', 'publish'], handler: postPublish },
   { method: 'GET', tail: ['catalog', 'versions'], handler: getVersions },
+  { method: 'GET', tail: ['review-requests'], handler: getReviewRequests },
+  { method: 'POST', tail: ['treatments', ':treatmentId', 'review-requests'], handler: postReviewRequest },
 ];
 
 async function authenticate(services: AdminServices, request: Request): Promise<AdminIdentity | null> {
@@ -197,7 +225,26 @@ async function authenticate(services: AdminServices, request: Request): Promise<
   }
 }
 
-const sameTail = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((part, index) => part === b[index]);
+/** 경로 조각이 모양과 맞으면 `:이름` 조각이 잡은 값을, 아니면 null 을 돌려준다. `:이름` 조각은 빈 값을 잡지 않는다. */
+function matchTail(pattern: readonly string[], tail: readonly string[]): RouteParams | null {
+  if (pattern.length !== tail.length) {
+    return null;
+  }
+  const params: Record<string, string> = {};
+  for (let index = 0; index < pattern.length; index += 1) {
+    const part = pattern[index] as string;
+    const actual = tail[index] as string;
+    if (part.startsWith(':')) {
+      if (actual === '') {
+        return null;
+      }
+      params[part.slice(1)] = actual;
+    } else if (part !== actual) {
+      return null;
+    }
+  }
+  return params;
+}
 
 // @MX:ANCHOR: [AUTO] 관리자 API 의 단일 처리점. src/app/api/admin 의 route 와 시험 앞단이 부른다.
 // @MX:REASON: 인증(401) → 소속·역할(403) → 병원 존재(404) → 본문 순서와 "거절은 저장소를 쓰지 않는다"는 약속이 이 함수 하나에서 지켜진다. 순서가 바뀌면 인증 없는 요청이 병원의 존재를 알거나 저장 상태를 바꾼다.
@@ -213,16 +260,27 @@ export function handleAdmin(services: AdminServices, request: Request, segments:
     if (segments.length === 1 && segments[0] === 'session') {
       return request.method === 'GET' ? ok({ userId: identity.userId, memberships: identity.memberships.map((m) => ({ clinicId: m.clinicId, role: m.role })) }) : adminError('METHOD_NOT_ALLOWED');
     }
+    if (segments.length === 1 && segments[0] === 'review-queue') {
+      if (request.method !== 'GET') {
+        return adminError('METHOD_NOT_ALLOWED');
+      }
+      // 병원 경로가 없는 자원이라 병원 소속이 아니라 플랫폼 단위 RV 소속만 본다. 읽기만 한다.
+      return actorForPlatformRole(identity, 'RV') === null ? adminError('FORBIDDEN') : ok({ queue: readReviewQueue(services.api.repo) });
+    }
     if (segments.length < 3 || segments[0] !== 'clinics') {
       return adminError('NOT_FOUND');
     }
     const clinicId = segments[1] as string;
-    const matches = CLINIC_ROUTES.filter((route) => sameTail(route.tail, segments.slice(2)));
+    const tail = segments.slice(2);
+    const matches = CLINIC_ROUTES.flatMap((route) => {
+      const params = matchTail(route.tail, tail);
+      return params === null ? [] : [{ route, params }];
+    });
     if (matches.length === 0) {
       return adminError('NOT_FOUND');
     }
-    const route = matches.find((candidate) => candidate.method === request.method);
-    if (route === undefined) {
+    const matched = matches.find((candidate) => candidate.route.method === request.method);
+    if (matched === undefined) {
       return adminError('METHOD_NOT_ALLOWED');
     }
     const actor = actorForClinic(identity, clinicId, 'HA');
@@ -234,7 +292,7 @@ export function handleAdmin(services: AdminServices, request: Request, segments:
       return adminError('NOT_FOUND');
     }
     try {
-      return await route.handler(services, request, actor, clinic);
+      return await matched.route.handler(services, request, actor, clinic, matched.params);
     } catch (error) {
       const response = error instanceof DomainError ? responseFromDomainError(error) : null;
       if (response === null) {
