@@ -11,6 +11,8 @@ export const APP_PORT = 3101;
 export const HARNESS_PORT = 3102;
 /** 미리보기와 같은 --test-notice 앞단(고정 안내 띠 + 앱 틀). 같은 운영 구성 앱(APP_PORT)을 업스트림으로 쓴다. *.preview.spec.ts 만 이 주소를 쓴다. */
 export const NOTICE_PORT = 3104;
+/** 관리자 흐름 시험(*.admin.spec.ts) 전용 앞단. 저장소를 따로 가진다: 관리자 시험이 게시로 가격을 바꾸므로 다른 시험의 앞단(HARNESS_PORT)과 섞이지 않게 한다. */
+export const ADMIN_PORT = 3105;
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -35,7 +37,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const appUrl = `http://127.0.0.1:${APP_PORT}/kiosk/e2e-probe`;
   const harnessUrl = `http://127.0.0.1:${HARNESS_PORT}/__harness/health`;
   const noticeUrl = `http://127.0.0.1:${NOTICE_PORT}/__harness/health`;
-  for (const url of [appUrl, harnessUrl, noticeUrl]) {
+  const adminUrl = `http://127.0.0.1:${ADMIN_PORT}/__harness/health`;
+  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl]) {
     if (await isUp(url)) throw new Error(`이미 쓰고 있는 주소다(다른 서버를 시험하지 않는다): ${url}`);
   }
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(APP_PORT)], { stdio: 'ignore', windowsHide: true });
@@ -48,19 +51,27 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(NOTICE_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--test-notice'],
     { stdio: 'ignore', windowsHide: true },
   );
+  const adminHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`],
+    { stdio: 'ignore', windowsHide: true },
+  );
   try {
     await waitUntilUp(appUrl, app, '운영 구성 앱');
     await waitUntilUp(harnessUrl, harness, '실제 핸들러 앞단');
     await waitUntilUp(noticeUrl, notice, '시험 안내 띠 앞단');
+    await waitUntilUp(adminUrl, adminHarness, '관리자 시험 앞단');
   } catch (error) {
     app.kill();
     harness.kill();
     notice.kill();
+    adminHarness.kill();
     throw error;
   }
   return async () => {
     app.kill();
     harness.kill();
     notice.kill();
+    adminHarness.kill();
   };
 }

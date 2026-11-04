@@ -513,6 +513,7 @@ describe('읽기 감시 (spy)', () => {
     ['listCommonBaseFeeVersions', (repo) => repo.listCommonBaseFeeVersions(makeCommonBaseFee().baseFeeId)],
     ['getCatalogVersion', (repo) => repo.getCatalogVersion(makeCatalogVersion().id)],
     ['listCatalogVersions', (repo, w) => repo.listCatalogVersions(w.clinicId)],
+    ['getCatalogDraft', (repo, w) => repo.getCatalogDraft(w.clinicId)],
     ['getInsurer', (repo) => repo.getInsurer(makeInsurer().id)],
     ['listInsurers', (repo) => repo.listInsurers()],
     ['getPolicySource', (repo) => repo.getPolicySource(makePolicySource().id)],

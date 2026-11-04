@@ -14,6 +14,7 @@ export const READ_QUERY_NAMES = [
   'listCommonBaseFeeVersions',
   'getCatalogVersion',
   'listCatalogVersions',
+  'getCatalogDraft',
   'getInsurer',
   'listInsurers',
   'getPolicySource',

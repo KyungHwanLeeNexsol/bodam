@@ -1,6 +1,10 @@
+import { UNCONNECTED_ADMIN_AUTHENTICATOR } from './admin/auth';
+import { createAdminServices } from './admin/services';
+import type { AdminServices } from './admin/services';
 import { createBundleContentCache } from './api/bundle-content-cache';
 import type { ServerLog } from './api/log';
 import type { AcceptedOrigins, ApiServices } from './api/services';
+import type { Clock, IdGenerator } from './domain/ports';
 import type { Repository } from './repo/interfaces';
 
 // 운영 구성 (SPEC-REIMBURSEMENT-001 M4.A, design.md DD-04·DD-19, AC-010b). 운영 서비스를 만드는 유일한 곳이다.
@@ -29,4 +33,19 @@ export interface OperatingDeps {
 /** 운영 서비스를 만든다. 저장소·로그 출구·기준일 함수만 받고, 허용 출처는 OPERATING 으로 고정이다. 묶음 내용 캐시는 호출마다 새로 만든다(주입하지 않는다). */
 export function createOperatingServices(deps: OperatingDeps): ApiServices {
   return Object.freeze({ repo: deps.repo, log: deps.log, acceptedOrigins: OPERATING_ACCEPTED_ORIGINS, today: deps.today, bundleCache: createBundleContentCache() });
+}
+
+export interface OperatingAdminParts {
+  api: ApiServices;
+  /** 시계와 식별자 생성기는 src/server 가 만들 수 없어 src/app 이 주입한다. */
+  clock: Clock;
+  ids: IdGenerator;
+}
+
+// @MX:ANCHOR: [AUTO] 운영 관리자 서비스 구성의 단일 진입점. src/app/admin-services.ts 와 구성 시험이 부른다.
+// @MX:REASON: 운영의 인증기가 이 한 곳에서 UNCONNECTED 로 고정돼야 "운영 인증 어댑터가 연결되기 전에는 관리자 기능을 운영에서 쓸 수 없다"가 구성 하나를 보고 증명된다.
+//   인증기를 매개변수로 받으면 시험 인증기·기본 관리자가 운영 경로로 샌다. 공급자가 정해지면 이 함수가 그 어댑터를 쓰도록 바뀐다(plan.md §E #2).
+/** 운영 관리자 서비스. 인증 공급자가 연결되지 않아 어떤 요청도 인증되지 않는다(모든 관리자 API 가 401). 저장소·로그·허용 출처는 공개 API 와 같은 것이다. */
+export function createOperatingAdminServices(parts: OperatingAdminParts): AdminServices {
+  return createAdminServices({ api: parts.api, clock: parts.clock, ids: parts.ids, authenticator: UNCONNECTED_ADMIN_AUTHENTICATOR });
 }

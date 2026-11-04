@@ -1,0 +1,311 @@
+/* 관리자 화면 스타일 (SPEC-REIMBURSEMENT-001 M7 첫 기능). 병원 직원이 PC 브라우저로 쓰는 화면이라 키오스크의 큰 글자·72px 터치 규칙 대신 일반 업무 화면의 밀도를 쓴다.
+   색·글꼴은 키오스크 디자인 변수(tokens.css)를 재사용한다. 클래스는 admin- 로 시작한다. 전역 규칙을 더하지 않는다. */
+
+.admin-shell {
+  min-height: 100vh;
+  background: var(--kiosk-bg);
+  color: var(--kiosk-navy);
+  font-family: var(--kiosk-font);
+  font-size: 16px;
+  line-height: 1.5;
+  /* 키오스크 body 의 글자 선택 금지는 관리자 화면에 필요 없다(가격·코드를 복사해 확인한다). */
+  -webkit-user-select: text;
+  user-select: text;
+  overflow-y: auto;
+}
+
+.admin-root {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.admin-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+.admin-sub {
+  margin: 4px 0 0;
+  color: var(--kiosk-text-body);
+}
+
+.admin-sub2 {
+  display: block;
+  color: var(--kiosk-text-muted);
+  font-size: 14px;
+}
+
+.admin-h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.admin-h3 {
+  margin: 16px 0 8px;
+  font-size: 16px;
+}
+
+.admin-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 16px 0 0;
+}
+
+.admin-meta div {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-meta dt {
+  color: var(--kiosk-text-muted);
+}
+
+.admin-meta dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.admin-note,
+.admin-hint {
+  margin: 0 0 12px;
+  color: var(--kiosk-text-body);
+  font-size: 14px;
+}
+
+.admin-banner {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 12px;
+  background: var(--kiosk-surface);
+}
+
+.admin-banner--ok {
+  border-color: var(--kiosk-success);
+  background: var(--kiosk-success-soft);
+  color: var(--kiosk-success);
+}
+
+.admin-banner--error {
+  border-color: var(--kiosk-danger);
+  background: var(--kiosk-danger-soft);
+  color: var(--kiosk-danger);
+}
+
+.admin-live {
+  min-height: 0;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--kiosk-surface);
+  border: 1px solid var(--kiosk-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--kiosk-border);
+}
+
+.admin-table thead th {
+  background: var(--kiosk-surface-alt);
+  font-size: 14px;
+  color: var(--kiosk-text-body);
+}
+
+.admin-table tbody tr:last-child th,
+.admin-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-table tr[data-changed='true'] {
+  background: var(--kiosk-warn-soft);
+}
+
+.admin-table .admin-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-name {
+  display: block;
+  font-weight: 700;
+}
+
+.admin-input,
+.admin-select {
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 8px;
+  background: var(--kiosk-surface);
+  color: var(--kiosk-navy);
+  font: inherit;
+}
+
+.admin-input {
+  width: 9em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-input[aria-invalid='true'] {
+  border-color: var(--kiosk-danger);
+}
+
+.admin-field-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--kiosk-danger);
+  font-size: 13px;
+  white-space: normal;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.admin-btn {
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 10px;
+  background: var(--kiosk-surface);
+  color: var(--kiosk-navy);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-btn--primary {
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent);
+  color: var(--kiosk-on-accent);
+}
+
+.admin-btn:disabled {
+  border-color: var(--kiosk-disabled);
+  background: var(--kiosk-disabled);
+  color: var(--kiosk-text-muted);
+  cursor: not-allowed;
+}
+
+.admin-btn:focus-visible,
+.admin-input:focus-visible,
+.admin-select:focus-visible,
+.admin-link:focus-visible {
+  outline: 3px solid var(--kiosk-accent);
+  outline-offset: 2px;
+}
+
+.admin-draft-status {
+  margin: 12px 0 0;
+  font-weight: 700;
+}
+
+.admin-draft-status[data-admin-draft='stale'] {
+  color: var(--kiosk-danger);
+}
+
+.admin-preview {
+  padding-top: 8px;
+  border-top: 1px solid var(--kiosk-border);
+}
+
+.admin-fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: flex-end;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 12px;
+  background: var(--kiosk-surface);
+}
+
+.admin-fieldset legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.admin-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--kiosk-text-body);
+}
+
+.admin-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.admin-label-text {
+  font-size: 14px;
+  color: var(--kiosk-text-body);
+}
+
+.admin-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-changes {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.admin-compare th[scope='row'] {
+  font-weight: 400;
+  color: var(--kiosk-text-body);
+}
+
+.admin-history {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.admin-history li {
+  margin-bottom: 6px;
+}
+
+.admin-pill {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-link {
+  color: var(--kiosk-accent-dark);
+  font-weight: 700;
+}
+
+.admin-nowrap {
+  white-space: nowrap;
+}

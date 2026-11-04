@@ -1,6 +1,7 @@
 import type {
   AuditLogEntry,
   BundleAvailability,
+  CatalogDraft,
   CatalogVersion,
   Clinic,
   ClinicRuleScope,
@@ -77,6 +78,14 @@ export interface Repository {
   putCatalogVersion(catalog: CatalogVersion): void;
   getCatalogVersion(id: string): CatalogVersion | null;
   listCatalogVersions(clinicId: string): CatalogVersion[];
+
+  /**
+   * (M7) 카탈로그 초안: 병원마다 최대 하나, 가변 기록. save 는 upsert 이고 병원과 기준 카탈로그 버전(그 병원의 것)과 초안이 가리키는 치료(그 병원의 것)가 있어야 한다.
+   * 초안은 치료 버전·카탈로그 버전·병원의 현재 카탈로그를 바꾸지 않는다. close 는 현재 초안을 닫는다(게시·버리기 뒤): 이 가변 기록의 현재 값만 없애고 불변 기록에는 닿지 않는다. 없는 초안의 close 는 아무 일도 없다.
+   */
+  saveCatalogDraft(draft: CatalogDraft): void;
+  getCatalogDraft(clinicId: string): CatalogDraft | null;
+  closeCatalogDraft(clinicId: string): void;
 
   // ── 보험사·약관 ──
   saveInsurer(insurer: Insurer): void;
