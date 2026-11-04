@@ -51,6 +51,8 @@ for (const large of [false, true]) {
 
       await generationRadio(page).check();
       expect(await isDisabled(page, '다음')).toBe(false);
+      // 경계 안내 줄을 세대 선택 화면에서 뺐으므로 "다음"은 화면 안에 온전히 보이고(가려지지 않고) 곧바로 눌린다(2026-11-04).
+      await expect(bottomButton(page, '다음')).toBeInViewport({ ratio: 1 });
       await bottomButton(page, '다음').click();
       await expect(page.locator('.kiosk-steps__counter')).toHaveText('2 / 4');
       await expect(page.getByRole('radio')).toHaveCount(3);
@@ -98,12 +100,20 @@ for (const large of [false, true]) {
     test('"세대를 모르겠어요"와 "확인 방법 보기"는 세대 확인 안내 화면을 열고 계산 요청이 없으며, 돌아가면 화면 1이다 (AC-012d·AC-012h)', async ({ page }) => {
       await toK01(page);
       await generationRadio(page, '3세대(C3)').check();
+      // 경계 안내 임시 문구(§E #35)는 세대 선택 화면이 아니라 이 도움말에 있다(2026-11-04).
+      await expect(page.locator('[data-kiosk-boundary-pending]')).toHaveCount(0);
       for (const label of ['세대를 모르겠어요', '확인 방법 보기']) {
         await page.getByRole('button', { name: label }).click();
         await expect(heading(page, TITLES.generationHelp)).toBeVisible();
         const text = await page.locator('.kiosk-root').innerText();
         expect(text).toContain('1544-8069로 문의해 주세요');
         expect(text).toContain('키오스크에서 전화가 걸리지는 않습니다');
+        // 두 방향 모두 안내 한 줄이 스크롤 없이 화면 안에 보이고 가려지지 않는다. 문구는 보험 설명이 아니라 "문구 검토 중" 표시다.
+        const pending = page.locator('[data-kiosk-boundary-pending]');
+        await expect(pending).toHaveCount(1);
+        await expect(pending).toHaveText('가입 시기 경계 안내: 문구 검토 중');
+        await expect(pending).toBeInViewport({ ratio: 1 });
+        expect(await pending.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
         // 링크·전화 연결이 없다: 번호는 글자일 뿐이다.
         expect(await page.locator('.kiosk-root a, .kiosk-root [href]').count()).toBe(0);
         expect(await page.locator('.kiosk-root').innerHTML()).not.toContain('tel:');

@@ -23,6 +23,11 @@ export function K01GenerationHelp() {
           {copy.title}
         </h1>
         <p className="kiosk-status__body">{copy.body}</p>
+        {/* 경계 계약 도움말은 문구 확정 전이다(§E #35). 버튼이 아닌 한 줄 안내이며 세대를 정하거나 제안하지 않는다. 2026-11-04 소유자 지시로 세대 선택 화면이 아니라 이 도움말에 둔다.
+            가로 방향에서도 스크롤 없이 보이도록 단계 목록 위, 본문 바로 아래에 둔다. */}
+        <p className="kiosk-help-screen__pending" data-kiosk-boundary-pending>
+          {COPY.input.generation.boundaryPending}
+        </p>
         <ol className="kiosk-help-steps">
           {copy.steps.map((step, index) => (
             <li key={step.title} className="kiosk-help-steps__item">

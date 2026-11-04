@@ -35,10 +35,6 @@ export function K01Generation() {
               {COPY.input.generation.helpAction}
             </Button>
           </HelpPanel>
-          {/* 경계 계약 도움말은 문구 확정 전이다(§E #35). 버튼이 아닌 한 줄 안내이며 세대를 정하거나 제안하지 않는다. */}
-          <p className="kiosk-input__pending-note" data-kiosk-boundary-pending>
-            {COPY.input.generation.boundaryPending}
-          </p>
         </>
       }
       footer={

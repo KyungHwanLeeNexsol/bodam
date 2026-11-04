@@ -1,9 +1,9 @@
 import { defineConfig } from '@playwright/test';
-import { APP_PORT, HARNESS_PORT } from './tests/e2e/global-setup';
+import { APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
-//  - *.production.spec.ts : 운영 구성 그대로 빌드한 앱을 직접 띄운다(next start). 운영 자료가 없으므로 어떤 slug 도 404 이고, 그것이 증명하는 전부다.
+//  - *.production.spec.ts : 운영 구성 그대로 빌드한 앱을 직접 띄운다(next start). 운영 자료가 없으므로 키오스크 문서는 200 이어도 병원 조회 API 는 어떤 slug 든 404 이고 화면은 이용 불가 안내를 보인다. 그것이 증명하는 전부다.
 //  - *.intercept.spec.ts  : 같은 빌드 앱에 page.route 로 /api/clinics/** 를 시험 자료로 가로채 응답한다. 409·422·5xx·시간 초과·늦은 응답·끝내 오지 않는 응답을 정확히 만든다.
 //  - *.real.spec.ts       : 시험용 앞단 서버(tests/e2e/harness)가 /api/clinics/* 를 실제 핸들러(handleCatalog·handleOptions·handleEstimate)에 시험 자료(TEST_FIXTURE) 서비스로 맡기고
 //                           나머지는 빌드 앱으로 넘긴다. 실제 핸들러 논리를 시험 자료로 돌리는 것이며 운영 자료 검증이 아니다.
@@ -32,5 +32,8 @@ export default defineConfig({
     { name: 'intercept-landscape', testMatch: /.*\.intercept\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${APP_PORT}`, viewport: LANDSCAPE } },
     { name: 'real-portrait', testMatch: /.*\.real\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${HARNESS_PORT}`, viewport: PORTRAIT } },
     { name: 'real-landscape', testMatch: /.*\.real\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${HARNESS_PORT}`, viewport: LANDSCAPE } },
+    //  - *.preview.spec.ts    : 사람이 보는 미리보기와 같은 앞단(--test-notice, 고정 안내 띠 + 앱 틀)을 거친다. 계산은 *.real 과 같은 실제 핸들러다.
+    { name: 'preview-portrait', testMatch: /.*\.preview\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${NOTICE_PORT}`, viewport: PORTRAIT } },
+    { name: 'preview-landscape', testMatch: /.*\.preview\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${NOTICE_PORT}`, viewport: LANDSCAPE } },
   ],
 });

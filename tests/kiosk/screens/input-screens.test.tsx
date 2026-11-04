@@ -47,11 +47,10 @@ describe('K01_Generation (AC-012a·b·d·h·i)', () => {
     expect(text).toContain('다음');
   });
 
-  it.each(states('K01_Generation'))('%s: 경계 계약 도움말은 문구 확정 전이라 "가입 시기 경계 안내: 문구 검토 중" 한 줄만 있고 버튼·링크가 아니며 세대를 정하거나 제안하지 않는다 (§E #35)', (_name, state) => {
+  it.each(states('K01_Generation'))('%s: 경계 안내 임시 문구는 세대 선택 화면에 없다 (2026-11-04: "세대를 모르겠어요" 도움말로 옮김, §E #35)', (_name, state) => {
     const html = renderWithState(state, <K01Generation />).html;
-    expect(html.match(/data-kiosk-boundary-pending/g)).toHaveLength(1);
-    expect(/<p class="kiosk-input__pending-note" data-kiosk-boundary-pending="true">([^<]*)<\/p>/.exec(html)?.[1]).toBe('가입 시기 경계 안내: 문구 검토 중');
-    expect(html).not.toMatch(/2009\.0[89]\.[^"<]*경계|경계 계약|추천|권장/);
+    expect(html).not.toContain('data-kiosk-boundary-pending');
+    expect(textOf(html)).not.toContain('가입 시기 경계 안내');
     expect(html).not.toMatch(/checked=""/);
   });
 
@@ -113,6 +112,14 @@ describe('K01_Generation_Unknown (AC-012d)', () => {
     expect(html.match(/<button/g)).toHaveLength(1);
     for (const banned of BANNED.filter((pattern) => !/1588/.test(String(pattern)))) expect(html, String(banned)).not.toMatch(banned);
     expect(html).not.toMatch(/\d{3,4}-\d{4}<\/a>/);
+  });
+
+  it.each(states('K01_Generation_Unknown'))('%s: 경계 안내 임시 문구 "가입 시기 경계 안내: 문구 검토 중" 한 줄이 하나만 있고 버튼·링크가 아니며 세대를 정하거나 제안하지 않는다 (§E #35)', (_name, state) => {
+    const html = renderWithState(state, <K01GenerationHelp />).html;
+    expect(html.match(/data-kiosk-boundary-pending/g)).toHaveLength(1);
+    expect(/<p class="kiosk-help-screen__pending" data-kiosk-boundary-pending="true">([^<]*)<\/p>/.exec(html)?.[1]).toBe('가입 시기 경계 안내: 문구 검토 중');
+    expect(html).not.toMatch(/2009\.0[89]\.[^"<]*경계|경계 계약|추천|권장/);
+    expect(html.match(/<button/g)).toHaveLength(1);
   });
 });
 

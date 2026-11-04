@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleCatalog } from '../../../src/server/api/catalog';
 import { handleEstimate } from '../../../src/server/api/estimate';
 import { handleOptions } from '../../../src/server/api/options';
+import { previewFrameHtml } from './notice';
 import { buildHarnessServices } from './world';
 
 // 브라우저 시험의 "실제 핸들러" 층 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12).
@@ -17,6 +18,9 @@ function argument(name: string, fallback: string): string {
 
 const port = Number(argument('port', '3102'));
 const upstream = argument('upstream', 'http://127.0.0.1:3101');
+// --test-notice: 사람이 보는 미리보기 전용. 브라우저가 키오스크 문서(/kiosk/…)를 화면으로 열 때만 고정 안내 띠 + 앱 틀을 돌려준다(notice.ts).
+// 이 옵션이 없으면(자동 시험의 실제 핸들러 층 포함) 앞단은 문서를 손대지 않고 그대로 넘긴다.
+const testNotice = process.argv.includes('--test-notice');
 const services = buildHarnessServices();
 
 const API_PATH = /^\/api\/clinics\/([^/]+)\/(catalog|insurance\/options|estimate)$/;
@@ -56,6 +60,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     }
     response.writeHead(405, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     response.end('{"error":"METHOD_NOT_ALLOWED"}');
+    return;
+  }
+  // 최상위 문서로 열 때(Sec-Fetch-Dest: document)만 틀을 돌려준다. 틀 안 iframe 의 요청은 'iframe', API·스크립트·curl 은 헤더가 없거나 다르므로 앱 문서가 그대로 간다.
+  if (testNotice && request.method === 'GET' && url.pathname.startsWith('/kiosk/') && request.headers['sec-fetch-dest'] === 'document') {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    response.end(previewFrameHtml(url.pathname + url.search));
     return;
   }
   const forwarded = await fetch(new URL(url.pathname + url.search, upstream), {
