@@ -5,7 +5,7 @@ import type { ReactElement } from 'react';
 import { formatSeoulMinute } from '../clock';
 import type { ApiFailure, CatalogVersionRow, OptionsResponse, PreviewResponse, SessionResponse, TreatmentsResponse } from './api-types';
 import { ADMIN_COPY as COPY } from './copy';
-import { EMPTY_ADD_FORM, appendAddition, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden } from './draft-model';
+import { EMPTY_ADD_FORM, appendAddition, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, listVisibility, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden } from './draft-model';
 import type { AddError, AddField, AddForm, WorkingState } from './draft-model';
 import { failureMessage } from './failure-message';
 import type { FailureKind } from './failure-message';
@@ -254,7 +254,8 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
     );
   }
 
-  const noCatalog = data?.catalogVersion === null || rows.length === 0;
+  const visibility = listVisibility(data?.catalogVersion ?? null, rows.length);
+  const noCatalog = visibility === 'none';
   const canSave = !busy && !invalid && hasChange && !(draft !== null && savedMatches);
   const canPreview = !busy && draft !== null && !draft.stale && savedMatches;
   const canPublish = !busy && previewCurrent && draft !== null && !draft.stale;
@@ -293,6 +294,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
       ) : (
         <section aria-labelledby="admin-prices-heading">
           <h2 id="admin-prices-heading" className="admin-h2">{COPY.listTitle}</h2>
+          {visibility === 'empty' ? <p className="admin-banner" data-admin-empty-catalog>{COPY.emptyCatalog}</p> : null}
           <p className="admin-note">{COPY.readOnlyNote}</p>
           <div className="admin-table-wrap">
             <table className="admin-table" data-admin-list="working">

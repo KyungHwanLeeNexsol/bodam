@@ -24,6 +24,7 @@ describe('failureMessage', () => {
         'UNKNOWN_FIELD',
         'ORIGIN_NOT_ACCEPTED',
         'TOO_MANY_ADDITIONS',
+        'NO_TREATMENT_REMAINS',
       ]),
     );
     for (const code of codes) {
@@ -31,6 +32,12 @@ describe('failureMessage', () => {
       expect(text, code).not.toContain(code);
       expect(text, code).toContain(ADMIN_COPY.nothingChanged.save);
     }
+  });
+
+  it('모든 치료를 숨기려 한 거절은 최소 한 개는 남아야 한다고 알린다', () => {
+    const text = failureMessage(defects('NO_TREATMENT_REMAINS'), 'save');
+    expect(text).toContain('모든 치료를 숨길 수는 없습니다. 최소 한 개는 게시된 채로 남아야 합니다.');
+    expect(text).not.toContain('NO_TREATMENT_REMAINS');
   });
 
   it('여러 결함이면 서로 다른 문장을 최대 셋까지 잇고, 같은 문장은 한 번만 쓴다', () => {

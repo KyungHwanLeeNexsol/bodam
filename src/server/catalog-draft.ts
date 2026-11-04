@@ -99,7 +99,8 @@ export function saveCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: stri
       updatedAt: deps.clock.now(),
     };
     const before = deps.repo.getCatalogDraft(clinicId);
-    deps.repo.saveCatalogDraft(draft);    appendAudit(deps, actor, {
+    deps.repo.saveCatalogDraft(draft);
+    appendAudit(deps, actor, {
       action: 'CATALOG_DRAFT_SAVE',
       target: `CATALOG_DRAFT/${clinicId}`,
       beforeVersion: before === null ? null : draftContentDigest(before),

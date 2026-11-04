@@ -178,8 +178,22 @@ describe('PUT draft: 구조 편집 저장', () => {
     // 같은 병원의 치료 id 와 겹치면 여전히 거절한다 (아래 BAD 표의 'draftKey 가 기존 치료 id').
   });
 
+  it('모든 치료를 숨기는 초안은 400 NO_TREATMENT_REMAINS 이고 공개 카탈로그·초안이 그대로다. 새 치료를 더하거나 하나를 남기면 저장된다', async () => {
+    const world = setup('ha-clinic-1');
+    const catalogBefore = await publicCatalog(world);
+    const response = await putDraft(world.admin, { deactivations: [T1, T2, T3] });
+    expect(response.status).toBe(400);
+    expect((await json(response)).defects).toEqual([{ code: 'NO_TREATMENT_REMAINS', path: 'deactivations' }]);
+    expect(await publicCatalog(world)).toEqual(catalogBefore);
+    expect(world.world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)).toBeNull();
+    expect((await putDraft(world.admin, { deactivations: [T1, T2] })).status).toBe(200);
+    expect((await putDraft(world.admin, { deactivations: [T1, T2, T3], additions: [additionBody(A)] })).status).toBe(200);
+    expect(await publicCatalog(world)).toEqual(catalogBefore);
+  });
+
   const BAD: Array<[string, unknown, string, string]> = [
     ['숨기는 치료에 가격 수정', { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }], deactivations: [T1] }, 'PRICE_EDIT_ON_DEACTIVATED', 'priceEdits[0].treatmentId'],
+    ['모든 치료를 숨김 (남는 치료가 없음)', { deactivations: [T1, T2, T3] }, 'NO_TREATMENT_REMAINS', 'deactivations'],
     ['없는 치료를 숨김', { deactivations: ['NO_SUCH'] }, 'TREATMENT_NOT_IN_CATALOG', 'deactivations[0]'],
     ['새 치료에 분류를 보냄', { additions: [additionBody(A, { calcClass: 'GENERAL_BENEFIT' })] }, 'UNKNOWN_FIELD', 'additions[0].calcClass'],
     ['새 치료에 출처를 보냄', { additions: [additionBody(A, { origin: 'OPERATING' })] }, 'UNKNOWN_FIELD', 'additions[0].origin'],

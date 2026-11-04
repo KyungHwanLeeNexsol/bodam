@@ -118,8 +118,11 @@ function rejectUnknownKeys(out: Defect[], entry: Record<string, unknown>, allowe
 /** 값이 없거나(undefined·null) 형식이 틀렸을 때의 결함 코드. */
 const missingOrInvalid = (value: unknown): string => (value === undefined || value === null ? 'VALUE_MISSING' : 'VALUE_INVALID');
 
+/** 비어 있지 않고 공백(스페이스·탭·줄바꿈)만으로 이루어지지도 않은 문자열인가. 값은 다듬지 않고 그대로 보존한다. */
+const isMeaningfulString = (value: unknown): value is string => isNonEmptyString(value) && value.trim() !== '';
+
 function parseNonEmptyString(out: Defect[], value: unknown, path: string): boolean {
-  if (isNonEmptyString(value)) {
+  if (isMeaningfulString(value)) {
     return true;
   }
   out.push({ code: missingOrInvalid(value), path });
@@ -170,7 +173,7 @@ function parseProcedureCodes(out: Defect[], value: unknown, path: string): strin
   // 빈 배열은 허용한다(카탈로그 게시 검증과 같다). 항목은 모두 비어 있지 않은 문자열이어야 한다.
   let valid = true;
   for (let index = 0; index < value.length; index += 1) {
-    if (!isNonEmptyString(value[index])) {
+    if (!isMeaningfulString(value[index])) {
       out.push({ code: 'VALUE_INVALID', path: `${path}[${index}]` });
       valid = false;
     }

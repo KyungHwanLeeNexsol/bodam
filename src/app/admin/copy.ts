@@ -2,6 +2,8 @@
 // 디자인 저장본 A02_Admin_TreatmentList·A03_Admin_TreatmentEdit·A04_Admin_PublishPreview 의 이름과 변경 규칙(design-requirements.md §3 행 14)을 따른다:
 // 금액만 바꾸면 승인된 보장 매핑은 그대로 유지되고 새 가격 버전으로 게시된다. 새 치료는 보장 분류를 이 화면에서 정하지 않으므로 보장 검토 전까지 보험금이 계산되지 않는다.
 
+const HIDE_NOTE = '숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다. 게시하기 전에는 "숨김 취소"로 되돌릴 수 있습니다.';
+
 export const ADMIN_COPY = {
   title: '치료 관리',
   subtitle: '현재 게시된 치료의 가격·표시 순서·숨김을 고치고 새 치료를 더한 뒤, 미리보기로 확인하고 게시합니다.',
@@ -22,8 +24,11 @@ export const ADMIN_COPY = {
   hiddenBadge: '숨김 예정',
   movedBadge: '순서 바뀜',
   newBadge: '새 치료',
+  // 숨기기는 게시한 뒤에는 이 화면에서 되돌릴 수 없다: 목록 안내와 미리보기의 숨김 줄이 같은 문장을 쓴다.
+  hideNote: HIDE_NOTE,
   readOnlyNote:
-    '급여 구분·치료 코드·행위 코드는 이 화면에서 바꿀 수 없습니다. 금액만 바꾼 게시는 승인된 보장 분류를 그대로 유지하고 새 가격 버전으로 게시됩니다. 분류가 바뀌는 변경은 검토 요청이 필요합니다. 숨기기·순서·새 치료도 "초안 저장 → 미리보기 → 게시"를 거치기 전에는 키오스크에 나가지 않습니다.',
+    '급여 구분·치료 코드·행위 코드는 이 화면에서 바꿀 수 없습니다. 금액만 바꾼 게시는 승인된 보장 분류를 그대로 유지하고 새 가격 버전으로 게시됩니다. 분류가 바뀌는 변경은 검토 요청이 필요합니다. 숨기기·순서·새 치료도 "초안 저장 → 미리보기 → 게시"를 거치기 전에는 키오스크에 나가지 않습니다. ' + HIDE_NOTE,
+  emptyCatalog: '지금 키오스크에 보이는 치료가 하나도 없습니다. 아래에서 새 치료를 추가해 초안을 저장하고 미리보기를 거쳐 게시해 주세요.',
   benefit: '급여',
   nonBenefit: '비급여',
   code: '치료 코드',
@@ -125,7 +130,7 @@ export const ADMIN_COPY = {
   noneListed: '없음',
   addedLine: (benefit: string, price: number): string => `${benefit} · 가격 ${price.toLocaleString('ko-KR')}원`,
   holdPrefix: '사유',
-  deactivatedLine: '게시하면 키오스크 목록에서 빠집니다',
+  deactivatedLine: '게시하면 키오스크 목록에서 빠집니다. 숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다',
   reorderedLine: (before: number, after: number): string => `${before}번째 → ${after}번째`,
   listsTitle: '키오스크 목록 비교',
   listBefore: '현재 게시본',
@@ -178,6 +183,7 @@ export const ADMIN_COPY = {
       DUPLICATE_ORDER_ENTRY: '표시 순서에 같은 치료가 두 번 들어 있습니다.',
       ORDER_INCOMPLETE: '표시 순서가 현재 치료 목록과 맞지 않습니다. 화면을 새로 불러온 뒤 다시 시도해 주세요.',
       ORDER_UNKNOWN_ENTRY: '표시 순서가 현재 치료 목록과 맞지 않습니다. 화면을 새로 불러온 뒤 다시 시도해 주세요.',
+      NO_TREATMENT_REMAINS: '모든 치료를 숨길 수는 없습니다. 최소 한 개는 게시된 채로 남아야 합니다.',
       TOO_MANY_ADDITIONS: '한 번에 더할 수 있는 새 치료는 50건까지입니다.',
       UNKNOWN_FIELD: '서버가 알지 못하는 항목이 들어 있어 거절했습니다.',
       VALUE_INVALID: '입력값이 올바르지 않습니다. 가격은 0 이상의 정수(원), 날짜는 달력에 있는 YYYY-MM-DD 여야 합니다.',

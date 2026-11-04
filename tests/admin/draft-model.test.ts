@@ -11,6 +11,7 @@ import {
   isAmountText,
   isCalendarDate,
   isEmptyBody,
+  listVisibility,
   moveRow,
   nextDraftKey,
   previewSelection,
@@ -348,6 +349,15 @@ describe('summaryOf', () => {
   it('가격 변경·추가·숨김 건수와 순서 변경 여부를 센다', () => {
     const working = moveRow(appendAddition(toggleHidden({ ...fresh(), priceTexts: { T1: '1', T2: '10000', T3: '11000' } }, 'T2'), addition('new-1')), 'new-1', -1);
     expect(summaryOf(draftBodyOf(working, ROWS).body)).toEqual({ priceChanged: 1, added: 1, hidden: 1, reordered: true });
+  });
+});
+
+describe('listVisibility: 게시된 카탈로그가 없을 때만 화면 전체를 숨긴다', () => {
+  it('카탈로그가 없으면 none, 카탈로그는 있는데 활성 치료가 없으면 empty(새 치료 추가·미리보기·이력은 계속 보인다), 치료가 있으면 normal', () => {
+    expect(listVisibility(null, 0)).toBe('none');
+    expect(listVisibility(null, 3)).toBe('none');
+    expect(listVisibility('V1', 0)).toBe('empty');
+    expect(listVisibility('V1', 2)).toBe('normal');
   });
 });
 

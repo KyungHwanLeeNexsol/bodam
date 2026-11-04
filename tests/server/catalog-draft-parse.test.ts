@@ -75,6 +75,14 @@ describe('parseDraftRequest: 거절 (코드와 경로)', () => {
     ['가격 소수', { additions: [additionBody('X', { patientAmount: 1.5 })] }, 'VALUE_INVALID', 'additions[0].patientAmount'],
     ['가격 없음', { additions: [additionBody('X', { patientAmount: undefined })] }, 'VALUE_MISSING', 'additions[0].patientAmount'],
     ['치료 코드가 빈 문자열', { additions: [additionBody('X', { treatmentCode: '' })] }, 'VALUE_INVALID', 'additions[0].treatmentCode'],
+    ['치료 코드가 공백뿐', { additions: [additionBody('X', { treatmentCode: '   ' })] }, 'VALUE_INVALID', 'additions[0].treatmentCode'],
+    ['치료 코드가 탭·줄바꿈뿐', { additions: [additionBody('X', { treatmentCode: '\t\n' })] }, 'VALUE_INVALID', 'additions[0].treatmentCode'],
+    ['금액 조건의 환자 유형이 공백뿐', { additions: [additionBody('X', { amountCondition: { patientType: '  ', assumption: 'A', referenceDate: '2026-11-01' } })] }, 'VALUE_INVALID', 'additions[0].amountCondition.patientType'],
+    ['금액 조건의 환자 유형이 탭·줄바꿈뿐', { additions: [additionBody('X', { amountCondition: { patientType: '\t\r\n', assumption: 'A', referenceDate: '2026-11-01' } })] }, 'VALUE_INVALID', 'additions[0].amountCondition.patientType'],
+    ['금액 조건의 가정이 공백뿐', { additions: [additionBody('X', { amountCondition: { patientType: 'P', assumption: ' ', referenceDate: '2026-11-01' } })] }, 'VALUE_INVALID', 'additions[0].amountCondition.assumption'],
+    ['금액 조건의 가정이 탭·줄바꿈뿐', { additions: [additionBody('X', { amountCondition: { patientType: 'P', assumption: '\n\t', referenceDate: '2026-11-01' } })] }, 'VALUE_INVALID', 'additions[0].amountCondition.assumption'],
+    ['행위 코드가 공백뿐', { additions: [additionBody('X', { procedureCodes: ['A', '   '] })] }, 'VALUE_INVALID', 'additions[0].procedureCodes[1]'],
+    ['행위 코드가 탭·줄바꿈뿐', { additions: [additionBody('X', { procedureCodes: ['\t\n'] })] }, 'VALUE_INVALID', 'additions[0].procedureCodes[0]'],
     ['행위 코드 목록 없음', { additions: [additionBody('X', { procedureCodes: undefined })] }, 'VALUE_MISSING', 'additions[0].procedureCodes'],
     ['행위 코드 목록이 배열이 아님', { additions: [additionBody('X', { procedureCodes: 'A' })] }, 'VALUE_INVALID', 'additions[0].procedureCodes'],
     ['행위 코드에 빈 문자열', { additions: [additionBody('X', { procedureCodes: ['A', ''] })] }, 'VALUE_INVALID', 'additions[0].procedureCodes[1]'],
@@ -96,6 +104,16 @@ describe('parseDraftRequest: 거절 (코드와 경로)', () => {
 
   it.each(['calcClass', 'origin', 'id', 'sortOrder', 'active', 'clinicId', 'treatmentId', 'approved', 'mapping', 'coverage'])('새 치료의 알 수 없는 키 %s 는 UNKNOWN_FIELD 다 (서버가 정하는 값을 요청이 정하지 못한다)', (key) => {
     expect(defectsOf({ additions: [additionBody('X', { [key]: 'GENERAL_BENEFIT' })] })).toEqual([{ code: 'UNKNOWN_FIELD', path: `additions[0].${key}` }]);
+  });
+
+  it('값 앞뒤의 공백은 다듬거나 바꾸지 않고 그대로 보존한다 (공백뿐인 값만 거절한다)', () => {
+    const result = parse({ additions: [additionBody('X', { treatmentCode: ' TC ', procedureCodes: [' P '], amountCondition: { patientType: ' 성인 ', assumption: ' 가정 ', referenceDate: '2026-11-01' } })] });
+    expect(result.ok).toBe(true);
+    const addition = result.ok ? result.request.additions[0]! : null;
+    expect(addition?.treatmentCode).toBe(' TC ');
+    expect(addition?.procedureCodes).toEqual([' P ']);
+    expect(addition?.amountCondition.patientType).toBe(' 성인 ');
+    expect(addition?.amountCondition.assumption).toBe(' 가정 ');
   });
 
   it('새 치료는 최대 50건이다: 50건은 통과, 51건은 TOO_MANY_ADDITIONS', () => {

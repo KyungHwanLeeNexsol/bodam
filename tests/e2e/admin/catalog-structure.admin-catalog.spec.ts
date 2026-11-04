@@ -122,7 +122,8 @@ async function kioskCalculate(browser: Browser, picks: RegExp[], shotName?: stri
   for (const name of picks) await kiosk.getByRole('checkbox', { name }).check();
   const response = kiosk.waitForResponse((entry) => entry.url().endsWith('/estimate') && entry.request().method() === 'POST');
   await kiosk.getByRole('button', { name: '예상 부담액 확인' }).click();
-  const body = (await (await response).json()) as { result: { state: string; amounts: { hospitalPayment: number; expectedInsurancePayout: number | null } } };  await expect(kiosk.locator('[data-result]')).toBeVisible();
+  const body = (await (await response).json()) as { result: { state: string; amounts: { hospitalPayment: number; expectedInsurancePayout: number | null } } };
+  await expect(kiosk.locator('[data-result]')).toBeVisible();
   const outcome: KioskOutcome = {
     kind: await kiosk.locator('[data-result]').getAttribute('data-result'),
     state: body.result.state,
@@ -185,6 +186,25 @@ test('사전 상태: 키오스크 목록은 치료 A, B 순서이고 관리자 �
   await expect(button(page, '게시')).toBeDisabled();
   await expect(page.locator('[data-admin-add-note]')).toContainText("새 치료는 보장 검토 전까지 보험금이 계산되지 않고 '계산 보류'로 나옵니다");
   await shoot(page, 'admin-before');
+  // 숨기기는 게시한 뒤에는 이 화면에서 되돌릴 수 없다는 안내가 목록 위에 있다.
+  await expect(page.locator('.admin-note').first()).toContainText('숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다');
+
+  // 모든 치료를 숨기는 초안은 서버가 거절한다(최소 한 개는 남아야 한다): 저장은 되지 않고, 이유가 보이며, 입력은 화면에 남고, 공개 목록은 그대로다.
+  const catalogBefore = await publicCatalog(page.request);
+  await button(page, `${NAME_A} 숨기기`).click();
+  await button(page, `${NAME_B} 숨기기`).click();
+  await expect(row(page, T1)).toHaveAttribute('data-hidden', 'true');
+  await expect(row(page, T2)).toHaveAttribute('data-hidden', 'true');
+  await button(page, '초안 저장').click();
+  const banner = page.locator('[data-admin-message="error"]');
+  await expect(banner).toContainText('모든 치료를 숨길 수는 없습니다. 최소 한 개는 게시된 채로 남아야 합니다.');
+  await expect(banner).toContainText('초안은 바뀌지 않았고');
+  expect(await banner.innerText()).not.toContain('NO_TREATMENT_REMAINS');
+  await expect(row(page, T1)).toHaveAttribute('data-hidden', 'true');
+  await expect(page.locator('[data-admin-draft="none"]')).toBeVisible();
+  expect(await serverDraft(page.request)).toBeNull();
+  expect(await publicCatalog(page.request)).toEqual(catalogBefore);
+  await shoot(page, 'hide-all-rejected');
 });
 
 test('화면에서 새 치료 추가 · 숨기기 · 순서 · 가격을 고쳐 초안으로 저장한다: 저장만으로는 키오스크도 공개 자료도 바뀌지 않는다', async ({ page, browser }) => {
@@ -389,7 +409,7 @@ test('미리보기: 추가·숨김·가격을 변경 내역과 목록으로 보�
   // 새 치료의 계산 줄에는 숫자가 한 글자도 없다(보험금을 보이지 않는다).
   expect(await addedState.innerText()).not.toMatch(/\d/);
   await expect(preview.locator(`[data-admin-deactivated="${T2}"]`)).toContainText(NAME_B);
-  await expect(preview.locator(`[data-admin-deactivated="${T2}"]`)).toContainText('키오스크 목록에서 빠집니다');
+  await expect(preview.locator(`[data-admin-deactivated="${T2}"]`)).toContainText('키오스크 목록에서 빠집니다. 숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다');
   // 남는 기존 치료가 하나뿐이라 "순서 변경"은 없다(새 치료가 끼어들어 번호가 밀린 것은 순서 변경이 아니다).
   await expect(preview.locator('[data-admin-reordered]')).toHaveCount(0);
 

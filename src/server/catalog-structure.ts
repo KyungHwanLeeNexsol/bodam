@@ -57,6 +57,7 @@ export function canonicalOrder(published: readonly PublishedTreatment[], parts: 
  *  - 숨김: P 에 없으면 TREATMENT_NOT_IN_CATALOG. 다른 병원 치료와 없는 치료는 같은 코드라 다른 병원의 존재를 드러내지 않는다.
  *  - 새 치료: draftKey 는 초안 안에서만 쓰는 이름표다(진짜 치료 id 는 게시 때 서버가 만든다). 그래서 같은 병원 안의 충돌만 본다 —
  *    이 병원의 치료 id(비활성 포함)나 이 병원의 공통 기본비용 안정 식별자와 겹치면 DRAFT_KEY_COLLIDES. 다른 병원의 치료·기본비용과 겹치는 것은 거절하지 않는다(거절하면 다른 병원의 존재가 드러난다).
+ *  - 남는 치료: (P − 숨김) + 새 치료가 비어 있으면(모든 치료를 숨기고 새 치료도 없음) NO_TREATMENT_REMAINS(path deactivations). 새 치료를 하나라도 더하면 모두 숨겨도 된다.
  *  - 순서: F = (P − 숨김) + 새 치료의 draftKey 의 정확한 순열이어야 한다. F 에 없는 항목(숨긴 치료·다른 병원 치료 포함)은 ORDER_UNKNOWN_ENTRY, F 의 항목이 빠지면 ORDER_INCOMPLETE.
  *    항목 중복(DUPLICATE_ORDER_ENTRY)은 형식 검사(parseDraftRequest)가 이미 거른다. 직접 만든 초안을 넘기는 호출에 대비해 여기서도 한 번 더 본다.
  */
@@ -82,6 +83,10 @@ export function structureDefects(repo: StructureReads, clinicId: string, publish
       defects.push({ code: 'DRAFT_KEY_COLLIDES', path: `additions[${index}].draftKey` });
     }
   });
+  // 게시 뒤에 남는 치료(숨기지 않은 기존 치료 + 새 치료)가 하나도 없으면 키오스크에 고를 치료가 없다. 저장 때와 게시 때 모두 여기서 막는다.
+  if (defaultOrderOf(published, parts).length === 0) {
+    defects.push({ code: 'NO_TREATMENT_REMAINS', path: 'deactivations' });
+  }
   if (parts.order !== null) {
     const members = new Set(defaultOrderOf(published, parts));
     const seen = new Set<string>();

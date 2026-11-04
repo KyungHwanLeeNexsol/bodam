@@ -119,6 +119,7 @@ describe('초안 저장 (구조 편집): 거절은 INVALID_INPUT 이고 저장�
     ['숨기는 치료에 가격 수정', { priceEdits: [edit(T1, 12_000)], deactivations: [T1] }, 'PRICE_EDIT_ON_DEACTIVATED', 'priceEdits[0].treatmentId'],
     ['없는 치료를 숨김', { deactivations: ['NO_SUCH_TREATMENT'] }, 'TREATMENT_NOT_IN_CATALOG', 'deactivations[0]'],
     ['다른 병원 치료를 숨김 (없는 치료와 같은 코드)', { deactivations: [OTHER_CLINIC_TREATMENT_ID] }, 'TREATMENT_NOT_IN_CATALOG', 'deactivations[0]'],
+    ['모든 치료를 숨김 (게시된 치료가 하나도 남지 않음)', { deactivations: [T1, T2, T3] }, 'NO_TREATMENT_REMAINS', 'deactivations'],
     ['draftKey 가 기존 치료 id 와 같음', { additions: [additionBody(T1)] }, 'DRAFT_KEY_COLLIDES', 'additions[0].draftKey'],
     ['draftKey 가 공통 기본비용의 안정 식별자와 같음', { additions: [additionBody(makeBaseFeeVersion(1).baseFeeId)] }, 'DRAFT_KEY_COLLIDES', 'additions[0].draftKey'],
     ['순서에 빠진 항목 (새 치료 누락)', { additions: [additionBody(A)], order: [T1, T2, T3] }, 'ORDER_INCOMPLETE', 'order'],
@@ -146,6 +147,17 @@ describe('초안 저장 (구조 편집): 거절은 INVALID_INPUT 이고 저장�
     expect(error.defects).toContainEqual({ code, path });
     expect(world.repo.exportState()).toEqual(before);
     expect(world.ids.next('CATALOG_DRAFT_REVISION')).toBe('TEST_FIXTURE_CATALOG_DRAFT_REVISION_2');
+  });
+
+  it('모든 치료를 숨기면 거절하고 저장소는 그대로다. 하나라도 남기거나 새 치료를 더하면 저장된다', () => {
+    const world = threeTreatmentWorld();
+    const before = world.repo.exportState();
+    const error = rejectionOf(() => save(world, { deactivations: [T1, T2, T3] }));
+    expect(error.code).toBe('INVALID_INPUT');
+    expect(error.defects).toEqual([{ code: 'NO_TREATMENT_REMAINS', path: 'deactivations' }]);
+    expect(world.repo.exportState()).toEqual(before);
+    expect(save(world, { deactivations: [T1, T2] }).deactivations).toEqual([T1, T2]);
+    expect(save(world, { deactivations: [T1, T2, T3], additions: [additionBody(A)] }).deactivations).toEqual([T1, T2, T3]);
   });
 
   // draftKey 는 초안 안에서만 쓰는 이름표다(진짜 치료 id 는 게시 때 서버가 만든다). 같은 병원 안에서만 겹침을 가리고, 다른 병원의 치료·기본비용 존재는 드러내지 않는다.
@@ -481,6 +493,19 @@ describe('초안 게시 (구조 편집): 하나라도 실패하면 모두 되돌
     expect(error.code).toBe('STATE_CONFLICT');
     expect(error.defects).toContainEqual({ code: 'DRAFT_STALE', path: 'draft' });
     expect(world.repo.exportState()).toEqual(before);
+  });
+
+  it('저장한 뒤 다른 길로 마지막 남은 치료가 비활성이 되어 모든 치료를 숨기는 초안이 되었으면 DRAFT_STALE 로 거절한다 (쓰기 전에)', () => {
+    const world = threeTreatmentWorld();
+    save(world, { deactivations: [T2, T3] }); // T1 하나가 남으니 저장은 통과한다
+    const confirmation = confirmationOf(world);
+    world.repo.saveTreatment({ ...world.repo.getTreatment(T1)!, active: false });
+    const before = world.repo.exportState();
+    const error = rejectionOf(() => publishCatalogDraft(world.deps, HA, CLINIC, confirmation, TEST_CATALOG_CONFIG, 'TEST_FIXTURE'));
+    expect(error.code).toBe('STATE_CONFLICT');
+    expect(error.defects).toContainEqual({ code: 'DRAFT_STALE', path: 'draft' });
+    expect(world.repo.exportState()).toEqual(before);
+    expect(world.repo.getCatalogDraft(CLINIC)).not.toBeNull();
   });
 
   it('초안이 근거한 카탈로그가 바뀌었으면 구조 편집 초안도 DRAFT_STALE 이고 저장소는 그대로다', () => {

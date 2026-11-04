@@ -59,6 +59,12 @@ export function isCalendarDate(text: string): boolean {
 
 const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((entry, index) => entry === b[index]);
 
+/**
+ * 화면 어디까지 보일지: 게시된 카탈로그가 아예 없으면 none(목록·추가·미리보기 모두 숨긴다),
+ * 카탈로그는 있는데 활성 치료가 하나도 없으면 empty(안내와 함께 새 치료 추가·미리보기·이력은 계속 보여 다시 추가할 수 있게 한다), 그 밖에는 normal.
+ */
+export const listVisibility = (catalogVersion: string | null, rowCount: number): 'none' | 'empty' | 'normal' => (catalogVersion === null ? 'none' : rowCount === 0 ? 'empty' : 'normal');
+
 // ───────────────────────── 서버 응답 → 작업 상태 ─────────────────────────
 
 /**
