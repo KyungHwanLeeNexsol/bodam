@@ -55,7 +55,10 @@ export interface PreviewResponse {
   priceChanges: Array<{ treatmentId: string; displayName: string; before: number; after: number }>;
   before: EstimateSide;
   after: EstimateSide;
+  /** 가격 목록의 지문: 화면이 저장된 초안과 같은지 비교하는 상태 표지. 게시 권한이 아니다. */
   draftDigest: string;
+  /** 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줬다는 것을 게시 때 확인하는 값. 게시 요청 본문 { publishConfirmation } 에 그대로 보낸다. */
+  publishConfirmation: string;
 }
 
 export interface OptionsResponse {

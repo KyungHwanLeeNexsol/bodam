@@ -13,6 +13,8 @@ test.describe.configure({ mode: 'serial' });
 const CLINIC_ID = 'TEST_FIXTURE_CLINIC_1';
 const KIOSK = '/kiosk/test-fixture-clinic-1';
 const T1 = 'TEST_FIXTURE_TREATMENT_1';
+/** 형식(소문자 16진수 64자)은 맞지만 서버가 발급한 적 없는 게시 확인값. */
+const NOT_ISSUED = 'a'.repeat(64);
 const SHOTS = path.resolve('.moai/state/shots/m7-admin');
 const shoot = async (page: Page, name: string): Promise<void> => {
   mkdirSync(SHOTS, { recursive: true });
@@ -70,7 +72,7 @@ test('권한 없는 계정: 검토 담당자(RV)·플랫폼 운영자(PO)·다�
     // API 도 같다: 쓰기 시도는 403 이고 키오스크 가격은 그대로다.
     const attempt = await page.request.put(`/api/admin/clinics/${CLINIC_ID}/catalog/draft`, { data: { priceEdits: [{ treatmentId: T1, patientAmount: 1 }] } });
     expect(attempt.status(), account).toBe(403);
-    expect((await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/publish`, { data: { draftDigest: 'x' } })).status(), account).toBe(403);
+    expect((await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/publish`, { data: { publishConfirmation: NOT_ISSUED } })).status(), account).toBe(403);
   }
   expect(await kioskCatalogPrices(page)).toEqual(pricesBefore);
   // 로그아웃으로 세션을 없앤다.
@@ -106,6 +108,15 @@ test('병원 1 관리자: 기존 가격 확인 → 수정 → 초안 저장 → 
   // 저장했지만 게시 전: 게시 단추는 미리보기를 보기 전까지 비활성이다.
   await expect(button(page, '게시')).toBeDisabled();
   await shoot(page, '3-draft-saved');
+
+  // 화면을 거치지 않고 API 로 직접 게시하려 해도 미리보기 전에는 서버가 거절한다: 목록의 draftDigest 는 게시 권한이 아니다.
+  const listed = (await (await page.request.get(`/api/admin/clinics/${CLINIC_ID}/treatments`)).json()) as { draft: { draftDigest: string } };
+  const legacy = await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/publish`, { data: { draftDigest: listed.draft.draftDigest } });
+  expect(legacy.status()).toBe(400);
+  const direct = await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/publish`, { data: { publishConfirmation: listed.draft.draftDigest } });
+  expect(direct.status()).toBe(409);
+  expect(await direct.json()).toEqual({ error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' });
+  expect(await kioskCatalogPrices(page)).toEqual([10_000, 10_000]);
 
   // 키오스크(다른 브라우저 창)는 기존 가격과 기존 카탈로그 버전이다.
   const kioskContext = await browser.newContext({ viewport: { width: 1080, height: 1920 }, locale: 'ko-KR' });
@@ -146,6 +157,28 @@ test('미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보
   await expect(button(page, '미리보기 계산')).toBeEnabled();
 });
 
+test('미리보기를 본 뒤 같은 가격으로 초안이 다시 저장되면 게시는 거절되고(PREVIEW_REQUIRED), 미리보기를 다시 해야 게시할 수 있다. 아무것도 게시되지 않는다', async ({ page }) => {
+  await login(page, 'ha-clinic-1');
+  const versionBefore = (await page.locator('[data-admin-catalog-version]').innerText()).trim();
+  await button(page, '미리보기 계산').click();
+  await expect(page.locator('[data-admin-preview]')).toBeVisible();
+  await expect(button(page, '게시')).toBeEnabled();
+  // 다른 창/관리자가 같은 가격으로 초안을 다시 저장한다: 가격은 같지만 서버가 보는 초안 버전은 달라진다.
+  const resave = await page.request.put(`/api/admin/clinics/${CLINIC_ID}/catalog/draft`, { data: { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] } });
+  expect(resave.status()).toBe(200);
+  await button(page, '게시').click();
+  await expect(page.locator('[data-admin-message="error"]')).toContainText('미리보기를 다시 실행한 뒤 게시');
+  await expect(page.locator('[data-admin-preview]')).toHaveCount(0);
+  await expect(button(page, '게시')).toBeDisabled();
+  await expect(page.locator('[data-admin-catalog-version]')).toHaveText(versionBefore);
+  expect(await kioskCatalogPrices(page)).toEqual([10_000, 10_000]);
+  await shoot(page, '4b-preview-required');
+  // 미리보기를 다시 하면 게시할 수 있는 상태로 돌아온다(게시는 다음 시험이 한다).
+  await button(page, '미리보기 계산').click();
+  await expect(page.locator('[data-admin-preview]')).toBeVisible();
+  await expect(button(page, '게시')).toBeEnabled();
+});
+
 test('게시: 새 카탈로그 버전이 만들어지고 키오스크의 가격과 계산 결과가 새 값으로 바뀐다', async ({ page, browser }) => {
   await login(page, 'ha-clinic-1');
   const versionBefore = (await page.locator('[data-admin-catalog-version]').innerText()).trim();
@@ -174,7 +207,7 @@ test('게시: 새 카탈로그 버전이 만들어지고 키오스크의 가격�
 
 test('게시 뒤에는 초안이 없고 같은 초안을 다시 게시할 수 없다 (409 DRAFT_ABSENT), 가격을 바꾸지 않은 저장은 거절된다', async ({ page }) => {
   await login(page, 'ha-clinic-1');
-  const absent = await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/publish`, { data: { draftDigest: 'x' } });
+  const absent = await page.request.post(`/api/admin/clinics/${CLINIC_ID}/catalog/publish`, { data: { publishConfirmation: NOT_ISSUED } });
   expect(absent.status()).toBe(409);
   expect(await absent.json()).toEqual({ error: 'CONFLICT', reason: 'DRAFT_ABSENT' });
   const noChange = await page.request.put(`/api/admin/clinics/${CLINIC_ID}/catalog/draft`, { data: { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] } });

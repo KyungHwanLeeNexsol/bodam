@@ -23,7 +23,7 @@ const isAmountText = (text: string): boolean => /^\d+$/.test(text.trim());
 function failureMessage(result: Api<unknown>): string {
   const failure = result.body as ApiFailure;
   if (result.status === 409) {
-    return failure.reason === 'DRAFT_CHANGED' ? COPY.errors.changed : failure.reason === 'DRAFT_STALE' ? COPY.errors.stale : failure.reason === 'DRAFT_ABSENT' ? COPY.errors.absent : COPY.errors.generic;
+    return failure.reason === 'PREVIEW_REQUIRED' ? COPY.errors.previewRequired : failure.reason === 'DRAFT_STALE' ? COPY.errors.stale : failure.reason === 'DRAFT_ABSENT' ? COPY.errors.absent : COPY.errors.generic;
   }
   if (result.status === 400) {
     const codes = (failure.defects ?? []).map((defect) => defect.code);
@@ -163,11 +163,15 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   const publish = (): Promise<void> =>
     run(async () => {
       if (preview === null) return;
-      const result = await request<{ catalogVersion: string }>('POST', `${base}/catalog/publish`, { draftDigest: preview.draftDigest });
+      // 게시 권한은 미리보기 응답이 준 게시 확인값뿐이다(목록·저장 응답의 draftDigest 는 화면이 상태를 비교하는 데만 쓴다).
+      const result = await request<{ catalogVersion: string }>('POST', `${base}/catalog/publish`, { publishConfirmation: preview.publishConfirmation });
       if (result.status !== 200) {
         setMessage({ kind: 'error', text: failureMessage(result) });
-        // 충돌(초안이 바뀜·낡음)이면 서버 상태를 다시 읽어 화면을 맞춘다.
-        if (result.status === 409) await refresh();
+        // 충돌(확인값이 맞지 않음·초안이 낡음)이면 지금 쥔 미리보기를 버리고 서버 상태를 다시 읽는다: 미리보기를 다시 실행해야 게시할 수 있다.
+        if (result.status === 409) {
+          setPreview(null);
+          await refresh();
+        }
         return;
       }
       setPreview(null);

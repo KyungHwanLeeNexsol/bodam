@@ -242,6 +242,9 @@ export class MemoryRepository implements Repository {
 
   saveCatalogDraft(draft: CatalogDraft): void {
     this.requireClinic(draft.clinicId);
+    if (typeof draft.revision !== 'string' || draft.revision === '') {
+      throw new DomainError('INVALID_INPUT', '초안의 revision 이 비어 있다', [{ code: 'VALUE_MISSING', path: 'draft.revision' }]);
+    }
     const base = this.store.catalogVersions.get(draft.baseCatalogVersionId);
     if (base === undefined) {
       throw notFound('카탈로그 버전', draft.baseCatalogVersionId);

@@ -3426,7 +3426,7 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 | 영역 | 파일 | 내용 |
 |------|------|------|
 | 저장소 | `domain/entities.ts`, `repo/interfaces.ts`, `repo/memory/*` | `CatalogDraft`(병원마다 하나, 가변 기록: 치료별 새 가격만)와 `saveCatalogDraft`·`getCatalogDraft`·`closeCatalogDraft`. 초안은 치료 버전·카탈로그 버전·병원의 현재 카탈로그를 쓰지 않는다. 불변 기록에는 삭제 동작을 추가하지 않았다(기존 "삭제·초기화 이름 없음" 시험을 약화하지 않으려고 `close` 로 이름 지었다) |
-| 도메인 서비스 | `server/catalog-draft.ts`, `catalog-draft-request.ts` | `saveCatalogDraft`(검증: 가격 범위·형식·중복·현재 카탈로그의 활성 치료·변경 있음), `discardCatalogDraft`, `publishCatalogDraft`(초안 → 가격만 다른 새 치료 버전 → **기존 `publishCatalog` 한 경로**로 새 카탈로그 게시 → 초안 닫기). 낡은 초안(DRAFT_STALE)·초안 없음(DRAFT_ABSENT)은 STATE_CONFLICT |
+| 도메인 서비스 | `server/catalog-draft.ts`, `catalog-draft-request.ts` | `saveCatalogDraft`(검증: 가격 범위·형식·중복·현재 카탈로그의 활성 치료·변경 있음), `discardCatalogDraft`, `publishCatalogDraft`(초안 → 가격만 다른 새 치료 버전 → **기존 `publishCatalog` 한 경로**로 새 카탈로그 게시 → 초안 닫기). 낡은 초안(DRAFT_STALE)·초안 없음(DRAFT_ABSENT)·게시 확인값 불일치(PREVIEW_REQUIRED, 후속 수정)는 STATE_CONFLICT |
 | 계산 재사용 | `server/api/estimate.ts`(`calculate` 내보냄), `server/admin/catalog-preview.ts` | 미리보기는 공개 계산과 **같은 함수**로 현재 게시본과 초안 적용 카탈로그를 두 번 계산해 나란히 보인다(읽기만, 식별자·저장 없음). 두 번째 계산 구현은 없다 |
 | 인증·권한 경계 | `server/admin/auth.ts` | `AdminAuthenticator`(서버가 검증한 `userId` + 병원 소속 목록), `UNCONNECTED_ADMIN_AUTHENTICATOR`(운영: 아무도 인증하지 않음), 신원 모양 정규화(공급자 결함 → 인증 안 됨), `actorForClinic`(병원 id 와 역할이 정확히 같은 소속만 HA 로 인정) |
 | 관리자 API | `server/admin/router.ts`, `http.ts`, `services.ts`, `src/app/api/admin/[...path]/route.ts` | 아래 "API" 표. 처리 순서: 인증(401) → 경로·메서드(404·405) → 소속·역할(403) → 병원 존재(404) → 본문(400) → 서비스. 모든 응답 `no-store` |
@@ -3434,7 +3434,7 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 | 화면 | `src/app/admin/**`, `next.config.mjs` | `/admin`(입구), `/admin/{clinicId}/treatments`(가격 표·초안·미리보기·게시·이력). 서버가 준 값만 보이고, 네트워크 출구는 `transport.ts` 하나(같은 출처 상대 경로). 관리자 문서도 `no-store`. 화면 값(입력·결과)은 저장소·주소로 내보내지 않는다 |
 | 시험 환경 | `tests/fixtures/server/admin.fixture.ts`, `tests/e2e/harness/{world,server,login}.ts` | 시험 계정 4개(병원 1 HA·병원 2 HA·RV·PO), `TestAdminAuthenticator`(서버의 세션 표 + HttpOnly 쿠키), 시험 로그인 화면. **tests/ 에만 있다.** 앞단 서버는 관리자·공개 API 를 같은 저장소의 실제 핸들러로 처리한다 |
 
-**API (DD-19 관리자 API (제안)의 부분집합).** `GET /api/admin/session` · `GET /api/admin/clinics/{id}/treatments` · `PUT·DELETE …/catalog/draft` · `POST …/catalog/preview` · `POST …/catalog/publish`(본문 `{ draftDigest }`: 사람이 미리보기에서 본 초안과 게시하는 초안이 같음을 보장, 다르면 409 DRAFT_CHANGED) · `GET …/catalog/versions`. 초안 요청 본문은 `{ priceEdits: [{ treatmentId, patientAmount }] }` 뿐이고 **다른 키는 모두 400(UNKNOWN_FIELD)** 이다: 급여 구분·행위 코드·치료 코드·분류·묶음 관련 필드를 보낼 길이 없다.
+**API (DD-19 관리자 API (제안)의 부분집합).** `GET /api/admin/session` · `GET /api/admin/clinics/{id}/treatments` · `PUT·DELETE …/catalog/draft` · `POST …/catalog/preview` · `POST …/catalog/publish`(본문 `{ publishConfirmation }` 하나뿐: 미리보기 성공 응답이 준 게시 확인값이어야 하고, 맞지 않으면 409 `PREVIEW_REQUIRED`. 아래 "후속 수정" 절) · `GET …/catalog/versions`. 초안 요청 본문은 `{ priceEdits: [{ treatmentId, patientAmount }] }` 뿐이고 **다른 키는 모두 400(UNKNOWN_FIELD)** 이다: 급여 구분·행위 코드·치료 코드·분류·묶음 관련 필드를 보낼 길이 없다.
 
 #### 지킨 약속과 그 증거
 
@@ -3448,7 +3448,7 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 | 시험 로그인·기본 관리자는 운영 구성에 없다 | `admin-surface.test.ts` 2번(운영 구성은 UNCONNECTED 하나, 시험 인증기·계정 이름이 src 에 없음), `tests/api/admin-catalog.test.ts`(운영 구성 관리자 서비스는 시험 쿠키·헤더를 줘도 7개 경로 모두 401), 브라우저 운영 구성(`unavailable.production.spec.ts`): 문서 200·API 401·시험 로그인 404·가격 입력·단추 없음 |
 | 운영 인증 어댑터가 연결되기 전에는 관리자 기능을 운영에서 쓸 수 없다 | 위와 같다: 운영의 인증기가 아무도 인증하지 않으므로 모든 관리자 API 가 401 이고 화면은 안내만 보인다 |
 | 잘못된 가격·다른 병원 치료 id 는 거절되고 저장되지 않는다 | 도메인·API·브라우저: 음수·소수·범위 밖·문자열·없는 치료·다른 병원의 치료·변경 없음·알 수 없는 키 → 400 과 어긋난 필드 경로, 저장소 전체 비교 불변 |
-| 게시 거절 시 데이터 불변 | 운영 허용 출처(OPERATING)로 시험 자료 줄을 게시하면 400(ORIGIN_NOT_ACCEPTED)이고 카탈로그·치료 버전·초안·감사 기록이 그대로이며 식별자 생성기도 쓰지 않았다(도메인·API 시험). 낡은 초안·바뀐 초안 digest·초안 없음은 409 이고 불변 |
+| 게시 거절 시 데이터 불변 | 운영 허용 출처(OPERATING)로 시험 자료 줄을 게시하면 400(ORIGIN_NOT_ACCEPTED)이고 카탈로그·치료 버전·초안·감사 기록이 그대로이며 식별자 생성기도 쓰지 않았다(도메인·API 시험). 낡은 초안·초안 없음·게시 확인값 불일치(미리보기 없음·초안 재저장·다른 관리자/병원)는 409 이고 불변 |
 | 가격 수정에 보장 판단 필드 변경을 섞을 수 없다 | `UNKNOWN_FIELD` 거절 시험(도메인·API·브라우저 API 호출) |
 
 #### 직접 실행한 검증 (2026-11-04, 이 작업 트리, Windows 11, Node 24, 설치된 Chrome)
@@ -3466,6 +3466,55 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 
 층 구분: 위 관리자 브라우저 시험과 미리보기 실행은 **실제 HTTP 왕복**이다(`page.route` 가로채기 없음). 시험 로그인과 시험 인증기는 시험 앞단의 것이다. 도메인·API 시험(단위 층)은 핸들러를 `Request` 객체로 직접 부른다. 반복하지 않은 것: 키오스크 가로채기 층(I, 756+757)과 사진 156장, 개발 서버 Strict Mode 시험(3) — 이번 변경은 키오스크 화면·상태 기계를 건드리지 않았다(`src/app/kiosk/**` 변경 없음).
 
+#### 후속 수정: 미리보기 없이 API 로 직접 게시할 수 있던 결함 (2026-11-04, PR #8 같은 브랜치)
+
+**결함.** 처음 구현은 게시 본문 `{ draftDigest }` 의 값이 가격 목록의 지문(`canonicalDigest(priceEdits)`)이라, 저장 응답이나 목록 응답에서 얻은 값으로 미리보기 없이 게시할 수 있었다. 지문은 기준 카탈로그와 저장 횟수를 담지 않아, 기준 카탈로그가 바뀐 뒤 같은 가격으로 초안을 다시 저장하면 이전 미리보기의 값이 다시 맞았다.
+
+**수정 전 재현** (임시 시험, 같은 시험을 수정 뒤에 다시 돌려 비교. 시험 파일은 커밋하지 않았다):
+
+| 시도 | 수정 전 | 수정 후 |
+|------|---------|---------|
+| 저장 응답의 `draftDigest` 로 게시 (미리보기 없음) | 200, 새 카탈로그 버전 생성 | 400 `UNKNOWN_FIELD` (옛 이름) |
+| 목록의 `draftDigest` 로 게시 (미리보기 없음) | 200 | 400 (옛 이름) / 같은 값을 새 이름에 넣으면 409 `PREVIEW_REQUIRED` |
+| 기준 카탈로그 변경 → 같은 가격 재저장 → 옛 미리보기 값 | 200 (게시됨) | 409 `PREVIEW_REQUIRED` |
+
+**수정.** 서버가 "이 관리자에게 이 초안의 미리보기를 만들어 줬다"는 것을 게시 때 다시 확인한다. 사람이 화면을 읽었다는 증명이 아니다.
+- `CatalogDraft.revision`: 초안을 저장할 때마다 서버가 `ids.next('CATALOG_DRAFT_REVISION')` 로 새로 만든다(가격이 같아도 매번 다르고, 검증이 끝난 뒤에만 만들어 거절이 생성기를 쓰지 않는다). 어떤 응답·감사 기록에도 싣지 않는다. 저장소는 빈 revision 을 받지 않는다.
+- `server/publish-confirmation.ts`: `확인값 = canonicalDigest([용도 표지, revision, 관리자 id, 병원 id, 기준 카탈로그 버전 id, 가격 목록 지문])`. 발급·확인 모두 계산이라 저장소에 쓰지 않는다 → **미리보기는 읽기만 한다는 약속이 그대로**다. 비교는 두 값을 한 번 더 해시해 비교한다.
+- 발급: `POST …/catalog/preview` 가 **성공(200)했을 때만** 응답에 `publishConfirmation` 을 싣는다. 목록·저장 응답의 `draftDigest` 는 화면이 상태를 비교하는 표지로 남지만 게시 권한이 아니다.
+- 확인: `publishCatalogDraft(deps, actor, clinicId, confirmation, config)` 가 **게시 트랜잭션 안에서 쓰기 전에** (초안 있음 → 낡지 않음 → 확인값 일치) 순서로 가린다. 틀린 확인값에는 게시 검증 결함도 새지 않는다(순서를 고정하는 시험).
+
+**게시 요청 형식과 응답** (실제 구현):
+
+| 요청 | 응답 |
+|------|------|
+| `POST /api/admin/clinics/{id}/catalog/publish` 본문 `{ "publishConfirmation": "<미리보기 응답의 값, 소문자 16진수 64자>" }` 하나뿐 | 200 `{ catalogVersion, publishedAt, changeSummary }` |
+| 본문에 확인값이 없음 / 형식이 아님 / 다른 키(옛 이름 `draftDigest` 포함) | 400 `INVALID_REQUEST` + `defects` (`VALUE_MISSING`·`VALUE_INVALID`·`UNKNOWN_FIELD`) |
+| 초안이 없음 | 409 `{ error: "CONFLICT", reason: "DRAFT_ABSENT" }` |
+| 초안이 근거한 카탈로그가 낡음 | 409 `reason: "DRAFT_STALE"` |
+| 미리보기를 안 했거나, 초안을 다시 저장·버렸다 새로 만들었거나, 기준 카탈로그가 바뀐 뒤 다시 저장했거나, 다른 관리자·다른 병원의 확인값 | 409 `reason: "PREVIEW_REQUIRED"` (구분해서 알리지 않는다) |
+| 미리보기 응답 | 기존 필드 + `draftDigest` + `publishConfirmation` |
+
+옛 `DRAFT_CHANGED` 는 없어졌다(초안이 바뀐 경우도 `PREVIEW_REQUIRED` 로 나온다). 거절은 모두 저장소 전체 비교로 불변을 확인했다. 화면은 게시가 409 로 거절되면 쥐고 있던 미리보기를 버리고 서버 상태를 다시 읽어, 미리보기를 다시 실행해야 게시할 수 있다.
+
+**검증.**
+
+| 확인 | 결과 |
+|------|------|
+| `npx tsc --noEmit` / `next build` | 종료 0 / 종료 0 |
+| 전체 `vitest run` | 166 파일 / 8541 통과 (수정 전 165 / 8516) |
+| 새·바뀐 시험 | `publish-confirmation.test.ts` 신규(묶음 요소별 불일치·열쇠 없는 초안), `catalog-draft.test.ts`(확인값 불일치·재저장·재생성·다른 행위자·검사 순서·저장소 거절), `admin-catalog.test.ts`(미리보기 없이 지문 게시 거절·재저장·재생성·기준 카탈로그 변경·다른 관리자·다른 병원·재사용·응답 누출 없음) |
+| 병원 격리 시험 | 실제 미리보기 성공 뒤 게시하도록 바꿨고 기존 격리 단언(병원 2 카탈로그 불변)은 그대로 |
+| 변이 점검 | 확인 한 줄을 일부러 끄자 새 시험 11건이 실패했고 되돌렸다 |
+| 브라우저(Playwright, 실제 Chrome) `admin`+`production` | 18 통과: 가격 수정 → 초안 저장 → (API 직접 게시 거절) → 미리보기 → (재저장 뒤 게시 거절 → 재미리보기) → 게시 → 키오스크 반영(17,000원) |
+| 독립 검토(읽기 전용 에이전트, 우회 시도) | 운영 구성에서 우회 없음. 아래 한계 반영 |
+
+**한계와 남은 위험 (닫지 않음).**
+1. **비밀성은 식별자 생성기에 기댄다.** `src/server` 는 난수를 만들 수 없고, 키를 따로 주입하면 `getAdminServices()` 에 모듈 수준 상태가 생겨 기존 경계 시험을 어긴다. 운영 생성기(`systemIds`)는 UUID 라 괜찮지만, 시험 생성기는 예측 가능해서 시험 세계에서는 확인값을 만들어 낼 수 있음을 독립 검토가 시연했다. `IdGenerator` 포트에 예측 불가 요건을 적었다. 다른 생성기(순차·DB 번호)로 바꾸면 이 방어는 보통의 해시로 내려앉으므로 그때 서명 키 주입 방식을 다시 정해야 한다.
+2. **미리보기 범위.** 미리보기가 200 이면 확인값을 준다. 초안이 바꾼 치료가 아닌 치료만 골라 미리보기해도 발급된다(응답에는 초안의 가격 변경 전체가 함께 나온다). 변경된 치료를 모두 계산했을 때만 발급할지는 정하지 않았다.
+3. 거절된 게시 시도는 감사 기록을 남기지 않는다. 확인값은 한 번 쓰면 초안이 닫혀 재사용되지 않지만, 게시 전까지 유효 기간은 없다.
+4. 여러 서버 프로세스·실제 저장소에서의 동시성, 실제 인증 공급자, 가격 기준일 정책은 이번 범위가 아니다. 이번 수정은 시험 자료 점검이며 운영 검증이 아니다.
+
 #### M7 수용 기준 상태 (닫지 않았다)
 
 | AC | 이번 기능에서 본 것 | 못 본 것 |
@@ -3481,8 +3530,8 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 
 1. **관리자 인증 공급자(§E #2)와 소속의 출처.** 지금은 인증기 포트뿐이다. 공급자가 정해지면 (a) 공급자 클레임으로 소속을 줄지, (b) `ClinicMembership` 저장소(DD-18)로 둘지, (c) 세션 쿠키 설계, (d) **CSRF 방어**를 정해야 한다. 지금 관리자 본문은 `Content-Type` 과 무관하게 JSON 으로 읽으므로(헤더를 읽지 않기로 한 경계 때문) 쿠키 인증을 연결할 때 `application/json` 요구·출처 검사·SameSite 설정을 함께 넣어야 한다. 시험 인증기는 쿠키를 쓰지만 시험 앞단 전용이다.
 2. **가격 기준일 정책.** 가격만 바뀐 새 치료 버전은 `amountCondition.referenceDate`·`effectiveDate` 를 원본 그대로 옮긴다. 가격을 바꿀 때 기준일을 갱신해야 하는지는 사업 판단이다(환자 화면의 `priceCondition` 문구에 기준일이 나온다).
-3. **초안 규칙.** 병원마다 초안 하나, 마지막 저장이 이긴다. 그 사이 게시가 있으면 게시 거절(DRAFT_STALE), 초안이 바뀌면 거절(DRAFT_CHANGED). 초안 보관 기한·여러 관리자의 동시 편집 표시·변경 사유 입력은 정하지 않았다.
-4. **DD-19 관리자 API 표 갱신 필요.** 구현한 경로가 제안과 다르다: `PUT …/catalog/draft`(제안은 `PATCH …/treatments/{id}`), 게시 본문의 `draftDigest`, 오류 코드 409 `CONFLICT`(reason: DRAFT_STALE·DRAFT_CHANGED·DRAFT_ABSENT·CATALOG_ABSENT)·404 `NOT_FOUND`·405 는 오류 표에 없다. SPEC 본문은 이번에 고치지 않았다.
+3. **초안 규칙.** 병원마다 초안 하나, 마지막 저장이 이긴다. 그 사이 게시가 있으면 게시 거절(DRAFT_STALE), 미리보기를 서버가 확인하지 못한 초안(저장을 다시 했거나 다른 관리자·병원의 확인값)도 거절(PREVIEW_REQUIRED). 초안 보관 기한·여러 관리자의 동시 편집 표시·변경 사유 입력은 정하지 않았다.
+4. **DD-19 관리자 API 표 갱신 필요.** 구현한 경로가 제안과 다르다: `PUT …/catalog/draft`(제안은 `PATCH …/treatments/{id}`), 게시 본문의 `publishConfirmation`(미리보기 응답이 주는 값), 오류 코드 409 `CONFLICT`(reason: DRAFT_STALE·PREVIEW_REQUIRED·DRAFT_ABSENT·CATALOG_ABSENT)·404 `NOT_FOUND`·405 는 오류 표에 없다. SPEC 본문은 이번에 고치지 않았다.
 5. **디자인 대조 미실시.** 이번 세션에서 Pencil MCP 로 `design.pen` 의 A02~A04 를 열지 못했다(앱을 띄운 뒤에도 MCP 가 파일을 열린 것으로 보지 않았다). `design-requirements.md` 의 기록(변경 규칙: 금액만 바꾸면 승인 매핑 유지·새 가격 버전, 분류 변경은 검토 요청)만 따랐고 시안과의 시각 대조는 하지 않았다. 관리자 화면 문구(`src/app/admin/copy.ts`)는 최종 승인이 아니다.
 6. **하지 않은 기능**: 치료 추가·비활성·순서 변경, 공통 기본비용 수정, 이전 게시 버전 복구 화면(`restoreCatalogVersion` 서비스는 있으나 화면·API 없음), 감사 기록 조회, 검토 요청(보장 분류 변경), 병원 설정·무조작 정책, 소속·역할 관리, 규칙 사용 범위, 기기-병원 연결.
 7. **시험 한계**: 시험 앞단의 시계는 고정 값이라 게시 이력의 시각이 모두 같다. 관리자 화면은 Chrome 한 가지, PC 화면 크기(1280)에서만 봤다. 시험 자료의 두 치료 이름이 같아(`TEST_FIXTURE 시험 치료`) 화면에서 치료 id 를 함께 보이게 했다.

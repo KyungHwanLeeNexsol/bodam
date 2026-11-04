@@ -6,6 +6,7 @@ import { canonicalDigest } from '../digest';
 import type { Actor } from '../domain/actor';
 import type { CatalogDraft, Clinic } from '../domain/entities';
 import { DomainError } from '../domain/errors';
+import { issuePublishConfirmation, PUBLISH_CONFIRMATION_PATTERN } from '../publish-confirmation';
 import { isPlainObject } from '../validate/shape';
 import { actorForClinic, normalizeIdentity } from './auth';
 import type { AdminIdentity } from './auth';
@@ -19,8 +20,8 @@ import type { AdminServices } from './services';
 //   GET    /api/admin/clinics/{clinicId}/treatments             — 현재 게시 치료·가격과 초안(있으면)
 //   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 가격 수정을 초안으로 저장(덮어씀)
 //   DELETE /api/admin/clinics/{clinicId}/catalog/draft          — 초안 버리기
-//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만)
-//   POST   /api/admin/clinics/{clinicId}/catalog/publish        — 미리보기에서 본 초안을 게시(draftDigest 가 맞아야 한다)
+//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다
+//   POST   /api/admin/clinics/{clinicId}/catalog/publish        — 본문 { publishConfirmation }: 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줬을 때 발급한 값이어야 게시한다
 //   GET    /api/admin/clinics/{clinicId}/catalog/versions       — 게시 이력
 //
 // 처리 순서(앞선 거절이 이기고 응답 하나만 나간다): 인증(401) → 경로·메서드(404·405) → 병원 소속과 역할(403) → 병원 존재(404) → 본문 읽기(400) → 도메인 서비스.
@@ -30,7 +31,7 @@ import type { AdminServices } from './services';
 
 type Handler = (services: AdminServices, request: Request, actor: Actor, clinic: Clinic) => Promise<Response> | Response;
 
-const CONFLICT_REASONS: readonly string[] = ['DRAFT_STALE', 'DRAFT_ABSENT', 'CATALOG_ABSENT'];
+const CONFLICT_REASONS: readonly string[] = ['DRAFT_STALE', 'DRAFT_ABSENT', 'CATALOG_ABSENT', 'PREVIEW_REQUIRED'];
 
 /** 도메인 오류를 관리자 응답으로 바꾼다. 요청 쪽 거절만 바꾸고, 서버 데이터 결함은 null 이라 호출한 쪽이 다시 던져 500 이 된다. */
 function responseFromDomainError(error: DomainError): Response | null {
@@ -64,7 +65,7 @@ const draftView = (draft: CatalogDraft, currentCatalogVersion: string | null) =>
   priceEdits: draft.priceEdits.map((edit) => ({ treatmentId: edit.treatmentId, patientAmount: edit.patientAmount })),
   updatedAt: draft.updatedAt,
   updatedBy: draft.updatedBy.id,
-  /** 미리보기·게시가 이 초안을 가리키는 값. 게시 요청이 이 값을 돌려줘야 한다(본 초안과 게시하는 초안이 같음을 보장). */
+  /** 가격 목록의 지문. 화면이 "저장된 초안이 그대로인가"를 비교하는 상태 표지일 뿐 게시 권한이 아니다(누구나 이 응답에서 얻는다). 게시는 미리보기가 준 publishConfirmation 으로만 한다. */
   draftDigest: canonicalDigest(draft.priceEdits),
   /** 초안이 근거한 카탈로그가 지금의 현재 카탈로그와 다르면 true: 이 초안은 게시할 수 없다. */
   stale: draft.baseCatalogVersionId !== currentCatalogVersion,
@@ -105,7 +106,7 @@ const putDraft: Handler = async (services, request, actor, clinic) => {
 
 const deleteDraft: Handler = (services, _request, actor, clinic) => ok({ discarded: discardCatalogDraft(services.deps, actor, clinic.id) });
 
-const postPreview: Handler = async (services, request, _actor, clinic) => {
+const postPreview: Handler = async (services, request, actor, clinic) => {
   const body = await readJson(request);
   if (!body.ok) {
     return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
@@ -126,7 +127,8 @@ const postPreview: Handler = async (services, request, _actor, clinic) => {
   if (preview === null) {
     return invalidRequest([{ code: 'TREATMENT_NOT_IN_CATALOG', path: 'request.treatmentIds' }]);
   }
-  return ok({ ...preview, draftDigest: canonicalDigest(draft.priceEdits) });
+  // 계산이 성공했을 때만 게시 확인값을 싣는다. 이 요청을 한 관리자·이 병원·이 기준 카탈로그·이 초안(저장 한 번)에 묶인 값이다.
+  return ok({ ...preview, draftDigest: canonicalDigest(draft.priceEdits), publishConfirmation: issuePublishConfirmation(draft, actor.id) });
 };
 
 const postPublish: Handler = async (services, request, actor, clinic) => {
@@ -137,19 +139,18 @@ const postPublish: Handler = async (services, request, actor, clinic) => {
   if (!isPlainObject(body.body)) {
     return invalidRequest([{ code: 'NOT_OBJECT', path: 'request' }]);
   }
-  const extra = Object.keys(body.body).filter((key) => key !== 'draftDigest');
-  if (extra.length > 0 || typeof body.body.draftDigest !== 'string') {
-    return invalidRequest([...extra.map((key) => ({ code: 'UNKNOWN_FIELD', path: `request.${key}` })), ...(typeof body.body.draftDigest === 'string' ? [] : [{ code: 'VALUE_MISSING', path: 'draftDigest' }])]);
+  // 본문은 { publishConfirmation } 하나뿐이다. 옛 이름 draftDigest 를 포함한 다른 키는 모두 UNKNOWN_FIELD 로 거절한다(목록·저장 응답의 지문은 게시 권한이 아니다).
+  const extra = Object.keys(body.body).filter((key) => key !== 'publishConfirmation');
+  const confirmation = body.body.publishConfirmation;
+  const defects = [
+    ...extra.map((key) => ({ code: 'UNKNOWN_FIELD', path: `request.${key}` })),
+    ...(confirmation === undefined ? [{ code: 'VALUE_MISSING', path: 'publishConfirmation' }] : typeof confirmation === 'string' && PUBLISH_CONFIRMATION_PATTERN.test(confirmation) ? [] : [{ code: 'VALUE_INVALID', path: 'publishConfirmation' }]),
+  ];
+  if (defects.length > 0 || typeof confirmation !== 'string') {
+    return invalidRequest(defects);
   }
-  const draft = services.api.repo.getCatalogDraft(clinic.id);
-  if (draft === null) {
-    return adminError('CONFLICT', { reason: 'DRAFT_ABSENT' });
-  }
-  // 환자에게 나갈 가격은 사람이 미리보기에서 본 초안이어야 한다: 그 사이 초안이 바뀌었으면 게시하지 않는다.
-  if (canonicalDigest(draft.priceEdits) !== body.body.draftDigest) {
-    return adminError('CONFLICT', { reason: 'DRAFT_CHANGED' });
-  }
-  const catalog = publishCatalogDraft(services.deps, actor, clinic.id, { acceptedLineOrigins: services.api.acceptedOrigins.lines });
+  // 초안 존재·낡음·확인값 일치는 게시 트랜잭션 안에서, 아무것도 쓰기 전에 서비스가 가린다(DRAFT_ABSENT·DRAFT_STALE·PREVIEW_REQUIRED → 409).
+  const catalog = publishCatalogDraft(services.deps, actor, clinic.id, confirmation, { acceptedLineOrigins: services.api.acceptedOrigins.lines });
   return ok({ catalogVersion: catalog.id, publishedAt: catalog.publishedAt, changeSummary: catalog.changeSummary });
 };
 

@@ -28,7 +28,7 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
       ['PUT', `/api/admin/clinics/${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: 'TEST_FIXTURE_TREATMENT_1', patientAmount: 1 }] }],
       ['DELETE', `/api/admin/clinics/${CLINIC}/catalog/draft`],
       ['POST', `/api/admin/clinics/${CLINIC}/catalog/preview`, { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' }],
-      ['POST', `/api/admin/clinics/${CLINIC}/catalog/publish`, { draftDigest: 'x' }],
+      ['POST', `/api/admin/clinics/${CLINIC}/catalog/publish`, { publishConfirmation: 'a'.repeat(64) }],
       ['GET', `/api/admin/clinics/${CLINIC}/catalog/versions`],
     ];
     const spoof = { cookie: 'bodam_test_session=TEST_FIXTURE_SESSION_1_ha-clinic-1; role=HA', 'x-role': 'HA', 'x-clinic-id': CLINIC, authorization: 'Bearer HA' };

@@ -3,8 +3,10 @@ import { discardCatalogDraft, parsePriceEdits, publishCatalogDraft, saveCatalogD
 import { publishCatalog } from '../../src/server/catalog-publish';
 import { DomainError } from '../../src/server/domain/errors';
 import type { Actor } from '../../src/server/domain/actor';
+import { issuePublishConfirmation } from '../../src/server/publish-confirmation';
 import { TEST_FIXTURE_CLINIC_ID, TEST_FIXTURE_HA_1, TEST_FIXTURE_PO_1, TEST_FIXTURE_RV_AUTHOR } from '../fixtures/server/actors.fixture';
 import { buildWorld } from '../fixtures/server/estimate-world.fixture';
+import type { World } from '../fixtures/server/lifecycle.fixture';
 import { T1, T2 } from '../fixtures/server/base-fee.fixture';
 import { makeTreatmentVersion } from '../fixtures/server/entities.fixture';
 import { OPERATING_CATALOG_CONFIG, TEST_CATALOG_CONFIG } from '../fixtures/server/publish.fixture';
@@ -16,6 +18,8 @@ import { OTHER_CLINIC_ID, OTHER_CLINIC_TREATMENT_ID, addOtherClinic } from '../f
 const HA = TEST_FIXTURE_HA_1;
 const edit = (treatmentId: string, patientAmount: number) => ({ treatmentId, patientAmount });
 const edits = (...list: Array<ReturnType<typeof edit>>) => ({ priceEdits: list });
+/** 지금 저장된 초안에 대해 이 행위자에게 발급될 게시 확인값(API 에서는 미리보기 응답이 준다). */
+const confirmationOf = (world: World, actor: Actor = HA): string => issuePublishConfirmation(world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)!, actor.id);
 
 function dumpWithout(state: Record<string, unknown>, ...keys: string[]): Record<string, unknown> {
   const copy = { ...state };
@@ -147,7 +151,7 @@ describe('초안 게시 (publishCatalogDraft)', () => {
   it('가격만 바뀐 새 치료 버전과 새 카탈로그 버전이 게시되고, 초안은 지워지며, 변경 요약은 가격 변경으로 나온다', () => {
     const { world, catalog } = buildWorld();
     saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
-    const published = publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, TEST_CATALOG_CONFIG);
+    const published = publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, confirmationOf(world), TEST_CATALOG_CONFIG);
 
     expect(published.id).not.toBe(catalog.id);
     expect(world.repo.getClinicCurrentCatalogVersion(TEST_FIXTURE_CLINIC_ID)?.id).toBe(published.id);
@@ -175,7 +179,7 @@ describe('초안 게시 (publishCatalogDraft)', () => {
     const scopeBefore = world.repo.listClinicRuleScopeHistory(TEST_FIXTURE_CLINIC_ID);
     const statusBefore = bundle === null ? null : world.repo.listBundleStatusEvents(bundle.id);
     saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000), edit(T2, 9_000)));
-    publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, TEST_CATALOG_CONFIG);
+    publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, confirmationOf(world), TEST_CATALOG_CONFIG);
 
     expect(mappingRefs.length).toBeGreaterThan(0);
     expect(statesBefore.every((state) => state !== null && ['APPROVED', 'PUBLISHED'].includes(state.state))).toBe(true);
@@ -195,7 +199,7 @@ describe('초안 게시 (publishCatalogDraft)', () => {
     const { world } = buildWorld();
     saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
     const before = world.repo.exportState();
-    const error = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, OPERATING_CATALOG_CONFIG));
+    const error = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, confirmationOf(world), OPERATING_CATALOG_CONFIG));
     expect(error.code).toBe('PUBLISH_VALIDATION_FAILED');
     expect(error.defects.some((defect) => defect.code === 'ORIGIN_NOT_ACCEPTED')).toBe(true);
     expect(world.repo.exportState()).toEqual(before);
@@ -205,17 +209,18 @@ describe('초안 게시 (publishCatalogDraft)', () => {
 
   it('초안이 없으면 STATE_CONFLICT(DRAFT_ABSENT), 초안이 근거한 카탈로그가 바뀌었으면 STATE_CONFLICT(DRAFT_STALE)이며 저장소는 그대로다', () => {
     const { world, catalog } = buildWorld();
-    const absent = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, TEST_CATALOG_CONFIG));
+    const absent = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, 'a'.repeat(64), TEST_CATALOG_CONFIG));
     expect(absent.code).toBe('STATE_CONFLICT');
     expect(absent.defects).toContainEqual({ code: 'DRAFT_ABSENT', path: 'draft' });
 
     saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const confirmation = confirmationOf(world);
     // 그 사이 다른 게시(같은 병원, 가격만 다른 치료 버전)가 현재 카탈로그를 바꾼다.
     const other = makeTreatmentVersion({ id: 'TEST_FIXTURE_TV_OTHER_PUBLISH', treatmentId: T1, patientAmount: 11_000 });
     const versions = catalog.treatmentVersionIds.map((id) => (id === catalog.treatmentVersionIds[0] ? other : world.repo.getTreatmentVersion(id)!));
     publishCatalog(world.deps, HA, TEST_FIXTURE_CLINIC_ID, { treatmentVersions: versions, commonBaseFees: catalog.baseFeeIds.map((id) => world.repo.getCommonBaseFee(id)!) }, TEST_CATALOG_CONFIG);
     const before = world.repo.exportState();
-    const stale = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, TEST_CATALOG_CONFIG));
+    const stale = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, confirmation, TEST_CATALOG_CONFIG));
     expect(stale.code).toBe('STATE_CONFLICT');
     expect(stale.defects).toContainEqual({ code: 'DRAFT_STALE', path: 'draft' });
     expect(world.repo.exportState()).toEqual(before);
@@ -228,7 +233,82 @@ describe('초안 게시 (publishCatalogDraft)', () => {
     const { world } = buildWorld();
     saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
     const before = world.repo.exportState();
-    expect(rejectionOf(() => publishCatalogDraft(world.deps, actor, TEST_FIXTURE_CLINIC_ID, TEST_CATALOG_CONFIG)).code).toBe('ROLE_NOT_PERMITTED');
+    expect(rejectionOf(() => publishCatalogDraft(world.deps, actor, TEST_FIXTURE_CLINIC_ID, confirmationOf(world, actor), TEST_CATALOG_CONFIG)).code).toBe('ROLE_NOT_PERMITTED');
+    expect(world.repo.exportState()).toEqual(before);
+  });
+});
+
+describe('게시 확인값 (publishCatalogDraft 의 미리보기 조건)', () => {
+  const A_FORM_OK_BUT_NOT_ISSUED = 'a'.repeat(64);
+
+  it('맞는 확인값이 아니면 STATE_CONFLICT(PREVIEW_REQUIRED)이고, 아무것도 쓰기 전에 거절되어 저장소·감사 기록·식별자 생성기가 호출 전과 같다', () => {
+    const { world } = buildWorld();
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const before = world.repo.exportState();
+    for (const wrong of ['', 'x', A_FORM_OK_BUT_NOT_ISSUED, world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)!.revision]) {
+      const error = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, wrong, TEST_CATALOG_CONFIG));
+      expect(error.code).toBe('STATE_CONFLICT');
+      expect(error.defects).toContainEqual({ code: 'PREVIEW_REQUIRED', path: 'draft' });
+    }
+    expect(world.repo.exportState()).toEqual(before);
+    expect(world.ids.next('TREATMENT_VERSION')).toBe('TEST_FIXTURE_TREATMENT_VERSION_1');
+  });
+
+  it('확인값 검사는 게시 검증보다 먼저다: 틀린 확인값에 운영 허용 출처 거절이 겹쳐도 PREVIEW_REQUIRED 만 나가고 검증 결함은 새지 않는다', () => {
+    const { world } = buildWorld();
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const before = world.repo.exportState();
+    const error = rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, A_FORM_OK_BUT_NOT_ISSUED, OPERATING_CATALOG_CONFIG));
+    expect(error.code).toBe('STATE_CONFLICT');
+    expect(error.defects).toEqual([{ code: 'PREVIEW_REQUIRED', path: 'draft' }]);
+    expect(world.repo.exportState()).toEqual(before);
+  });
+
+  it('저장소는 revision 이 빈 초안을 받지 않는다 (가져오기 등으로 열쇠 없는 초안이 들어오는 길을 막는다)', () => {
+    const { world } = buildWorld();
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const stored = world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)!;
+    const before = world.repo.exportState();
+    for (const bad of ['', undefined]) {
+      expect(rejectionOf(() => world.repo.saveCatalogDraft({ ...stored, revision: bad as unknown as string })).code).toBe('INVALID_INPUT');
+    }
+    expect(world.repo.exportState()).toEqual(before);
+  });
+
+  it('가격이 같아도 초안을 다시 저장하면 이전 확인값은 맞지 않고, 새 초안의 확인값은 맞는다 (revision 이 저장마다 바뀐다)', () => {
+    const { world } = buildWorld();
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const first = world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)!;
+    const oldConfirmation = confirmationOf(world);
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const second = world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)!;
+    expect(second.priceEdits).toEqual(first.priceEdits);
+    expect(second.revision).not.toBe(first.revision);
+    expect(confirmationOf(world)).not.toBe(oldConfirmation);
+
+    const before = world.repo.exportState();
+    expect(rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, oldConfirmation, TEST_CATALOG_CONFIG)).defects).toContainEqual({ code: 'PREVIEW_REQUIRED', path: 'draft' });
+    expect(world.repo.exportState()).toEqual(before);
+    expect(publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, confirmationOf(world), TEST_CATALOG_CONFIG).changeSummary.priceChangedTreatmentIds).toEqual([T1]);
+  });
+
+  it('초안을 버렸다가 같은 가격으로 새로 만들어도 이전 확인값은 맞지 않는다', () => {
+    const { world } = buildWorld();
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const oldConfirmation = confirmationOf(world);
+    expect(discardCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID)).toBe(true);
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const before = world.repo.exportState();
+    expect(rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, oldConfirmation, TEST_CATALOG_CONFIG)).defects).toContainEqual({ code: 'PREVIEW_REQUIRED', path: 'draft' });
+    expect(world.repo.exportState()).toEqual(before);
+  });
+
+  it('다른 행위자(같은 병원의 다른 HA)에게 발급된 확인값으로는 게시할 수 없다', () => {
+    const { world } = buildWorld();
+    saveCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, edits(edit(T1, 12_000)));
+    const issuedToOther = confirmationOf(world, { id: 'TEST_FIXTURE_HA_OTHER_PERSON', role: 'HA' });
+    const before = world.repo.exportState();
+    expect(rejectionOf(() => publishCatalogDraft(world.deps, HA, TEST_FIXTURE_CLINIC_ID, issuedToOther, TEST_CATALOG_CONFIG)).defects).toContainEqual({ code: 'PREVIEW_REQUIRED', path: 'draft' });
     expect(world.repo.exportState()).toEqual(before);
   });
 });

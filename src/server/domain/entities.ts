@@ -115,10 +115,13 @@ export interface PriceEdit {
  * 초안은 게시된 치료 버전·카탈로그 버전을 어떤 식으로도 바꾸지 않으므로 공개 키오스크 가격에 영향을 주지 않는다.
  * 게시할 때만 서비스가 새 치료 버전과 새 카탈로그 버전을 기존 게시 서비스(publishCatalog)로 만든다.
  * baseCatalogVersionId: 이 초안이 근거한 병원의 현재 카탈로그. 그 사이 다른 게시가 있었으면 게시를 거절한다(낡은 초안).
+ * revision: 저장할 때마다 서버가 새로 만드는 초안 버전 값(가격이 같아도 매번 다르다). 게시 확인값의 열쇠로 쓰이므로 서버 밖(응답·감사 기록)으로 내보내지 않는다.
  */
 export interface CatalogDraft {
   clinicId: string;
   baseCatalogVersionId: string;
+  /** 서버 비공개. publish-confirmation.ts 만 읽는다. */
+  revision: string;
   priceEdits: PriceEdit[];
   updatedBy: Actor;
   updatedAt: string;

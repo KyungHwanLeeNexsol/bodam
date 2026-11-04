@@ -46,13 +46,16 @@ function setup(account: TestAccountKey | null, options: { linesOrigins?: ('OPERA
 }
 
 const CLINIC = `clinics/${TEST_FIXTURE_CLINIC_ID}`;
+/** 형식(소문자 16진수 64자)은 맞지만 서버가 발급한 적 없는 값. */
+const NOT_ISSUED = 'a'.repeat(64);
+const PREVIEW_BODY = { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' };
 const ROUTES: Array<[string, string, unknown]> = [
   ['GET', 'session', undefined],
   ['GET', `${CLINIC}/treatments`, undefined],
   ['PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] }],
   ['DELETE', `${CLINIC}/catalog/draft`, undefined],
   ['POST', `${CLINIC}/catalog/preview`, { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' }],
-  ['POST', `${CLINIC}/catalog/publish`, { draftDigest: 'x' }],
+  ['POST', `${CLINIC}/catalog/publish`, { publishConfirmation: NOT_ISSUED }],
   ['GET', `${CLINIC}/catalog/versions`, undefined],
 ];
 
@@ -66,6 +69,18 @@ async function publicEstimate(world: ReturnType<typeof setup>, catalogVersion: s
 async function publicCatalog(world: ReturnType<typeof setup>): Promise<Json> {
   return json(await handleCatalog(world.api, CLINIC_1_SLUG));
 }
+
+type AdminOf = ReturnType<typeof adminServicesOf>['admin'];
+
+/** 실제 미리보기 API 를 불러 성공을 확인하고, 그 응답이 준 게시 확인값을 돌려준다. */
+async function previewConfirmation(admin: AdminOf, clinicPath: string = CLINIC): Promise<string> {
+  const response = await call(admin, 'POST', `${clinicPath}/catalog/preview`, PREVIEW_BODY);
+  expect(response.status).toBe(200);
+  return (await json(response)).publishConfirmation as string;
+}
+
+const saveT1 = (admin: AdminOf, amount = 12_000): Promise<Response> => call(admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: amount }] });
+const publish = (admin: AdminOf, body: unknown): Promise<Response> => call(admin, 'POST', `${CLINIC}/catalog/publish`, body);
 
 describe('401: 인증이 없으면 모든 관리자 요청이 거절되고 저장 상태는 그대로다', () => {
   it.each(ROUTES)('%s /api/admin/%s', async (method, path, body) => {
@@ -230,12 +245,15 @@ describe('가격 수정 → 초안 저장 → 미리보기 → 게시 → 공개
     expect(preview.before.result.amounts.hospitalPayment).toBe(15_000);
     expect(preview.after.result.amounts.hospitalPayment).toBe(17_000);
     expect(preview.after.result.amounts.expectedInsurancePayout).not.toBe(preview.before.result.amounts.expectedInsurancePayout);
+    // 상태 비교용 지문은 목록·저장 응답과 같지만, 게시 확인값은 그것과 다른 값이다(지문으로는 게시할 수 없다).
     expect(preview.draftDigest).toBe(draft.draftDigest);
+    expect(preview.publishConfirmation).toMatch(/^[0-9a-f]{64}$/);
+    expect(preview.publishConfirmation).not.toBe(draft.draftDigest);
     // 미리보기 계산은 공개 계산과 같은 결과를 낸다(현재 카탈로그 쪽 before 가 위의 공개 계산과 같다).
     expect(preview.before.result.amounts).toEqual(oldEstimate.body.result.amounts);
 
     // 5) 게시
-    const published = await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: draft.draftDigest });
+    const published = await publish(world.admin, { publishConfirmation: preview.publishConfirmation });
     expect(published.status).toBe(200);
     const publishedBody = await json(published);
     expect(publishedBody.catalogVersion).not.toBe(oldVersion);
@@ -264,9 +282,9 @@ describe('가격 수정 → 초안 저장 → 미리보기 → 게시 → 공개
   it('두 번째 병원의 가격·카탈로그는 첫 병원의 게시에 영향을 받지 않는다 (병원 격리)', async () => {
     const world = setup('ha-clinic-1');
     const other = world.world.repo.getClinicCurrentCatalogVersion(OTHER_CLINIC_ID)!;
-    await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] });
-    const digest = (await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))).draft.draftDigest as string;
-    expect((await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: digest })).status).toBe(200);
+    await saveT1(world.admin);
+    const confirmation = await previewConfirmation(world.admin);
+    expect((await publish(world.admin, { publishConfirmation: confirmation })).status).toBe(200);
     expect(world.world.repo.getClinicCurrentCatalogVersion(OTHER_CLINIC_ID)).toEqual(other);
   });
 
@@ -342,12 +360,26 @@ describe('400: 잘못된 입력은 어긋난 필드 경로와 함께 거절되�
     expect(world.world.repo.exportState()).toEqual(before);
   });
 
-  it('게시 본문: draftDigest 없음·알 수 없는 키는 400', async () => {
+  it('게시 본문은 { publishConfirmation } 하나뿐이다: 없음·형식 위반·알 수 없는 키(옛 이름 draftDigest 포함)는 400 이고 아무것도 쓰지 않는다', async () => {
     const world = setup('ha-clinic-1');
-    await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] });
+    await saveT1(world.admin);
+    const digest = (await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))).draft.draftDigest as string;
     const before = world.world.repo.exportState();
-    expect((await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, {})).status).toBe(400);
-    expect((await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: 'x', priceEdits: [] })).status).toBe(400);
+    const cases: Array<[string, unknown, string, string]> = [
+      ['본문이 비어 있음', {}, 'VALUE_MISSING', 'publishConfirmation'],
+      ['목록의 지문을 옛 이름 draftDigest 로', { draftDigest: digest }, 'UNKNOWN_FIELD', 'request.draftDigest'],
+      ['목록의 지문을 옛 이름 draftDigest 로 (확인값 없음)', { draftDigest: digest }, 'VALUE_MISSING', 'publishConfirmation'],
+      ['알 수 없는 키를 더함', { publishConfirmation: NOT_ISSUED, priceEdits: [] }, 'UNKNOWN_FIELD', 'request.priceEdits'],
+      ['형식이 확인값이 아님', { publishConfirmation: 'x' }, 'VALUE_INVALID', 'publishConfirmation'],
+      ['대문자 16진수', { publishConfirmation: 'A'.repeat(64) }, 'VALUE_INVALID', 'publishConfirmation'],
+      ['문자열이 아님', { publishConfirmation: 123 }, 'VALUE_INVALID', 'publishConfirmation'],
+    ];
+    for (const [name, body, code, path] of cases) {
+      const response = await publish(world.admin, body);
+      expect(response.status, name).toBe(400);
+      expect((await json(response)).defects, name).toContainEqual({ code, path });
+    }
+    expect((await publish(world.admin, [1])).status).toBe(400);
     expect(world.world.repo.exportState()).toEqual(before);
   });
 });
@@ -356,7 +388,7 @@ describe('409: 충돌은 거절되고 저장 상태는 그대로다', () => {
   it('초안 없이 미리보기·게시하면 DRAFT_ABSENT', async () => {
     const world = setup('ha-clinic-1');
     const before = world.world.repo.exportState();
-    for (const [path, body] of [[`${CLINIC}/catalog/preview`, { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' }], [`${CLINIC}/catalog/publish`, { draftDigest: 'x' }]] as const) {
+    for (const [path, body] of [[`${CLINIC}/catalog/preview`, { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' }], [`${CLINIC}/catalog/publish`, { publishConfirmation: NOT_ISSUED }]] as const) {
       const response = await call(world.admin, 'POST', path, body);
       expect(response.status).toBe(409);
       expect(await json(response)).toEqual({ error: 'CONFLICT', reason: 'DRAFT_ABSENT' });
@@ -364,23 +396,23 @@ describe('409: 충돌은 거절되고 저장 상태는 그대로다', () => {
     expect(world.world.repo.exportState()).toEqual(before);
   });
 
-  it('미리보기를 본 뒤 초안이 바뀌면(다른 관리자가 다시 저장) 본 초안의 digest 로는 게시할 수 없다 (DRAFT_CHANGED)', async () => {
+  it('미리보기를 본 뒤 초안이 바뀌면(다시 저장) 본 초안의 확인값으로는 게시할 수 없다 (PREVIEW_REQUIRED)', async () => {
     const world = setup('ha-clinic-1');
-    await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] });
-    const seen = (await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))).draft.draftDigest as string;
-    await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 99_000 }] });
+    await saveT1(world.admin);
+    const seen = await previewConfirmation(world.admin);
+    await saveT1(world.admin, 99_000);
     const before = world.world.repo.exportState();
-    const response = await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: seen });
+    const response = await publish(world.admin, { publishConfirmation: seen });
     expect(response.status).toBe(409);
-    expect(await json(response)).toEqual({ error: 'CONFLICT', reason: 'DRAFT_CHANGED' });
+    expect(await json(response)).toEqual({ error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' });
     expect(world.world.repo.exportState()).toEqual(before);
     expect((await publicCatalog(world)).treatments[0].patientAmount).toBe(10_000);
   });
 
   it('초안이 근거한 카탈로그가 그 사이 바뀌었으면 게시도 미리보기도 DRAFT_STALE', async () => {
     const world = setup('ha-clinic-1');
-    await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] });
-    const digest = (await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))).draft.draftDigest as string;
+    await saveT1(world.admin);
+    const confirmation = await previewConfirmation(world.admin);
     // 다른 경로의 게시(예: 다른 도구)가 현재 카탈로그를 바꾼다. 도메인 서비스로 직접 같은 병원에 게시한다.
     const { publishCatalog } = await import('../../src/server/catalog-publish');
     const current = world.world.repo.getClinicCurrentCatalogVersion(TEST_FIXTURE_CLINIC_ID)!;
@@ -393,7 +425,7 @@ describe('409: 충돌은 거절되고 저장 상태는 그대로다', () => {
       { acceptedLineOrigins: ['OPERATING', 'TEST_FIXTURE', 'DEMO'] },
     );
     const before = world.world.repo.exportState();
-    const published = await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: digest });
+    const published = await publish(world.admin, { publishConfirmation: confirmation });
     expect(published.status).toBe(409);
     expect(await json(published)).toEqual({ error: 'CONFLICT', reason: 'DRAFT_STALE' });
     const preview = await call(world.admin, 'POST', `${CLINIC}/catalog/preview`, { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' });
@@ -407,11 +439,11 @@ describe('409: 충돌은 거절되고 저장 상태는 그대로다', () => {
 describe('게시 거절: 게시 검증이 거절하면 데이터가 하나도 바뀌지 않는다', () => {
   it('운영 허용 출처(OPERATING)는 시험 자료 줄을 거절한다: 400 + ORIGIN_NOT_ACCEPTED, 카탈로그·치료 버전·초안·감사 기록 불변, 공개 가격 그대로', async () => {
     const world = setup('ha-clinic-1', { linesOrigins: ['OPERATING'] });
-    const saved = await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] });
+    const saved = await saveT1(world.admin);
     expect(saved.status).toBe(200);
-    const digest = ((await json(saved)).draft as Json).draftDigest as string;
+    const confirmation = await previewConfirmation(world.admin);
     const before = world.world.repo.exportState();
-    const response = await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: digest });
+    const response = await publish(world.admin, { publishConfirmation: confirmation });
     expect(response.status).toBe(400);
     const body = await json(response);
     expect(body.error).toBe('INVALID_REQUEST');
@@ -425,12 +457,187 @@ describe('게시 거절: 게시 검증이 거절하면 데이터가 하나도 �
 describe('감사 기록', () => {
   it('초안 저장·게시마다 수행자(검증된 신원)와 역할이 남는다', async () => {
     const world = setup('ha-clinic-1');
-    await call(world.admin, 'PUT', `${CLINIC}/catalog/draft`, { priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }] });
-    const digest = (await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))).draft.draftDigest as string;
-    await call(world.admin, 'POST', `${CLINIC}/catalog/publish`, { draftDigest: digest });
+    await saveT1(world.admin);
+    const confirmation = await previewConfirmation(world.admin);
+    await publish(world.admin, { publishConfirmation: confirmation });
     const audits = world.world.repo.listAuditLog().filter((entry) => entry.actorId === 'TEST_FIXTURE_HA_CLINIC_1');
     expect(audits.map((entry) => entry.action)).toEqual(['CATALOG_DRAFT_SAVE', 'CATALOG_PUBLISH', 'CATALOG_DRAFT_PUBLISH']);
     expect(audits.every((entry) => entry.role === 'HA')).toBe(true);
+  });
+});
+
+describe('미리보기 없이는 게시할 수 없다: 서버가 미리보기 성공 때 발급한 게시 확인값만 게시 권한이다', () => {
+  const PREVIEW_REQUIRED = { error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' };
+  const publicPrices = async (world: ReturnType<typeof setup>): Promise<number[]> => (await publicCatalog(world)).treatments.map((row: Json) => row.patientAmount);
+
+  it('미리보기 없이 저장 응답·목록의 지문으로는 게시할 수 없다 (옛 이름 draftDigest 는 400, 새 이름에 넣어도 409). 저장소·공개 가격·초안이 그대로다', async () => {
+    const world = setup('ha-clinic-1');
+    const saved = await saveT1(world.admin);
+    const savedDigest = ((await json(saved)).draft as Json).draftDigest as string;
+    const listDigest = (await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))).draft.draftDigest as string;
+    expect(listDigest).toBe(savedDigest);
+    const before = world.world.repo.exportState();
+    for (const digest of [savedDigest, listDigest]) {
+      expect((await publish(world.admin, { draftDigest: digest })).status).toBe(400);
+      const renamed = await publish(world.admin, { publishConfirmation: digest });
+      expect(renamed.status).toBe(409);
+      expect(await json(renamed)).toEqual(PREVIEW_REQUIRED);
+    }
+    expect(world.world.repo.exportState()).toEqual(before);
+    expect(await publicPrices(world)).toEqual([10_000, 10_000]);
+    expect(world.world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)).not.toBeNull();
+  });
+
+  it('성공하지 못한 미리보기는 게시 확인값을 주지 않는다', async () => {
+    const world = setup('ha-clinic-1');
+    const noDraft = await call(world.admin, 'POST', `${CLINIC}/catalog/preview`, PREVIEW_BODY);
+    expect(noDraft.status).toBe(409);
+    expect(JSON.stringify(await json(noDraft))).not.toContain('publishConfirmation');
+    await saveT1(world.admin);
+    for (const bad of [{ ...PREVIEW_BODY, generation: 'GEN9' }, { ...PREVIEW_BODY, price: 1 }, { ...PREVIEW_BODY, treatmentIds: [OTHER_CLINIC_TREATMENT_ID] }, 'not json']) {
+      const response = await call(world.admin, 'POST', `${CLINIC}/catalog/preview`, bad);
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(await json(response))).not.toContain('publishConfirmation');
+    }
+  });
+
+  it('가격이 같아도 초안을 다시 저장하면 이전 미리보기의 확인값은 쓸 수 없고, 새 미리보기의 확인값은 쓸 수 있다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveT1(world.admin);
+    const old = await previewConfirmation(world.admin);
+    await saveT1(world.admin); // 같은 가격으로 다시 저장
+    const before = world.world.repo.exportState();
+    const rejected = await publish(world.admin, { publishConfirmation: old });
+    expect(rejected.status).toBe(409);
+    expect(await json(rejected)).toEqual(PREVIEW_REQUIRED);
+    expect(world.world.repo.exportState()).toEqual(before);
+    expect(await publicPrices(world)).toEqual([10_000, 10_000]);
+
+    const fresh = await previewConfirmation(world.admin);
+    expect(fresh).not.toBe(old);
+    expect((await publish(world.admin, { publishConfirmation: fresh })).status).toBe(200);
+    expect(await publicPrices(world)).toEqual([12_000, 10_000]);
+  });
+
+  it('초안을 버렸다가 같은 가격으로 새로 만들어도 이전 확인값은 쓸 수 없다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveT1(world.admin);
+    const old = await previewConfirmation(world.admin);
+    expect(await json(await call(world.admin, 'DELETE', `${CLINIC}/catalog/draft`))).toEqual({ discarded: true });
+    await saveT1(world.admin);
+    const before = world.world.repo.exportState();
+    const rejected = await publish(world.admin, { publishConfirmation: old });
+    expect(rejected.status).toBe(409);
+    expect(await json(rejected)).toEqual(PREVIEW_REQUIRED);
+    expect(world.world.repo.exportState()).toEqual(before);
+  });
+
+  it('기준 카탈로그가 바뀐 뒤 같은 수정 가격으로 초안을 다시 저장해도, 바뀌기 전 미리보기의 확인값은 쓸 수 없다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveT1(world.admin);
+    const old = await previewConfirmation(world.admin);
+    const { publishCatalog } = await import('../../src/server/catalog-publish');
+    const current = world.world.repo.getClinicCurrentCatalogVersion(TEST_FIXTURE_CLINIC_ID)!;
+    const versions = current.treatmentVersionIds.map((id) => world.world.repo.getTreatmentVersion(id)!);
+    publishCatalog(
+      world.world.deps,
+      { id: 'TEST_FIXTURE_HA_CLINIC_1', role: 'HA' },
+      TEST_FIXTURE_CLINIC_ID,
+      { treatmentVersions: [{ ...versions[0]!, id: 'TEST_FIXTURE_TV_RACE', patientAmount: 10_500 }, versions[1]!], commonBaseFees: current.baseFeeIds.map((id) => world.world.repo.getCommonBaseFee(id)!) },
+      { acceptedLineOrigins: ['OPERATING', 'TEST_FIXTURE', 'DEMO'] },
+    );
+    expect((await saveT1(world.admin)).status).toBe(200); // 새 기준 카탈로그 위에 같은 가격 수정을 다시 저장
+    const before = world.world.repo.exportState();
+    const rejected = await publish(world.admin, { publishConfirmation: old });
+    expect(rejected.status).toBe(409);
+    expect(await json(rejected)).toEqual(PREVIEW_REQUIRED);
+    expect(world.world.repo.exportState()).toEqual(before);
+
+    const fresh = await previewConfirmation(world.admin);
+    expect((await publish(world.admin, { publishConfirmation: fresh })).status).toBe(200);
+  });
+
+  it('다른 관리자(같은 병원의 다른 HA)에게 발급된 확인값은 쓸 수 없다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveT1(world.admin);
+    const issuedToFirst = await previewConfirmation(world.admin);
+    const second = { ...world.admin, authenticator: staticAuthenticator({ userId: 'TEST_FIXTURE_HA_CLINIC_1_SECOND', memberships: [{ clinicId: TEST_FIXTURE_CLINIC_ID, role: 'HA' }] }) };
+    const before = world.world.repo.exportState();
+    const rejected = await publish(second, { publishConfirmation: issuedToFirst });
+    expect(rejected.status).toBe(409);
+    expect(await json(rejected)).toEqual(PREVIEW_REQUIRED);
+    expect(world.world.repo.exportState()).toEqual(before);
+    // 두 번째 관리자가 직접 미리보기를 하면 자기 확인값으로 게시한다(첫 관리자의 확인값은 여전히 첫 관리자 몫이다).
+    expect((await publish(second, { publishConfirmation: await previewConfirmation(second) })).status).toBe(200);
+  });
+
+  it('다른 병원의 확인값은 쓸 수 없다 (한 관리자가 두 병원 소속이어도 병원에 묶여 있다). 다른 병원의 카탈로그·초안은 그대로다', async () => {
+    const built = buildWorld();
+    publishSecondClinicCatalog(built.world);
+    const both = { userId: 'TEST_FIXTURE_HA_BOTH_CLINICS', memberships: [{ clinicId: TEST_FIXTURE_CLINIC_ID, role: 'HA' as const }, { clinicId: OTHER_CLINIC_ID, role: 'HA' as const }] };
+    const { admin } = adminServicesOf(built.world, { authenticator: staticAuthenticator(both) });
+    const OTHER = `clinics/${OTHER_CLINIC_ID}`;
+    await saveT1(admin);
+    const clinic1Confirmation = await previewConfirmation(admin);
+    expect((await call(admin, 'PUT', `${OTHER}/catalog/draft`, { priceEdits: [{ treatmentId: OTHER_CLINIC_TREATMENT_ID, patientAmount: 777 }] })).status).toBe(200);
+    const otherCatalog = built.world.repo.getClinicCurrentCatalogVersion(OTHER_CLINIC_ID)!;
+    const before = built.world.repo.exportState();
+    const rejected = await call(admin, 'POST', `${OTHER}/catalog/publish`, { publishConfirmation: clinic1Confirmation });
+    expect(rejected.status).toBe(409);
+    expect(await json(rejected)).toEqual(PREVIEW_REQUIRED);
+    expect(built.world.repo.exportState()).toEqual(before);
+    expect(built.world.repo.getClinicCurrentCatalogVersion(OTHER_CLINIC_ID)).toEqual(otherCatalog);
+    expect(built.world.repo.getCatalogDraft(OTHER_CLINIC_ID)).not.toBeNull();
+    // 병원 1 에서는 같은 확인값이 정상으로 쓰인다.
+    expect((await publish(admin, { publishConfirmation: clinic1Confirmation })).status).toBe(200);
+  });
+
+  it('게시에 성공한 확인값을 다시 보내면 초안이 없으므로 DRAFT_ABSENT 이고 아무것도 바뀌지 않는다', async () => {
+    const world = setup('ha-clinic-1');
+    await saveT1(world.admin);
+    const confirmation = await previewConfirmation(world.admin);
+    expect((await publish(world.admin, { publishConfirmation: confirmation })).status).toBe(200);
+    const before = world.world.repo.exportState();
+    const replay = await publish(world.admin, { publishConfirmation: confirmation });
+    expect(replay.status).toBe(409);
+    expect(await json(replay)).toEqual({ error: 'CONFLICT', reason: 'DRAFT_ABSENT' });
+    expect(world.world.repo.exportState()).toEqual(before);
+  });
+
+  it('게시 확인값과 초안 버전 값은 미리보기 응답 밖의 어떤 응답에도 실리지 않는다', async () => {
+    const world = setup('ha-clinic-1');
+    const saved = await json(await saveT1(world.admin));
+    const confirmation = await previewConfirmation(world.admin);
+    const revision = world.world.repo.getCatalogDraft(TEST_FIXTURE_CLINIC_ID)!.revision;
+    const others = [
+      JSON.stringify(saved),
+      JSON.stringify(await json(await call(world.admin, 'GET', `${CLINIC}/treatments`))),
+      JSON.stringify(await json(await call(world.admin, 'GET', `${CLINIC}/catalog/versions`))),
+      JSON.stringify(await json(await call(world.admin, 'GET', 'session'))),
+      JSON.stringify(await json(await call(world.admin, 'DELETE', `${CLINIC}/catalog/draft`))),
+    ];
+    // 실패 응답(게시 거절 409·400, 미리보기 거절)도 값을 되돌려 주지 않는다.
+    const failures: string[] = [];
+    for (const failed of [
+      await publish(world.admin, { publishConfirmation: NOT_ISSUED }),
+      await publish(world.admin, { publishConfirmation: confirmation.toUpperCase() }),
+      await publish(world.admin, { draftDigest: confirmation }),
+      await call(world.admin, 'POST', `${CLINIC}/catalog/preview`, { ...PREVIEW_BODY, generation: 'GEN9' }),
+    ]) {
+      expect(failed.status).toBeGreaterThanOrEqual(400);
+      failures.push(JSON.stringify(await json(failed)));
+    }
+    // 값(확인값·열쇠)은 어떤 응답에도 없다. 필드 이름 publishConfirmation 은 400 의 결함 경로에 나올 수 있으므로 성공 응답에서만 없어야 한다.
+    for (const text of [...others, ...failures]) {
+      expect(text).not.toContain(confirmation);
+      expect(text).not.toContain(revision);
+    }
+    for (const text of others) {
+      expect(text).not.toContain('publishConfirmation');
+    }
+    // 감사 기록에도 열쇠(revision)와 확인값이 남지 않는다.
+    expect(JSON.stringify(world.world.repo.listAuditLog())).not.toContain(revision);
+    expect(JSON.stringify(world.world.repo.listAuditLog())).not.toContain(confirmation);
   });
 });
 

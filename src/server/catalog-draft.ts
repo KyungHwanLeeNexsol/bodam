@@ -10,6 +10,7 @@ import type { Actor } from './domain/actor';
 import type { CatalogDraft, CatalogVersion, PriceEdit } from './domain/entities';
 import { DomainError } from './domain/errors';
 import type { Defect } from './domain/errors';
+import { confirmsPublish } from './publish-confirmation';
 import { selectPublishedTreatments } from './published-treatments';
 import { assertNoDefects, validateCatalogPublish } from './publish-validate';
 import type { CatalogPublishConfig } from './publish-validate';
@@ -26,11 +27,13 @@ import { isNonEmptyString, isPlainObject } from './validate/shape';
 //    원본 그대로 옮기므로 재검토 전환(triggerReReview)이 일어나지 않아 승인된 매핑·규칙 묶음·병원의 규칙 사용 범위는 바뀌지 않는다(DD-16).
 //  - 게시는 기존 게시 서비스의 단일 경로를 지난다: 검증·소유 확인·변경 요약·감사 기록은 거기서 한다. 어느 단계든 던지면 저장소 전체가 호출 전과 같다(초안도 남는다).
 //  - 낡은 초안은 게시하지 않는다: 초안이 근거한 카탈로그가 병원의 현재 카탈로그와 다르면 STATE_CONFLICT(DRAFT_STALE).
+//  - 미리보기 없이 게시하지 않는다: 게시는 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줄 때 발급한 게시 확인값(publish-confirmation.ts)을 받아야 하고,
+//    맞는지는 게시 트랜잭션 안에서 아무것도 쓰기 전에 본다. 맞지 않으면 STATE_CONFLICT(PREVIEW_REQUIRED)이고 저장소는 호출 전과 같다.
 // 역할만 본다: 병원 소유·소속·인증은 관리자 API 경계(src/server/admin)가 서버에서 검증한 신원으로 하고 이 서비스에는 병원 id 와 행위자만 온다.
 
 const PRICE_EDIT_KEYS: readonly string[] = ['treatmentId', 'patientAmount'];
 
-function conflict(code: 'DRAFT_STALE' | 'DRAFT_ABSENT' | 'CATALOG_ABSENT', message: string): DomainError {
+function conflict(code: 'DRAFT_STALE' | 'DRAFT_ABSENT' | 'CATALOG_ABSENT' | 'PREVIEW_REQUIRED', message: string): DomainError {
   return new DomainError('STATE_CONFLICT', message, [{ code, path: 'draft' }]);
 }
 
@@ -137,9 +140,11 @@ export function saveCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: stri
     if (defects.length > 0) {
       throw new DomainError('INVALID_INPUT', `가격 수정 요청을 저장할 수 없다 (결함 ${defects.length}건)`, defects);
     }
+    // 검증이 끝난 뒤에야 만든다(거절이 생성기를 쓰지 않게). 저장할 때마다 새 값이라 가격이 같은 재저장도 이전 게시 확인값을 무효로 만든다.
     const draft: CatalogDraft = {
       clinicId,
       baseCatalogVersionId: catalog.id,
+      revision: deps.ids.next('CATALOG_DRAFT_REVISION'),
       priceEdits: changed.sort((a, b) => compareCodePoints(a.treatmentId, b.treatmentId)),
       updatedBy: { id: actor.id, role: actor.role },
       updatedAt: deps.clock.now(),
@@ -176,10 +181,12 @@ export function discardCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: s
 // @MX:REASON: 게시는 기존 publishCatalog 한 경로만 지나야 검증·소유 확인·재검토 판정·변경 요약·감사 기록이 어긋나지 않는다. 새 치료 버전은 가격만 다르고 보장 판단 필드는 원본 그대로여야 한다.
 /**
  * 초안을 게시한다: 초안이 가리키는 가격만 바뀐 새 치료 버전들과 나머지는 그대로인 현재 카탈로그의 구성으로 publishCatalog 를 부르고, 성공하면 초안을 지운다.
- * 초안이 없으면 STATE_CONFLICT(DRAFT_ABSENT), 초안이 근거한 카탈로그가 현재 카탈로그와 다르면 STATE_CONFLICT(DRAFT_STALE). 게시 검증이 거절하면(PUBLISH_VALIDATION_FAILED 등)
+ * confirmation 은 미리보기 응답이 준 게시 확인값이다(publish-confirmation.ts): 이 행위자에게 이 초안(저장 한 번)의 미리보기를 만들어 줬을 때만 맞는다.
+ * 초안이 없으면 STATE_CONFLICT(DRAFT_ABSENT), 초안이 근거한 카탈로그가 현재 카탈로그와 다르면 STATE_CONFLICT(DRAFT_STALE), 확인값이 맞지 않으면 STATE_CONFLICT(PREVIEW_REQUIRED).
+ * 이 세 가지는 게시 트랜잭션 안에서 아무것도 쓰기 전에 가려진다. 게시 검증이 거절하면(PUBLISH_VALIDATION_FAILED 등)
  * 하나의 트랜잭션이 되돌려져 현재 카탈로그·치료 버전·초안·감사 기록 모두 호출 전과 같다. 새 치료 버전 id 는 검증이 끝난 뒤에야 만든다(거절이 생성기를 소비하지 않는다).
  */
-export function publishCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: string, config: CatalogPublishConfig): CatalogVersion {
+export function publishCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: string, confirmation: string, config: CatalogPublishConfig): CatalogVersion {
   requireRole(actor, 'HA');
   return deps.repo.transaction(() => {
     requireClinic(deps, clinicId);
@@ -190,6 +197,9 @@ export function publishCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: s
     const { catalog } = currentPublished(deps, clinicId);
     if (catalog.id !== draft.baseCatalogVersionId) {
       throw conflict('DRAFT_STALE', `초안은 카탈로그 '${draft.baseCatalogVersionId}' 에 근거했지만 현재는 '${catalog.id}' 이다`);
+    }
+    if (!confirmsPublish(draft, actor.id, confirmation)) {
+      throw conflict('PREVIEW_REQUIRED', `병원 '${clinicId}' 의 현재 초안에 대해 이 행위자에게 발급된 미리보기 확인값이 아니다`);
     }
     // 1) 임시 id 로 먼저 검증한다(거절이 id 생성기를 쓰지 않게).
     assertNoDefects(validateCatalogPublish(catalogRequestOf(deps.repo, catalog, draft, (treatmentId) => `PROVISIONAL:${treatmentId}`), config));
