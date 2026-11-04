@@ -88,7 +88,8 @@ export function tokenize(source: string): Token[] {
       case 'ident':
         return REGEX_AFTER_KEYWORDS.has(previous.text);
       case 'punct':
-        return previous.text !== ')' && previous.text !== ']' && previous.text !== '}';
+        // `<` 바로 뒤의 `/` 는 JSX 닫는 태그(`</div>`)의 시작이지 정규식이 아니다(M6: src/app 에 .tsx 가 생겼다).
+        return previous.text !== ')' && previous.text !== ']' && previous.text !== '}' && previous.text !== '<';
     }
   }
 
