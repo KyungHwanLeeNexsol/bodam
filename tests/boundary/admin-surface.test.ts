@@ -108,24 +108,26 @@ describe('3. 관리자 화면의 바깥 연결은 transport.ts 하나다', () =>
   });
 });
 
+/** 치료 기록(saveTreatment) 말고 불변 기록·매핑·규칙 묶음·범위를 쓰는 동작. 4번(초안·요청 변환·관리자 API)은 여기에 saveTreatment 를 더해 막고, 4b번(구조 편집 모듈)은 이것만 막는다. */
+const WRITES_OUTSIDE_TREATMENT_RECORD = [
+  'putTreatmentVersion',
+  'putCommonBaseFee',
+  'putCatalogVersion',
+  'saveClinic',
+  'putItemVersion',
+  'reviseDraftItemVersion',
+  'recordItemTransition',
+  'putRuleBundleVersion',
+  'appendBundleStatusEvent',
+  'assignClinicRuleScope',
+  'saveCoverageReviewRequest',
+  'saveIdlePolicy',
+  'triggerReReview',
+  'triggerReReviewForBaseFee',
+];
+
 describe('4. 가격 수정은 게시 서비스 밖에서 불변 기록·매핑·규칙 묶음을 쓰지 않는다', () => {
-  const WRITES = [
-    'putTreatmentVersion',
-    'putCommonBaseFee',
-    'putCatalogVersion',
-    'saveClinic',
-    'saveTreatment',
-    'putItemVersion',
-    'reviseDraftItemVersion',
-    'recordItemTransition',
-    'putRuleBundleVersion',
-    'appendBundleStatusEvent',
-    'assignClinicRuleScope',
-    'saveCoverageReviewRequest',
-    'saveIdlePolicy',
-    'triggerReReview',
-    'triggerReReviewForBaseFee',
-  ];
+  const WRITES = [...WRITES_OUTSIDE_TREATMENT_RECORD, 'saveTreatment'];
   const files = [find(serverFiles, 'src/server/catalog-draft.ts'), find(serverFiles, 'src/server/catalog-draft-request.ts'), ...ADMIN_SERVER];
 
   it.each(files.map((file) => [file.path, file] as const))('%s 는 위 쓰기 동작을 직접 부르지 않는다', (_path, file) => {
@@ -137,6 +139,52 @@ describe('4. 가격 수정은 게시 서비스 밖에서 불변 기록·매핑·
     const repoCalls = tokenize(draft.text).flatMap((token, index, all) => (token.text === 'repo' && all[index + 1]?.text === '.' && all[index + 2]?.kind === 'ident' ? [all[index + 2]!.text] : []));
     expect([...new Set(repoCalls)].sort()).toEqual(['closeCatalogDraft', 'getCatalogDraft', 'getClinic', 'getClinicCurrentCatalogVersion', 'saveCatalogDraft', 'transaction']);
     expect(idents(draft)).toContain('publishCatalog');
+  });
+});
+
+describe('4b. 치료 기록(활성·표시 순서)을 쓰는 코드는 구조 편집 모듈 하나뿐이다 (M7 구조 편집)', () => {
+  const structure = find(serverFiles, 'src/server/catalog-structure.ts');
+  const nonRepo = serverFiles.filter((file) => !file.path.startsWith('src/server/repo/'));
+  const callsOf = (file: SourceFile, name: string): boolean => {
+    const list = tokenize(file.text);
+    return list.some((token, index) => token.kind === 'ident' && token.text === name && list[index - 1]?.text === '.' && list[index + 1]?.text === '(');
+  };
+
+  it('saveTreatment 를 부르는 src/server 코드는 catalog-structure.ts 뿐이다 (초안 서비스·요청 변환·관리자 API 는 부르지 않는다)', () => {
+    expect(nonRepo.filter((file) => callsOf(file, 'saveTreatment')).map((file) => file.path)).toEqual(['src/server/catalog-structure.ts']);
+  });
+
+  it('catalog-structure.ts 가 저장소에 쓰는 동작은 saveTreatment 하나뿐이다 (치료 버전·카탈로그·병원·매핑·규칙 묶음·범위·재검토 요청은 쓰지 않는다)', () => {
+    const writes = WRITES_OUTSIDE_TREATMENT_RECORD;
+    expect(idents(structure).filter((name) => writes.includes(name))).toEqual([]);
+    const repoCalls = tokenize(structure.text).flatMap((token, index, all) => (token.text === 'repo' && all[index + 1]?.text === '.' && all[index + 2]?.kind === 'ident' ? [all[index + 2]!.text] : []));
+    // 읽기 셋(치료 조회·기본비용 버전 조회·병원의 치료 목록)과 쓰기 하나(치료 기록).
+    expect([...new Set(repoCalls)].sort()).toEqual(['getTreatment', 'listCommonBaseFeeVersions', 'listTreatments', 'saveTreatment']);
+  });
+
+  it('형식 검사 모듈(catalog-draft-parse.ts)은 저장소에 닿지 않는다 (순수 함수)', () => {
+    const parse = find(serverFiles, 'src/server/catalog-draft-parse.ts');
+    expect(idents(parse).filter((name) => name === 'repo' || name === 'deps')).toEqual([]);
+  });
+
+  it('치료 기록을 쓰는 함수(createAdditions·applyDeactivations·applyOrder)는 게시 서비스 한 곳(publishCatalogDraft)에서만 부른다', () => {
+    const callers = (name: string): string[] =>
+      nonRepo
+        .filter((file) => {
+          const list = tokenize(file.text);
+          return list.some((token, index) => token.kind === 'ident' && token.text === name && list[index + 1]?.text === '(' && list[index - 1]?.text !== 'function');
+        })
+        .map((file) => file.path);
+    for (const name of ['createAdditions', 'applyDeactivations', 'applyOrder']) {
+      expect(callers(name), name).toEqual(['src/server/catalog-draft.ts']);
+    }
+    // 초안 저장·버리기 함수의 본문에는 위 쓰기 함수 호출이 없다.
+    const draft = find(serverFiles, 'src/server/catalog-draft.ts').text;
+    const publishAt = draft.indexOf('export function publishCatalogDraft');
+    expect(publishAt).toBeGreaterThan(0);
+    for (const name of ['createAdditions(', 'applyDeactivations(', 'applyOrder(']) {
+      expect(draft.slice(0, publishAt), name).not.toContain(name);
+    }
   });
 });
 

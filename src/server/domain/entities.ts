@@ -91,6 +91,13 @@ export interface CatalogChangeSummary {
   removedTreatmentIds: string[];
   priceChangedTreatmentIds: string[];
   baseFeesChanged: boolean;
+  /**
+   * 초안 게시로 숨김 처리된(비활성) 치료 id (코드 포인트 순). 카탈로그 스냅샷에는 그대로 남으므로 removedTreatmentIds 와 다르다.
+   * 있을 때만 싣는다(비어 있으면 키 자체가 없다): 이 필드가 생기기 전의 요약과 모양이 같다.
+   */
+  deactivatedTreatmentIds?: string[];
+  /** 표시 순서가 바뀐 기존 치료 id (코드 포인트 순). 살아남은 기존 치료들 사이의 순위가 달라진 것만 센다. 있을 때만 싣는다. */
+  reorderedTreatmentIds?: string[];
 }
 
 /** 병원 카탈로그의 게시본. 바뀌지 않는다. 게시할 때마다 새 버전이며 가격만 바뀐 게시도 마찬가지다 (DD-14). */
@@ -111,6 +118,24 @@ export interface PriceEdit {
 }
 
 /**
+ * 새 치료 한 건의 초안 (M7 구조 편집). 환자에게 보일 표시 필드와 서류 표시, 금액 조건만 담는다.
+ * 보장 판단은 담지 않는다: 분류(calcClass)는 서버가 NEEDS_REVIEW 로 고정하고, 출처·치료 id·표시 순서·활성 여부도 서버가 정한다(요청에서 받지 않는다).
+ * draftKey 는 초안 안에서만 쓰는 클라이언트 이름이다(저장된 치료 id 와 겹치면 안 된다). 게시할 때 서버가 실제 치료 id 를 새로 만든다.
+ */
+export interface TreatmentAddition {
+  draftKey: string;
+  displayName: string;
+  description: string;
+  benefitType: BenefitType;
+  patientAmount: Won;
+  treatmentCode: string;
+  procedureCodes: string[];
+  documentFlags: DocumentFlags;
+  amountCondition: AmountCondition;
+  effectiveDate: string;
+}
+
+/**
  * 병원 카탈로그의 초안 (M7 첫 기능, design.md DD-17 "카탈로그 초안 저장·미리보기·게시"). 병원마다 최대 하나(가변 기록, 저장하면 덮어쓴다).
  * 초안은 게시된 치료 버전·카탈로그 버전을 어떤 식으로도 바꾸지 않으므로 공개 키오스크 가격에 영향을 주지 않는다.
  * 게시할 때만 서비스가 새 치료 버전과 새 카탈로그 버전을 기존 게시 서비스(publishCatalog)로 만든다.
@@ -123,6 +148,14 @@ export interface CatalogDraft {
   /** 서버 비공개. publish-confirmation.ts 만 읽는다. */
   revision: string;
   priceEdits: PriceEdit[];
+  /** 새 치료들(초안에 적은 순서). 게시 전에는 어떤 치료 기록도 만들지 않는다. */
+  additions: TreatmentAddition[];
+  /** 숨길 게시 치료 id (코드 포인트 순). 게시 전에는 치료의 active 를 바꾸지 않는다. */
+  deactivations: string[];
+  /**
+   * 게시 뒤의 표시 순서(남는 기존 치료 id + 새 치료의 draftKey 의 순열). 기본 순서(남는 기존 치료는 지금 표시 순서 그대로, 새 치료는 적은 순서대로 뒤에)와 같으면 null 로 저장한다.
+   */
+  order: string[] | null;
   updatedBy: Actor;
   updatedAt: string;
 }

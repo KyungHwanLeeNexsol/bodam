@@ -69,7 +69,24 @@ interface AuditChoice {
   reason: string | null;
 }
 
-function publishNew(deps: ServiceDeps, actor: Actor, clinicId: string, request: unknown, config: CatalogPublishConfig, audit: AuditChoice): CatalogVersion {
+/** 변경 요약에 더 싣는 구조 변경(초안 게시가 넘긴다). 비어 있는 목록은 키 자체를 싣지 않아 기존 요약과 모양이 같다. */
+export interface ExtraChangeSummary {
+  deactivatedTreatmentIds?: readonly string[];
+  reorderedTreatmentIds?: readonly string[];
+}
+
+function withExtra(summary: CatalogChangeSummary, extra: ExtraChangeSummary): CatalogChangeSummary {
+  const out = { ...summary };
+  if (extra.deactivatedTreatmentIds !== undefined && extra.deactivatedTreatmentIds.length > 0) {
+    out.deactivatedTreatmentIds = [...extra.deactivatedTreatmentIds];
+  }
+  if (extra.reorderedTreatmentIds !== undefined && extra.reorderedTreatmentIds.length > 0) {
+    out.reorderedTreatmentIds = [...extra.reorderedTreatmentIds];
+  }
+  return out;
+}
+
+function publishNew(deps: ServiceDeps, actor: Actor, clinicId: string, request: unknown, config: CatalogPublishConfig, audit: AuditChoice, extra: ExtraChangeSummary = {}): CatalogVersion {
   requireRole(actor, 'HA');
   return deps.repo.transaction(() => {
     const clinic = deps.repo.getClinic(clinicId);
@@ -91,7 +108,7 @@ function publishNew(deps: ServiceDeps, actor: Actor, clinicId: string, request: 
       baseFeeIds,
       publishedBy: { id: actor.id, role: actor.role },
       publishedAt: deps.clock.now(),
-      changeSummary: summarize(deps, previous, treatmentVersions, baseFeeIds),
+      changeSummary: withExtra(summarize(deps, previous, treatmentVersions, baseFeeIds), extra),
     };
     treatmentVersions.forEach((version) => deps.repo.putTreatmentVersion(version));
     commonBaseFees.forEach((fee) => deps.repo.putCommonBaseFee(fee));
@@ -114,8 +131,8 @@ function publishNew(deps: ServiceDeps, actor: Actor, clinicId: string, request: 
  * 요청의 치료 버전·기본비용은 저장소가 복사해 저장한다(요청 객체를 바꾸지 않는다). `config.acceptedLineOrigins` 가 허용 출처다 —
  * 운영 구성은 ['OPERATING'] 이므로 DEMO·TEST_FIXTURE 는 거절된다 (AC-010c).
  */
-export function publishCatalog(deps: ServiceDeps, actor: Actor, clinicId: string, request: unknown, config: CatalogPublishConfig): CatalogVersion {
-  return publishNew(deps, actor, clinicId, request, config, { action: 'CATALOG_PUBLISH', reason: null });
+export function publishCatalog(deps: ServiceDeps, actor: Actor, clinicId: string, request: unknown, config: CatalogPublishConfig, extra: ExtraChangeSummary = {}): CatalogVersion {
+  return publishNew(deps, actor, clinicId, request, config, { action: 'CATALOG_PUBLISH', reason: null }, extra);
 }
 
 /**

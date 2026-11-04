@@ -1,0 +1,135 @@
+/* 관리자 화면 스타일 중 구조 편집(M7: 순서·숨김·새 치료)에 쓰는 것. admin.css 와 함께 layout.tsx 가 가져온다. 클래스는 admin- 로 시작한다. 전역 규칙을 더하지 않는다. */
+
+.admin-h4 {
+  margin: 12px 0 4px;
+  font-size: 15px;
+}
+
+/* 표가 좁은 화면보다 넓으면 표만 가로로 밀린다(페이지 전체가 흔들리지 않게). */
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table-wrap .admin-table {
+  min-width: 860px;
+}
+
+/* 숨김 예정 줄: 글자색만이 아니라 취소선과 흐림, 그리고 "숨김 예정" 글자 표시로 구분한다. */
+.admin-table tr.admin-row--hidden {
+  background: var(--kiosk-surface-alt);
+  color: var(--kiosk-text-muted);
+}
+
+.admin-name--hidden {
+  text-decoration: line-through;
+}
+
+.admin-table tr[data-new='true'] {
+  background: var(--kiosk-accent-soft);
+}
+
+.admin-pill {
+  margin-right: 4px;
+}
+
+.admin-pill--hidden {
+  background: var(--kiosk-danger-soft);
+  color: var(--kiosk-danger);
+}
+
+.admin-pill--changed,
+.admin-pill--moved {
+  background: var(--kiosk-warn-soft);
+  color: var(--kiosk-warn);
+}
+
+.admin-status-none {
+  color: var(--kiosk-text-muted);
+  font-size: 14px;
+}
+
+.admin-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-btn--small {
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 14px;
+}
+
+.admin-working-summary {
+  margin: 12px 0 0;
+  color: var(--kiosk-text-body);
+}
+
+.admin-add {
+  padding-top: 8px;
+  border-top: 1px solid var(--kiosk-border);
+}
+
+.admin-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
+
+.admin-input--text {
+  width: 100%;
+  min-width: 12em;
+  text-align: left;
+}
+
+.admin-lists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin: 0 0 16px;
+}
+
+.admin-list-col {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.admin-preview-list {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.admin-preview-list li {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.admin-calc {
+  display: block;
+  color: var(--kiosk-text-body);
+  font-size: 14px;
+}
+
+.admin-btn:focus-visible,
+.admin-btn--small:focus-visible {
+  outline: 3px solid var(--kiosk-accent);
+  outline-offset: 2px;
+}
+
+/* 휴대폰 너비: 좌우 여백은 16px 이상을 지킨다. */
+@media (max-width: 640px) {
+  .admin-root {
+    padding: 24px 16px 48px;
+  }
+
+  .admin-field {
+    min-width: 0;
+    width: 100%;
+  }
+}

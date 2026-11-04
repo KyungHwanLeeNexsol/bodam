@@ -20,13 +20,17 @@ export class FixedClock implements Clock {
   }
 }
 
-/** 접두어마다 1부터 세는 식별자 생성기. 만든 식별자는 눈에 띄게 TEST_FIXTURE_ 로 시작한다. */
+/**
+ * 접두어마다 1부터 세는 식별자 생성기. 만든 식별자는 눈에 띄게 TEST_FIXTURE_ 로 시작한다.
+ * 치료 id(접두어 TREATMENT)만 이름 공간을 따로 쓴다: 시험 자료의 치료는 손으로 `TEST_FIXTURE_TREATMENT_1` 처럼 이름 붙여 있어서, 같은 규칙으로 만들면 첫 새 치료가
+ * 이미 있는 치료 id 와 겹친다(서버는 겹침을 무결성 결함으로 던진다). 운영 생성기는 예측할 수 없는 값이라 이 일이 없다.
+ */
 export class CounterIdGenerator implements IdGenerator {
   private readonly counters = new Map<string, number>();
 
   next(prefix: string): string {
     const n = (this.counters.get(prefix) ?? 0) + 1;
     this.counters.set(prefix, n);
-    return `TEST_FIXTURE_${prefix}_${n}`;
+    return `TEST_FIXTURE_${prefix === 'TREATMENT' ? 'ADDED_TREATMENT' : prefix}_${n}`;
   }
 }

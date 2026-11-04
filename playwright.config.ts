@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { ADMIN_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
+import { ADMIN_CATALOG_PORT, ADMIN_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
@@ -37,5 +37,7 @@ export default defineConfig({
     { name: 'preview-landscape', testMatch: /.*\.preview\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${NOTICE_PORT}`, viewport: LANDSCAPE } },
     //  - *.admin.spec.ts      : 관리자 가격 수정 흐름(M7 첫 기능). 저장소를 따로 가진 앞단(ADMIN_PORT)이 실제 관리자 핸들러·공개 핸들러를 시험 인증기·시험 자료로 돌린다. PC 화면 크기이고 파일 안에서 순서대로 돈다.
     { name: 'admin', testMatch: /.*\.admin\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-catalog.spec.ts : 관리자 구조 편집 흐름(M7: 새 치료 추가 · 숨김 · 표시 순서). 위와 같은 앞단이지만 저장소를 따로 가진 인스턴스(ADMIN_CATALOG_PORT)라 가격 흐름 시험과 순서에 상관없이 돈다.
+    { name: 'admin-catalog', testMatch: /.*\.admin-catalog\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_CATALOG_PORT}`, viewport: { width: 1280, height: 900 } } },
   ],
 });

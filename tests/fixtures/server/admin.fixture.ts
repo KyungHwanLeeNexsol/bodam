@@ -1,3 +1,4 @@
+import type { Origin } from '../../../src/engine/types';
 import { createAdminServices } from '../../../src/server/admin/services';
 import type { AdminServices } from '../../../src/server/admin/services';
 import type { AdminAuthenticator, AdminIdentity } from '../../../src/server/admin/auth';
@@ -72,10 +73,15 @@ export function staticAuthenticator(identity: AdminIdentity | null): AdminAuthen
 export interface AdminTestOptions {
   authenticator: AdminAuthenticator;
   api?: Partial<TestServicesOptions>;
+  /** 새 치료의 출처. 생략하면 시험 자료 출처(TEST_FIXTURE)다: 시험 구성의 줄 허용 출처가 그것을 받는다. 운영 구성은 이 값을 정하지 못한다(기본 OPERATING). */
+  newTreatmentOrigin?: Origin;
 }
 
 /** 시험 세계의 저장소·시계·식별자 생성기를 그대로 쓰는 관리자 서비스. 공개 API 서비스(api)도 같은 저장소다. */
 export function adminServicesOf(world: World, options: AdminTestOptions): { admin: AdminServices; api: ApiServices } {
   const api = createTestServices({ repo: world.repo, ...options.api });
-  return { api, admin: createAdminServices({ api, clock: world.clock, ids: world.ids, authenticator: options.authenticator }) };
+  return {
+    api,
+    admin: createAdminServices({ api, clock: world.clock, ids: world.ids, authenticator: options.authenticator, newTreatmentOrigin: options.newTreatmentOrigin ?? 'TEST_FIXTURE' }),
+  };
 }
