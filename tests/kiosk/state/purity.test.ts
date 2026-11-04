@@ -9,8 +9,10 @@ import { extractModuleRefs, readSourceFiles, tokenize } from '../../boundary/sou
 //  - 시계는 주입한 것만 쓴다: Date 와 전역 객체(globalThis)를 쓰지 않는다
 // 한계: 어휘 수준 검사라 별칭이나 문자열로 만든 접근은 못 잡는다(tests/boundary/source-scan.ts 머리말).
 
-const KIOSK_DIR = fileURLToPath(new URL('../../../src/app/kiosk', import.meta.url));
-const files = readSourceFiles(KIOSK_DIR, 'src/app/kiosk');
+// M6 부터 src/app/kiosk 에 화면·런타임 폴더가 생겼다. 이 시험이 지키는 것은 상태 기계(state/)이므로 그 폴더만 읽는다(경로 접두는 그대로 src/app/kiosk/state/…).
+// 화면·런타임을 포함한 키오스크 전체의 금지 목록은 tests/kiosk/static/kiosk-tree.test.ts 가 지킨다.
+const KIOSK_DIR = fileURLToPath(new URL('../../../src/app/kiosk/state', import.meta.url));
+const files = readSourceFiles(KIOSK_DIR, 'src/app/kiosk/state');
 
 const FORBIDDEN_IDENTIFIERS = [
   'localStorage', 'sessionStorage', 'indexedDB', 'caches', 'cookieStore',

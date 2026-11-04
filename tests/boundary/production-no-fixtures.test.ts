@@ -48,6 +48,25 @@ describe('실제 운영 진입점', () => {
     }
   });
 
+  it('키오스크 화면도 같은 검사 대상이다 (M6): layout·page·KioskApp·화면·결과 화면·상태 기계가 진입점이며 따라간 그래프에 모두 들어 있고 fixture 로 가는 길이 없다', () => {
+    for (const expected of [
+      'src/app/layout.tsx',
+      'src/app/kiosk/[clinicSlug]/page.tsx',
+      'src/app/kiosk/KioskApp.tsx',
+      'src/app/kiosk/runtime/LiveKiosk.tsx',
+      'src/app/kiosk/screens/ScreenRouter.tsx',
+      'src/app/kiosk/screens/ResultScreens.tsx',
+      'src/app/kiosk/screens/DocumentsScreens.tsx',
+      'src/app/kiosk/components/ScrollRegion.tsx',
+      'src/app/kiosk/state/controller.ts',
+      'src/app/kiosk/state/deps.ts',
+    ]) {
+      expect(PRODUCTION_ENTRIES, `진입점: ${expected}`).toContain(expected);
+      expect(realWalk.files, `따라간 그래프: ${expected}`).toContain(expected);
+    }
+    expect(realWalk.findings.filter((finding) => finding.chain.some((path) => path.startsWith('src/app/kiosk/')))).toEqual([]);
+  });
+
   it('따라간 모든 파일은 src/ 안에 있고 tests/ 나 시험 파일이 하나도 없다', () => {
     expect(realWalk.files.every((path) => path.startsWith('src/'))).toBe(true);
     expect(realWalk.files.filter((path) => isTestPath(path) || /fixture/i.test(path))).toEqual([]);

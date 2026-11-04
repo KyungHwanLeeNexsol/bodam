@@ -1,0 +1,70 @@
+/* 키오스크 디자인 변수 (SPEC-REIMBURSEMENT-001 M6, 디자인 저장본 4b4a158 의 .pen 변수 23색 + 치수·글자·문자열).
+   값은 .moai/state/design-ref/dump/__variables.json 과 같다. 예전 청록 팔레트는 쓰지 않는다. 그라데이션은 브랜드 한 쌍(accent → blue)뿐이고
+   그림자는 모달 둘에만 쓴다(디자인 명세: 카드·버튼·상단바는 그림자 없이 border 로 구분). */
+:root {
+  --kiosk-bg: #f8fafc;
+  --kiosk-surface: #ffffff;
+  --kiosk-surface-alt: #f1f5f9;
+  --kiosk-navy: #0f172a;
+  --kiosk-text-body: #475569;
+  --kiosk-text-muted: #58687e;
+  --kiosk-accent: #2563eb;
+  --kiosk-accent-dark: #1d4ed8;
+  --kiosk-accent-soft: #dbeafe;
+  --kiosk-blue: #4f46e5;
+  --kiosk-blue-soft: #eef2ff;
+  --kiosk-border: #cbd5e1;
+  --kiosk-warn: #a35a0a;
+  --kiosk-warn-soft: #fdf3e4;
+  --kiosk-danger: #b3372b;
+  --kiosk-danger-soft: #fbebe9;
+  --kiosk-success: #136c3b;
+  --kiosk-success-soft: #e6f4ec;
+  --kiosk-disabled: #e2e8f0;
+  --kiosk-disabled-text: #94a3b8;
+  --kiosk-on-accent: #ffffff;
+  --kiosk-scrim: #0f172ab8;
+  --kiosk-shadow: #0f172a40;
+
+  --kiosk-r-card: 20px;
+  --kiosk-r-btn: 16px;
+  --kiosk-r-pill: 999px;
+
+  --kiosk-sp-2: 8px;
+  --kiosk-sp-3: 12px;
+  --kiosk-sp-4: 16px;
+  --kiosk-sp-6: 24px;
+  --kiosk-sp-8: 32px;
+  --kiosk-sp-10: 40px;
+  --kiosk-sp-12: 48px;
+
+  /* 큰 글자 보기(DD-12)는 이 배율 하나로 글자·버튼·터치 영역을 키운다. 데이터·기능은 바꾸지 않는다. 배율에 기대는 파생 토큰은 아래 별도 규칙에 있다. */
+  --kiosk-scale: 1;
+  /* 터치 영역의 하한(CSS px). 디자인 버튼 높이는 88 이고 SPEC 결정(plan.md §E #29)은 72 이상이다. */
+  --kiosk-touch-min: 72px;
+
+  /* 글꼴: Pretendard(자체 호스팅, fonts.css) → Noto Sans KR → 맑은 고딕 → 시스템 산세리프 (디자인 명세 "대체 순서"). */
+  --kiosk-font: Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+
+  --kiosk-gradient-brand: linear-gradient(to bottom, var(--kiosk-accent), var(--kiosk-blue));
+  --kiosk-gradient-wordmark: linear-gradient(to right, var(--kiosk-accent), var(--kiosk-blue));
+}
+
+[data-large-text='true'] {
+  --kiosk-scale: 1.2;
+}
+
+/* 배율에 기대는 토큰. var() 를 품은 사용자 정의 속성은 "정의한 요소"에서 값이 정해져 자식에게 상속되므로, 배율을 바꾸는 요소([data-large-text])에서 다시 정의해야 큰 글자 보기가 토큰에 닿는다.
+   :root 는 루트 표지가 없는 곳(오류 페이지 등)의 기본값이다. */
+:root,
+[data-large-text] {
+  --kiosk-h-btn: calc(88px * var(--kiosk-scale));
+
+  --kiosk-fs-caption: calc(20px * var(--kiosk-scale));
+  --kiosk-fs-label: calc(22px * var(--kiosk-scale));
+  --kiosk-fs-body: calc(24px * var(--kiosk-scale));
+  --kiosk-fs-card: calc(32px * var(--kiosk-scale));
+  --kiosk-fs-title: calc(40px * var(--kiosk-scale));
+  --kiosk-fs-amount: calc(56px * var(--kiosk-scale));
+  --kiosk-fs-amount-lg: calc(72px * var(--kiosk-scale));
+}
