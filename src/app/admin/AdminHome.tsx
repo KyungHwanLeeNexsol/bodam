@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { SessionResponse } from './api-types';
+import { BUNDLE_COPY, SCOPE_COPY } from './bundle-copy';
 import { ADMIN_COPY as COPY } from './copy';
 import { REVIEW_COPY } from './review-copy';
 import { adminRequest } from './transport';
@@ -47,11 +48,13 @@ export function AdminHome(): ReactElement {
   const clinics = state.session.memberships.filter((membership) => membership.role === 'HA' && membership.clinicId !== null);
   // 검토 담당자(RV)는 병원에 묶이지 않는 소속(clinicId null)만 대기열로 이어 준다. 병원에 묶인 RV 소속은 서버가 대기열을 거절하므로 링크를 만들지 않는다.
   const isReviewer = state.session.memberships.some((membership) => membership.role === 'RV' && membership.clinicId === null);
+  // 플랫폼 운영자(PO)도 병원에 묶이지 않는 소속만 규칙 사용 범위로 이어 준다. 검토 담당자에게는 지정 링크가, 운영자에게는 게시 링크가 없다(링크는 안내일 뿐 서버가 같은 역할을 다시 본다).
+  const isOperator = state.session.memberships.some((membership) => membership.role === 'PO' && membership.clinicId === null);
   return (
     <main className="admin-root" data-admin-state="ready">
       <h1 className="admin-title">보담 관리자</h1>
       <p className="admin-sub">{COPY.sessionAs}: <span data-admin-user>{state.session.userId}</span></p>
-      {clinics.length === 0 && !isReviewer ? (
+      {clinics.length === 0 && !isReviewer && !isOperator ? (
         <p className="admin-banner">{COPY.forbidden}</p>
       ) : (
         <ul className="admin-history">
@@ -68,6 +71,13 @@ export function AdminHome(): ReactElement {
           {isReviewer ? (
             <li>
               <a className="admin-link" href="/admin/review-queue">{REVIEW_COPY.navReviewQueue}</a>
+              {' · '}
+              <a className="admin-link" href="/admin/bundles">{BUNDLE_COPY.navBundles}</a>
+            </li>
+          ) : null}
+          {isOperator ? (
+            <li>
+              <a className="admin-link" href="/admin/rule-scope">{SCOPE_COPY.navScope}</a>
             </li>
           ) : null}
         </ul>

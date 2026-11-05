@@ -96,6 +96,12 @@ export function applyAssigned(rows: readonly ClinicScopeRow[], updated: ClinicSc
 /** 병원 id → 고른 묶음 id. 고르지 않은 병원은 키가 없다. */
 export type Drafts = Readonly<Record<string, string>>;
 
+/** 한 병원의 선택만 바꾼다(빈 값은 그 병원의 선택을 지운다). 다른 병원의 선택과 원래 객체는 그대로다. */
+export function setDraft(drafts: Drafts, clinicId: string, selectedId: string): Drafts {
+  const rest = Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== clinicId));
+  return selectedId === '' ? rest : { ...rest, [clinicId]: selectedId };
+}
+
 /**
  * 전체를 다시 불러온 뒤 병원별 선택을 정리한다. 현재 적용본이 그대로이고 고른 묶음이 여전히 고를 수 있는 병원의 선택만 남긴다.
  * resetClinicIds(거절된 병원)의 선택은 지운다: 화면이 본 값이 틀렸으니 운영자가 다시 고르게 한다.

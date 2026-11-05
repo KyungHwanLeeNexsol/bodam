@@ -182,7 +182,7 @@ export const SCOPE_COPY = {
   sameAsCurrent: '이미 이 묶음을 쓰고 있습니다.',
   suspendedHint: '중지된 묶음은 선택할 수 없습니다.',
   confirmButton: '이 병원에 적용',
-  confirmLabel: (clinic: string): string => `${clinic} 에 적용`,
+  confirmLabel: (clinic: string): string => `이 병원에 적용 (${clinic})`,
   bundlesEmpty: '게시된 규칙 묶음이 없어 지정할 수 없습니다.',
 
   assigned: (clinic: string, bundle: string): string => `${clinic} 의 규칙 사용 범위를 ${bundle} 으로 지정했습니다. 다른 병원은 바뀌지 않았습니다.`,

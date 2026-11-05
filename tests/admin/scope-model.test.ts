@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SCOPE_COPY } from '../../src/app/admin/bundle-copy';
 import { shortBundleId } from '../../src/app/admin/bundle-model';
 import type { BundleSummary, ClinicScopeRow } from '../../src/app/admin/bundle-types';
-import { applyAssigned, assignRequestOf, assignedMessage, bundleOptions, confirmStateOf, currentView, reconcileDrafts, scopeFailureMessage } from '../../src/app/admin/scope-model';
+import { applyAssigned, assignRequestOf, assignedMessage, bundleOptions, confirmStateOf, currentView, reconcileDrafts, scopeFailureMessage, setDraft } from '../../src/app/admin/scope-model';
 
 // 규칙 사용 범위 화면의 순수 계산 (화면 코드 밖). 시험 자료(TEST_FIXTURE)만 쓴다.
 // 서버가 권위이다: 여기서 정하는 "적용 단추가 눌린다"는 화면의 안내일 뿐이고, 현재 적용본 비교(SCOPE_CHANGED)와 묶음·병원 존재는 서버가 다시 본다.
@@ -121,6 +121,17 @@ describe('지정 뒤 병원 줄 갱신', () => {
     expect(next[0]).toBe(rows[0]);
     expect(next[2]).toBe(rows[2]);
     expect(rows[1]!.current).toBeNull();
+  });
+});
+
+describe('병원별 선택 한 칸', () => {
+  it('한 병원의 선택만 바꾸고, 빈 값은 그 병원의 선택을 지운다 (원래 객체를 바꾸지 않는다)', () => {
+    const start = { C1: 'TEST_FIXTURE_BUNDLE_1' };
+    const withC2 = setDraft(start, 'C2', 'TEST_FIXTURE_BUNDLE_2');
+    expect(withC2).toEqual({ C1: 'TEST_FIXTURE_BUNDLE_1', C2: 'TEST_FIXTURE_BUNDLE_2' });
+    expect(start).toEqual({ C1: 'TEST_FIXTURE_BUNDLE_1' });
+    expect(setDraft(withC2, 'C1', '')).toEqual({ C2: 'TEST_FIXTURE_BUNDLE_2' });
+    expect(setDraft(withC2, 'C2', 'TEST_FIXTURE_BUNDLE_1')).toEqual({ C1: 'TEST_FIXTURE_BUNDLE_1', C2: 'TEST_FIXTURE_BUNDLE_1' });
   });
 });
 
