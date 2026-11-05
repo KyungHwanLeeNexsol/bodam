@@ -5,6 +5,7 @@ import {
   CLINIC_2,
   NAME_C,
   OTHER_TREATMENT,
+  PUBLISH_PATH,
   SLUG_1,
   SLUG_2,
   TREATMENT_A,
@@ -19,14 +20,17 @@ import {
   estimateWith,
   excerpt,
   gotoBundles,
+  json,
   kioskCalculate,
   lineOf,
   newestBaseId,
   note,
   openAs,
   previewButton,
+  previewConfirmation,
   publicSnapshot,
   publishButton,
+  refBody,
   resetNote,
   resetWorld,
   scopeOverview,
@@ -46,6 +50,8 @@ import type { Json, MappingRef, PublicSnapshot, Session } from '../helpers/bundl
 //   - 지정한 병원만 바뀐다: 병원 1 에 지정한 뒤 병원 1 의 보험 선택지가 새 묶음을 가리키고 치료 C 가 보류(MAPPING_ABSENT)에서 계산(ESTIMATED)으로 바뀐다. 병원 2 의 응답은 글자 그대로 같고, 규칙 사용 범위 화면의 병원 2 줄도 그대로다.
 //   - 이전 묶음을 본 계산 요청은 병원 1 에서만 409 VERSION_MISMATCH(최신 묶음 = 새 묶음, ruleChanged), 병원 2 에서는 그대로 통한다.
 //   - 감사 기록은 이 흐름이 BUNDLE_PUBLISH 한 건 · CLINIC_SCOPE_ASSIGN 한 건만 더했음을 보인다(대상 · 이전/이후 버전 · 행위자 역할).
+//   - 미리보기 우회는 막혀 있다: 화면 미리보기가 저장소에 남기는 것은 확인값 기록(bundleConfirmations) 하나뿐이고, 미리보기 없이 보낸 확인값 · 다른 관리자가 받은 확인값은 409 PREVIEW_REQUIRED 이며,
+//     화면이 보낸 게시 요청을 글자 그대로 다시 보내도 409 PREVIEW_REQUIRED 다(확인값은 일회용이라 새 묶음은 하나뿐이다).
 // 한 파일 안에서 순서대로 돈다: 앞 단계가 만든 매핑·묶음을 뒤 단계가 이어받는다. 사진은 .moai/state/shots/m7-bundle/ 에 남고(육안 검토용 자료이며 시험 결과가 아니다), 실행 기록(bundle-flow-log.txt)은 환경 변수 KIOSK_E2E_EVIDENCE_DIR 을 정했을 때만 그 폴더에 쌓인다(helpers/evidence.ts).
 
 test.describe.configure({ mode: 'serial' });
@@ -209,6 +215,33 @@ test('S2 묶음 게시 화면(rv-2): 후보에 승인된 매핑 C → 고르면 
     expect(previewBody['publishConfirmation']).toMatch(/^[0-9a-f]{64}$/);
     expect(previewBody['defects']).toEqual([]);
     expect(previewBody['conflicts']).toEqual([]);
+
+    // 미리보기가 저장소에 남긴 것은 서버의 확인값 기록 하나뿐이다: 묶음 · 가용성 · 항목 상태 · 범위 이력 · 감사는 그대로다.
+    const afterPreview = JSON.parse(await stateText(rv2.context.request)) as Record<string, unknown>;
+    const beforePreview = JSON.parse(stateAfterApproval) as Record<string, unknown>;
+    expect(Object.keys(afterPreview).filter((key) => JSON.stringify(afterPreview[key]) !== JSON.stringify(beforePreview[key])).sort()).toEqual(['bundleConfirmations']);
+    note(`화면 미리보기 직후: 저장소에서 달라진 영역 = bundleConfirmations 하나 (확인값 기록 ${String((afterPreview['bundleConfirmations'] as unknown[]).length)}건)`);
+
+    // 우회 시도 (API, rv-2 세션): 미리보기를 받지 않은 확인값 · 다른 관리자가 받은 확인값은 같은 409 PREVIEW_REQUIRED 이고 저장소는 그대로다.
+    const stateBeforeGuess = await stateText(rv2.context.request);
+    const guess = await rv2.context.request.post(PUBLISH_PATH, { data: { baseBundleId: baseId, mappings: [refBody(mapping)], publishConfirmation: 'a'.repeat(64) } });
+    expect([guess.status(), await json(guess)]).toEqual([409, { error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' }]);
+    expect(await stateText(rv2.context.request)).toBe(stateBeforeGuess);
+    const rv1 =await openAs(browser, 'rv-1');
+    try {
+      const othersToken = await previewConfirmation(rv1, baseId, [mapping]);
+      const stateBeforeStolen = await stateText(rv2.context.request);
+      const stolen = await rv2.context.request.post(PUBLISH_PATH, { data: { baseBundleId: baseId, mappings: [refBody(mapping)], publishConfirmation: othersToken } });
+      expect([stolen.status(), await json(stolen)]).toEqual([409, { error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' }]);
+      expect(await stateText(rv2.context.request)).toBe(stateBeforeStolen);
+      note(`우회 시도(API): 발급된 적 없는 확인값 → ${String(guess.status())} PREVIEW_REQUIRED, rv-1 이 받은 확인값을 rv-2 가 사용 → ${String(stolen.status())} PREVIEW_REQUIRED (저장소 그대로)`);
+    } finally {
+      await closeAll(rv1);
+    }
+    // rv-1 의 미리보기가 확인값 기록을 하나 더했을 뿐 그 밖의 영역은 그대로다.
+    const afterBypass = JSON.parse(await stateText(rv2.context.request)) as Record<string, unknown>;
+    expect(Object.keys(afterBypass).filter((key) => JSON.stringify(afterBypass[key]) !== JSON.stringify(beforePreview[key])).sort()).toEqual(['bundleConfirmations']);
+
     const preview = page.locator('[data-admin-preview]');
     await expect(preview).toBeVisible();
     await expect(preview).toHaveAttribute('data-admin-preview-publishable', 'true');
@@ -250,6 +283,7 @@ test('S2 묶음 게시 화면(rv-2): 후보에 승인된 매핑 C → 고르면 
     expect(publishBody['assignedClinics']).toEqual([]);
     newBundleId = publishBody['bundle']['id'] as string;
     expect(newBundleId).not.toBe(baseId);
+    const publishRequestBody = publishResponse.request().postDataJSON() as Json;
     const message = page.locator('[data-admin-message="ok"]');
     await expect(message).toHaveAttribute('data-admin-message-code', 'PUBLISHED');
     await expect(message).toHaveAttribute('data-admin-published', newBundleId);
@@ -260,6 +294,14 @@ test('S2 묶음 게시 화면(rv-2): 후보에 승인된 매핑 C → 고르면 
     await shoot(page, 'bundle-3-published-not-applied');
     note(`게시(rv-2, 화면): 새 묶음 ${newBundleId}, assignedClinics=[] — 문장: ${(await message.innerText()).trim()}`);
     note(`게시 응답(앞부분): ${excerpt(JSON.stringify(publishBody), 500)}`);
+
+    // 확인값은 일회용이다: 화면이 보낸 게시 요청을 글자 그대로 다시 보내면 409 PREVIEW_REQUIRED 이고, 새 묶음은 여전히 하나뿐이며 저장소는 그대로다.
+    const stateBeforeResend = await stateText(rv2.context.request);
+    const resent = await rv2.context.request.post(PUBLISH_PATH, { data: publishRequestBody });
+    expect([resent.status(), await json(resent)]).toEqual([409, { error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' }]);
+    expect(await stateText(rv2.context.request)).toBe(stateBeforeResend);
+    expect(((await bundleOverview(rv2))['bases'] as Json[]).map((base) => base['bundleId']).sort()).toEqual([baseId, newBundleId].sort());
+    note(`같은 게시 요청을 다시 보냄 → ${String(resent.status())} PREVIEW_REQUIRED, 새 묶음은 ${newBundleId} 하나뿐(저장소 그대로)`);
   } finally {
     await closeAll(rv2);
   }
@@ -298,8 +340,12 @@ test('S3 게시만으로는 아무 병원도 바뀌지 않는다: 병원 1·2 �
     const now = JSON.parse(await stateText(roles.ha.context.request)) as Record<string, unknown>;
     const old = JSON.parse(stateAfterApproval) as Record<string, unknown>;
     const changed = Object.keys(now).filter((key) => JSON.stringify(now[key]) !== JSON.stringify(old[key])).sort();
-    expect(changed).toEqual(['auditLog', 'bundleEvents', 'bundles', 'itemStates']);
-    note(`게시 직후(지정 전): 병원 1·2 의 카탈로그·보험 선택지·계산 응답이 BEFORE 와 글자 그대로 같다. 저장소에서 달라진 영역: ${changed.join(', ')} (scopeHistory·clinics·catalogs 는 그대로)`);
+    // 확인값 기록(bundleConfirmations)이 미리보기마다 늘고 게시가 하나를 소비하므로 이 목록에 들어간다(이전 목록에는 없던 키).
+    expect(changed).toEqual(['auditLog', 'bundleConfirmations', 'bundleEvents', 'bundles', 'itemStates']);
+    const records = now['bundleConfirmations'] as Array<[string, Json]>;
+    expect(records.filter(([, record]) => record['consumedAt'] !== null)).toHaveLength(1);
+    expect(records.filter(([, record]) => record['consumedAt'] !== null).map(([, record]) => record['resultBundleId'])).toEqual([newBundleId]);
+    note(`게시 직후(지정 전): 병원 1·2 의 카탈로그·보험 선택지·계산 응답이 BEFORE 와 글자 그대로 같다. 저장소에서 달라진 영역: ${changed.join(', ')} (scopeHistory·clinics·catalogs 는 그대로; 확인값 기록 ${String(records.length)}건 중 소비된 것은 새 묶음 ${newBundleId} 로 간 1건)`);
     note(`감사 기록 추가분: ${JSON.stringify(added.map((entry) => ({ action: entry['action'], target: entry['target'], before: entry['beforeVersion'], after: entry['afterVersion'], actor: entry['actorId'], role: entry['role'] })))}`);
 
     // 키오스크 화면도 그대로다: 치료 C 만 골라 계산하면 아직 보류다(정상 결과가 아니다).
@@ -437,7 +483,7 @@ test('S5 지정 뒤: 병원 1 의 보험 선택지가 새 묶음을 가리키고
     // 저장소: 선행 직후와 비교하면 게시(묶음·가용성·항목 상태)와 지정(범위 이력)과 감사만 달라졌다.
     const now = JSON.parse(await stateText(request)) as Record<string, unknown>;
     const old = JSON.parse(stateAfterApproval) as Record<string, unknown>;
-    expect(Object.keys(now).filter((key) => JSON.stringify(now[key]) !== JSON.stringify(old[key])).sort()).toEqual(['auditLog', 'bundleEvents', 'bundles', 'itemStates', 'scopeHistory']);
+    expect(Object.keys(now).filter((key) => JSON.stringify(now[key]) !== JSON.stringify(old[key])).sort()).toEqual(['auditLog', 'bundleConfirmations', 'bundleEvents', 'bundles', 'itemStates', 'scopeHistory']);
   } finally {
     await closeAll(roles.ha, roles.rv1, roles.rv2);
   }

@@ -46,9 +46,11 @@ import type { Json, MappingRef, Session } from '../helpers/bundle-flow';
 // 시험마다 /__harness/reset 으로 세계(저장소·시계·로그인 세션)를 통째로 새로 만들어 서로의 순서에 기대지 않는다(한 인스턴스를 쓰므로 파일 안에서는 순서대로 돈다).
 // 거절마다: 거절 직전에 저장소 전체 사본(/__harness/state: 묶음·항목 상태·범위 이력·병원·카탈로그·감사 기록 모두)을 글자 그대로 떠 두고, 거절된 시도 뒤의 사본과 같음을 확인한다. 감사 기록도 사본에 들어 있어 거절은 감사 기록을 늘리지 않는다.
 // 정직한 한계(서버가 실제로 내는 값을 본 그대로 적는다):
-//   - 승인되지 않은 매핑(초안·검토 제출됨)을 게시하는 경로: 미리보기는 200 이고 결함(ITEM_STATE_NOT_PUBLISHABLE)을 담되 확인값은 null 이다. 결함 있는 구성은 어떤 미리보기도 확인값을 내주지 않으므로 HTTP 로는 유효한 확인값을 만들 수 없고,
-//     게시는 400(결함)이 아니라 409 PREVIEW_REQUIRED 로 거절된다. 400 의 결함 목록은 "확인값을 받은 뒤에 구성이 바뀐" 경우(아래 FINGERPRINT_STALE)에만 HTTP 로 닿는다. 결함 자체는 단위·서비스 시험이 확인값을 직접 계산해 400 으로 본다(tests/api/admin-bundle-scope.test.ts).
+//   - 승인되지 않은 매핑(초안·검토 제출됨)을 게시하는 경로: 미리보기는 200 이고 결함(ITEM_STATE_NOT_PUBLISHABLE)을 담되 확인값은 null 이다(기록도 쓰지 않는다). 결함 있는 구성은 어떤 미리보기도 확인값을 내주지 않으므로 HTTP 로는 유효한 확인값을 얻을 수 없고,
+//     게시는 400(결함)이 아니라 409 PREVIEW_REQUIRED 로 거절된다. 400 의 결함 목록은 "확인값을 받은 뒤에 구성이 바뀐" 경우(아래 FINGERPRINT_STALE)에만 HTTP 로 닿는다. 확인값은 서버가 발급해 기록한 값이라 입력에서 계산해 만들 수도 없다
+//     (그 우회는 tests/api/admin-bundle-confirmation.test.ts 가 재현·차단을 확인한다). 기록이 있어도 게시 전제가 막는다는 것은 서비스 시험(tests/server/bundle-compose.test.ts)이 서버에 기록을 심어 본다.
 //   - 겹치는 매핑 게시도 같다: 겹침이 확인값 확인보다 먼저 판정되므로 아무 확인값으로도 409 MAPPING_CONFLICT 이다.
+//   - 깨끗한 미리보기는 서버에 확인값 기록 하나를 남긴다(저장소 사본의 bundleConfirmations). 그래서 "저장소 사본이 그대로"를 확인하는 구간은 깨끗한 미리보기를 받은 뒤에 거절 전 사본을 뜬다.
 // 사진은 .moai/state/shots/m7-bundle/ 에 남고(육안 검토용 자료이며 시험 결과가 아니다), 관찰한 응답의 기록(bundle-reject-log.txt)은 환경 변수 KIOSK_E2E_EVIDENCE_DIR 을 정했을 때만 그 폴더에 쌓인다(helpers/evidence.ts).
 
 test.describe.configure({ mode: 'serial' });
@@ -308,7 +310,11 @@ test('R-e 겹치는 매핑: 기준 묶음의 매핑과 겹치거나 함께 고�
     await previewButton(page).click();
     expect(((await (await clean).json()) as Json)['publishConfirmation']).toMatch(/^[0-9a-f]{64}$/);
     await expect(page.locator('[data-admin-preview][data-admin-preview-publishable="true"]')).toBeVisible();
-    await expectUnchanged(request, before, '겹치는 매핑');
+    // 겹침 거절은 아무것도 쓰지 않았고, 마지막 깨끗한 미리보기가 확인값 기록 하나를 더했을 뿐이다.
+    const afterClean = JSON.parse(await stateText(request)) as Record<string, unknown>;
+    const beforeClean = JSON.parse(before) as Record<string, unknown>;
+    expect(Object.keys(afterClean).filter((key) => JSON.stringify(afterClean[key]) !== JSON.stringify(beforeClean[key])).sort()).toEqual(['bundleConfirmations']);
+    expect((afterClean['bundleConfirmations'] as unknown[]).length - (beforeClean['bundleConfirmations'] as unknown[]).length).toBe(1);
   } finally {
     await closeAll(roles.ha, roles.rv1, roles.rv2);
   }
@@ -326,9 +332,9 @@ test('R-f 낡은 확인값: 다른 구성의 확인값·다른 관리자의 확�
     await submitMapping(roles.rv1, second, secondRequest);
     const approvedSecond = await roles.rv2.context.request.post(`/api/admin/mappings/${encodeURIComponent(second.id)}/versions/${encodeURIComponent(second.version)}/approve`, { data: { reviewRequestId: secondRequest } });
     expect(approvedSecond.status()).toBe(200);
-    const before = await stateText(request);
-
+    // 깨끗한 미리보기가 서버에 확인값 기록을 남기므로, 거절 전 사본은 미리보기를 받은 뒤에 뜬다.
     const confirmationForOne = await previewConfirmation(roles.rv2, baseId, [one]);
+    const before = await stateText(request);
     // 다른 구성(둘을 함께)에 한 개의 확인값.
     const otherSet = await roles.rv2.context.request.post(PUBLISH_PATH, { data: { baseBundleId: baseId, mappings: [refBody(one), refBody(second)], publishConfirmation: confirmationForOne } });
     await expectRefused('게시 · 다른 구성의 확인값', otherSet, 409, { error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' });
@@ -348,6 +354,10 @@ test('R-f 낡은 확인값: 다른 구성의 확인값·다른 관리자의 확�
     const alreadyPublish = await roles.rv2.context.request.post(PUBLISH_PATH, { data: { baseBundleId: baseId, mappings: [refBody(existing)], publishConfirmation: NOT_ISSUED } });
     await expectRefused('게시 · 기준 묶음에 이미 있는 매핑', alreadyPublish, 409, { error: 'CONFLICT', reason: 'MAPPING_ALREADY_IN_BASE' });
     await expectUnchanged(request, before, '기준 묶음에 이미 있는 매핑');
+    // 거절된 시도는 확인값을 소비하지 않았다: 받은 사람(rv-2)이 같은 구성으로 그대로 게시할 수 있다.
+    const stillValid = await roles.rv2.context.request.post(PUBLISH_PATH, { data: { baseBundleId: baseId, mappings: [refBody(one)], publishConfirmation: confirmationForOne } });
+    expect(stillValid.status(), await stillValid.text()).toBe(200);
+    note('거절된 시도(다른 구성·다른 관리자·임의 값)는 확인값을 소비하지 않았다 → 받은 rv-2 가 같은 구성으로 게시 200', REJECT_LOG_FILE);
   } finally {
     await closeAll(roles.ha, roles.rv1, roles.rv2);
   }
