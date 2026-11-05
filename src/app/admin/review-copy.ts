@@ -143,6 +143,7 @@ export const MAPPING_COPY = {
   basisMatch: '검토 기준과 같음',
   basisMissing: '검토 기준이 기록되지 않음',
   basisUncheckable: '현재 게시값을 읽을 수 없어 검토 기준과 비교하지 못함',
+  basisUncheckableNoValue: '현재 게시값이 없어 검토 기준과 비교하지 못함',
   basisChanged: (fields: string): string => `검토를 시작한 뒤 바뀐 항목: ${fields}`,
   judgmentFields: { treatmentCode: '치료 코드', procedureCodes: '행위 코드', benefitType: '급여 구분', calcClass: '보험 계산 분류' } as const,
 

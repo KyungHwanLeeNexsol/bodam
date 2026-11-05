@@ -1,4 +1,5 @@
 # M7 매핑 검토 실행 기록 — 아래는 이 작업 폴더에서 실제로 실행해 관찰한 출력이다(명령·종료 코드·출력 꼬리). 가공하지 않았다.
+# (숨긴 치료의 분류 안내 수정 뒤 다시 실행한 기록이다)
 
 === tsc (.moai/state/verify/mapping-review/tsc.txt) 마지막 25줄
 
@@ -9,8 +10,8 @@
 
  Test Files  11 passed (11)
       Tests  361 passed (361)
-   Start at  10:46:44
-   Duration  1.24s (tests 65%, import 32%, transform 2%, worker 2%)
+   Start at  10:55:15
+   Duration  1.16s (tests 65%, import 31%, transform 2%, worker 1%)
 
 
 === vitest-full (.moai/state/verify/mapping-review/vitest-full.txt) 마지막 25줄
@@ -32,22 +33,22 @@
 
 
  Test Files  1 failed | 182 passed (183)
-      Tests  2 failed | 9293 passed (9295)
-   Start at  10:46:46
-   Duration  13.51s (tests 79%, import 16%, transform 3%, worker 2%)
+      Tests  2 failed | 9295 passed (9297)
+   Start at  10:55:17
+   Duration  13.06s (tests 78%, import 17%, transform 4%, worker 2%)
 
-    Isolate  183 workers spawned · ~275ms startup each (spawn + environment, per file)
-             at least ~4.30s faster with isolate: false — reuses workers across files instead of one per file
+    Isolate  183 workers spawned · ~265ms startup each (spawn + environment, per file)
+             at least ~4.14s faster with isolate: false — reuses workers across files instead of one per file
 
 
 === build (.moai/state/verify/mapping-review/build.txt) 마지막 25줄
   Creating an optimized production build ...
-✓ Compiled successfully in 512ms
+✓ Compiled successfully in 483ms
   Running TypeScript ...
-  Finished TypeScript in 584ms ...
+  Finished TypeScript in 624ms ...
   Collecting page data using 11 workers ...
   Generating static pages using 11 workers (0/2) ...
-✓ Generating static pages using 11 workers (2/2) in 92ms
+✓ Generating static pages using 11 workers (2/2) in 87ms
   Finalizing page optimization ...
 
 Route (app)
@@ -71,47 +72,47 @@ Route (app)
 
 Running 8 tests using 1 worker
 
-  ✓  1 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:205:1 › S0 기준선: 공개 카탈로그·보험 선택지·계산 결과·관리자 치료 목록을 읽고, 요청이 하나도 없음을 확인한다 (800ms)
-  ✓  2 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:222:1 › S1 병원 1 관리자: 새 치료 C 를 기존 흐름(초안→미리보기→게시)으로 게시한 뒤 기준선을 다시 잡고, 화면에서 치료 A·B·C 에 검토를 요청한다 (1.2s)
-  ✓  3 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:257:1 › S2 검토 담당자 1: 대기열에 열린 요청 셋이 서로 다른 상태로 보이고, 치료 A 의 매핑 초안을 화면에서 작성·제출한다. 작성자에게는 승인 단추가 없고 API 도 403 이다 (2.5s)
-  ✓  4 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:342:1 › S3 검토 담당자 2: 치료 A 의 매핑을 화면에서 승인한다 — 검토 기록이며 환자 화면에는 아직 반영되지 않는다. 병원 관리자 화면에도 같은 말로 보이고 공개 자료는 기준선 그대로다 (1.2s)
-  ✓  5 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:400:1 › S4 치료 B: 검토 담당자 1 이 초안(보장 제외)·제출, 검토 담당자 2 는 사유 없는 반려가 화면에서 막히고 API 도 400 이며, 사유를 적으면 반려된다. 병원 1 은 사유를 읽고 병원 2 는 읽을 수 없다 (2.4s)
-  ✓  6 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:467:1 › S5 새 치료 C(분류 확인 필요): 분류 안내가 검토 담당자 항목과 병원 관리자 행에 보이고, 초안·제출·승인은 검토 기록으로 되지만 계산은 승인 전후로 보류 그대로다 (1.7s)
-  ✓  7 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:521:1 › S6 거절: 연결되지 않은 매핑 · 없는 요청/매핑 · 닫힌 요청 · 중복 초안 · 치료 불일치 · 권한 없는 계정 · 위조·잘못된 본문 · 잘못된 방법 — 응답과 함께 관찰한 저장 상태가 그대로다 (5.5s)
-  ✓  8 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:688:1 › S7 숨김 (마지막: 카탈로그를 바꾼다): 승인 단추가 켜진 채 열려 있던 화면에서 승인하면 409 TREATMENT_HIDDEN 안내가 뜨고, 항목은 "숨긴 치료입니다"로 바뀌며 승인 단추가 막힌다. 반려로 닫는다 (2.2s)
+  ✓  1 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:205:1 › S0 기준선: 공개 카탈로그·보험 선택지·계산 결과·관리자 치료 목록을 읽고, 요청이 하나도 없음을 확인한다 (872ms)
+  ✓  2 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:222:1 › S1 병원 1 관리자: 새 치료 C 를 기존 흐름(초안→미리보기→게시)으로 게시한 뒤 기준선을 다시 잡고, 화면에서 치료 A·B·C 에 검토를 요청한다 (1.1s)
+  ✓  3 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:257:1 › S2 검토 담당자 1: 대기열에 열린 요청 셋이 서로 다른 상태로 보이고, 치료 A 의 매핑 초안을 화면에서 작성·제출한다. 작성자에게는 승인 단추가 없고 API 도 403 이다 (2.2s)
+  ✓  4 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:342:1 › S3 검토 담당자 2: 치료 A 의 매핑을 화면에서 승인한다 — 검토 기록이며 환자 화면에는 아직 반영되지 않는다. 병원 관리자 화면에도 같은 말로 보이고 공개 자료는 기준선 그대로다 (1.3s)
+  ✓  5 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:400:1 › S4 치료 B: 검토 담당자 1 이 초안(보장 제외)·제출, 검토 담당자 2 는 사유 없는 반려가 화면에서 막히고 API 도 400 이며, 사유를 적으면 반려된다. 병원 1 은 사유를 읽고 병원 2 는 읽을 수 없다 (2.3s)
+  ✓  6 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:467:1 › S5 새 치료 C(분류 확인 필요): 분류 안내가 검토 담당자 항목과 병원 관리자 행에 보이고, 초안·제출·승인은 검토 기록으로 되지만 계산은 승인 전후로 보류 그대로다 (1.6s)
+  ✓  7 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:521:1 › S6 거절: 연결되지 않은 매핑 · 없는 요청/매핑 · 닫힌 요청 · 중복 초안 · 치료 불일치 · 권한 없는 계정 · 위조·잘못된 본문 · 잘못된 방법 — 응답과 함께 관찰한 저장 상태가 그대로다 (5.6s)
+  ✓  8 [admin-mapping] › tests\e2e\admin\mapping-review.admin-mapping.spec.ts:688:1 › S7 숨김 (마지막: 카탈로그를 바꾼다): 승인 단추가 켜진 채 열려 있던 화면에서 승인하면 409 TREATMENT_HIDDEN 안내가 뜨고, 항목은 "숨긴 치료입니다"로 바뀌며 승인 단추가 막힌다. 반려로 닫는다 (2.3s)
 
-  8 passed (19.8s)
+  8 passed (19.6s)
 
 === npx playwright test --project=admin-review --workers=1 (.moai/state/verify/mapping-review/pw-admin-review.txt) 마지막 25줄
 
 Running 8 tests using 1 worker
 
-  ✓  1 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:100:1 › BEFORE: 공개 카탈로그·보험 선택지·계산 결과·관리자 치료 목록을 기록하고, 요청이 하나도 없음을 확인한다 (753ms)
+  ✓  1 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:100:1 › BEFORE: 공개 카탈로그·보험 선택지·계산 결과·관리자 치료 목록을 기록하고, 요청이 하나도 없음을 확인한다 (723ms)
   ✓  2 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:112:1 › 병원 1 관리자: 입구와 이동 줄로 검토 요청 화면에 들어가 치료 A 에 검토를 요청한다 (보험 계산 분류를 고르지 않으면 보내지 않는다) (1.0s)
   ✓  3 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:202:1 › 거절: 중복 · 없는 치료 · 다른 병원 치료 · 위조·잘못된 본문 · 권한 없는 계정 · 인증 없음 · 잘못된 방법 — 모두 응답과 함께 저장 상태가 그대로다 (1.7s)
-  ✓  4 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:310:1 › 검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전 요청을 현재 게시값과 제안값을 나란히 읽는다 (매핑 처리는 별도 시험 admin-mapping 이 본다: 여기서는 초안 작성 단추 말고 처리 동작이 없다) (509ms)
-  ✓  5 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:357:1 › 접근 거절 화면: 병원 관리자·PO 는 대기열이, 검토 담당자·PO·다른 병원 관리자는 병원 1 의 검토 요청 화면이 거절되고 단추·입력칸이 없다. 인증이 없으면 로그인 안내다 (1.9s)
-  ✓  6 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:394:1 › AFTER: 요청이 쌓인 뒤에도 공개 카탈로그·보험 선택지·같은 조건의 계산 결과·관리자 치료 목록은 BEFORE 와 완전히 같다 (새 자료는 검토 요청뿐) (620ms)
-  ✓  7 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:412:1 › 화면의 서버 거절 문장: 열어 둔 사이에 같은 치료의 요청이 다른 세션에서 만들어졌다면(409) 안내가 뜨고 요청은 늘지 않으며 입력이 남는다 (치료 B) (909ms)
-  ✓  8 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:437:1 › 숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남고 "숨긴 치료입니다"로 보인다 (이 시험은 마지막이다) (985ms)
+  ✓  4 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:310:1 › 검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전 요청을 현재 게시값과 제안값을 나란히 읽는다 (매핑 처리는 별도 시험 admin-mapping 이 본다: 여기서는 초안 작성 단추 말고 처리 동작이 없다) (534ms)
+  ✓  5 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:357:1 › 접근 거절 화면: 병원 관리자·PO 는 대기열이, 검토 담당자·PO·다른 병원 관리자는 병원 1 의 검토 요청 화면이 거절되고 단추·입력칸이 없다. 인증이 없으면 로그인 안내다 (1.8s)
+  ✓  6 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:394:1 › AFTER: 요청이 쌓인 뒤에도 공개 카탈로그·보험 선택지·같은 조건의 계산 결과·관리자 치료 목록은 BEFORE 와 완전히 같다 (새 자료는 검토 요청뿐) (592ms)
+  ✓  7 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:412:1 › 화면의 서버 거절 문장: 열어 둔 사이에 같은 치료의 요청이 다른 세션에서 만들어졌다면(409) 안내가 뜨고 요청은 늘지 않으며 입력이 남는다 (치료 B) (901ms)
+  ✓  8 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:437:1 › 숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남고 "숨긴 치료입니다"로 보인다 (이 시험은 마지막이다) (949ms)
 
-  8 passed (10.6s)
+  8 passed (10.4s)
 
 === npx playwright test --project=admin --workers=1 (.moai/state/verify/mapping-review/pw-admin.txt) 마지막 25줄
 
 Running 9 tests using 1 worker
 
-  ✓  1 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:58:1 › 로그인 전: 가격 관리 화면은 안내만 보이고, 관리자 API 는 401 이다 (481ms)
-  ✓  2 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:68:1 › 권한 없는 계정: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원의 관리자는 이 병원의 가격 관리에서 거절(403)되고 아무것도 바뀌지 않는다 (664ms)
+  ✓  1 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:58:1 › 로그인 전: 가격 관리 화면은 안내만 보이고, 관리자 API 는 401 이다 (448ms)
+  ✓  2 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:68:1 › 권한 없는 계정: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원의 관리자는 이 병원의 가격 관리에서 거절(403)되고 아무것도 바뀌지 않는다 (674ms)
   ✓  3 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:86:1 › 병원 1 관리자: 기존 가격 확인 → 수정 → 초안 저장 → 키오스크는 기존 가격 유지 (1.5s)
-  ✓  4 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:140:1 › 미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보이고, 미리보기 뒤에만 게시할 수 있다 (791ms)
-  ✓  5 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:183:1 › 미리보기를 본 뒤 같은 가격으로 초안이 다시 저장되면 게시는 거절되고(PREVIEW_REQUIRED), 미리보기를 다시 해야 게시할 수 있다. 아무것도 게시되지 않는다 (774ms)
-  ✓  6 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:205:1 › 게시: 새 카탈로그 버전이 만들어지고 키오스크의 가격과 계산 결과가 새 값으로 바뀐다 (1.4s)
-  ✓  7 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:231:1 › 게시 뒤에는 초안이 없고 같은 초안을 다시 게시할 수 없다 (409 DRAFT_ABSENT), 가격을 바꾸지 않은 저장은 거절된다 (377ms)
-  ✓  8 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:252:1 › 초안 버리기: 저장한 초안을 버려도 키오스크 가격은 그대로다 (584ms)
-  ✓  9 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:266:1 › 치료 두 개의 가격을 바꾸면 둘 다 계산 대상에 고정되고, 미리보기 → 게시 → 키오스크에 두 가격이 모두 반영된다 (일부만 계산하는 길은 서버가 막는다) (1.6s)
+  ✓  4 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:140:1 › 미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보이고, 미리보기 뒤에만 게시할 수 있다 (757ms)
+  ✓  5 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:183:1 › 미리보기를 본 뒤 같은 가격으로 초안이 다시 저장되면 게시는 거절되고(PREVIEW_REQUIRED), 미리보기를 다시 해야 게시할 수 있다. 아무것도 게시되지 않는다 (780ms)
+  ✓  6 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:205:1 › 게시: 새 카탈로그 버전이 만들어지고 키오스크의 가격과 계산 결과가 새 값으로 바뀐다 (1.3s)
+  ✓  7 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:231:1 › 게시 뒤에는 초안이 없고 같은 초안을 다시 게시할 수 없다 (409 DRAFT_ABSENT), 가격을 바꾸지 않은 저장은 거절된다 (397ms)
+  ✓  8 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:252:1 › 초안 버리기: 저장한 초안을 버려도 키오스크 가격은 그대로다 (537ms)
+  ✓  9 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:266:1 › 치료 두 개의 가격을 바꾸면 둘 다 계산 대상에 고정되고, 미리보기 → 게시 → 키오스크에 두 가격이 모두 반영된다 (일부만 계산하는 길은 서버가 막는다) (1.5s)
 
-  9 passed (10.3s)
+  9 passed (10.1s)
 
 === npx playwright test --project=admin-catalog --workers=1 (.moai/state/verify/mapping-review/pw-admin-catalog.txt) 마지막 25줄
 
@@ -119,14 +120,14 @@ Running 10 tests using 1 worker
 
   ✓   1 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:167:1 › 사전 상태: 키오스크 목록은 치료 A, B 순서이고 관리자 화면도 같은 목록을 보인다 (1.6s)
   ✓   2 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:211:1 › 화면에서 새 치료 추가 · 숨기기 · 순서 · 가격을 고쳐 초안으로 저장한다: 저장만으로는 키오스크도 공개 자료도 바뀌지 않는다 (2.0s)
-  ✓   3 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:318:1 › 화면을 거치지 않고 API 로 직접 게시하려 해도 미리보기 확인값이 없으면 서버가 거절한다: 공개 자료와 초안은 그대로다 (394ms)
-  ✓   4 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:339:1 › 접근 거절: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원 관리자는 403, 로그인하지 않으면 401 이고 초안과 공개 자료는 그대로다 (1.5s)
-  ✓   5 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:384:1 › 미리보기: 추가·숨김·가격을 변경 내역과 목록으로 보이고, 새 치료는 계산 보류이며 보험금 숫자가 없다. 숨길 치료는 계산 대상으로 고를 수 없다 (644ms)
-  ✓   6 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:432:1 › 미리보기를 본 뒤 초안이 바뀌면 다시 미리보기를 해야 게시할 수 있다: 옛 확인값은 서버도 거절한다 (775ms)
-  ✓   7 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:472:1 › 게시가 서버에서 거절되면(다른 창이 같은 초안을 다시 저장) 아무것도 바뀌지 않고 입력은 화면에 남는다 (802ms)
+  ✓   3 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:318:1 › 화면을 거치지 않고 API 로 직접 게시하려 해도 미리보기 확인값이 없으면 서버가 거절한다: 공개 자료와 초안은 그대로다 (399ms)
+  ✓   4 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:339:1 › 접근 거절: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원 관리자는 403, 로그인하지 않으면 401 이고 초안과 공개 자료는 그대로다 (1.4s)
+  ✓   5 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:384:1 › 미리보기: 추가·숨김·가격을 변경 내역과 목록으로 보이고, 새 치료는 계산 보류이며 보험금 숫자가 없다. 숨길 치료는 계산 대상으로 고를 수 없다 (633ms)
+  ✓   6 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:432:1 › 미리보기를 본 뒤 초안이 바뀌면 다시 미리보기를 해야 게시할 수 있다: 옛 확인값은 서버도 거절한다 (753ms)
+  ✓   7 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:472:1 › 게시가 서버에서 거절되면(다른 창이 같은 초안을 다시 저장) 아무것도 바뀌지 않고 입력은 화면에 남는다 (801ms)
   ✓   8 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:510:1 › 게시: 새 목록·순서가 키오스크에 반영된다 (숨긴 치료는 사라지고, 새 치료는 고를 수 있지만 계산은 보류, 기존 치료는 그대로 계산된다) (3.5s)
-  ✓   9 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:558:1 › 순서만 바꾼 초안도 저장·미리보기·게시된다: 금액 비교는 만들지 않고 목록과 변경 내역만 보인다 (1.4s)
-  ✓  10 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:603:1 › 서버가 거절한 저장은 입력을 지우지 않고 이유를 말한다. 초안 버리기는 화면을 게시된 상태로 되돌린다 (812ms)
+  ✓   9 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:558:1 › 순서만 바꾼 초안도 저장·미리보기·게시된다: 금액 비교는 만들지 않고 목록과 변경 내역만 보인다 (1.5s)
+  ✓  10 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:603:1 › 서버가 거절한 저장은 입력을 지우지 않고 이유를 말한다. 초안 버리기는 화면을 게시된 상태로 되돌린다 (818ms)
 
   10 passed (15.7s)
 
@@ -134,24 +135,25 @@ Running 10 tests using 1 worker
 
 Running 11 tests using 1 worker
 
-  ✓   1 [production] › tests\e2e\admin\unavailable.production.spec.ts:11:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › /admin 과 가격 관리 화면은 안내만 보이고 가격 입력·초안 저장·게시 단추가 없다 (434ms)
-  ✓   2 [production] › tests\e2e\admin\unavailable.production.spec.ts:24:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 보장 검토 요청 화면과 검토 대기열 화면(매핑 검토 단추 포함)도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다) (309ms)
-  ✓   3 [production] › tests\e2e\admin\unavailable.production.spec.ts:37:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 모든 관리자 API 는 401 이다 (일반 요청, 시험 쿠키·역할 헤더·쿼리 위조 모두), 응답은 no-store 이다 (285ms)
-  ✓   4 [production] › tests\e2e\admin\unavailable.production.spec.ts:71:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 시험 로그인은 운영 구성에 없다 (/__harness 는 앱이 모르는 경로 404) (165ms)
-  ✓   5 [production] › tests\e2e\admin\unavailable.production.spec.ts:76:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 브라우저 저장소에는 아무것도 쓰지 않는다 (248ms)
-  ✓   6 [production] › tests\e2e\kiosk\not-found.production.spec.ts:12:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 찾을 수 없는 병원: 안내 화면만 보이고 시작할 길이 없다 (환자 문구에 코드·상태 번호가 없다) (278ms)
-  ✓   7 [production] › tests\e2e\kiosk\not-found.production.spec.ts:34:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 구성에는 시험 전용 안내가 없다: 시험 데이터 안내 문장도, 안내 띠·앱 틀(iframe)도 화면과 문서에 없다 (263ms)
-  ✓   8 [production] › tests\e2e\kiosk\not-found.production.spec.ts:44:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 다른 slug(한글·특수 문자 포함)도 같다. 병원 자료가 없으므로 병원명·토글이 없다 (359ms)
-  ✓   9 [production] › tests\e2e\kiosk\not-found.production.spec.ts:53:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 데이터가 없는 곳에서도 브라우저 저장소에는 아무것도 쓰지 않는다 (263ms)
-  ✓  10 [production] › tests\e2e\kiosk\not-found.production.spec.ts:68:3 › AC-021g: 키오스크 문서의 응답 헤더 › /kiosk/{slug} 문서는 Cache-Control: no-store 이다 (실제 next start 응답) (243ms)
-  ✓  11 [production] › tests\e2e\kiosk\not-found.production.spec.ts:74:3 › AC-021g: 키오스크 문서의 응답 헤더 › 다른 slug·쿼리가 붙어도 같고, API 응답도 no-store 다 (AC-021e 와 함께 본다) (140ms)
+  ✓   1 [production] › tests\e2e\admin\unavailable.production.spec.ts:11:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › /admin 과 가격 관리 화면은 안내만 보이고 가격 입력·초안 저장·게시 단추가 없다 (421ms)
+  ✓   2 [production] › tests\e2e\admin\unavailable.production.spec.ts:24:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 보장 검토 요청 화면과 검토 대기열 화면(매핑 검토 단추 포함)도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다) (316ms)
+  ✓   3 [production] › tests\e2e\admin\unavailable.production.spec.ts:37:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 모든 관리자 API 는 401 이다 (일반 요청, 시험 쿠키·역할 헤더·쿼리 위조 모두), 응답은 no-store 이다 (290ms)
+  ✓   4 [production] › tests\e2e\admin\unavailable.production.spec.ts:71:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 시험 로그인은 운영 구성에 없다 (/__harness 는 앱이 모르는 경로 404) (173ms)
+  ✓   5 [production] › tests\e2e\admin\unavailable.production.spec.ts:76:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 브라우저 저장소에는 아무것도 쓰지 않는다 (278ms)
+  ✓   6 [production] › tests\e2e\kiosk\not-found.production.spec.ts:12:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 찾을 수 없는 병원: 안내 화면만 보이고 시작할 길이 없다 (환자 문구에 코드·상태 번호가 없다) (283ms)
+  ✓   7 [production] › tests\e2e\kiosk\not-found.production.spec.ts:34:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 구성에는 시험 전용 안내가 없다: 시험 데이터 안내 문장도, 안내 띠·앱 틀(iframe)도 화면과 문서에 없다 (258ms)
+  ✓   8 [production] › tests\e2e\kiosk\not-found.production.spec.ts:44:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 다른 slug(한글·특수 문자 포함)도 같다. 병원 자료가 없으므로 병원명·토글이 없다 (372ms)
+  ✓   9 [production] › tests\e2e\kiosk\not-found.production.spec.ts:53:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 데이터가 없는 곳에서도 브라우저 저장소에는 아무것도 쓰지 않는다 (239ms)
+  ✓  10 [production] › tests\e2e\kiosk\not-found.production.spec.ts:68:3 › AC-021g: 키오스크 문서의 응답 헤더 › /kiosk/{slug} 문서는 Cache-Control: no-store 이다 (실제 next start 응답) (241ms)
+  ✓  11 [production] › tests\e2e\kiosk\not-found.production.spec.ts:74:3 › AC-021g: 키오스크 문서의 응답 헤더 › 다른 slug·쿼리가 붙어도 같고, API 응답도 no-store 다 (AC-021e 와 함께 본다) (149ms)
 
-  11 passed (5.2s)
+  11 passed (5.3s)
 
 === 종료 코드 (같은 실행에서 셸이 출력한 값)
 tsc_exit=0
 boundary_exit=0
 full_exit=1   (실패 2건: tests/kiosk/state/request-static.test.ts, CRLF — 위 vitest-full 꼬리 참조)
+build_exit=0
 admin-mapping exit=0
 admin-review exit=0
 admin exit=0

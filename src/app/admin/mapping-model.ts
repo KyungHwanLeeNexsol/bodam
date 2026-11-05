@@ -24,10 +24,14 @@ export function currentStateDisplay(current: CurrentPublishedView): { state: Cur
   }
 }
 
-/** 검토 담당자 쪽 분류 안내. 분류가 정해진 치료는 안내가 없다. */
-export function classificationNotice(classification: Classification): string | null {
+/**
+ * 검토 담당자 쪽 분류 안내. 분류가 정해진 치료는 안내가 없다.
+ * "분류를 읽지 못했습니다"는 현재 게시값을 읽지 못한 경우(UNREADABLE)에만 말한다: 숨긴 치료·목록에 없는 치료도 서버 분류 표지는 UNKNOWN 이지만 읽기 실패가 아니므로
+ * 그 이유는 현재 게시 상태 문구(숨긴 치료입니다 / 현재 게시 목록에 없습니다)가 이미 말하고 여기서는 안내를 내지 않는다(숨김을 읽기 실패처럼 보이지 않는다).
+ */
+export function classificationNotice(classification: Classification, current: CurrentPublishedView): string | null {
   if (classification === 'NEEDS_REVIEW') return COPY.classificationNeedsReview;
-  return classification === 'UNKNOWN' ? COPY.classificationUnknown : null;
+  return classification === 'UNKNOWN' && current.state === 'UNREADABLE' ? COPY.classificationUnknown : null;
 }
 
 /** 병원 관리자 쪽 분류 안내: 열린 요청과 승인된 요청에서 분류 확인이 남은 치료에만 나온다. */
@@ -37,15 +41,15 @@ export function haClassificationNotice(request: { status: 'REVIEW_REQUESTED' | '
 
 // ───────────────────────── 검토 기준 · 승인이 막힌 이유 ─────────────────────────
 
-/** 검토 기준 비교 문구. 바뀐 항목은 사람이 읽는 이름으로 나열한다. */
-export function basisText(basis: BasisView): string {
+/** 검토 기준 비교 문구. 바뀐 항목은 사람이 읽는 이름으로 나열한다. 비교하지 못한 이유는 현재 게시 상태로 가른다(숨김·목록에 없음은 게시값이 없는 것이고, 읽기 실패와 다르다). */
+export function basisText(basis: BasisView, current: CurrentPublishedView): string {
   switch (basis.check) {
     case 'MATCH':
       return COPY.basisMatch;
     case 'MISSING':
       return COPY.basisMissing;
     case 'UNCHECKABLE':
-      return COPY.basisUncheckable;
+      return current.state === 'UNREADABLE' ? COPY.basisUncheckable : COPY.basisUncheckableNoValue;
     case 'CHANGED': {
       const names = basis.changedFields.map((field) => (COPY.judgmentFields as Record<string, string>)[field] ?? field);
       return COPY.basisChanged(names.join(', '));

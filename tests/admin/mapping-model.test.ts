@@ -100,12 +100,25 @@ describe('currentStateDisplay: 현재 게시 상태 네 가지는 서로 다른 
 
 describe('classificationNotice: 치료 분류 안내', () => {
   it('분류 확인 필요는 승인해도 분류가 바뀌지 않아 환자 화면 계산이 가능해지지 않는다고 말한다', () => {
-    expect(classificationNotice('NEEDS_REVIEW')).toBe('치료 분류 처리가 남아 있습니다. 매핑을 승인해도 분류가 바뀌지 않으므로 이 승인만으로 환자 화면 계산이 가능해지지 않습니다.');
+    expect(classificationNotice('NEEDS_REVIEW', PUBLISHED)).toBe('치료 분류 처리가 남아 있습니다. 매핑을 승인해도 분류가 바뀌지 않으므로 이 승인만으로 환자 화면 계산이 가능해지지 않습니다.');
   });
 
   it('읽지 못한 분류(UNKNOWN)는 읽지 못했다고 말하고, 분류가 정해진 치료는 안내가 없다', () => {
-    expect(classificationNotice('UNKNOWN')).toContain('읽지 못');
-    expect(classificationNotice('CLASSIFIED')).toBeNull();
+    expect(classificationNotice('UNKNOWN', { state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' })).toContain('읽지 못');
+    expect(classificationNotice('CLASSIFIED', PUBLISHED)).toBeNull();
+  });
+
+  it('"읽지 못했습니다" 안내는 현재 게시값을 읽지 못한 경우(UNREADABLE)에만 나온다 — 숨긴 치료·목록에 없는 치료는 읽기 실패가 아니다', () => {
+    const unreadable = classificationNotice('UNKNOWN', { state: 'UNREADABLE', defectCode: 'TREATMENT_VERSION_MISSING' });
+    expect(unreadable).toBe(MAPPING_COPY.classificationUnknown);
+    for (const current of [{ state: 'HIDDEN' }, { state: 'NOT_IN_CATALOG' }] as CurrentPublishedView[]) {
+      const notice = classificationNotice('UNKNOWN', current);
+      expect(notice === null || !notice.includes('읽지 못'), current.state).toBe(true);
+      expect(notice, current.state).not.toBe(unreadable);
+    }
+    // 숨긴 치료·목록에 없는 치료에는 분류 안내를 아예 내지 않는다(현재 게시 상태 문구가 이미 이유를 말한다).
+    expect(classificationNotice('UNKNOWN', { state: 'HIDDEN' })).toBeNull();
+    expect(classificationNotice('UNKNOWN', { state: 'NOT_IN_CATALOG' })).toBeNull();
   });
 
   it('병원 관리자 쪽 안내는 열린 요청과 승인된 요청의 분류 확인 필요에만 나온다', () => {
@@ -119,13 +132,23 @@ describe('classificationNotice: 치료 분류 안내', () => {
 
 describe('basisText: 검토 기준 비교 문구', () => {
   it('네 가지가 서로 다르다', () => {
-    expect(basisText({ check: 'MATCH', changedFields: [], reviewed: null })).toBe('검토 기준과 같음');
-    expect(basisText({ check: 'MISSING', changedFields: [], reviewed: null })).toBe('검토 기준이 기록되지 않음');
-    expect(basisText({ check: 'UNCHECKABLE', changedFields: [], reviewed: null })).toContain('비교하지 못');
+    expect(basisText({ check: 'MATCH', changedFields: [], reviewed: null }, PUBLISHED)).toBe('검토 기준과 같음');
+    expect(basisText({ check: 'MISSING', changedFields: [], reviewed: null }, PUBLISHED)).toBe('검토 기준이 기록되지 않음');
+    expect(basisText({ check: 'UNCHECKABLE', changedFields: [], reviewed: null }, { state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' })).toContain('읽을 수 없어');
+  });
+
+  it('비교하지 못한 이유를 구분한다: 숨긴 치료·목록에 없는 치료는 "읽을 수 없어"가 아니라 "게시값이 없어"다 (숨김을 읽기 실패처럼 말하지 않는다)', () => {
+    const basis: BasisView = { check: 'UNCHECKABLE', changedFields: [], reviewed: null };
+    for (const current of [{ state: 'HIDDEN' }, { state: 'NOT_IN_CATALOG' }] as CurrentPublishedView[]) {
+      const text = basisText(basis, current);
+      expect(text, current.state).toContain('비교하지 못');
+      expect(text, current.state).toContain('게시값이 없어');
+      expect(text, current.state).not.toContain('읽');
+    }
   });
 
   it('CHANGED 는 바뀐 항목을 사람이 읽는 이름으로 나열한다', () => {
-    const text = basisText({ check: 'CHANGED', changedFields: ['procedureCodes', 'calcClass'], reviewed: null });
+    const text = basisText({ check: 'CHANGED', changedFields: ['procedureCodes', 'calcClass'], reviewed: null }, PUBLISHED);
     expect(text).toContain('행위 코드');
     expect(text).toContain('보험 계산 분류');
     expect(text).not.toContain('procedureCodes');

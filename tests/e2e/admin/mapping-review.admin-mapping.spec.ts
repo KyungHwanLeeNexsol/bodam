@@ -725,6 +725,13 @@ test('S7 숨김 (마지막: 카탈로그를 바꾼다): 승인 단추가 켜진 
     await expect(current.locator('[data-admin-queue-hidden]')).toHaveText(HIDDEN_TEXT);
     await expect(entry.locator('[data-admin-queue-not-published]')).toHaveCount(0);
     expect(await entry.innerText()).not.toContain(NOT_IN_LIST_TEXT);
+    // 숨김은 읽기 실패가 아니다: 서버 분류 표지는 UNKNOWN 이지만 항목 어디에도 "읽지 못했습니다/읽을 수 없어"가 없고 분류 안내도 없다. 검토 기준은 "게시값이 없어" 비교하지 못했다고 말한다.
+    const hiddenText = await entry.innerText();
+    expect(hiddenText).not.toContain('읽지 못했습니다');
+    expect(hiddenText).not.toContain('읽을 수 없');
+    await expect(entry.locator('[data-admin-queue-classification]')).toHaveCount(0);
+    await expect(entry.locator('[data-admin-queue-unreadable]')).toHaveCount(0);
+    await expect(entry.locator('[data-admin-stage-basis="UNCHECKABLE"]')).toContainText('현재 게시값이 없어 검토 기준과 비교하지 못함');
     await expect(entry.locator('[data-admin-queue-current-state="PUBLISHED"]')).toHaveCount(0);
     await expect(entry.getByRole('button', { name: '승인', exact: true })).toBeDisabled();
     await expect(entry.locator('[data-admin-stage-blocked]')).toContainText('숨긴 치료라서 승인할 수 없습니다');

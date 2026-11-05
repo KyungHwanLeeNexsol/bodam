@@ -396,7 +396,7 @@ export function ReviewQueue(): ReactElement {
         <ul className="admin-queue-list" data-admin-queue-list>
           {queue.map((entry) => {
             const stage = stageOf(entry, viewer);
-            const notice = classificationNotice(entry.classification);
+            const notice = classificationNotice(entry.classification, entry.current);
             const differs = differingFieldsOf(entry.current, entry.proposed);
             const display = currentStateDisplay(entry.current);
             const mine = message !== null && message.requestId === entry.id ? message : null;
@@ -472,7 +472,7 @@ export function ReviewQueue(): ReactElement {
 
                   {stage.kind === 'REVIEW' ? (
                     <>
-                      <p className="admin-hint" data-admin-stage-basis={entry.basis.check}>{MAPPING.basisLabel}: {basisText(entry.basis)}</p>
+                      <p className="admin-hint" data-admin-stage-basis={entry.basis.check}>{MAPPING.basisLabel}: {basisText(entry.basis, entry.current)}</p>
                       {stage.authorCannotApprove ? <p className="admin-banner" data-admin-stage-author-note>{MAPPING.authorCannotApprove}</p> : null}
                       <div className="admin-actions">
                         {stage.showApprove ? (
