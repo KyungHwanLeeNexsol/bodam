@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalDigest } from '../../src/server/digest';
 import type { IdlePolicy } from '../../src/server/domain/entities';
-import { DEFAULT_IDLE_THRESHOLDS, IDLE_SCREEN_KINDS, MIN_IDLE_LEAD_SECONDS, readIdlePolicy, saveClinicIdlePolicy } from '../../src/server/idle-policy';
+import { DEFAULT_IDLE_THRESHOLDS, IDLE_SCREEN_KINDS, MIN_IDLE_LEAD_SECONDS, idlePolicyDigest, readIdlePolicy, saveClinicIdlePolicy, saveClinicIdlePolicyChecked } from '../../src/server/idle-policy';
 import { TEST_FIXTURE_CLINIC_ID, TEST_FIXTURE_HA_1, TEST_FIXTURE_PO_1, TEST_FIXTURE_RV_AUTHOR } from '../fixtures/server/actors.fixture';
 import { makeClinic, makeIdlePolicy } from '../fixtures/server/entities.fixture';
 import { catchDomainError } from '../fixtures/server/errors.fixture';
@@ -321,5 +321,110 @@ describe('저장 검증 (거절하면 아무것도 저장하지 않는다)', () 
     expect(catchDomainError(() => saveClinicIdlePolicy(deps, TEST_FIXTURE_HA_1, TEST_FIXTURE_CLINIC_ID, input({ completionHoldSeconds: 99 }))).code).toBe('DUPLICATE_KEY');
     expect(snapshotOf(w.repo)).toEqual(before);
     expect(readIdlePolicy(w.repo, TEST_FIXTURE_CLINIC_ID).completionHoldSeconds).toBe(10);
+  });
+});
+
+describe('조건부 저장 (saveClinicIdlePolicyChecked · idlePolicyDigest): 화면이 읽은 상태의 지문이 맞을 때만 저장한다', () => {
+  const digestNow = (w: ReturnType<typeof setup>): string => idlePolicyDigest(TEST_FIXTURE_CLINIC_ID, w.repo.getIdlePolicy(TEST_FIXTURE_CLINIC_ID));
+  const checked = (w: ReturnType<typeof setup>, request: Record<string, unknown>, actor = TEST_FIXTURE_HA_1) => saveClinicIdlePolicyChecked(w.deps, actor, TEST_FIXTURE_CLINIC_ID, request);
+
+  it('지문은 병원 id 와 저장된 상태로 정해진다: 저장한 적 없음 · 비어 있게 저장 · 기본값과 같은 값을 직접 저장 · 직접 설정한 값 · 다른 병원이 모두 다르고, 같은 상태는 늘 같다', () => {
+    const w = setup();
+    w.repo.saveClinic(makeClinic({ id: 'TEST_FIXTURE_CLINIC_2', slug: 'test-fixture-clinic-2' }));
+    const unsaved = digestNow(w);
+    expect(digestNow(w)).toBe(unsaved);
+    expect(unsaved).toMatch(/^[0-9a-f]{64}$/);
+    expect(idlePolicyDigest('TEST_FIXTURE_CLINIC_2', null)).not.toBe(unsaved);
+
+    const seen = new Set([unsaved]);
+    const states: Array<Record<string, unknown>> = [
+      { screens: {}, completionHoldSeconds: null },
+      { screens: { INPUT: { ...DD10_DEFAULTS.INPUT } }, completionHoldSeconds: null },
+      { screens: { INPUT: { warnSeconds: 90, resetSeconds: 150 } }, completionHoldSeconds: null },
+      { screens: { INPUT: { warnSeconds: 90, resetSeconds: 150 } }, completionHoldSeconds: 10 },
+    ];
+    for (const state of states) {
+      saveClinicIdlePolicy(w.deps, TEST_FIXTURE_HA_1, TEST_FIXTURE_CLINIC_ID, state);
+      seen.add(digestNow(w));
+    }
+    expect(seen.size).toBe(states.length + 1);
+  });
+
+  it('지문은 객체 키를 쓴 순서와 무관하다. 저장소에 직접 쓴 닫힌 목록 밖의 키도 저장 상태이므로 지문에 반영된다', () => {
+    const a = idlePolicyDigest(TEST_FIXTURE_CLINIC_ID, { clinicId: TEST_FIXTURE_CLINIC_ID, screens: { INPUT: { warnSeconds: 90, resetSeconds: 150 }, RESULT: { warnSeconds: 100, resetSeconds: 200 } }, completionHoldSeconds: 5 });
+    const b = idlePolicyDigest(TEST_FIXTURE_CLINIC_ID, { completionHoldSeconds: 5, clinicId: TEST_FIXTURE_CLINIC_ID, screens: { RESULT: { resetSeconds: 200, warnSeconds: 100 }, INPUT: { resetSeconds: 150, warnSeconds: 90 } } });
+    expect(a).toBe(b);
+    const withUnknown = idlePolicyDigest(TEST_FIXTURE_CLINIC_ID, { clinicId: TEST_FIXTURE_CLINIC_ID, screens: { INPUT: { warnSeconds: 90, resetSeconds: 150 }, RESULT: { warnSeconds: 100, resetSeconds: 200 }, TEST_FIXTURE_X: { warnSeconds: 1, resetSeconds: 50 } }, completionHoldSeconds: 5 });
+    expect(withUnknown).not.toBe(a);
+  });
+
+  it('현재 지문과 같으면 저장하고 감사 기록 한 건을 남긴다 (이전/이후 해시는 기존 저장과 같다)', () => {
+    const w = setup();
+    const saved = checked(w, { ...input(), expectedDigest: digestNow(w) });
+    expect(saved).toEqual({ clinicId: TEST_FIXTURE_CLINIC_ID, screens: { INPUT: { warnSeconds: 90, resetSeconds: 150 } }, completionHoldSeconds: 10 });
+    expect(w.repo.getIdlePolicy(TEST_FIXTURE_CLINIC_ID)).toEqual(saved);
+    const audit = w.repo.listAuditLog();
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ action: 'IDLE_POLICY_SAVE', beforeVersion: null, afterVersion: canonicalDigest(saved) });
+  });
+
+  it('지문이 다르면 STATE_CONFLICT(IDLE_POLICY_CHANGED, 경로 expectedDigest) 이고 정책·감사 기록을 포함한 저장소 전체가 그대로다', () => {
+    const w = setup();
+    const stale = digestNow(w);
+    saveClinicIdlePolicy(w.deps, TEST_FIXTURE_HA_1, TEST_FIXTURE_CLINIC_ID, input({ completionHoldSeconds: 7 }));
+    const before = snapshotOf(w.repo);
+
+    const error = catchDomainError(() => checked(w, { ...input(), expectedDigest: stale }));
+
+    expect(error.code).toBe('STATE_CONFLICT');
+    expect(error.defects).toEqual([{ code: 'IDLE_POLICY_CHANGED', path: 'expectedDigest' }]);
+    expect(snapshotOf(w.repo)).toEqual(before);
+  });
+
+  it('지문이 없거나 형식이 틀리면 비교하지 않고 INVALID_INPUT 이다 (결함 경로 expectedDigest, 값의 결함 뒤에 붙는다). 요청이 객체가 아니면 지문 결함 없이 요청 결함만 낸다', () => {
+    const w = setup();
+    const before = snapshotOf(w.repo);
+    expect(catchDomainError(() => checked(w, input())).defects).toEqual([{ code: 'VALUE_MISSING', path: 'expectedDigest' }]);
+    expect(catchDomainError(() => checked(w, { ...input(), expectedDigest: 'abc' })).defects).toEqual([{ code: 'VALUE_INVALID', path: 'expectedDigest' }]);
+    expect(catchDomainError(() => checked(w, { screens: { INPUT: { warnSeconds: 100, resetSeconds: 101 } }, completionHoldSeconds: 5 })).defects).toEqual([
+      { code: 'LEAD_TIME_TOO_SHORT', path: 'screens.INPUT.resetSeconds' },
+      { code: 'VALUE_MISSING', path: 'expectedDigest' },
+    ]);
+    expect(catchDomainError(() => saveClinicIdlePolicyChecked(w.deps, TEST_FIXTURE_HA_1, TEST_FIXTURE_CLINIC_ID, [])).defects).toEqual([{ code: 'VALUE_INVALID', path: '' }]);
+    expect(snapshotOf(w.repo)).toEqual(before);
+  });
+
+  it('순서: 낡은 지문과 틀린 값이 함께 오면 지문 비교(STATE_CONFLICT)가 값 검사(INVALID_INPUT)보다 먼저다', () => {
+    const w = setup();
+    const stale = digestNow(w);
+    saveClinicIdlePolicy(w.deps, TEST_FIXTURE_HA_1, TEST_FIXTURE_CLINIC_ID, input());
+    const error = catchDomainError(() => checked(w, { screens: { INPUT: { warnSeconds: 100, resetSeconds: 101 } }, completionHoldSeconds: 0, expectedDigest: stale }));
+    expect(error.code).toBe('STATE_CONFLICT');
+  });
+
+  it('순서: 역할(ROLE_NOT_PERMITTED) → 병원 존재(NOT_FOUND) → 지문. 지문이 틀렸어도 앞의 거절이 먼저다', () => {
+    const w = setup();
+    const before = snapshotOf(w.repo);
+    expect(catchDomainError(() => checked(w, { ...input(), expectedDigest: 'abc' }, TEST_FIXTURE_PO_1)).code).toBe('ROLE_NOT_PERMITTED');
+    expect(catchDomainError(() => saveClinicIdlePolicyChecked(w.deps, TEST_FIXTURE_HA_1, 'TEST_FIXTURE_CLINIC_NOPE', { ...input(), expectedDigest: 'abc' })).code).toBe('NOT_FOUND');
+    expect(snapshotOf(w.repo)).toEqual(before);
+  });
+
+  it('비교와 저장은 한 트랜잭션이다: 저장 도중(감사 기록 쓰기)에 실패하면 정책 저장도 되돌려진다', () => {
+    const w = setup();
+    const digest = digestNow(w);
+    const before = snapshotOf(w.repo);
+    const spy = vi.spyOn(w.repo, 'appendAuditLog').mockImplementation(() => {
+      throw new Error('감사 기록 쓰기 실패(시험용)');
+    });
+    expect(() => checked(w, { ...input(), expectedDigest: digest })).toThrow('감사 기록 쓰기 실패');
+    spy.mockRestore();
+    expect(snapshotOf(w.repo)).toEqual(before);
+    expect(w.repo.getIdlePolicy(TEST_FIXTURE_CLINIC_ID)).toBeNull();
+  });
+
+  it('조건 없는 saveClinicIdlePolicy 는 지문 없이 그대로 저장한다 (시드·서비스 시험용 안쪽 길)', () => {
+    const w = setup();
+    expect(() => saveClinicIdlePolicy(w.deps, TEST_FIXTURE_HA_1, TEST_FIXTURE_CLINIC_ID, input())).not.toThrow();
   });
 });

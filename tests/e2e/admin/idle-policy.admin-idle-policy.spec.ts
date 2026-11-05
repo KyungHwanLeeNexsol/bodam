@@ -388,6 +388,77 @@ test('S5b 낡은 화면은 다른 창에서 저장된 설정을 덮어쓰지 않
   await closeAll(other);
 });
 
+test('S5c 사전 재조회를 통과한 뒤에 다른 창이 저장해도 낡은 창의 저장은 서버가 거절한다: 아무것도 저장되지 않고, 입력은 남으며, 자동으로 다시 보내지 않고, 서버 값을 다시 읽은 뒤에야 저장할 수 있다 (AC-023f)', async ({ browser, request }) => {
+  const { page } = ha;
+  const url = `**${policyApi(CLINIC_1)}`;
+  // 이 창의 근거를 서버의 현재 값으로 맞춘다(S5b 의 마지막 저장 뒤).
+  await page.locator('[data-idle-reload]').click();
+  await expect(page.locator('[data-idle-dirty]')).toHaveAttribute('data-idle-dirty', 'false');
+  const other = await openAs(browser, 'ha-clinic-1');
+  await gotoPolicy(other.page);
+
+  // 이 창의 저장 직전 재조회(GET)는 서버 값이 그대로라 통과한다. 저장 요청(PUT)이 서버에 닿기 직전, 두 번째 창이 화면에서 실제로 저장한다.
+  let putCount = 0;
+  let stateAfterOther = '';
+  let auditAfterOther = 0;
+  await page.route(url, async (route) => {
+    if (route.request().method() === 'PUT') {
+      putCount += 1;
+      if (putCount === 1) {
+        await setRow(other.page, 'HOLD_RESULT', '171', '201');
+        await saveButton(other.page).click();
+        await expect(messageOf(other.page, 'SAVED')).toBeVisible();
+        stateAfterOther = await stateText(request);
+        auditAfterOther = (await auditLog(request)).length;
+      }
+    }
+    await route.continue();
+  });
+
+  await setRow(page, 'NOTICE_PROGRESS_ERROR', '96', '161');
+  await saveButton(page).click();
+
+  // 서버가 거절했다: 안내는 "다른 창이나 다른 사람이 바꿨다" 이고 오류 코드 글자를 보이지 않는다. 저장소 전체 사본과 감사 기록은 두 번째 창이 저장한 그대로다.
+  await expect(messageOf(page, 'IDLE_POLICY_CHANGED')).toBeVisible();
+  await expect(messageOf(page, 'IDLE_POLICY_CHANGED')).toContainText('다른 창이나 다른 사람이');
+  await expect(messageOf(page, 'IDLE_POLICY_CHANGED')).toContainText('아무것도 저장하지 않았고 서버의 설정은 그대로입니다');
+  await expect(messageOf(page, 'IDLE_POLICY_CHANGED')).not.toContainText('IDLE_POLICY_CHANGED');
+  expect(putCount).toBe(1);
+  expect(await stateText(request)).toBe(stateAfterOther);
+  expect((await auditLog(request)).length).toBe(auditAfterOther);
+  const policy = await serverPolicy(ha);
+  expect(policy['idlePolicy']['screens']['HOLD_RESULT']).toEqual({ warnSeconds: 171, resetSeconds: 201 });
+  expect(policy['idlePolicy']['screens']['NOTICE_PROGRESS_ERROR']).toEqual({ warnSeconds: 95, resetSeconds: 160 });
+
+  // 입력은 남고, 저장 단추는 막히며, 이유가 보인다. 기다려도 화면이 스스로 다시 보내지 않는다.
+  await expect(warnInput(page, 'NOTICE_PROGRESS_ERROR')).toHaveValue('96');
+  await expect(resetInput(page, 'NOTICE_PROGRESS_ERROR')).toHaveValue('161');
+  await expect(saveButton(page)).toBeDisabled();
+  await expect(page.locator('[data-idle-stale]')).toContainText('서버 값 다시 읽기');
+  await page.waitForTimeout(1_500);
+  expect(putCount).toBe(1);
+  expect(await stateText(request)).toBe(stateAfterOther);
+  await shoot(page, '05c-policy-changed');
+
+  // "서버 값 다시 읽기": 두 번째 창이 저장한 값이 보이고, 입력은 지워지고, 막혔던 저장 단추의 이유 표시는 사라진다.
+  await page.unroute(url);
+  await page.locator('[data-idle-reload]').click();
+  await expectRow(page, 'HOLD_RESULT', 171, 201, 'custom');
+  await expectRow(page, 'NOTICE_PROGRESS_ERROR', 95, 160, 'custom');
+  await expect(page.locator('[data-idle-stale]')).toHaveCount(0);
+  await expect(saveButton(page)).toBeDisabled(); // 고친 것이 없어서
+
+  // 확인한 사람이 다시 고쳐 저장하면 저장되고 두 창의 설정이 모두 남는다.
+  await setRow(page, 'NOTICE_PROGRESS_ERROR', '96', '161');
+  await saveButton(page).click();
+  await expect(messageOf(page, 'SAVED')).toBeVisible();
+  const after = await serverPolicy(ha);
+  expect(after['idlePolicy']['screens']['HOLD_RESULT']).toEqual({ warnSeconds: 171, resetSeconds: 201 });
+  expect(after['idlePolicy']['screens']['NOTICE_PROGRESS_ERROR']).toEqual({ warnSeconds: 96, resetSeconds: 161 });
+  expect((await auditLog(request)).length).toBe(auditAfterOther + 1);
+  await closeAll(other);
+});
+
 test('S6 (AC-023d·AC-023g) completionHoldSeconds: null(자동 복귀 없음)과 양의 정수(1초 포함, 20초 하한 없음)가 저장되고, 새로 연 키오스크의 이용 완료 화면이 그대로 따른다', async ({ browser, request }) => {
   const { page } = ha;
   // null: 자동 복귀를 끈다.

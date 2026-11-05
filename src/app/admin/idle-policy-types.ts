@@ -18,6 +18,8 @@ export interface IdlePolicyView {
   defaults: Record<IdleScreenKind, IdleThreshold>;
   /** 경고와 초기화 사이의 최소 간격(초). 서버가 정한다. */
   minLeadSeconds: number;
+  /** 읽은 순간의 저장 상태 지문. 저장(PUT)에 expectedDigest 로 그대로 되돌려 보낸다. 변경 감지용이며 화면이 해석하거나 만들지 않는다. */
+  policyDigest: string;
 }
 
 /**
@@ -27,4 +29,9 @@ export interface IdlePolicyView {
 export interface IdlePolicyBody {
   screens: Partial<Record<IdleScreenKind, { warnSeconds: number | string; resetSeconds: number | string }>>;
   completionHoldSeconds: number | string | null;
+}
+
+/** 실제로 보내는 PUT 본문: IdlePolicyBody + 화면이 근거로 삼은 읽기 응답의 policyDigest. 서버가 현재 저장 상태와 다르면 409 IDLE_POLICY_CHANGED 로 거절한다. */
+export interface IdlePolicyPutBody extends IdlePolicyBody {
+  expectedDigest: string;
 }

@@ -5,7 +5,7 @@ import type { ReactElement } from 'react';
 import type { SessionResponse } from './api-types';
 import { AdminNav } from './AdminNav';
 import { IDLE_COPY as COPY, IDLE_SCREEN_LABEL } from './idle-policy-copy';
-import { editRow, formFromServer, holdHint, isDirty, isOutcomeUnknown, isPolicyView, requestBodyOf, revertRow, rowHint, sameServerSettings, saveFailureMessage, serverMatchesBody, setHoldEnabled, setHoldText } from './idle-policy-model';
+import { editRow, formFromServer, holdHint, isDirty, isOutcomeUnknown, isPolicyChanged, isPolicyView, putBodyOf, requestBodyOf, revertRow, rowHint, sameServerSettings, saveFailureMessage, serverMatchesBody, setHoldEnabled, setHoldText } from './idle-policy-model';
 import type { FormState } from './idle-policy-model';
 import { IDLE_SCREEN_KINDS } from './idle-policy-types';
 import type { IdlePolicyBody, IdlePolicyView } from './idle-policy-types';
@@ -15,7 +15,8 @@ import { adminRequest as request } from './transport';
 //  - 저장은 정책 전체를 바꾼다(PUT): 직접 설정한 화면 종류만 본문에 담고, 기본값을 따르는 종류는 담지 않는다(서버가 기본값으로 읽는다). 일부만 고쳐도 다른 설정을 잃지 않는다(idle-policy-model.ts).
 //  - 저장이 성공하면 서버 값을 다시 읽어 보인다. 응답을 받지 못했거나 서버 오류이면 저장 실패로 단정하지 않고 서버 값을 다시 읽어 입력과 같은지 알린다.
 //  - 저장 직전에 서버 값을 다시 읽어 이 화면이 근거로 삼은 값과 같은지 본다: 다른 창·다른 사람이 그 사이 저장했으면 아무것도 저장하지 않고 서버 값을 다시 보인다(PUT 이 전체 교체라 낡은 화면이 다른 설정을 지우지 않게 한다).
-//    서버에 저장 시각·버전 비교(expectedDigest)가 없어 읽기와 저장 사이의 아주 짧은 틈은 남는다.
+//  - 서버가 최종 방어선이다: 저장 요청은 이 입력이 근거로 삼은 읽기 응답의 policyDigest 를 expectedDigest 로 담아 보낸다. 그 사이(사전 재조회를 통과한 뒤 포함) 다른 곳에서 저장됐으면 서버가 409 IDLE_POLICY_CHANGED 로 거절하고
+//    아무것도 저장하지 않는다. 화면은 자동으로 덮어쓰거나 다시 보내지 않는다: 입력을 남긴 채 다른 곳에서 바뀌었다고 알리고, "서버 값 다시 읽기" 를 누르기 전까지 저장 단추를 막는다(같은 낡은 지문으로는 다시 거절될 뿐이다).
 //  - 이미 열려 있는 키오스크 세션에는 닿지 않는다(키오스크 화면을 새로 열 때 catalog 응답으로 읽는다). 접근 판정과 값의 검사는 서버가 한다. 시험 문구이며 최종 안내 문구가 아니다.
 //
 // 화면 표지(data-*) — 시험이 쓰는 안정된 이름:
@@ -23,8 +24,8 @@ import { adminRequest as request } from './transport';
 //   [data-admin-nav] / [data-admin-nav-link=idle-policy] / [data-admin-user]
 //   tr[data-idle-row=<화면 종류>] 안: input[data-idle-warn=<종류>] · input[data-idle-reset=<종류>] · [data-idle-source=<종류>][data-idle-source-kind=default|custom] · [data-idle-default=<종류>] · button[data-idle-revert=<종류>] · [data-idle-hint=<종류>]
 //   input[data-idle-hold-enabled] · input[data-idle-hold-seconds] · [data-idle-hold-state] · [data-idle-hold-hint]
-//   button[data-idle-save] · button[data-idle-reload] · button[data-idle-recheck](결과가 확실하지 않을 때만) · [data-idle-dirty=true|false]
-//   [data-admin-message=ok|error][data-admin-message-code=SAVED|SAVED_READ_FAILED|SERVER_CHANGED|PRECHECK_FAILED|LOST_CONFIRMED|LOST_NOT_SAVED|LOST_UNVERIFIED|RECHECK_FAILED|HTTP_<상태>]
+//   button[data-idle-save] · button[data-idle-reload] · button[data-idle-recheck](결과가 확실하지 않을 때만) · [data-idle-dirty=true|false] · [data-idle-stale](서버가 "그 사이 바뀌었다" 고 거절한 뒤 다시 읽기 전까지만)
+//   [data-admin-message=ok|error][data-admin-message-code=SAVED|SAVED_READ_FAILED|SERVER_CHANGED|IDLE_POLICY_CHANGED|PRECHECK_FAILED|LOST_CONFIRMED|LOST_NOT_SAVED|LOST_UNVERIFIED|RECHECK_FAILED|HTTP_<상태>]
 
 type Phase = 'loading' | 'unauthenticated' | 'forbidden' | 'notfound' | 'error' | 'ready';
 type Banner = { kind: 'ok' | 'error'; text: string; code: string };
@@ -54,6 +55,8 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
   const [busy, setBusy] = useState(false);
   /** 응답을 받지 못한 저장의 본문: 서버 값을 아직 확인하지 못했을 때 "서버 값 다시 확인" 이 이 본문과 비교한다. */
   const [pendingCheck, setPendingCheck] = useState<IdlePolicyBody | null>(null);
+  /** 서버가 409 IDLE_POLICY_CHANGED 로 거절한 지문. 입력이 근거로 삼은 지문이 이 값이면 저장할 수 없다(서버 값을 다시 읽어 근거가 바뀌면 저절로 풀린다). */
+  const [rejectedDigest, setRejectedDigest] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const messageRef = useRef<HTMLDivElement | null>(null);
 
@@ -105,7 +108,7 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
   };
 
   const save = async (): Promise<void> => {
-    if (busy || view === null || form === null || formBase === null || !isDirty(form, view)) return;
+    if (busy || view === null || form === null || formBase === null || !isDirty(form, view) || rejectedDigest === formBase.policyDigest) return;
     const body = requestBodyOf(form);
     setBusy(true);
     setMessage(null);
@@ -124,7 +127,7 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
       }
       let result: Awaited<ReturnType<typeof request<IdlePolicyView>>> | null = null;
       try {
-        result = await request<IdlePolicyView>('PUT', policyPath(clinicId), body, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
+        result = await request<IdlePolicyView>('PUT', policyPath(clinicId), putBodyOf(body, formBase), AbortSignal.timeout(REQUEST_TIMEOUT_MS));
       } catch {
         result = null; // 응답이 끊겼다: 서버가 저장했는지 알 수 없다.
       }
@@ -139,6 +142,12 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
           if (isPolicyView(result.body)) adopt(result.body);
           setMessage({ kind: 'ok', text: COPY.savedReadFailed, code: 'SAVED_READ_FAILED' });
         }
+        return;
+      }
+      if (result !== null && isPolicyChanged(result)) {
+        // 사전 재조회를 통과한 뒤에 다른 곳에서 저장됐다(서버의 조건부 저장이 거절): 서버의 설정은 그대로이고 입력은 남는다. 자동으로 덮어쓰거나 다시 보내지 않고, 사람이 서버 값을 다시 읽게 한다.
+        setRejectedDigest(formBase.policyDigest);
+        setMessage({ kind: 'error', text: saveFailureMessage(result, view.minLeadSeconds), code: 'IDLE_POLICY_CHANGED' });
         return;
       }
       if (result !== null && !isOutcomeUnknown(result.status)) {
@@ -233,6 +242,7 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
   }
 
   const dirty = isDirty(form, view);
+  const stale = formBase !== null && rejectedDigest === formBase.policyDigest;
   const holdProblem = holdHint(form);
   const holdSeconds = view.idlePolicy.completionHoldSeconds;
 
@@ -359,7 +369,7 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
       </div>
 
       <div className="admin-actions">
-        <button type="button" className="admin-btn admin-btn--primary" disabled={busy || !dirty} data-idle-save onClick={() => void save()}>
+        <button type="button" className="admin-btn admin-btn--primary" disabled={busy || !dirty || stale} data-idle-save onClick={() => void save()}>
           {busy ? COPY.saving : COPY.save}
         </button>
         <button type="button" className="admin-btn" disabled={busy} data-idle-reload onClick={() => void reload()}>
@@ -371,6 +381,7 @@ export function IdlePolicy({ clinicId }: { clinicId: string }): ReactElement {
           </button>
         ) : null}
         <span className="admin-sub2" data-idle-dirty={dirty ? 'true' : 'false'}>{dirty ? COPY.dirtyNote : COPY.cleanNote}</span>
+        {stale ? <span className="admin-sub2" data-idle-stale>{COPY.staleNote}</span> : null}
       </div>
     </main>
   );

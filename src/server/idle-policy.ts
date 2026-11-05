@@ -107,8 +107,41 @@ function parseRequest(request: unknown): { screens: Partial<Record<IdleScreenKin
   return { screens, completionHoldSeconds: hold as number | null };
 }
 
+/** 지문(expectedDigest·policyDigest)의 형식: canonicalDigest 의 출력(소문자 16진수 64글자). */
+const DIGEST_FORMAT = /^[0-9a-f]{64}$/;
+
 /**
- * HA 가 병원의 무조작 정책을 저장한다. 요청 = { screens: 화면 종류별 { warnSeconds, resetSeconds }(일부만 가능), completionHoldSeconds: 양의 정수 | null }.
+ * 병원의 무조작 정책 "저장 상태"의 변경 감지용 지문. 병원 id 와 저장소에 실제로 저장된 정책(화면 종류별 값·completionHoldSeconds)을 canonicalDigest 로 해시한다.
+ *  - 저장한 적 없음(null) · 저장은 했지만 비어 있음(screens {} 와 completionHoldSeconds null) · 기본값과 같은 값을 직접 저장함 · 직접 설정한 화면 종류의 집합과 값이 모두 서로 다른 지문이다.
+ *  - 읽기 결과(기본값으로 채운 값)가 아니라 저장된 상태에서 계산하므로 "기본값을 따름"과 "기본값과 같은 값을 직접 저장함"이 갈린다.
+ *  - 변경 감지에만 쓴다: 비밀값도, 미리보기 증명도 아니다(GET 으로 누구나 읽는다). 같은 상태가 되돌아오면(A → B → A) 지문도 같다: 저장 사건이 아니라 상태를 견준다.
+ */
+export function idlePolicyDigest(clinicId: string, stored: IdlePolicy | null): string {
+  return canonicalDigest({ kind: 'IDLE_POLICY_STATE', clinicId, stored: stored === null ? null : { screens: stored.screens, completionHoldSeconds: stored.completionHoldSeconds } });
+}
+
+/** 요청 검사 → 저장 → 감사 기록. 호출한 쪽의 트랜잭션 안에서만 부른다. extraDefects 는 요청 검사의 결함 뒤에 붙는다. */
+function commitPolicy(deps: ServiceDeps, actor: Actor, clinicId: string, previous: IdlePolicy | null, request: unknown, extraDefects: readonly Defect[]): IdlePolicy {
+  const parsed = parseRequest(request);
+  const defects = [...('defects' in parsed ? parsed.defects : []), ...extraDefects];
+  if ('defects' in parsed || defects.length > 0) {
+    throw new DomainError('INVALID_INPUT', '무조작 정책 요청의 형식이 틀렸다', defects);
+  }
+  const policy: IdlePolicy = { clinicId, screens: parsed.screens as Record<string, IdleThreshold>, completionHoldSeconds: parsed.completionHoldSeconds };
+  deps.repo.saveIdlePolicy(policy);
+  appendAudit(deps, actor, {
+    action: 'IDLE_POLICY_SAVE',
+    target: `CLINIC/${clinicId}/IDLE_POLICY`,
+    beforeVersion: previous === null ? null : canonicalDigest(previous),
+    afterVersion: canonicalDigest(policy),
+    reason: null,
+  });
+  return policy;
+}
+
+/**
+ * HA 가 병원의 무조작 정책을 **조건 없이** 저장한다(시드·서비스 시험용 안쪽 길). 관리자 API 는 이 함수를 부르지 않고 saveClinicIdlePolicyChecked 를 부른다.
+ * 요청 = { screens: 화면 종류별 { warnSeconds, resetSeconds }(일부만 가능), completionHoldSeconds: 양의 정수 | null }.
  * 저장은 정책 전체를 바꾼다(PUT): 요청에 없는 화면 종류는 기본값으로 읽힌다. 순서: 역할 → 병원 존재(NOT_FOUND) → 요청 검사(INVALID_INPUT, 결함 경로 포함) → 쓰기.
  * 거절하면 아무것도 저장하지 않는다.
  */
@@ -118,21 +151,39 @@ export function saveClinicIdlePolicy(deps: ServiceDeps, actor: Actor, clinicId: 
     if (deps.repo.getClinic(clinicId) === null) {
       throw new DomainError('NOT_FOUND', `병원 '${clinicId}' 이(가) 없다`);
     }
-    const parsed = parseRequest(request);
-    if ('defects' in parsed) {
-      throw new DomainError('INVALID_INPUT', '무조작 정책 요청의 형식이 틀렸다', parsed.defects);
+    return commitPolicy(deps, actor, clinicId, deps.repo.getIdlePolicy(clinicId), request, []);
+  });
+}
+
+// @MX:ANCHOR: [AUTO] HA 의 무조작 정책 저장 관리자 경로(PUT idle-policy)의 단일 진입점. 관리자 API 와 시험이 부른다.
+// @MX:REASON: 지문 비교와 저장이 한 트랜잭션이어야 한다. 갈라지면 두 관리자 창이 같은 정책을 읽고 나서 서로의 설정을 모르게 덮어쓴다(PUT 은 전체 교체다).
+/**
+ * HA 가 화면이 읽은 상태를 근거로 무조작 정책을 저장한다(조건부 저장). 요청 = saveClinicIdlePolicy 의 요청 + expectedDigest(GET 이 알린 policyDigest).
+ * 순서(한 트랜잭션): 역할 → 병원 존재(NOT_FOUND) → 지문 형식(없음 VALUE_MISSING · 형식 틀림 VALUE_INVALID, 경로 expectedDigest; 요청 검사의 결함과 함께 INVALID_INPUT 으로 모아 낸다)
+ *   → 현재 지문 비교(다르면 STATE_CONFLICT IDLE_POLICY_CHANGED, 아무것도 쓰지 않는다) → 기존 값 검사(INVALID_INPUT) → 정책 저장 → 감사 기록.
+ * 지문이 맞아야 값 검사로 가므로, 낡은 지문과 틀린 값이 함께 오면 409 가 먼저다. 지문이 없거나 형식이 틀리면 비교하지 않고 400 이다.
+ * 이것은 같은 저장소 트랜잭션 안의 비교다. 실제 DB 의 동시성(격리 수준·잠금)은 이 함수가 보장하지 않으며 검증하지 않았다.
+ */
+export function saveClinicIdlePolicyChecked(deps: ServiceDeps, actor: Actor, clinicId: string, request: unknown): IdlePolicy {
+  requireRole(actor, 'HA');
+  return deps.repo.transaction(() => {
+    if (deps.repo.getClinic(clinicId) === null) {
+      throw new DomainError('NOT_FOUND', `병원 '${clinicId}' 이(가) 없다`);
     }
     const previous = deps.repo.getIdlePolicy(clinicId);
-    const policy: IdlePolicy = { clinicId, screens: parsed.screens as Record<string, IdleThreshold>, completionHoldSeconds: parsed.completionHoldSeconds };
-    deps.repo.saveIdlePolicy(policy);
-    appendAudit(deps, actor, {
-      action: 'IDLE_POLICY_SAVE',
-      target: `CLINIC/${clinicId}/IDLE_POLICY`,
-      beforeVersion: previous === null ? null : canonicalDigest(previous),
-      afterVersion: canonicalDigest(policy),
-      reason: null,
-    });
-    return policy;
+    const digestDefects: Defect[] = [];
+    // 요청이 객체가 아니면 요청 검사가 VALUE_INVALID(경로 '') 로 거절한다: 지문 이야기는 하지 않는다.
+    if (isPlainObject(request)) {
+      const expected = request.expectedDigest;
+      if (isAbsent(expected)) {
+        digestDefects.push({ code: 'VALUE_MISSING', path: 'expectedDigest' });
+      } else if (typeof expected !== 'string' || !DIGEST_FORMAT.test(expected)) {
+        digestDefects.push({ code: 'VALUE_INVALID', path: 'expectedDigest' });
+      } else if (expected !== idlePolicyDigest(clinicId, previous)) {
+        throw new DomainError('STATE_CONFLICT', `병원 '${clinicId}' 의 무조작 정책이 화면이 읽은 뒤 바뀌었다`, [{ code: 'IDLE_POLICY_CHANGED', path: 'expectedDigest' }]);
+      }
+    }
+    return commitPolicy(deps, actor, clinicId, previous, request, digestDefects);
   });
 }
 
@@ -169,6 +220,8 @@ export interface IdlePolicyAdminView extends ResolvedIdlePolicy {
   customizedScreens: IdleScreenKind[];
   defaults: Record<IdleScreenKind, IdleThreshold>;
   minLeadSeconds: number;
+  /** 읽은 순간의 저장 상태 지문(idlePolicyDigest). 저장(PUT)이 expectedDigest 로 되돌려 보낸다. */
+  policyDigest: string;
 }
 
 export function readIdlePolicyAdminView(repo: Pick<Repository, 'getClinic' | 'getIdlePolicy'>, clinicId: string): IdlePolicyAdminView {
@@ -185,5 +238,6 @@ export function readIdlePolicyAdminView(repo: Pick<Repository, 'getClinic' | 'ge
     customizedScreens: IDLE_SCREEN_KINDS.filter((kind) => stored !== null && stored.screens[kind] !== undefined),
     defaults,
     minLeadSeconds: MIN_IDLE_LEAD_SECONDS,
+    policyDigest: idlePolicyDigest(clinicId, stored),
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IDLE_COPY, IDLE_SCREEN_LABEL } from '../../src/app/admin/idle-policy-copy';
-import { bodyOfServer, editRow, formFromServer, holdHint, isDirty, isOutcomeUnknown, isPolicyView, requestBodyOf, revertRow, rowHint, sameServerSettings, saveFailureMessage, serverMatchesBody, setHoldEnabled, setHoldText } from '../../src/app/admin/idle-policy-model';
+import { bodyOfServer, editRow, formFromServer, holdHint, isDirty, isOutcomeUnknown, isPolicyChanged, isPolicyView, putBodyOf, requestBodyOf, revertRow, rowHint, sameServerSettings, saveFailureMessage, serverMatchesBody, setHoldEnabled, setHoldText } from '../../src/app/admin/idle-policy-model';
 import { IDLE_SCREEN_KINDS } from '../../src/app/admin/idle-policy-types';
 import type { IdlePolicyView, IdleScreenKind, IdleThreshold } from '../../src/app/admin/idle-policy-types';
 
@@ -14,6 +14,8 @@ const DEFAULTS: Record<IdleScreenKind, IdleThreshold> = {
   NOTICE_PROGRESS_ERROR: { warnSeconds: 100, resetSeconds: 120 },
 };
 
+const DIGEST = 'ab12'.repeat(16);
+
 function view(overrides: Partial<Record<IdleScreenKind, IdleThreshold>> = {}, completionHoldSeconds: number | null = null): IdlePolicyView {
   const screens = { ...DEFAULTS, ...overrides } as Record<IdleScreenKind, IdleThreshold>;
   return {
@@ -22,6 +24,7 @@ function view(overrides: Partial<Record<IdleScreenKind, IdleThreshold>> = {}, co
     customizedScreens: IDLE_SCREEN_KINDS.filter((kind) => overrides[kind] !== undefined),
     defaults: DEFAULTS,
     minLeadSeconds: 20,
+    policyDigest: DIGEST,
   };
 }
 
@@ -136,6 +139,20 @@ describe('기본값을 따르던 종류는 값이 기본값으로 돌아오면 �
   });
 });
 
+describe('저장 요청의 지문', () => {
+  it('저장 본문은 입력에서 만든 본문에 근거로 삼은 서버 값의 지문을 expectedDigest 로 더한다. 지문은 읽은 그대로이고 본문의 다른 값은 바뀌지 않는다', () => {
+    const base = view({ INPUT: { warnSeconds: 90, resetSeconds: 110 } }, 15);
+    const body = requestBodyOf(formFromServer(base));
+    const put = putBodyOf(body, base);
+    expect(put).toEqual({ ...body, expectedDigest: DIGEST });
+    expect(Object.keys(put).sort()).toEqual(['completionHoldSeconds', 'expectedDigest', 'screens']);
+    // 지문은 근거로 삼은 서버 값의 것이다: 다른 지문을 가진 서버 값을 근거로 하면 그 지문을 보낸다.
+    expect(putBodyOf(body, { ...base, policyDigest: 'cd34'.repeat(16) }).expectedDigest).toBe('cd34'.repeat(16));
+    // 비교용 본문(서버 값과 견주는 정본)에는 지문이 끼지 않는다.
+    expect(bodyOfServer(base)).not.toHaveProperty('expectedDigest');
+  });
+});
+
 describe('낡은 화면 판단과 응답 모양 확인', () => {
   it('서버 값이 근거와 같으면 같은 설정이고, 직접 저장한 종류·값·자동 복귀 중 하나라도 다르면 다르다', () => {
     const base = view({ INPUT: { warnSeconds: 90, resetSeconds: 110 } }, 15);
@@ -147,7 +164,7 @@ describe('낡은 화면 판단과 응답 모양 확인', () => {
 
   it('쓸 수 있는 모양만 값으로 받는다: 빈 객체·문자열·null·종류가 빠진 응답은 거절', () => {
     expect(isPolicyView(view())).toBe(true);
-    for (const bad of [{}, '<html>', null, undefined, 5, { ...view(), idlePolicy: null }, { ...view(), customizedScreens: 'INPUT' }, { ...view(), defaults: {} }, { ...view(), minLeadSeconds: '20' }]) {
+    for (const bad of [{}, '<html>', null, undefined, 5, { ...view(), idlePolicy: null }, { ...view(), customizedScreens: 'INPUT' }, { ...view(), defaults: {} }, { ...view(), minLeadSeconds: '20' }, { ...view(), policyDigest: undefined }, { ...view(), policyDigest: '' }, { ...view(), policyDigest: 5 }]) {
       expect(isPolicyView(bad), JSON.stringify(bad)).toBe(false);
     }
     const missingKind = view();
@@ -237,6 +254,22 @@ describe('서버 거절 문장', () => {
     for (const text of texts) expect(text).toContain('저장되지 않았고 서버의 설정은 그대로입니다');
     expect(saveFailureMessage(failure(400, [{ code: 'SOMETHING_NEW', path: 'screens.UNKNOWN.warnSeconds' }]), 20)).toContain(IDLE_COPY.failure.other);
     expect(saveFailureMessage(failure(400), 20)).toBe(IDLE_COPY.failure.generic);
+  });
+
+  it('409 IDLE_POLICY_CHANGED 는 "다른 곳에서 바뀌었다" 는 별도 문장이고, 저장되지 않았다·입력이 남았다·서버 값을 다시 읽는다는 말을 담는다. 다른 사유의 409 는 일반 문장이다', () => {
+    const changed = { status: 409, body: { error: 'CONFLICT', reason: 'IDLE_POLICY_CHANGED' } };
+    expect(isPolicyChanged(changed)).toBe(true);
+    const text = saveFailureMessage(changed, 20);
+    expect(text).toBe(IDLE_COPY.failure.policyChanged);
+    expect(text).toContain('다른 창이나 다른 사람이');
+    expect(text).toContain('아무것도 저장하지 않았고 서버의 설정은 그대로입니다');
+    expect(text).toContain('입력한 값은 화면에 남아 있습니다');
+    expect(text).toContain('서버 값 다시 읽기');
+    expect(text).not.toMatch(/IDLE_POLICY_CHANGED|expectedDigest/);
+    for (const other of [{ status: 409, body: { error: 'CONFLICT', reason: 'SOMETHING_ELSE' } }, { status: 409, body: { error: 'CONFLICT' } }, { status: 400, body: { error: 'X', reason: 'IDLE_POLICY_CHANGED' } }]) {
+      expect(isPolicyChanged(other), JSON.stringify(other)).toBe(false);
+    }
+    expect(saveFailureMessage({ status: 409, body: { error: 'CONFLICT', reason: 'SOMETHING_ELSE' } }, 20)).toBe(IDLE_COPY.failure.generic);
   });
 
   it('같은 결함이 겹쳐도 문장은 한 번만 나온다', () => {

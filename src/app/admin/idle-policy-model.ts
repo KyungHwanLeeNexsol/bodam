@@ -1,7 +1,7 @@
 import type { ApiFailure } from './api-types';
 import { IDLE_COPY as COPY, IDLE_SCREEN_LABEL } from './idle-policy-copy';
 import { IDLE_SCREEN_KINDS } from './idle-policy-types';
-import type { IdlePolicyBody, IdlePolicyView, IdleScreenKind, IdleThreshold } from './idle-policy-types';
+import type { IdlePolicyBody, IdlePolicyPutBody, IdlePolicyView, IdleScreenKind, IdleThreshold } from './idle-policy-types';
 import type { Api } from './transport';
 
 // 병원 무조작 정책 화면의 순수 계산 (SPEC-REIMBURSEMENT-001 M7 병원별 무조작 정책 설정). React·네트워크·시계를 쓰지 않는다.
@@ -79,6 +79,9 @@ export function requestBodyOf(form: FormState): IdlePolicyBody {
   return { screens, completionHoldSeconds: form.holdEnabled ? numberOrText(form.holdText) : null };
 }
 
+/** 저장 요청(PUT)에 보낼 본문: 입력에서 만든 본문 + 이 입력이 근거로 삼은 서버 값의 지문(expectedDigest). 지문은 읽은 그대로이고 화면이 만들거나 고치지 않는다. */
+export const putBodyOf = (body: IdlePolicyBody, basis: IdlePolicyView): IdlePolicyPutBody => ({ ...body, expectedDigest: basis.policyDigest });
+
 /** 서버에 지금 저장된 값을 같은 모양의 본문으로 옮긴 것(화면을 고치지 않고 저장했을 때 보내게 될 본문). */
 export function bodyOfServer(view: IdlePolicyView): IdlePolicyBody {
   return requestBodyOf(formFromServer(view));
@@ -120,6 +123,8 @@ export function isPolicyView(value: unknown): value is IdlePolicyView {
     Array.isArray(view['customizedScreens']) &&
     hasAllKinds(view['defaults']) &&
     typeof view['minLeadSeconds'] === 'number' &&
+    typeof view['policyDigest'] === 'string' &&
+    view['policyDigest'] !== '' &&
     typeof view['clinic'] === 'object' &&
     view['clinic'] !== null
   );
@@ -158,6 +163,9 @@ function defectLine(defect: { code: string; path: string }, minLead: number): st
   return field === 'resetSeconds' ? COPY.failure.resetInvalid(screen) : COPY.failure.warnInvalid(screen);
 }
 
+/** 저장이 "그 사이 다른 곳에서 설정이 바뀌어서" 거절된 응답인가(409 + reason IDLE_POLICY_CHANGED). 이때 서버의 설정은 그대로이고 화면은 자동으로 덮어쓰거나 다시 보내지 않는다. */
+export const isPolicyChanged = (result: Api<unknown>): boolean => result.status === 409 && (result.body as ApiFailure).reason === 'IDLE_POLICY_CHANGED';
+
 /** 저장이 서버에서 분명히 거절된 응답(4xx)의 문장. 코드 글자를 보이지 않고, 늘 서버의 설정이 바뀌지 않았다는 말로 끝난다. */
 export function saveFailureMessage(result: Api<unknown>, minLead: number): string {
   const failure = result.body as ApiFailure;
@@ -168,6 +176,8 @@ export function saveFailureMessage(result: Api<unknown>, minLead: number): strin
       return COPY.failure.forbidden;
     case 404:
       return COPY.failure.notFound;
+    case 409:
+      return isPolicyChanged(result) ? COPY.failure.policyChanged : COPY.failure.generic;
     case 400: {
       const lines = [...new Set((failure.defects ?? []).map((defect) => defectLine(defect, minLead)))];
       return lines.length === 0 ? COPY.failure.generic : `${COPY.failure.invalidIntro} ${lines.slice(0, 6).join(' ')} ${COPY.failure.invalidEnd}`;
