@@ -341,6 +341,18 @@ describe('POST …/treatments/{treatmentId}/review-requests: 제출', () => {
     expect(world.state()).toEqual(before);
   });
 
+  it('병원 관리자 화면이 요청 후보로 읽는 치료 목록(GET …/treatments)은 서버가 받는 치료와 같은 집합이다: 숨긴 치료는 목록에 없고 보내도 거절된다', async () => {
+    const world = setup();
+    await publishDraft(world, { deactivations: [T2] });
+    const list = await json(await call(world.as('ha-clinic-1'), 'GET', `${CLINIC}/treatments`));
+    const listed: string[] = list.treatments.map((row: Json) => row.treatmentId);
+    expect(listed).not.toContain(T2);
+    expect(listed).toContain(T1);
+    // 목록에 있는 치료는 모두 받아 주고, 목록에 없는 숨긴 치료는 받지 않는다.
+    for (const treatmentId of listed) expect((await submit(world, 'ha-clinic-1', treatmentId)).status, treatmentId).toBe(200);
+    expect((await submit(world, 'ha-clinic-1', T2)).status).toBe(400);
+  });
+
   it('409 REVIEW_ALREADY_REQUESTED: 같은 치료에 열린 요청이 있으면 아무것도 저장하지 않는다. 다른 치료·다른 병원은 막지 않는다', async () => {
     const world = setup();
     expect((await submit(world, 'ha-clinic-1', T1)).status).toBe(200);

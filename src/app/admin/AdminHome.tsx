@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { SessionResponse } from './api-types';
 import { ADMIN_COPY as COPY } from './copy';
+import { REVIEW_COPY } from './review-copy';
 import { adminRequest } from './transport';
 
 // 관리자 입구 (SPEC-REIMBURSEMENT-001 M7): 서버가 검증한 신원의 소속 병원 가운데 병원 관리자(HA) 소속만 가격 관리로 이어 준다.
@@ -44,19 +45,31 @@ export function AdminHome(): ReactElement {
     );
   }
   const clinics = state.session.memberships.filter((membership) => membership.role === 'HA' && membership.clinicId !== null);
+  // 검토 담당자(RV)는 병원에 묶이지 않는 소속(clinicId null)만 대기열로 이어 준다. 병원에 묶인 RV 소속은 서버가 대기열을 거절하므로 링크를 만들지 않는다.
+  const isReviewer = state.session.memberships.some((membership) => membership.role === 'RV' && membership.clinicId === null);
   return (
     <main className="admin-root" data-admin-state="ready">
       <h1 className="admin-title">보담 관리자</h1>
       <p className="admin-sub">{COPY.sessionAs}: <span data-admin-user>{state.session.userId}</span></p>
-      {clinics.length === 0 ? (
+      {clinics.length === 0 && !isReviewer ? (
         <p className="admin-banner">{COPY.forbidden}</p>
       ) : (
         <ul className="admin-history">
-          {clinics.map((membership) => (
-            <li key={membership.clinicId}>
-              <a className="admin-link" href={`/admin/${encodeURIComponent(membership.clinicId as string)}/treatments`}>{COPY.title} — {membership.clinicId}</a>
+          {clinics.map((membership) => {
+            const base = `/admin/${encodeURIComponent(membership.clinicId as string)}`;
+            return (
+              <li key={membership.clinicId}>
+                <a className="admin-link" href={`${base}/treatments`}>{COPY.title} — {membership.clinicId}</a>
+                {' · '}
+                <a className="admin-link" href={`${base}/review-requests`}>{REVIEW_COPY.navReviewRequests} — {membership.clinicId}</a>
+              </li>
+            );
+          })}
+          {isReviewer ? (
+            <li>
+              <a className="admin-link" href="/admin/review-queue">{REVIEW_COPY.navReviewQueue}</a>
             </li>
-          ))}
+          ) : null}
         </ul>
       )}
     </main>
