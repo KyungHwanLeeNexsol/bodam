@@ -101,7 +101,7 @@ export function ReviewQueue(): ReactElement {
         <p className="admin-banner" data-admin-queue-empty>{COPY.queueEmpty}</p>
       ) : (
         <div className="admin-table-wrap">
-          <table className="admin-table" data-admin-queue-list>
+          <table className="admin-table admin-table--queue" data-admin-queue-list>
             <thead>
               <tr>
                 <th scope="col">{COPY.colClinic}</th>
@@ -121,7 +121,7 @@ export function ReviewQueue(): ReactElement {
                     <th scope="row"><span className="admin-name" data-admin-queue-treatment>{entry.treatmentName ?? entry.treatmentId}</span></th>
                     <td className="admin-nowrap" data-admin-queue-requested-at>{formatSeoulMinute(entry.requestedAt)}</td>
                     <td data-admin-queue-requester>{entry.requestedBy}</td>
-                    <td><span className="admin-pill" data-admin-queue-status={entry.status}>{statusLabel(entry)}</span></td>
+                    <td className="admin-nowrap"><span className="admin-pill" data-admin-queue-status={entry.status}>{statusLabel(entry)}</span></td>
                     <td>
                       <ValueBlock label={COPY.currentLabel} kind="current" lines={currentLines(entry.current)} differs={differs} />
                       <ValueBlock label={COPY.proposedLabel} kind="proposed" lines={proposedLines(entry.proposed)} differs={differs} />

@@ -143,6 +143,24 @@
 }
 
 /* 검토 담당자 대기열의 값 칸: 현재 게시값과 병원이 제안한 값을 위아래로 놓고, 달라지는 줄은 배경과 굵기로 구분한다(색만으로 구분하지 않는다). */
+/* 병원 관리자의 검토 요청 목록: 상태 표지와 단추 글자가 글자 중간에서 줄바꿈되지 않게 한다. */
+.admin-table--review .admin-pill,
+.admin-table--review .admin-btn--small,
+.admin-table--review thead th {
+  white-space: nowrap;
+}
+
+/* 값 칸이 좁아 행위 코드가 글자 중간에서 끊기지 않게 마지막 칸에 최소 너비를 준다. */
+.admin-table--queue td:last-child {
+  min-width: 260px;
+}
+
+/* 요청자 id 는 긴 글자라 칸이 좁아지면 어느 글자에서든 줄을 바꾼다(표가 가로로 넘치지 않게). */
+.admin-table--queue [data-admin-queue-requester] {
+  min-width: 130px;
+  overflow-wrap: anywhere;
+}
+
 .admin-queue-values + .admin-queue-values {
   margin-top: 8px;
   padding-top: 8px;
@@ -159,7 +177,7 @@
 }
 
 .admin-queue-lines dt {
-  min-width: 96px;
+  min-width: 88px;
   color: var(--kiosk-text-muted);
   font-size: 14px;
 }

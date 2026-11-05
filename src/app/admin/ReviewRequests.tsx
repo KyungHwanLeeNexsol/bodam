@@ -170,7 +170,7 @@ export function ReviewRequests({ clinicId }: { clinicId: string }): ReactElement
           <p className="admin-banner">{COPY.emptyList}</p>
         ) : (
           <div className="admin-table-wrap">
-            <table className="admin-table" data-admin-review-list>
+            <table className="admin-table admin-table--review" data-admin-review-list>
               <thead>
                 <tr>
                   <th scope="col">{COPY.colTreatment}</th>
@@ -190,7 +190,7 @@ export function ReviewRequests({ clinicId }: { clinicId: string }): ReactElement
                     <Fragment key={treatment.treatmentId}>
                       <tr data-admin-review-row={treatment.treatmentId}>
                         <th scope="row"><span className="admin-name">{treatment.displayName}</span></th>
-                        <td>{benefitLabel(treatment.benefitType)}</td>
+                        <td className="admin-nowrap">{benefitLabel(treatment.benefitType)}</td>
                         <td>{treatment.treatmentCode}</td>
                         <td>{treatment.procedureCodes.length === 0 ? COPY.noProcedure : codesToText(treatment.procedureCodes)}</td>
                         <td>

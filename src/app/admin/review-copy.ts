@@ -66,7 +66,7 @@ export const REVIEW_COPY = {
     server: '서버 오류로 처리하지 못했습니다.',
   },
   // 이동
-  navTreatments: '가격 관리',
+  navTreatments: ADMIN_COPY.title,
   navReviewRequests: '검토 요청',
   navReviewQueue: '검토 대기열',
   navLabel: '관리자 메뉴',
