@@ -66,8 +66,10 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       return;
     }
     const token = authenticator.login(account as TestAccountKey);
+    // 플랫폼 단위 검토 담당자(RV, 병원에 묶이지 않은 소속)는 병원 화면이 아니라 검토 대기열로 들어간다. 나머지 계정은 소속 병원의 가격 관리로 들어간다.
+    const isPlatformReviewer = TEST_ACCOUNTS[account as TestAccountKey].memberships.some((membership) => membership.role === 'RV' && membership.clinicId === null);
     response.writeHead(303, {
-      location: `/admin/${encodeURIComponent(TEST_ACCOUNTS[account as TestAccountKey].home)}/treatments`,
+      location: isPlatformReviewer ? '/admin/review-queue' : `/admin/${encodeURIComponent(TEST_ACCOUNTS[account as TestAccountKey].home)}/treatments`,
       'set-cookie': `${TEST_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax`,
       'cache-control': 'no-store',
     });

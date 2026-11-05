@@ -52,7 +52,8 @@ const previewResponse = (page: Page) => page.waitForResponse((response) => respo
 async function login(page: Page, account: string): Promise<void> {
   await page.goto('/__harness/login');
   await page.locator(`[data-test-account="${account}"]`).click();
-  await expect(page).toHaveURL(/\/admin\/[^/]+\/treatments$/);
+  // 플랫폼 단위 검토 담당자(rv-1)는 병원 가격 관리가 아니라 검토 대기열로 들어간다(시험 앞단의 로그인 이동). 나머지 계정은 소속 병원의 가격 관리다.
+  await expect(page).toHaveURL(/\/admin\/(?:[^/]+\/treatments|review-queue)$/);
 }
 
 async function adminReady(page: Page): Promise<void> {

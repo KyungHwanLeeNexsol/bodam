@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { formatSeoulMinute } from '../clock';
 import type { ApiFailure, CatalogVersionRow, OptionsResponse, PreviewResponse, SessionResponse, TreatmentsResponse } from './api-types';
+import { AdminNav } from './AdminNav';
 import { ADMIN_COPY as COPY } from './copy';
 import { EMPTY_ADD_FORM, appendAddition, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, listVisibility, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden } from './draft-model';
 import type { AddError, AddField, AddForm, WorkingState } from './draft-model';
@@ -263,6 +264,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   return (
     <main className="admin-root" data-admin-state="ready">
       <header className="admin-header">
+        <AdminNav clinicId={clinicId} current="treatments" />
         <h1 className="admin-title">{COPY.title}</h1>
         <p className="admin-sub">{COPY.subtitle}</p>
         <dl className="admin-meta">

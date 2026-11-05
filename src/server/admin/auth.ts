@@ -66,3 +66,12 @@ export function actorForClinic(identity: AdminIdentity, clinicId: string, role: 
   const allowed = identity.memberships.some((membership) => membership.role === role && membership.clinicId === clinicId);
   return allowed ? { id: identity.userId, role } : null;
 }
+
+/**
+ * 병원에 매이지 않는 플랫폼 단위 소속(clinicId 가 null)으로 그 역할을 가진 신원이면 행위자를, 아니면 null 이다 (검토 담당자 RV 의 대기열처럼 병원 경로가 없는 자원).
+ * 병원에 매인 같은 역할(예: 한 병원 소속의 RV)이나 다른 역할(HA·PO)은 이 권한을 주지 않는다. actorForClinic 의 거울이다: 그쪽은 정확히 같은 병원 소속만 인정한다.
+ */
+export function actorForPlatformRole(identity: AdminIdentity, role: Role): Actor | null {
+  const allowed = identity.memberships.some((membership) => membership.role === role && membership.clinicId === null);
+  return allowed ? { id: identity.userId, role } : null;
+}
