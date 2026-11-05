@@ -113,6 +113,13 @@ export interface BundlePublishResponse {
   assignedClinics: ClinicRef[];
 }
 
+/** 묶음 중지(POST /api/admin/rule-bundles/{id}/suspend)의 응답. affectedClinics 는 중지 시점에 현재 범위가 그 묶음을 가리키던 병원이다. */
+export interface BundleSuspendResponse {
+  bundle: { id: string; status: 'SUSPENDED' };
+  suspension: { at: string; by: string; role: string; reason: string | null; previousStatus: BundleAvailability | null };
+  affectedClinics: ClinicRef[];
+}
+
 /** 규칙 사용 범위 화면의 병원 한 줄. current 가 null 이면 지정된 묶음이 없다. */
 export interface ClinicScopeRow {
   clinicId: string;

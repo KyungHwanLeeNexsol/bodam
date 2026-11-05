@@ -43,7 +43,8 @@ export function suspendRuleBundle(deps: ServiceDeps, actor: Actor, bundleId: str
     }
     const current = deps.repo.getBundleStatus(bundleId);
     if (current !== 'ACTIVE') {
-      throw new DomainError('STATE_CONFLICT', `규칙 묶음 '${bundleId}' 의 현재 가용성은 ${current ?? '(기록 없음)'} 이라 중지할 수 없다 (ACTIVE 만 중지할 수 있다)`);
+      // 결함 코드 BUNDLE_NOT_ACTIVE: 관리자 API(M7)가 이 거절을 409 CONFLICT 의 사유로 바꾼다(코드가 없으면 서버 결함으로 보여 500 이 된다).
+      throw new DomainError('STATE_CONFLICT', `규칙 묶음 '${bundleId}' 의 현재 가용성은 ${current ?? '(기록 없음)'} 이라 중지할 수 없다 (ACTIVE 만 중지할 수 있다)`, [{ code: 'BUNDLE_NOT_ACTIVE', path: 'bundleId' }]);
     }
     const event: RuleBundleStatusEvent = { bundleId, status: 'SUSPENDED', actorId: actor.id, role: actor.role, at: deps.clock.now(), reason, previousStatus: 'ACTIVE' };
     deps.repo.appendBundleStatusEvent(event);

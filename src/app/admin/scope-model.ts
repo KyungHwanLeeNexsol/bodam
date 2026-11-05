@@ -138,7 +138,7 @@ export function scopeFailureMessage(result: Api<unknown>): string {
       core = COPY.failure.notFound;
       break;
     case 409:
-      core = failure.reason === 'SCOPE_CHANGED' ? COPY.failure.scopeChanged : COPY.failure.conflictGeneric;
+      core = failure.reason === 'SCOPE_CHANGED' ? COPY.failure.scopeChanged : failure.reason === 'BUNDLE_NOT_ACTIVE' ? COPY.failure.bundleNotActive : COPY.failure.conflictGeneric;
       break;
     case 400:
       core = COPY.failure.generic;

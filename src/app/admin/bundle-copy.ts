@@ -44,6 +44,35 @@ export const BUNDLE_COPY = {
   itemCounts: (counts: { profiles: number; mappings: number; documentRuleSets: number }): string => `프로필 ${counts.profiles} · 매핑 ${counts.mappings} · 서류 규칙 묶음 ${counts.documentRuleSets}`,
   publishedLine: (time: string, by: string): string => `${time} · ${by}`,
 
+  // 묶음 중지 (RV). 중지는 묶음의 가용성만 바꾼다: 묶음 내용·항목 상태·병원별 지정은 그대로이고, 되살리거나 다른 묶음으로 자동 교체하는 기능은 없다.
+  colAction: '관리',
+  suspendButton: '중지',
+  suspendButtonLabel: (bundle: string): string => `묶음 ${bundle} 중지`,
+  suspendTitle: (bundle: string): string => `묶음 ${bundle} 중지`,
+  suspendNote:
+    '중지하면 이 묶음을 쓰는 병원의 계산이 보류됩니다. 묶음 내용과 병원별 지정은 바뀌지 않고, 중지한 묶음을 다시 사용 가능으로 되돌리거나 다른 묶음으로 자동으로 바꾸는 기능은 없습니다. 복구하려면 새 묶음을 게시한 뒤 플랫폼 운영자가 병원마다 따로 다시 지정해야 합니다.',
+  suspendClinicsNow: (clinics: string, count: number): string => `지금 이 묶음을 쓰는 병원 ${count}곳: ${clinics}`,
+  suspendClinicsNone: '지금 이 묶음을 쓰는 병원은 없습니다.',
+  suspendReasonLabel: '중지 사유',
+  suspendReasonHint: '사유를 적어야 중지할 수 있습니다. 사유는 감사 기록에 남습니다.',
+  suspendConfirm: '중지 확정',
+  suspendCancel: '취소',
+  suspendedResultTitle: '중지한 묶음',
+  suspendedMessage: (bundle: string, count: number): string =>
+    `규칙 묶음 ${bundle} 을(를) 중지했습니다. 지금 이 묶음을 쓰던 병원 ${count}곳의 계산은 보류됩니다. 묶음 내용과 병원별 지정은 바뀌지 않았습니다.`,
+  suspendedClinicsTitle: '중지의 영향을 받는 병원',
+  suspendedClinicsNone: '영향을 받는 병원이 없습니다.',
+  suspendedRecovery: '복구하려면 새 묶음을 게시하고, 플랫폼 운영자가 규칙 사용 범위 화면에서 병원마다 정상 묶음으로 다시 지정해야 합니다.',
+  suspendedLine: (time: string, by: string): string => `${time} · ${by} 중지`,
+  suspendNothingChanged: '이 묶음의 상태는 바뀌지 않았습니다.',
+  suspendFailure: {
+    reasonRequired: '중지 사유를 적어 주세요.',
+    notFound: '규칙 묶음을 찾을 수 없습니다.',
+    notActive: '이 묶음은 이미 중지되었거나 상태를 확인할 수 없어 중지하지 않았습니다. 최신 상태를 다시 불러왔습니다.',
+    // 서버 오류·연결 끊김: 요청이 저장된 뒤에 응답만 끊겼을 수 있으므로 "바뀌지 않았다"고 말하지 않는다.
+    unknownResult: '중지 결과를 확인하지 못했습니다. 최신 상태를 다시 불러왔으니 묶음의 상태를 확인한 뒤 필요하면 다시 시도해 주세요.',
+  },
+
   // 후보 매핑
   candidatesTitle: '승인된 매핑',
   candidatesNote: '검토 담당자가 승인한 매핑입니다. 하나 이상 골라 새 묶음에 더합니다. 승인은 검토 기록이므로, 묶음에 담아 게시하기 전에는 환자 화면에 반영되지 않습니다.',
@@ -176,7 +205,7 @@ export const SCOPE_COPY = {
   colApply: '적용',
   currentNone: '지정된 묶음 없음',
   assignedLine: (time: string, by: string): string => `${time} · ${by} 지정`,
-  currentSuspendedNote: '현재 적용본이 중지된 묶음입니다.',
+  currentSuspendedNote: '현재 적용본이 중지된 묶음입니다. 이 병원의 계산은 보류 중이니 사용 가능한 묶음으로 다시 지정해 주세요.',
   selectLabel: (clinic: string): string => `${clinic} 에 적용할 묶음`,
   optionNone: '바꾸지 않음',
   optionLine: (short: string, status: string, time: string): string => `${short} · ${status} · ${time} 게시`,
@@ -193,6 +222,7 @@ export const SCOPE_COPY = {
   nothingChanged: SCOPE_NOTHING_CHANGED,
   failure: {
     scopeChanged: '이 병원의 현재 적용본이 화면을 불러온 뒤 다른 곳에서 바뀌었습니다. 최신 상태를 다시 불러왔으니 확인하고 다시 골라 주세요.',
+    bundleNotActive: '고른 규칙 묶음이 화면을 불러온 뒤 중지되었거나 사용할 수 없는 상태가 되어 지정하지 않았습니다. 최신 상태를 다시 불러왔으니 사용 가능한 묶음을 골라 주세요.',
     notFound: '병원 또는 규칙 묶음을 찾을 수 없습니다.',
     generic: '요청을 처리하지 못했습니다. 입력을 확인해 주세요.',
     server: '서버 오류로 처리하지 못했습니다.',

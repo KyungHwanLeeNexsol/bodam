@@ -11,10 +11,13 @@ import type {
   BundlePreviewItem,
   BundlePreviewResponse,
   BundlePublishOverview,
+  BundleSuspendResponse,
+  ClinicRef,
   ItemKind,
   MappingCandidate,
   MappingRefView,
 } from './bundle-types';
+import { ADMIN_COPY } from './copy';
 import { failureMessage } from './failure-message';
 import { GENERATION_CHOICES, INSURER_TYPE_CHOICES } from './mapping-model';
 import type { Api } from './transport';
@@ -70,6 +73,8 @@ export interface BaseView {
   status: BundleAvailability | null;
   statusText: string;
   selectable: boolean;
+  /** 중지 조작을 보일 수 있는 묶음: 사용 가능한(ACTIVE) 묶음뿐이다. 서버가 중지 때 다시 확인한다(이미 중지됐거나 기록이 없으면 409). */
+  suspendable: boolean;
   unavailableText: string | null;
   publishedText: string;
   itemsText: string;
@@ -83,6 +88,7 @@ export function baseView(base: BundleBase): BaseView {
     status: base.status,
     statusText: bundleStatusText(base.status),
     selectable: isBaseSelectable(base),
+    suspendable: base.status === 'ACTIVE',
     unavailableText: baseUnavailableText(base),
     publishedText: COPY.publishedLine(formatSeoulMinute(base.publishedAt), base.publishedBy),
     itemsText: COPY.itemCounts(base.itemCounts),
@@ -350,3 +356,55 @@ export function bundleFailureMessage(result: Api<unknown>, action: BundleAction,
 }
 
 export const publishedMessage = (bundleId: string): string => COPY.publishedNotApplied(bundleId);
+
+// ───────────────────────── 묶음 중지 ─────────────────────────
+
+/** 지금 이 묶음을 쓰는 병원들의 한 줄 안내(중지 확정 전에 보인다). 병원이 없으면 없다고 말한다. */
+export function suspendClinicsLine(clinics: readonly ClinicRef[]): string {
+  return clinics.length === 0 ? COPY.suspendClinicsNone : COPY.suspendClinicsNow(clinics.map((clinic) => clinic.slug).join(', '), clinics.length);
+}
+
+export type SuspendRequestResult = { ok: true; body: { reason: string } } | { ok: false; hint: string };
+
+/** 중지 요청 본문. 사유가 비었거나 공백뿐이면 만들지 않는다(서버도 같은 이유로 400 으로 거절한다). 앞뒤 공백은 떼어 보낸다. */
+export function suspendRequestOf(reasonText: string): SuspendRequestResult {
+  const reason = reasonText.trim();
+  return reason === '' ? { ok: false, hint: COPY.suspendReasonHint } : { ok: true, body: { reason } };
+}
+
+/** 중지 성공 뒤 화면에 남기는 결과: 방금 중지한 묶음과 그 시점에 영향을 받은 병원. */
+export interface SuspendResultView {
+  bundleId: string;
+  shortId: string;
+  message: string;
+  lineText: string;
+  reason: string;
+  clinics: ClinicRef[];
+}
+
+export function suspendResultView(response: BundleSuspendResponse): SuspendResultView {
+  const { bundle, suspension, affectedClinics } = response;
+  return {
+    bundleId: bundle.id,
+    shortId: shortBundleId(bundle.id),
+    message: COPY.suspendedMessage(shortBundleId(bundle.id), affectedClinics.length),
+    lineText: COPY.suspendedLine(formatSeoulMinute(suspension.at), suspension.by),
+    reason: suspension.reason ?? '',
+    clinics: affectedClinics.map((clinic) => ({ clinicId: clinic.clinicId, slug: clinic.slug })),
+  };
+}
+
+/** 중지 거절을 문장으로. 늘 이 묶음의 상태가 바뀌지 않았다는 말로 끝난다. 모르는 거절은 기존 관리자 거절 문장(failureMessage)을 쓴다. */
+export function suspendFailureMessage(result: Api<unknown>): string {
+  const failure = result.body as ApiFailure;
+  const nothing = COPY.suspendNothingChanged;
+  if (result.status === 403) return `${COPY.forbidden} ${nothing}`;
+  if (result.status === 404) return `${COPY.suspendFailure.notFound} ${nothing}`;
+  if (result.status === 409 && failure.reason === 'BUNDLE_NOT_ACTIVE') return `${COPY.suspendFailure.notActive} ${nothing}`;
+  if (result.status === 400 && (failure.defects ?? []).some((defect) => defect.path === 'reason')) return `${COPY.suspendFailure.reasonRequired} ${nothing}`;
+  // 서버 오류(5xx)·연결 끊김은 저장된 뒤 응답만 잃었을 수 있어 "바뀌지 않았다"고 단정하지 않고 결과를 확인하라고 말한다.
+  if (result.status >= 500) return COPY.suspendFailure.unknownResult;
+  // 그 밖(로그인 없음 · 모르는 409 · 결함 없는 400)은 기존 관리자 공통 문구를 쓴다.
+  const core = result.status === 401 ? ADMIN_COPY.unauthenticated : ADMIN_COPY.errors.generic;
+  return `${core} ${nothing}`;
+}

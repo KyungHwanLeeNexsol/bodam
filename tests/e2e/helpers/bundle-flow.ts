@@ -326,6 +326,43 @@ export const previewButton = (page: Page) => page.locator('button[data-admin-act
 export const publishButton = (page: Page) => page.locator('button[data-admin-action="publish"]');
 export const scopeRow = (page: Page, clinicId: string) => page.locator(`[data-admin-scope-row="${clinicId}"]`);
 
+// ───────────────────────── 묶음 중지 (M7 묶음 중지) ─────────────────────────
+
+/** 묶음 중지 시험이 시험 전용 끝점으로 더하는 병원 C·D (카탈로그 없이 범위만 쓴다). */
+export const CLINIC_3 = 'TEST_FIXTURE_CLINIC_3';
+export const CLINIC_4 = 'TEST_FIXTURE_CLINIC_4';
+export const SLUG_3 = 'test-fixture-clinic-3';
+export const SLUG_4 = 'test-fixture-clinic-4';
+/** 병원 2 의 치료 이름(키오스크에서 고른다). */
+export const NAME_OTHER = /병원2 치료/;
+export const NAME_A = /시험 치료 A/;
+
+export const suspendUrl = (bundleId: string): string => `/api/admin/rule-bundles/${encodeURIComponent(bundleId)}/suspend`;
+
+/** 병원 C·D 를 시험 세계에 더한다(병원 기록만. 범위 지정은 실제 관리자 API 로 한다). */
+export async function addScopeClinics(request: APIRequestContext): Promise<void> {
+  const response = await request.post('/__harness/test/add-scope-clinics');
+  expect(response.status()).toBe(200);
+}
+
+/** PO 가 실제 관리자 API 로 병원 하나의 범위를 지정한다(화면이 본 현재 범위 포함). 성공(200)만 돌려준다. */
+export async function assignViaApi(po: Session, clinicId: string, bundleId: string, expectedCurrentBundleId: string | null): Promise<void> {
+  const response = await po.context.request.post(scopeClinicPath(clinicId), { data: { ruleBundleVersionId: bundleId, expectedCurrentBundleId } });
+  expect(response.status(), `지정 ${clinicId}: ${await response.text()}`).toBe(200);
+}
+
+/** 저장소 사본에서 내용이 달라진 최상위 키(코드 포인트 순). 두 사본은 /__harness/state 의 글자 그대로다. */
+export function changedStateKeys(beforeText: string, afterText: string): string[] {
+  const before = JSON.parse(beforeText) as Json;
+  const after = JSON.parse(afterText) as Json;
+  return Object.keys(after)
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+    .sort();
+}
+
+export const baseRow = (page: Page, bundleId: string) => page.locator(`[data-admin-base="${bundleId}"]`);
+export const suspendOpen = (page: Page, bundleId: string) => page.locator(`button[data-admin-suspend-open="${bundleId}"]`);
+
 // ───────────────────────── 키오스크 화면 ─────────────────────────
 
 /** 키오스크에서 4세대 · 손해보험사 · 첫 원인까지 입력하고 치료 선택 화면에서 멈춘다. */

@@ -168,6 +168,14 @@ describe('서버 거절 문장', () => {
     expect(text.endsWith(SCOPE_COPY.nothingChanged)).toBe(true);
   });
 
+  it('선택한 묶음이 화면을 연 뒤 중지됐다는 거절(BUNDLE_NOT_ACTIVE)은 그 사실과 사용 가능한 묶음을 다시 고르라는 말을 하고 코드 글자는 보이지 않는다', () => {
+    const text = scopeFailureMessage(reply(409, { error: 'CONFLICT', reason: 'BUNDLE_NOT_ACTIVE' }));
+    expect(text).toContain(SCOPE_COPY.failure.bundleNotActive);
+    expect(text).toContain('중지되었거나');
+    expect(text).not.toContain('BUNDLE_NOT_ACTIVE');
+    expect(text.endsWith(SCOPE_COPY.nothingChanged)).toBe(true);
+  });
+
   it('그 밖의 409·404·403·401·서버 오류는 각자 문장이고 모두 지정이 바뀌지 않았다는 말로 끝난다', () => {
     const cases: Array<[number, unknown, string]> = [
       [409, { error: 'CONFLICT', reason: 'SOMETHING_NEW' }, SCOPE_COPY.failure.conflictGeneric],

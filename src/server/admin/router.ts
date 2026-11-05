@@ -2,9 +2,10 @@ import { priceConditionOf } from '../api/catalog';
 import { guarded } from '../api/integrity';
 import { readPublishedCatalog } from '../api/published-catalog';
 import { discardCatalogDraft, publishCatalogDraft, saveCatalogDraft } from '../catalog-draft';
-import { parseBundlePreviewBody, parseBundlePublishBody, parseRuleScopeAssignBody } from '../bundle-admin-parse';
+import { parseBundlePreviewBody, parseBundlePublishBody, parseBundleSuspendBody, parseRuleScopeAssignBody } from '../bundle-admin-parse';
 import { previewBundlePublish, publishBundleFromBase } from '../bundle-compose';
 import { readBundlePublishOverview } from '../bundle-overview';
+import { suspendRuleBundle } from '../bundle-status';
 import { structureDefects } from '../catalog-structure';
 import type { Actor, Role } from '../domain/actor';
 import type { CatalogDraft, Clinic, RuleBundleVersion } from '../domain/entities';
@@ -66,7 +67,12 @@ import type { AdminServices } from './services';
 //                                                                 400: 기존 게시 전제(PUBLISH_VALIDATION_FAILED 의 defects: ITEM_STATE_NOT_PUBLISHABLE · FINGERPRINT_STALE …). 404: 기준 묶음·매핑 없음. 감사 기록은 기존 BUNDLE_PUBLISH 한 건이다. 게시는 확인값을 한 번 소비한다(같은 요청을 다시 보내면 409 PREVIEW_REQUIRED)
 //   GET    /api/admin/rule-scope                                — (PO) 병원별 현재 범위(묶음·가용성·지정 시각·지정자)와 게시된 묶음 목록. 응답 { clinics, bundles }. 읽기만 한다
 //   POST   /api/admin/rule-scope/clinics/{clinicId}             — (PO) 본문 { ruleBundleVersionId, expectedCurrentBundleId }(키 필수, null = 범위가 없다고 보았다). 응답 { clinic: 갱신된 병원 줄, scope }. 병원은 경로가 정하고 본문에서 받지 않는다.
-//                                                                 404: 병원·묶음 없음(역할 확인 뒤에만). 409 SCOPE_CHANGED: 화면이 본 현재 범위가 그 사이 바뀜. 감사 기록은 기존 CLINIC_SCOPE_ASSIGN 한 건이다. 중지된 묶음의 지정은 기존 계약대로 막지 않는다(화면이 막는다)
+//                                                                 404: 병원·묶음 없음(역할 확인 뒤에만). 409 BUNDLE_NOT_ACTIVE: 지정하려는 묶음이 지정 트랜잭션 안에서 읽은 가용성이 ACTIVE 가 아님(화면을 연 뒤 중지됨 · 가용성 기록 없음). 409 SCOPE_CHANGED: 화면이 본 현재 범위가 그 사이 바뀜.
+//                                                                 409 는 모두 범위·이력·감사 기록을 쓰기 전에 나간다. 감사 기록은 기존 CLINIC_SCOPE_ASSIGN 한 건이다. 이미 중지된 묶음을 쓰고 있는 병원의 현재 범위는 그대로 읽힌다(GET 은 status SUSPENDED 로 보인다)
+//   POST   /api/admin/rule-bundles/{bundleId}/suspend           — (RV) 규칙 묶음 중지. 본문 { reason }(필수·비어 있지 않은 문자열; 묶음은 경로가 정한다). 응답 { bundle: { id, status: 'SUSPENDED' }, suspension: { at, by, role, reason, previousStatus: 'ACTIVE' }, affectedClinics: [{ clinicId, slug }] }.
+//                                                                 affectedClinics 는 중지 시점에 현재 범위가 이 묶음을 가리키는 병원이다(지난 범위 이력은 세지 않는다). 중지는 묶음의 가용성만 바꾼다: 묶음 내용·항목 상태·병원별 범위는 그대로이고, 다시 활성으로 돌리거나 다른 묶음으로 바꾸는 경로는 없다
+//                                                                 (복구 = 새 묶음 게시 + PO 의 병원별 재지정). 400: 사유 없음·공백뿐·알 수 없는 키. 403: RV 가 아니거나 병원에 매인 RV. 404: 묶음 없음. 409 BUNDLE_NOT_ACTIVE: 이미 중지됐거나 가용성 기록이 없음.
+//                                                                 감사 기록은 BUNDLE_SUSPEND 한 건(수행자·시각·사유·이전/이후 상태·영향 병원 수)이다. 병원 하나의 규칙을 즉시 멈추는 경로는 없다
 
 /** 경로의 `:이름` 조각이 잡은 (디코딩된) 값. */
 type RouteParams = Readonly<Record<string, string>>;
@@ -89,9 +95,11 @@ const CONFLICT_REASONS: readonly string[] = [
   'MAPPING_DRAFT_ALREADY_EXISTS',
   'TRANSITION_NOT_ALLOWED',
   // 묶음 구성(RV)과 규칙 사용 범위 지정(PO): 겹치는 매핑, 이미 기준 묶음에 있는 매핑, ACTIVE 가 아닌 기준 묶음, 화면이 본 뒤 바뀐 현재 범위.
+  // BUNDLE_NOT_ACTIVE: 묶음 중지(이미 중지됐거나 가용성 기록이 없음)와 범위 지정(지정하려는 묶음이 ACTIVE 가 아님)이 함께 쓴다.
   'MAPPING_CONFLICT',
   'MAPPING_ALREADY_IN_BASE',
   'BASE_BUNDLE_NOT_ACTIVE',
+  'BUNDLE_NOT_ACTIVE',
   'SCOPE_CHANGED',
 ];
 
@@ -404,6 +412,29 @@ const postRuleScopeAssign: PlatformHandler = async (services, request, actor, pa
   return ok({ clinic, scope: { clinicId: scope.clinicId, ruleBundleVersionId: scope.ruleBundleVersionId, assignedAt: scope.assignedAt, assignedBy: scope.assignedBy.id } });
 };
 
+const postBundleSuspend: PlatformHandler = async (services, request, actor, params) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  const parsed = parseBundleSuspendBody(body.body);
+  if (!parsed.ok) {
+    return invalidRequest(parsed.defects);
+  }
+  // 묶음은 경로가 정한다. 사유 검사 · 묶음 있음(404) · ACTIVE 인지(409) · 가용성 사건 · 영향 병원 계산 · 감사 기록은 서비스가 한 트랜잭션에서 한다: 거절은 아무것도 쓰지 않는다.
+  const bundleId = params.bundleId ?? '';
+  const outcome = suspendRuleBundle(services.deps, actor, bundleId, parsed.reason);
+  // 방금 덧붙인 사건이 읽히지 않으면 서버 결함이라 던져 500 이 된다.
+  if (services.api.repo.getBundleStatus(bundleId) !== 'SUSPENDED') {
+    throw new Error('중지한 규칙 묶음의 가용성을 읽을 수 없다');
+  }
+  return ok({
+    bundle: { id: bundleId, status: 'SUSPENDED' },
+    suspension: { at: outcome.event.at, by: outcome.event.actorId, role: outcome.event.role, reason: outcome.event.reason, previousStatus: outcome.event.previousStatus },
+    affectedClinics: outcome.affectedClinics.map((clinic) => ({ clinicId: clinic.clinicId, slug: clinic.slug })),
+  });
+};
+
 interface PlatformRoute {
   method: string;
   /** 이 경로를 열 수 있는 플랫폼 단위 역할(병원에 매이지 않은 소속). */
@@ -422,6 +453,7 @@ const PLATFORM_ROUTES: readonly PlatformRoute[] = [
   { method: 'GET', role: 'RV', segments: ['bundle-publish'], handler: getBundlePublish },
   { method: 'POST', role: 'RV', segments: ['bundle-publish', 'preview'], handler: postBundlePreview },
   { method: 'POST', role: 'RV', segments: ['bundle-publish'], handler: postBundlePublish },
+  { method: 'POST', role: 'RV', segments: ['rule-bundles', ':bundleId', 'suspend'], handler: postBundleSuspend },
   { method: 'GET', role: 'PO', segments: ['rule-scope'], handler: getRuleScope },
   { method: 'POST', role: 'PO', segments: ['rule-scope', 'clinics', ':clinicId'], handler: postRuleScopeAssign },
 ];

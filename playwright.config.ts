@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { ADMIN_BUNDLE_PORT, ADMIN_BUNDLE_REJECT_PORT, ADMIN_CATALOG_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
+import { ADMIN_BUNDLE_PORT, ADMIN_BUNDLE_REJECT_PORT, ADMIN_BUNDLE_SUSPEND_PORT, ADMIN_CATALOG_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
@@ -51,5 +51,8 @@ export default defineConfig({
     //  - *.admin-bundle-reject.spec.ts : 위 두 화면·다섯 API 의 거절(인증 없음 · 역할 · 게시할 수 없는 상태 · 승인 뒤 바뀐 치료 · 겹치는 매핑 · 낡은 확인값 · 낡은 화면 · 없는 병원/묶음). 시험마다 /__harness/reset 으로 세계를 새로 만들고
     //                                 거절 전후의 저장소 전체 사본이 같음을 본다. 같은 세계지만 인스턴스를 따로 쓴다(ADMIN_BUNDLE_REJECT_PORT): reset 이 흐름 시험의 상태를 지우지 않게 한다.
     { name: 'admin-bundle-reject', testMatch: /.*\.admin-bundle-reject\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_BUNDLE_REJECT_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-bundle-suspend.spec.ts : 묶음 중지와 병원별 재지정(M7 묶음 중지). 검토 담당자가 묶음 X 를 중지하면 지금 X 를 쓰는 병원 A·B 만 영향 목록에 나오고(C·D 는 빠진다), 중지 직후 A·B 의 계산은 409 가 아니라 200 보류이며,
+    //                                     플랫폼 운영자가 A 만 정상 묶음으로 재지정하면 A 만 복구되고 B 는 계속 보류다. 묶음 시연 세계(--bundle-demo)와 시험 전용 끝점(--test-hooks)을 켠 따로 쓰는 인스턴스(ADMIN_BUNDLE_SUSPEND_PORT)다.
+    { name: 'admin-bundle-suspend', testMatch: /.*\.admin-bundle-suspend\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_BUNDLE_SUSPEND_PORT}`, viewport: { width: 1280, height: 900 } } },
   ],
 });

@@ -23,7 +23,7 @@ export interface ClinicScopeRow {
 
 export interface RuleScopeOverview {
   clinics: ClinicScopeRow[];
-  /** 게시된 묶음 전부(ACTIVE · SUSPENDED), 최신순. 지정은 중지된 묶음도 막지 않는다(기존 계약): 화면이 중지된 묶음을 고르지 못하게 한다. */
+  /** 게시된 묶음 전부(ACTIVE · SUSPENDED), 최신순. 새 지정은 ACTIVE 묶음만 받는다(서버가 지정 트랜잭션 안에서 확인): 화면도 중지된 묶음을 고르지 못하게 한다. */
   bundles: BundleSummaryView[];
 }
 
@@ -53,9 +53,11 @@ export function readRuleScopeOverview(repo: Repository): RuleScopeOverview {
 // @MX:ANCHOR: [AUTO] PO 의 규칙 사용 범위 지정 관리자 경로의 단일 진입점. 관리자 API(rule-scope 경로)와 시험이 부른다.
 // @MX:REASON: "화면이 본 현재 범위"와 지정을 한 트랜잭션에서 비교해야 한다. 비교와 지정이 갈라지면 두 PO 가 같은 병원의 범위를 서로 모르게 덮어쓴다.
 /**
- * PO 가 병원의 규칙 사용 범위를 지정한다. 순서: 역할 → 병원 있음(NOT_FOUND) → 묶음 있음(NOT_FOUND) → 현재 범위 비교(STATE_CONFLICT SCOPE_CHANGED) → 기존 assignRuleScope.
+ * PO 가 병원의 규칙 사용 범위를 지정한다. 순서: 역할 → 병원 있음(NOT_FOUND) → 묶음 있음(NOT_FOUND) → 묶음이 지금 ACTIVE 인지(STATE_CONFLICT BUNDLE_NOT_ACTIVE) → 현재 범위 비교(STATE_CONFLICT SCOPE_CHANGED) → 기존 assignRuleScope.
  * expectedCurrentBundleId 는 화면이 본 현재 범위의 묶음 id 이고, null 은 "범위가 없다고 보았다"는 뜻이다. 현재 범위가 다르면 아무것도 쓰지 않는다.
- * 같은 묶음을 다시 지정하는 것도 기존 계약대로 이력에 남는다(expected 가 현재와 같을 때). 중지된 묶음의 지정은 기존 계약(assignRuleScope)을 따라 막지 않는다.
+ * 같은 묶음을 다시 지정하는 것도 기존 계약대로 이력에 남는다(expected 가 현재와 같을 때).
+ * 새로 지정하는 묶음은 이 트랜잭션 안에서 읽은 가용성이 ACTIVE 일 때만 받는다: 화면을 연 뒤 중지됐거나 가용성 기록이 없는 묶음은 409 이고, 범위·이력·감사 기록은 그대로다.
+ * 이미 중지된 묶음을 쓰고 있는 병원의 현재 범위는 이 검사의 대상이 아니다(읽기 보기는 계속 그 상태를 그대로 보인다). 기존 assignRuleScope 의 계약(중지된 묶음도 지정할 수 있다)은 바꾸지 않는다: 더 엄격한 것은 이 층뿐이다.
  */
 export function assignRuleScopeChecked(deps: ServiceDeps, actor: Actor, clinicId: string, bundleId: string, expectedCurrentBundleId: string | null): ClinicRuleScope {
   requireRole(actor, 'PO');
@@ -65,6 +67,10 @@ export function assignRuleScopeChecked(deps: ServiceDeps, actor: Actor, clinicId
     }
     if (deps.repo.getRuleBundleVersion(bundleId) === null) {
       throw new DomainError('NOT_FOUND', `규칙 묶음 '${bundleId}' 이(가) 없다`);
+    }
+    const status = deps.repo.getBundleStatus(bundleId);
+    if (status !== 'ACTIVE') {
+      throw new DomainError('STATE_CONFLICT', `규칙 묶음 '${bundleId}' 의 현재 가용성은 ${status ?? '(기록 없음)'} 이라 지정할 수 없다 (ACTIVE 만 지정할 수 있다)`, [{ code: 'BUNDLE_NOT_ACTIVE', path: 'ruleBundleVersionId' }]);
     }
     const current = deps.repo.getClinicRuleScope(clinicId);
     if ((current === null ? null : current.ruleBundleVersionId) !== expectedCurrentBundleId) {

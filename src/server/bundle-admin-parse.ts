@@ -11,11 +11,13 @@ import { isNonEmptyString, isPlainObject } from './validate/shape';
 // 미리보기 본문  { baseBundleId, mappings: [{ id, version }] }
 // 게시 본문      { baseBundleId, mappings: [{ id, version }], publishConfirmation }   (확인값: 소문자 16진수 64자)
 // 범위 지정 본문 { ruleBundleVersionId, expectedCurrentBundleId }   (expectedCurrentBundleId 키는 필수이고 null 이 "범위가 없다고 보았다"는 뜻이다)
+// 중지 본문      { reason }   (묶음 id 는 경로가 정한다. 사유가 비었는지는 서비스가 본다)
 
 const PREVIEW_KEYS: readonly string[] = ['baseBundleId', 'mappings'];
 const PUBLISH_KEYS: readonly string[] = ['baseBundleId', 'mappings', 'publishConfirmation'];
 const MAPPING_KEYS: readonly string[] = ['id', 'version'];
 const ASSIGN_KEYS: readonly string[] = ['ruleBundleVersionId', 'expectedCurrentBundleId'];
+const SUSPEND_KEYS: readonly string[] = ['reason'];
 
 const missingOrInvalid = (value: unknown): string => (value === undefined || value === null ? 'VALUE_MISSING' : 'VALUE_INVALID');
 
@@ -100,6 +102,26 @@ export function parseBundlePublishBody(body: unknown): BundlePublishParse {
     return { ok: false, defects };
   }
   return { ok: true, baseBundleId: body.baseBundleId as string, mappings, publishConfirmation: confirmation as string };
+}
+
+export type BundleSuspendParse = { ok: true; reason: string } | { ok: false; defects: Defect[] };
+
+/**
+ * 묶음 중지 본문 `{ reason }` 의 형식 검사. 사유는 문자열이어야 한다(키 없음·null → VALUE_MISSING, 문자열이 아님 → VALUE_INVALID). 알 수 없는 키는 모두 UNKNOWN_FIELD 다.
+ * 비었거나 공백뿐인 사유는 여기서 거르지 않는다: 도메인 서비스(suspendRuleBundle)가 역할 확인 뒤에 REASON_REQUIRED(경로 reason)로 거절하고, 라우터가 400 INVALID_REQUEST 로 바꾼다.
+ * 묶음 id 는 경로가 정하고 행위자는 검증된 신원이 정하므로 본문으로 받지 않는다.
+ */
+export function parseBundleSuspendBody(body: unknown): BundleSuspendParse {
+  if (!isPlainObject(body)) {
+    return { ok: false, defects: [{ code: 'NOT_OBJECT', path: 'request' }] };
+  }
+  const defects: Defect[] = [];
+  rejectUnknownKeys(defects, body, SUSPEND_KEYS, 'request');
+  const reason = body.reason;
+  if (typeof reason !== 'string') {
+    defects.push({ code: missingOrInvalid(reason), path: 'reason' });
+  }
+  return defects.length > 0 ? { ok: false, defects } : { ok: true, reason: reason as string };
 }
 
 export type RuleScopeAssignParse = { ok: true; ruleBundleVersionId: string; expectedCurrentBundleId: string | null } | { ok: false; defects: Defect[] };

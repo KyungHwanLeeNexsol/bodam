@@ -497,7 +497,8 @@
 
 .admin-bundle-section .admin-pill,
 .admin-table--scope .admin-pill,
-.admin-table--scope .admin-btn {
+.admin-table--scope .admin-btn,
+.admin-bundle-section .admin-table .admin-btn {
   white-space: nowrap;
 }
 

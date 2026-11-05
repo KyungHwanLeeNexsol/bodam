@@ -738,7 +738,7 @@ describe('거절은 모두 의도한 상태 코드와 사유를 내고 500 이 �
 describe('경로 표', () => {
   const source = readFileSync(fileURLToPath(new URL('../../src/server/admin/router.ts', import.meta.url)), 'utf8');
 
-  it('플랫폼 경로 표(병원 경로 표와 따로 둔다): 매핑 검토 RV 다섯 경로는 그대로이고, 묶음 구성 RV 셋 · 범위 지정 PO 둘이 경로마다 정해진 역할로 더해졌다', () => {
+  it('플랫폼 경로 표(병원 경로 표와 따로 둔다): 매핑 검토 RV 다섯 경로는 그대로이고, 묶음 구성 RV 셋 · 묶음 중지 RV 하나 · 범위 지정 PO 둘이 경로마다 정해진 역할로 더해졌다', () => {
     const routes = [...source.matchAll(/\{ method: '([A-Z]+)', role: '([A-Z]+)', segments: \[([^\]]*)\], handler: (\w+) \}/g)].map((match) => `${match[2]} ${match[1]} ${match[3]!.replaceAll("'", '').replaceAll(' ', '')}`);
     expect(routes).toEqual([
       'RV GET review-history',
@@ -749,13 +749,20 @@ describe('경로 표', () => {
       'RV GET bundle-publish',
       'RV POST bundle-publish,preview',
       'RV POST bundle-publish',
+      'RV POST rule-bundles,:bundleId,suspend',
       'PO GET rule-scope',
       'PO POST rule-scope,clinics,:clinicId',
     ]);
   });
 
-  it('게시(PUBLISHED) · 규칙 묶음 · 분류 전환으로 이어지는 경로는 없다', () => {
-    expect(source).not.toMatch(/'publish'.*mappings|mappings.*'publish'|rule-bundles|classification'\]/);
+  it('게시(PUBLISHED) · 분류 전환으로 이어지는 경로는 없고, 규칙 묶음(rule-bundles) 경로는 중지(suspend) 하나뿐이다 (M7 묶음 중지: 되살리기·교체·그 밖의 묶음 변경 경로는 없다)', () => {
+    expect(source).not.toMatch(/'publish'.*mappings|mappings.*'publish'|classification'\]/);
+    // rule-bundles 가 나오는 모든 곳(경로 표와 머리 설명)은 {bundleId}/suspend 로만 이어진다.
+    const mentions = [...source.matchAll(/rule-bundles[^\r\n]{0,40}/g)].map((match) => match[0]);
+    expect(mentions.length).toBeGreaterThan(0);
+    for (const mention of mentions) {
+      expect(mention).toMatch(/^rule-bundles(\/\{bundleId\}\/suspend|', ':bundleId', 'suspend')/);
+    }
   });
 });
 

@@ -228,6 +228,8 @@ describe('AC-011e 같은 묶음 id 를 다시 활성으로 돌리려는 시도�
     const before = snapshotOf(world.repo);
     const error = catchDomainError(() => suspendRuleBundle(world.deps, TEST_FIXTURE_RV_SUSPENDER, bundle.id, '다시 중지'));
     expect(error.code).toBe('STATE_CONFLICT');
+    // 관리자 API 가 이 거절을 409 CONFLICT(reason BUNDLE_NOT_ACTIVE)로 바꾸는 근거다. 코드가 없으면 서버 결함으로 보여 500 이 된다.
+    expect(error.defects).toEqual([{ code: 'BUNDLE_NOT_ACTIVE', path: 'bundleId' }]);
     expect(snapshotOf(world.repo)).toEqual(before);
     expect(world.repo.listBundleStatusEvents(bundle.id)).toHaveLength(2);
   });
