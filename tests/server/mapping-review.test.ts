@@ -150,14 +150,18 @@ describe('초안 작성 (createMappingDraftForReviewRequest)', () => {
     expectNothingWritten(world, before);
   });
 
-  it('이미 초안이 있거나 닫힌 요청이면 STATE_CONFLICT (기존 규칙)', () => {
+  it('이미 초안이 있거나 닫힌 요청이면 STATE_CONFLICT (기존 규칙이 거절하고, 이 층이 사유 코드를 붙인다 — 관리자 API 가 500 으로 내지 않게)', () => {
     const { world, request } = setup();
     const ref = submitted(world, request);
     const before = snapshotOf(world.repo);
-    expect(catchDomainError(() => createMappingDraftForReviewRequest(world.deps, AUTHOR, request.id, draftInput())).code).toBe('STATE_CONFLICT');
+    const again = catchDomainError(() => createMappingDraftForReviewRequest(world.deps, AUTHOR, request.id, draftInput()));
+    expect(again.code).toBe('STATE_CONFLICT');
+    expect(again.defects).toEqual([{ code: 'MAPPING_DRAFT_ALREADY_EXISTS', path: 'reviewRequestId' }]);
     approveMappingForReviewRequest(world.deps, APPROVER, request.id, ref);
     const afterClose = snapshotOf(world.repo);
-    expect(catchDomainError(() => createMappingDraftForReviewRequest(world.deps, AUTHOR, request.id, draftInput())).code).toBe('STATE_CONFLICT');
+    const closed = catchDomainError(() => createMappingDraftForReviewRequest(world.deps, AUTHOR, request.id, draftInput()));
+    expect(closed.code).toBe('STATE_CONFLICT');
+    expect(closed.defects).toEqual([{ code: 'REVIEW_REQUEST_CLOSED', path: 'reviewRequestId' }]);
     expectNothingWritten(world, afterClose);
     expect(before).not.toEqual(afterClose);
   });

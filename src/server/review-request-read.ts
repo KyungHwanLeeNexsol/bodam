@@ -208,10 +208,30 @@ function entryOf(repo: EntryReads, request: CoverageReviewRequest): ReviewQueueE
   };
 }
 
-/** 요청 id 하나의 대기열 모양 보기(열린 요청이든 닫힌 요청이든). 요청이 없으면 null. 처리 서비스의 성공 응답이 화면을 새로 고치는 데 쓴다. */
-export function readReviewEntry(repo: EntryReads, requestId: string): ReviewQueueEntry | null {
+/**
+ * 대기열 항목에 처리 결과 칸을 더한다. 열려 있는 요청은 세 칸이 모두 null 이다.
+ * closedBy·closedAt 은 연결된 매핑의 상태 이력에서 요청이 닫힌 결과(APPROVED/REJECTED)로 들어간 첫 전이의 수행자 id·시각이다. 연결된 매핑이 없거나
+ * 그 전이가 없으면 null 이다(지어내지 않는다).
+ */
+function historyEntryOf(repo: EntryReads, request: CoverageReviewRequest, entry: ReviewQueueEntry): ReviewHistoryEntry {
+  const closing = request.draftMappingRef === null || request.status === 'REVIEW_REQUESTED' ? undefined : repo.getItemState(request.draftMappingRef)?.history.find((transition) => transition.to === request.status);
+  const resultRef = request.resultMappingRef;
+  return {
+    ...entry,
+    resultMappingRef: resultRef === null ? null : { kind: resultRef.kind, id: resultRef.id, version: resultRef.version },
+    closedBy: closing?.actorId ?? null,
+    closedAt: closing?.at ?? null,
+  };
+}
+
+/**
+ * 요청 id 하나의 보기(열린 요청이든 닫힌 요청이든). 요청이 없으면 null. 처리 서비스의 성공 응답이 화면을 새로 고치는 데 쓴다.
+ * 모양은 이력 항목이다(대기열 항목 + 처리 결과 칸): 열린 요청에서는 처리 결과 칸이 null 이고, 닫는 처리(승인·반려)의 응답에서는 채워진다.
+ */
+export function readReviewEntry(repo: EntryReads, requestId: string): ReviewHistoryEntry | null {
   const request = repo.getCoverageReviewRequest(requestId);
-  return request === null ? null : entryOf(repo, request);
+  const entry = request === null ? null : entryOf(repo, request);
+  return request === null || entry === null ? null : historyEntryOf(repo, request, entry);
 }
 
 /**
@@ -232,8 +252,7 @@ export function readReviewQueue(repo: ListReads): ReviewQueueEntry[] {
 
 /**
  * RV 이력: 모든 병원의 닫힌 요청(APPROVED·REJECTED)을 최신순으로: 요청 시각 내림차순, 같으면 요청 id 의 코드 포인트 내림차순.
- * closedBy·closedAt 은 연결된 매핑의 상태 이력에서 요청이 닫힌 결과(APPROVED/REJECTED)로 들어간 첫 전이의 수행자 id·시각이다. 연결된 매핑이 없거나
- * 그 전이가 없으면 null 이다(지어내지 않는다). 현재 게시값·검토 기준 비교는 지금 시점의 값이다.
+ * 처리 결과 칸(resultMappingRef·closedBy·closedAt)은 historyEntryOf 의 정의를 따른다. 현재 게시값·검토 기준 비교는 지금 시점의 값이다.
  */
 export function readReviewHistory(repo: ListReads): ReviewHistoryEntry[] {
   return repo
@@ -241,20 +260,7 @@ export function readReviewHistory(repo: ListReads): ReviewHistoryEntry[] {
     .flatMap((clinic) => repo.listCoverageReviewRequests(clinic.id).filter((request) => request.status !== 'REVIEW_REQUESTED'))
     .flatMap((request) => {
       const entry = entryOf(repo, request);
-      if (entry === null) {
-        return [];
-      }
-      const closing =
-        request.draftMappingRef === null ? undefined : repo.getItemState(request.draftMappingRef)?.history.find((transition) => transition.to === request.status);
-      const resultRef = request.resultMappingRef;
-      return [
-        {
-          ...entry,
-          resultMappingRef: resultRef === null ? null : { kind: resultRef.kind, id: resultRef.id, version: resultRef.version },
-          closedBy: closing?.actorId ?? null,
-          closedAt: closing?.at ?? null,
-        },
-      ];
+      return entry === null ? [] : [historyEntryOf(repo, request, entry)];
     })
     .sort((a, b) => compareCodePoints(b.requestedAt, a.requestedAt) || compareCodePoints(b.id, a.id));
 }

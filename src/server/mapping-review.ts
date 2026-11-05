@@ -177,6 +177,22 @@ function contentOf(deps: ServiceDeps, request: CoverageReviewRequest, input: Map
 }
 
 /**
+ * 기존 초안 작성(요청이 열려 있음 · 초안이 아직 없음 · 치료 일치의 유일한 소유자)을 부른다. 그 서비스의 상태 충돌은 사유 코드가 없어서 관리자 API 가
+ * 서버 결함(500)과 구분하지 못하므로, 코드가 없는 STATE_CONFLICT 에만 어느 쪽 충돌인지 코드를 붙여 다시 던진다 (규칙을 다시 구현하지 않고 번역만 한다).
+ */
+function draftFromRequest(deps: ServiceDeps, actor: Actor, request: CoverageReviewRequest, input: MappingDraftInput): ItemVersionRecordOf<'MAPPING'> {
+  try {
+    return createMappingDraftFromRequest(deps, actor, request.id, contentOf(deps, request, input));
+  } catch (error) {
+    if (error instanceof DomainError && error.code === 'STATE_CONFLICT' && error.defects.length === 0) {
+      const code = request.status !== 'REVIEW_REQUESTED' ? 'REVIEW_REQUEST_CLOSED' : 'MAPPING_DRAFT_ALREADY_EXISTS';
+      throw conflict(error.message, [{ code, path: 'reviewRequestId' }]);
+    }
+    throw error;
+  }
+}
+
+/**
  * RV 가 열린 검토 요청으로 매핑 초안을 만든다. 순서: 역할 → 요청 있음 → 치료가 현재 게시 목록에 있고 값을 읽을 수 있음(STATE_CONFLICT
  * TREATMENT_HIDDEN | TREATMENT_NOT_IN_CATALOG | CURRENT_VALUES_UNREADABLE, path catalog) → 기존 초안 작성(요청이 열려 있음·초안 없음·치료 일치) →
  * 요청에 검토 기준(reviewedBasis)을 남긴다. 기존 서비스는 건드리지 않는다. 거절하면 아무것도 쓰지 않는다.
@@ -192,7 +208,7 @@ export function createMappingDraftForReviewRequest(deps: ServiceDeps, actor: Act
     if (state.kind !== 'PUBLISHED') {
       throw refusalOf({ ok: false, code: unpublishedCode(state) as ApprovalBasisCode, changedFields: [] });
     }
-    const draft = createMappingDraftFromRequest(deps, actor, request.id, contentOf(deps, request, input));
+    const draft = draftFromRequest(deps, actor, request, input);
     const linked = deps.repo.getCoverageReviewRequest(request.id) as CoverageReviewRequest;
     const reviewedBasis = basisOf(state.version, state.catalogVersionId, deps.clock.now());
     const updated: CoverageReviewRequest = { ...linked, reviewedBasis };
