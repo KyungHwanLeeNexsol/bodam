@@ -5,6 +5,7 @@ import { assignRuleScopeChecked, readClinicScopeRow, readRuleScopeOverview } fro
 import { TEST_FIXTURE_CLINIC_ID, TEST_FIXTURE_HA_1, TEST_FIXTURE_PO_1 } from '../fixtures/server/actors.fixture';
 import { approvedMapping, composeWorld } from '../fixtures/server/bundle-compose.fixture';
 import type { ComposeWorld } from '../fixtures/server/bundle-compose.fixture';
+import { makeBundleVersion } from '../fixtures/server/entities.fixture';
 import { catchDomainError } from '../fixtures/server/errors.fixture';
 import { TEST_FIXTURE_RV_SUSPENDER } from '../fixtures/server/governance.fixture';
 import { snapshotOf } from '../fixtures/server/repo.fixture';
@@ -106,13 +107,38 @@ describe('assignRuleScopeChecked', () => {
     expect(snapshotOf(world.repo)).toEqual(before);
   });
 
-  it('기존 계약 그대로 중지된 묶음도 지정할 수 있다(화면이 막는다)', () => {
+  it('지정하려는 묶음이 중지됐으면 BUNDLE_NOT_ACTIVE 이고 범위·이력·감사 기록은 그대로다 (화면이 막는 데 더해 서버가 지정 트랜잭션 안에서 확인한다)', () => {
     const { world, base, next } = worldWithNewBundle();
     suspendRuleBundle(world.deps, TEST_FIXTURE_RV_SUSPENDER, next, 'TEST_FIXTURE 중지');
+    const before = snapshotOf(world.repo);
 
+    const error = catchDomainError(() => assignRuleScopeChecked(world.deps, PO, CLINIC_1, next, base.id));
+
+    expect(error.code).toBe('STATE_CONFLICT');
+    expect(error.defects).toEqual([{ code: 'BUNDLE_NOT_ACTIVE', path: 'ruleBundleVersionId' }]);
+    expect(snapshotOf(world.repo)).toEqual(before);
+    expect(world.repo.getClinicRuleScope(CLINIC_1)?.ruleBundleVersionId).toBe(base.id);
+  });
+
+  it('이미 중지된 묶음을 쓰고 있는 병원은 읽기 보기에서 계속 그 상태가 보이고, 정상 묶음으로의 재지정은 된다 (중지는 범위를 바꾸지 않는다)', () => {
+    const { world, base, next } = worldWithNewBundle();
+    suspendRuleBundle(world.deps, TEST_FIXTURE_RV_SUSPENDER, base.id, 'TEST_FIXTURE 중지');
+
+    expect(readClinicScopeRow(world.repo, CLINIC_1)?.current).toMatchObject({ bundleId: base.id, status: 'SUSPENDED' });
     assignRuleScopeChecked(world.deps, PO, CLINIC_1, next, base.id);
 
-    expect(world.repo.getClinicRuleScope(CLINIC_1)?.ruleBundleVersionId).toBe(next);
+    expect(readClinicScopeRow(world.repo, CLINIC_1)?.current).toMatchObject({ bundleId: next, status: 'ACTIVE' });
+    expect(world.repo.getBundleStatus(base.id)).toBe('SUSPENDED');
+  });
+
+  it('가용성 기록이 없는 묶음의 지정도 BUNDLE_NOT_ACTIVE 이고 가용성 확인이 현재 범위 비교보다 앞선다', () => {
+    const { world, base } = worldWithNewBundle();
+    world.repo.putRuleBundleVersion(makeBundleVersion({ id: 'TEST_FIXTURE_BUNDLE_RAW', itemRefs: [...base.itemRefs] }));
+    const before = snapshotOf(world.repo);
+
+    expect(catchDomainError(() => assignRuleScopeChecked(world.deps, PO, CLINIC_1, 'TEST_FIXTURE_BUNDLE_RAW', base.id)).defects).toEqual([{ code: 'BUNDLE_NOT_ACTIVE', path: 'ruleBundleVersionId' }]);
+    expect(catchDomainError(() => assignRuleScopeChecked(world.deps, PO, CLINIC_1, 'TEST_FIXTURE_BUNDLE_RAW', null)).defects).toEqual([{ code: 'BUNDLE_NOT_ACTIVE', path: 'ruleBundleVersionId' }]);
+    expect(snapshotOf(world.repo)).toEqual(before);
   });
 });
 

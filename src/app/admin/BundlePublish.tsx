@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { SessionResponse } from './api-types';
 import { AdminNav } from './AdminNav';
@@ -19,21 +19,30 @@ import {
   recordOf,
   refKey,
   selectBase,
+  suspendClinicsLine,
+  suspendFailureMessage,
+  suspendRequestOf,
+  suspendResultView,
   toggleMapping,
 } from './bundle-model';
-import type { BundleSelection, PreviewRecord } from './bundle-model';
-import type { BundlePreviewResponse, BundlePublishOverview, BundlePublishResponse } from './bundle-types';
+import type { BundleSelection, PreviewRecord, SuspendResultView } from './bundle-model';
+import type { BundlePreviewResponse, BundlePublishOverview, BundlePublishResponse, BundleSuspendResponse } from './bundle-types';
 import { adminRequest as request } from './transport';
 
 // 규칙 묶음 게시 화면 (SPEC-REIMBURSEMENT-001 M7 묶음 구성). 검토 담당자(RV)가 기준 묶음 하나를 고르고 승인된 매핑을 더해 새 규칙 묶음을 만든다: 고르기 → 미리보기 → 게시.
 // 게시는 어느 병원에도 적용되지 않는다: 이 화면에는 병원을 고르거나 적용하는 어떤 조작도 없고, 성공 문구가 그 사실을 말한다(적용은 플랫폼 운영자의 규칙 사용 범위 화면).
 // 접근 판정과 모든 규칙(기준 묶음이 사용 가능한가·이미 담긴 매핑·겹침·확인값·게시 전제)은 서버가 한다. 이 화면은 401·403 응답을 안내로 보이고, 게시 단추를 미리보기와 같은 선택일 때만 연다.
+// 같은 화면에서 사용 가능한(ACTIVE) 묶음을 중지할 수 있다(M7 묶음 중지, 검토 담당자만): 묶음 줄의 "중지" → 사유 입력 → "중지 확정". 중지는 묶음의 가용성만 바꾼다 — 묶음 내용·병원별 지정은 그대로이고,
+// 되살리기도 다른 묶음으로의 자동 교체도 이 화면에 없다. 결과에는 중지 시점에 그 묶음을 쓰던 병원 목록이 남는다(복구는 새 묶음 게시 + 플랫폼 운영자의 병원별 재지정).
 // 시험 문구이며 최종 안내 문구가 아니다.
 //
 // 화면 표지(data-*) — 시험이 쓰는 안정된 이름:
 //   main[data-admin-state]                loading | unauthenticated | forbidden | error | ready   (ready 일 때 data-admin-page="bundles")
 //   [data-admin-nav] / [data-admin-nav-link=review-queue|bundles] / [data-admin-user]
-//   [data-admin-message=ok|error]         결과 문장(aria-live 영역 안). data-admin-message-code = PUBLISHED | 서버 사유/결함 코드 | HTTP_<상태>, ok 게시 문장에는 data-admin-published=<새 묶음 id>
+//   [data-admin-message=ok|error]         결과 문장(aria-live 영역 안). data-admin-message-code = PUBLISHED | SUSPENDED | 서버 사유/결함 코드 | HTTP_<상태>, ok 게시 문장에는 data-admin-published=<새 묶음 id>, ok 중지 문장에는 data-admin-suspended=<중지한 묶음 id>
+//   button[data-admin-suspend-open=<묶음 id>](ACTIVE 묶음 줄에만)
+//   [data-admin-suspend=<묶음 id>] 안: [data-admin-suspend-note] / [data-admin-suspend-clinics](지금 이 묶음을 쓰는 병원) / textarea[data-admin-suspend-reason] / [data-admin-suspend-hint] / button[data-admin-action=suspend-confirm] / button[data-admin-action=suspend-cancel]
+//   [data-admin-suspend-result=<묶음 id>] 안: [data-admin-suspend-result-line] / [data-admin-suspend-result-reason] / ul[data-admin-suspend-result-clinics] > li[data-admin-affected-clinic=<병원 slug>] / [data-admin-suspend-result-none]
 //   [data-admin-bundle-bases] 안: [data-admin-base=<묶음 id>][data-admin-base-status=ACTIVE|SUSPENDED], input[data-admin-base-radio=<묶음 id>](중지된 묶음은 disabled), [data-admin-base-unavailable], [data-admin-base-clinics]
 //   [data-admin-bundles-empty]            게시된 묶음이 없을 때
 //   [data-admin-candidates] 안: tr[data-admin-candidate=<매핑 id>@<버전>][data-admin-candidate-id][data-admin-candidate-version][data-selected=true|false][data-admin-candidate-fingerprint=CURRENT|STALE|UNKNOWN],
@@ -44,8 +53,8 @@ import { adminRequest as request } from './transport';
 //        li[data-admin-preview-item][data-admin-preview-kind][data-admin-preview-id][data-admin-preview-source=BASE|ADDED], [data-admin-preview-summary], [data-admin-preview-defect=<코드>], [data-admin-preview-conflict=<매핑 키>], [data-admin-preview-clean]
 
 type Phase = 'loading' | 'unauthenticated' | 'forbidden' | 'error' | 'ready';
-type Busy = 'idle' | 'preview' | 'publish';
-type Banner = { kind: 'ok' | 'error'; text: string; code: string; bundleId: string | null };
+type Busy = 'idle' | 'preview' | 'publish' | 'suspend';
+type Banner = { kind: 'ok' | 'error'; text: string; code: string; bundleId: string | null; suspendedId?: string };
 
 export function BundlePublish(): ReactElement {
   const [phase, setPhase] = useState<Phase>('loading');
@@ -56,6 +65,16 @@ export function BundlePublish(): ReactElement {
   const [message, setMessage] = useState<Banner | null>(null);
   const [busy, setBusy] = useState<Busy>('idle');
   const [reloadKey, setReloadKey] = useState(0);
+  /** 중지 사유를 받고 있는 묶음 id. 없으면 null. */
+  const [suspendTarget, setSuspendTarget] = useState<string | null>(null);
+  const [reasonText, setReasonText] = useState('');
+  /** 방금 성공한 중지의 결과(그 시점에 영향을 받은 병원 포함). 중지 폼을 다시 열 때 지운다. */
+  const [suspendResult, setSuspendResult] = useState<SuspendResultView | null>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  // 중지 폼이 열리면 사유 입력으로 포커스를 옮긴다(키보드·화면 낭독 사용자가 폼이 열린 것을 알 수 있게).
+  useEffect(() => {
+    if (suspendTarget !== null) reasonRef.current?.focus();
+  }, [suspendTarget]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -150,6 +169,67 @@ export function BundlePublish(): ReactElement {
     }
   };
 
+  const openSuspend = (bundleId: string): void => {
+    if (busy !== 'idle') return;
+    setSuspendTarget(bundleId);
+    setReasonText('');
+    setSuspendResult(null);
+    setMessage(null);
+  };
+
+  const cancelSuspend = (): void => {
+    if (busy !== 'idle') return;
+    const opener = suspendTarget;
+    setSuspendTarget(null);
+    setReasonText('');
+    // 폼이 사라지면 포커스를 그 묶음의 "중지" 단추로 되돌린다.
+    if (opener !== null) setTimeout(() => document.querySelector<HTMLButtonElement>(`[data-admin-suspend-open="${CSS.escape(opener)}"]`)?.focus(), 0);
+  };
+
+  /**
+   * 묶음 하나를 중지한다. 사유가 있어야 보낸다. 성공하면 서버가 낸 영향 병원 목록을 결과로 남기고 목록을 다시 읽는다(이 묶음은 이제 기준으로 고를 수 없다).
+   * 이미 중지됐거나(409)·없는(404) 묶음, 결과를 알 수 없는 서버 오류(5xx)·연결 끊김은 목록을 다시 읽어 최신 상태를 보인다(저장된 뒤 응답만 잃었을 수 있다). 권한(403)·사유(400) 거절은 입력을 그대로 두고 안내만 한다.
+   */
+  const suspend = async (): Promise<void> => {
+    if (suspendTarget === null || busy !== 'idle') return;
+    const built = suspendRequestOf(reasonText);
+    if (!built.ok) return;
+    const bundleId = suspendTarget;
+    setBusy('suspend');
+    setMessage(null);
+    try {
+      const result = await request<BundleSuspendResponse>('POST', `/api/admin/rule-bundles/${encodeURIComponent(bundleId)}/suspend`, built.body);
+      if (result.status !== 200) {
+        setMessage({ kind: 'error', text: suspendFailureMessage(result), code: failureCodeOf(result), bundleId: null });
+        if (result.status === 409 || result.status === 404 || result.status >= 500) {
+          setSuspendTarget(null);
+          setReasonText('');
+          setRecord(null);
+          const next = await load();
+          if (next !== null) setSelection((current) => reconcileSelection(current, next));
+        }
+        return;
+      }
+      const view = suspendResultView(result.body as BundleSuspendResponse);
+      setSuspendResult(view);
+      setSuspendTarget(null);
+      setReasonText('');
+      setRecord(null);
+      setMessage({ kind: 'ok', text: view.message, code: 'SUSPENDED', bundleId: null, suspendedId: view.bundleId });
+      const next = await load();
+      if (next !== null) setSelection((current) => reconcileSelection(current, next));
+    } catch {
+      setMessage({ kind: 'error', text: suspendFailureMessage({ status: 500, body: { error: 'INTERNAL' } }), code: 'HTTP_500', bundleId: null });
+      setSuspendTarget(null);
+      setReasonText('');
+      setRecord(null);
+      const next = await load();
+      if (next !== null) setSelection((current) => reconcileSelection(current, next));
+    } finally {
+      setBusy('idle');
+    }
+  };
+
   if (phase === 'loading') {
     return (
       <main className="admin-root" data-admin-state="loading">
@@ -177,6 +257,9 @@ export function BundlePublish(): ReactElement {
   const gate = publishGateOf(selection, overview.candidates, record);
   const view = record === null ? null : previewView(record.preview);
   const idle = busy === 'idle';
+  // 폼은 지금도 사용 가능한(ACTIVE) 묶음에만 보인다: 다시 읽은 목록에서 이미 중지됐거나 사라졌으면 폼을 닫은 것으로 본다.
+  const suspendBase = suspendTarget === null ? undefined : overview.bases.find((base) => base.bundleId === suspendTarget && base.status === 'ACTIVE');
+  const suspendRequest = suspendRequestOf(reasonText);
 
   return (
     <main className="admin-root" data-admin-state="ready" data-admin-page="bundles">
@@ -195,6 +278,7 @@ export function BundlePublish(): ReactElement {
             data-admin-message={message.kind}
             data-admin-message-code={message.code}
             {...(message.bundleId !== null ? { 'data-admin-published': message.bundleId } : {})}
+            {...(message.suspendedId !== undefined ? { 'data-admin-suspended': message.suspendedId } : {})}
           >
             {message.text}
           </p>
@@ -217,6 +301,7 @@ export function BundlePublish(): ReactElement {
                   <th scope="col">{COPY.colPublished}</th>
                   <th scope="col">{COPY.colItems}</th>
                   <th scope="col">{COPY.colClinics}</th>
+                  <th scope="col">{COPY.colAction}</th>
                 </tr>
               </thead>
               <tbody>
@@ -246,6 +331,22 @@ export function BundlePublish(): ReactElement {
                       <td>{row.publishedText}</td>
                       <td>{row.itemsText}</td>
                       <td data-admin-base-clinics>{row.clinicsText}</td>
+                      <td>
+                        {row.suspendable ? (
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--small"
+                            aria-label={COPY.suspendButtonLabel(row.shortId)}
+                            aria-expanded={suspendTarget === row.bundleId}
+                            aria-controls="admin-bundle-suspend-panel"
+                            disabled={!idle}
+                            data-admin-suspend-open={row.bundleId}
+                            onClick={() => openSuspend(row.bundleId)}
+                          >
+                            {COPY.suspendButton}
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   );
                 })}
@@ -254,6 +355,58 @@ export function BundlePublish(): ReactElement {
           </div>
         )}
       </section>
+
+      {suspendBase !== undefined ? (
+        <section id="admin-bundle-suspend-panel" className="admin-bundle-section" aria-labelledby="admin-bundle-suspend-heading" data-admin-suspend={suspendBase.bundleId}>
+          <h2 id="admin-bundle-suspend-heading" className="admin-h2">{COPY.suspendTitle(baseView(suspendBase).shortId)}</h2>
+          <p className="admin-note" data-admin-suspend-note>{COPY.suspendNote}</p>
+          <p className="admin-sub2" data-admin-suspend-clinics>{suspendClinicsLine(suspendBase.clinics)}</p>
+          <label className="admin-label" htmlFor="admin-suspend-reason">
+            <span className="admin-label-text">{COPY.suspendReasonLabel}</span>
+          </label>
+          <textarea
+            id="admin-suspend-reason"
+            ref={reasonRef}
+            className="admin-input admin-textarea"
+            rows={3}
+            value={reasonText}
+            disabled={!idle}
+            aria-describedby="admin-suspend-hint"
+            data-admin-suspend-reason
+            onChange={(event) => setReasonText(event.target.value)}
+          />
+          <p id="admin-suspend-hint" className="admin-hint" data-admin-suspend-hint>{suspendRequest.ok ? '' : suspendRequest.hint}</p>
+          <div className="admin-actions">
+            <button type="button" className="admin-btn admin-btn--primary" data-admin-action="suspend-confirm" disabled={!suspendRequest.ok || !idle} onClick={() => void suspend()}>
+              {busy === 'suspend' ? COPY.busy : COPY.suspendConfirm}
+            </button>
+            <button type="button" className="admin-btn" data-admin-action="suspend-cancel" disabled={!idle} onClick={cancelSuspend}>
+              {COPY.suspendCancel}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {suspendResult !== null ? (
+        <section className="admin-bundle-section" aria-labelledby="admin-bundle-suspended-heading" data-admin-suspend-result={suspendResult.bundleId}>
+          <h2 id="admin-bundle-suspended-heading" className="admin-h2">{COPY.suspendedResultTitle}</h2>
+          <p className="admin-note" data-admin-suspend-result-line>
+            <strong title={suspendResult.bundleId}>{suspendResult.shortId}</strong> · {suspendResult.lineText}
+          </p>
+          <p className="admin-hint" data-admin-suspend-result-reason>{COPY.suspendReasonLabel}: {suspendResult.reason}</p>
+          <h3 className="admin-h3">{COPY.suspendedClinicsTitle} ({suspendResult.clinics.length})</h3>
+          {suspendResult.clinics.length === 0 ? (
+            <p className="admin-hint" data-admin-suspend-result-none>{COPY.suspendedClinicsNone}</p>
+          ) : (
+            <ul className="admin-preview-list" data-admin-suspend-result-clinics>
+              {suspendResult.clinics.map((clinic) => (
+                <li key={clinic.clinicId} data-admin-affected-clinic={clinic.slug}>{clinic.slug}</li>
+              ))}
+            </ul>
+          )}
+          <p className="admin-hint">{COPY.suspendedRecovery}</p>
+        </section>
+      ) : null}
 
       <section className="admin-bundle-section" aria-labelledby="admin-bundle-candidates-heading" data-admin-candidates>
         <h2 id="admin-bundle-candidates-heading" className="admin-h2">{COPY.candidatesTitle}</h2>

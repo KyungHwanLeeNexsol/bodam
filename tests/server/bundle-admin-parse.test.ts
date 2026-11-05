@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseBundlePreviewBody, parseBundlePublishBody, parseRuleScopeAssignBody } from '../../src/server/bundle-admin-parse';
+import { parseBundlePreviewBody, parseBundlePublishBody, parseBundleSuspendBody, parseRuleScopeAssignBody } from '../../src/server/bundle-admin-parse';
 
 // 묶음 구성·규칙 사용 범위 지정 본문의 형식 검사. 순수 함수다: 저장소를 읽지 않고, 던지지 않고, 입력을 바꾸지 않는다.
 // 모든 단계의 키가 엄격하다(알 수 없는 키는 UNKNOWN_FIELD). 행위자·역할·병원·항목 종류는 본문으로 받지 않는다 — 종류는 서버가 MAPPING 으로 정한다.
@@ -88,5 +88,34 @@ describe('parseRuleScopeAssignBody', () => {
     ['행위자를 본문에 보냄', { ruleBundleVersionId: 'B2', expectedCurrentBundleId: null, actor: 'PO' }, [{ code: 'UNKNOWN_FIELD', path: 'request.actor' }]],
   ])('%s → 거절', (_name, body, defects) => {
     expect(defectsOf(parseRuleScopeAssignBody(body))).toEqual(defects);
+  });
+});
+
+describe('parseBundleSuspendBody', () => {
+  it('올바른 본문은 사유를 그대로 돌려준다 (앞뒤 공백도 바꾸지 않는다)', () => {
+    expect(parseBundleSuspendBody({ reason: '  TEST_FIXTURE 사유  ' })).toEqual({ ok: true, reason: '  TEST_FIXTURE 사유  ' });
+  });
+
+  it('비었거나 공백뿐인 사유는 여기서 거르지 않는다 (도메인 서비스가 역할 확인 뒤에 REASON_REQUIRED 로 거절한다)', () => {
+    expect(parseBundleSuspendBody({ reason: '' })).toEqual({ ok: true, reason: '' });
+    expect(parseBundleSuspendBody({ reason: '   ' })).toEqual({ ok: true, reason: '   ' });
+  });
+
+  it('입력을 바꾸지 않는다', () => {
+    expect(parseBundleSuspendBody(Object.freeze({ reason: 'x' })).ok).toBe(true);
+  });
+
+  it.each([
+    ['객체가 아님(배열)', [], [{ code: 'NOT_OBJECT', path: 'request' }]],
+    ['객체가 아님(문자열)', 'x', [{ code: 'NOT_OBJECT', path: 'request' }]],
+    ['null', null, [{ code: 'NOT_OBJECT', path: 'request' }]],
+    ['사유 키 없음', {}, [{ code: 'VALUE_MISSING', path: 'reason' }]],
+    ['사유 null', { reason: null }, [{ code: 'VALUE_MISSING', path: 'reason' }]],
+    ['사유가 숫자', { reason: 1 }, [{ code: 'VALUE_INVALID', path: 'reason' }]],
+    ['사유가 객체', { reason: { text: 'x' } }, [{ code: 'VALUE_INVALID', path: 'reason' }]],
+    ['알 수 없는 키만 더함', { reason: 'x', bundleId: 'B1' }, [{ code: 'UNKNOWN_FIELD', path: 'request.bundleId' }]],
+    ['알 수 없는 키 + 사유 없음', { actor: 'x' }, [{ code: 'UNKNOWN_FIELD', path: 'request.actor' }, { code: 'VALUE_MISSING', path: 'reason' }]],
+  ])('%s', (_name, body, expected) => {
+    expect(defectsOf(parseBundleSuspendBody(body))).toEqual(expected);
   });
 });

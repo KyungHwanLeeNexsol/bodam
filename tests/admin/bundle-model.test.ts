@@ -21,6 +21,10 @@ import {
   refKey,
   selectBase,
   shortBundleId,
+  suspendClinicsLine,
+  suspendFailureMessage,
+  suspendRequestOf,
+  suspendResultView,
   toggleMapping,
 } from '../../src/app/admin/bundle-model';
 import type {
@@ -28,6 +32,7 @@ import type {
   BundlePreviewItem,
   BundlePreviewResponse,
   BundlePublishOverview,
+  BundleSuspendResponse,
   MappingCandidate,
 } from '../../src/app/admin/bundle-types';
 
@@ -450,5 +455,70 @@ describe('게시 성공 안내', () => {
     expect(text).toContain('TEST_FIXTURE_BUNDLE_4');
     expect(text).toContain('아직 어느 병원에도 적용되지 않았습니다');
     expect(text).toContain('플랫폼 운영자');
+  });
+});
+
+describe('묶음 중지 (RV)', () => {
+  it('중지 조작은 사용 가능한(ACTIVE) 묶음에만 보인다: 이미 중지됐거나 상태를 모르는 묶음에는 없다', () => {
+    expect(baseView(base('TEST_FIXTURE_BUNDLE_A', 'ACTIVE', '2026-10-01T01:00:00.000Z')).suspendable).toBe(true);
+    expect(baseView(base('TEST_FIXTURE_BUNDLE_B', 'SUSPENDED', '2026-10-01T01:00:00.000Z')).suspendable).toBe(false);
+    expect(baseView(base('TEST_FIXTURE_BUNDLE_C', null, '2026-10-01T01:00:00.000Z')).suspendable).toBe(false);
+  });
+
+  it('사유가 비었거나 공백뿐이면 요청을 만들지 않고 이유를 말한다. 사유는 앞뒤 공백을 떼어 보낸다', () => {
+    expect(suspendRequestOf('')).toEqual({ ok: false, hint: BUNDLE_COPY.suspendReasonHint });
+    expect(suspendRequestOf('  \t\n ')).toEqual({ ok: false, hint: BUNDLE_COPY.suspendReasonHint });
+    expect(suspendRequestOf('  TEST_FIXTURE 사유  ')).toEqual({ ok: true, body: { reason: 'TEST_FIXTURE 사유' } });
+  });
+
+  it('중지 전 안내는 지금 이 묶음을 쓰는 병원을 slug 와 개수로 말하고, 없으면 없다고 말한다', () => {
+    expect(suspendClinicsLine([{ clinicId: 'C1', slug: 'clinic-a' }, { clinicId: 'C2', slug: 'clinic-b' }])).toBe(BUNDLE_COPY.suspendClinicsNow('clinic-a, clinic-b', 2));
+    expect(suspendClinicsLine([])).toBe(BUNDLE_COPY.suspendClinicsNone);
+  });
+
+  it('중지 결과 보기는 서버가 낸 영향 병원 목록을 그대로 남기고, 묶음 내용과 병원별 지정이 바뀌지 않았다는 말을 한다', () => {
+    const response: BundleSuspendResponse = {
+      bundle: { id: 'TEST_FIXTURE_BUNDLE_X', status: 'SUSPENDED' },
+      suspension: { at: '2026-10-18T02:00:00.000Z', by: 'TEST_FIXTURE_RV_1', role: 'RV', reason: 'TEST_FIXTURE 사유', previousStatus: 'ACTIVE' },
+      affectedClinics: [{ clinicId: 'C1', slug: 'clinic-a' }, { clinicId: 'C2', slug: 'clinic-b' }],
+    };
+    const view = suspendResultView(response);
+    expect(view.bundleId).toBe('TEST_FIXTURE_BUNDLE_X');
+    expect(view.clinics.map((clinic) => clinic.slug)).toEqual(['clinic-a', 'clinic-b']);
+    expect(view.reason).toBe('TEST_FIXTURE 사유');
+    expect(view.lineText).toBe(BUNDLE_COPY.suspendedLine('2026-10-18 11:00', 'TEST_FIXTURE_RV_1'));
+    expect(view.message).toContain('2곳');
+    expect(view.message).toContain('바뀌지 않았습니다');
+  });
+
+  it('거절은 쉬운 문장이고 늘 이 묶음의 상태가 바뀌지 않았다는 말로 끝나며 코드 글자를 보이지 않는다', () => {
+    const cases: Array<[number, unknown, string]> = [
+      [403, { error: 'FORBIDDEN' }, BUNDLE_COPY.forbidden],
+      [404, { error: 'NOT_FOUND' }, BUNDLE_COPY.suspendFailure.notFound],
+      [409, { error: 'CONFLICT', reason: 'BUNDLE_NOT_ACTIVE' }, BUNDLE_COPY.suspendFailure.notActive],
+      [400, { error: 'INVALID_REQUEST', defects: [{ code: 'EMPTY', path: 'reason' }] }, BUNDLE_COPY.suspendFailure.reasonRequired],
+    ];
+    for (const [status, body, expected] of cases) {
+      const text = suspendFailureMessage({ status, body } as Parameters<typeof suspendFailureMessage>[0]);
+      expect(text, String(status)).toContain(expected);
+      expect(text.endsWith(BUNDLE_COPY.suspendNothingChanged), String(status)).toBe(true);
+      expect(text, String(status)).not.toContain('BUNDLE_NOT_ACTIVE');
+    }
+  });
+
+  it('그 밖의 거절(로그인 없음 · 모르는 409)도 상태가 바뀌지 않았다는 말로 끝난다', () => {
+    for (const [status, body] of [[401, { error: 'UNAUTHENTICATED' }], [409, { error: 'CONFLICT', reason: 'SOMETHING_NEW' }]] as const) {
+      const text = suspendFailureMessage({ status, body } as Parameters<typeof suspendFailureMessage>[0]);
+      expect(text.endsWith(BUNDLE_COPY.suspendNothingChanged), String(status)).toBe(true);
+      expect(text, String(status)).not.toContain('SOMETHING_NEW');
+    }
+  });
+
+  it('서버 오류(5xx)·연결 끊김은 저장된 뒤 응답만 잃었을 수 있어 "바뀌지 않았다"고 단정하지 않고 결과를 확인하라고 말한다', () => {
+    for (const status of [500, 502]) {
+      const text = suspendFailureMessage({ status, body: { error: 'INTERNAL_ERROR' } } as Parameters<typeof suspendFailureMessage>[0]);
+      expect(text).toBe(BUNDLE_COPY.suspendFailure.unknownResult);
+      expect(text).not.toContain('바뀌지 않았습니다');
+    }
   });
 });

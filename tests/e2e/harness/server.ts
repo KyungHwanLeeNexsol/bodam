@@ -6,7 +6,7 @@ import { handleEstimate } from '../../../src/server/api/estimate';
 import { handleOptions } from '../../../src/server/api/options';
 import { TEST_SESSION_COOKIE } from '../../fixtures/server/admin.fixture';
 import type { TestAccountKey } from '../../fixtures/server/admin.fixture';
-import { auditEntries, changeCoverageJudgment, storeState } from './hooks';
+import { addScopeOnlyClinics, auditEntries, changeCoverageJudgment, storeState } from './hooks';
 import { ACCOUNT_KEYS, accountHome, loginPageHtml } from './login';
 import { previewFrameHtml } from './notice';
 import { HARNESS_BUNDLE_DEMO_TREATMENT, buildHarness } from './world';
@@ -31,6 +31,7 @@ const testNotice = process.argv.includes('--test-notice');
 // --bundle-demo: 묶음 시연 세계(치료 C 추가 + 병원 2 도 기준 묶음 사용, world.ts). 옵션이 없으면 기본 세계다.
 const bundleDemo = process.argv.includes('--bundle-demo');
 // --test-hooks: 브라우저 시험 전용 끝점(/__harness/audit · /__harness/state · /__harness/reset · /__harness/test/*)을 연다. 사람이 보는 미리보기는 이 옵션 없이 띄운다.
+// /__harness/test/add-scope-clinics 는 묶음 중지 시험(M7)이 병원 C·D 를 더하는 끝점이다(병원 기록만 쓴다. 범위 지정은 시험이 실제 관리자 API 로 한다).
 const testHooks = process.argv.includes('--test-hooks');
 // 세계는 시험 끝점 /__harness/reset 으로 통째로 새로 만들 수 있다(저장소·시계·식별자 생성기·로그인 세션 모두 새것). 요청마다 현재 세계를 읽는다.
 let current: Harness = buildHarness({ bundleDemo });
@@ -71,6 +72,10 @@ async function testHook(request: IncomingMessage, response: ServerResponse, url:
   if (url.pathname === '/__harness/reset' && request.method === 'POST') {
     current = buildHarness({ bundleDemo });
     sendJson(response, 200, { ok: true, bundleDemo });
+    return true;
+  }
+  if (url.pathname === '/__harness/test/add-scope-clinics' && request.method === 'POST') {
+    sendJson(response, 200, { clinicIds: addScopeOnlyClinics(current.world) });
     return true;
   }
   if (url.pathname === '/__harness/test/change-coverage' && request.method === 'POST') {
