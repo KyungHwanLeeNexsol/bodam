@@ -58,11 +58,12 @@ import type { AdminServices } from './services';
 // 묶음 구성(RV)과 규칙 사용 범위 지정(PO) — M7 묶음 구성. 흐름: 승인된 매핑 → RV 가 새 규칙 묶음 게시 → PO 가 한 병원에 명시 지정 → 그 병원의 옵션·계산이 새 묶음을 쓴다.
 // 경로마다 역할이 정해져 있고(PlatformRoute.role) 둘 다 병원에 매이지 않은 플랫폼 단위 소속만 인정한다. 게시는 어느 병원도 지정하지 않는다: RV 는 지정할 수 없고 PO 는 게시할 수 없다.
 //   GET    /api/admin/bundle-publish                            — (RV) 기준이 될 묶음(ACTIVE · SUSPENDED, 최신순)과 현재 APPROVED 인 후보 매핑. 응답 { bases, candidates, unreadable }. 읽기만 한다
-//   POST   /api/admin/bundle-publish/preview                    — (RV) 본문 { baseBundleId, mappings: [{ id, version }] }. 기준 묶음의 항목 전부 + 고른 매핑을 합친 구성을 읽기만 하고 평가한다. 응답 { base, items, defects, conflicts, publishConfirmation }.
-//                                                                 결함(게시와 같은 판정)과 충돌은 오류가 아니라 응답에 담기고(200) 확인값은 둘 다 없을 때만 있다(아니면 null). 구성이 성립하지 않으면 404(기준 묶음·매핑 없음) · 409(BASE_BUNDLE_NOT_ACTIVE · MAPPING_ALREADY_IN_BASE)
+//   POST   /api/admin/bundle-publish/preview                    — (RV) 본문 { baseBundleId, mappings: [{ id, version }] }. 기준 묶음의 항목 전부 + 고른 매핑을 합친 구성을 평가한다. 묶음·상태·범위·감사 기록은 바꾸지 않는다. 응답 { base, items, defects, conflicts, publishConfirmation }.
+//                                                                 결함(게시와 같은 판정)과 충돌은 오류가 아니라 응답에 담기고(200) 확인값은 둘 다 없을 때만 있다(아니면 null). 확인값은 서버가 이 RV 에게 이 구성으로 발급해 서버에 기록해 둔 예측할 수 없는 일회용 값이다
+//                                                                 (입력에서 다시 계산할 수 없다). 발급이 쓰는 것은 확인값 기록 하나뿐이고 결함·충돌이 있으면 아무것도 쓰지 않는다. 기록은 사람이 화면을 읽었다는 증명이 아니라 "서버가 미리보기를 만들었다"는 증거다. 구성이 성립하지 않으면 404(기준 묶음·매핑 없음) · 409(BASE_BUNDLE_NOT_ACTIVE · MAPPING_ALREADY_IN_BASE)
 //   POST   /api/admin/bundle-publish                            — (RV) 본문 { baseBundleId, mappings, publishConfirmation }. 응답 { bundle: { id, contentHash, publishedAt, publishedBy, itemRefs, status }, assignedClinics }.
-//                                                                 assignedClinics 는 새 묶음을 현재 범위로 가진 병원이며 게시는 지정하지 않으므로 빈 목록이다. 409: MAPPING_CONFLICT · MAPPING_ALREADY_IN_BASE · BASE_BUNDLE_NOT_ACTIVE · PREVIEW_REQUIRED(확인값이 없거나 이 구성·이 관리자의 것이 아님).
-//                                                                 400: 기존 게시 전제(PUBLISH_VALIDATION_FAILED 의 defects: ITEM_STATE_NOT_PUBLISHABLE · FINGERPRINT_STALE …). 404: 기준 묶음·매핑 없음. 감사 기록은 기존 BUNDLE_PUBLISH 한 건이다
+//                                                                 assignedClinics 는 새 묶음을 현재 범위로 가진 병원이며 게시는 지정하지 않으므로 빈 목록이다. 409: MAPPING_CONFLICT · MAPPING_ALREADY_IN_BASE · BASE_BUNDLE_NOT_ACTIVE · PREVIEW_REQUIRED(서버가 발급한 적 없는 값 · 이미 쓰인 값 · 다른 관리자에게 발급된 값 · 다른 구성의 값 · 미리보기 뒤 구성이 바뀐 값; 원인은 구별해 알리지 않는다).
+//                                                                 400: 기존 게시 전제(PUBLISH_VALIDATION_FAILED 의 defects: ITEM_STATE_NOT_PUBLISHABLE · FINGERPRINT_STALE …). 404: 기준 묶음·매핑 없음. 감사 기록은 기존 BUNDLE_PUBLISH 한 건이다. 게시는 확인값을 한 번 소비한다(같은 요청을 다시 보내면 409 PREVIEW_REQUIRED)
 //   GET    /api/admin/rule-scope                                — (PO) 병원별 현재 범위(묶음·가용성·지정 시각·지정자)와 게시된 묶음 목록. 응답 { clinics, bundles }. 읽기만 한다
 //   POST   /api/admin/rule-scope/clinics/{clinicId}             — (PO) 본문 { ruleBundleVersionId, expectedCurrentBundleId }(키 필수, null = 범위가 없다고 보았다). 응답 { clinic: 갱신된 병원 줄, scope }. 병원은 경로가 정하고 본문에서 받지 않는다.
 //                                                                 404: 병원·묶음 없음(역할 확인 뒤에만). 409 SCOPE_CHANGED: 화면이 본 현재 범위가 그 사이 바뀜. 감사 기록은 기존 CLINIC_SCOPE_ASSIGN 한 건이다. 중지된 묶음의 지정은 기존 계약대로 막지 않는다(화면이 막는다)
@@ -363,7 +364,8 @@ const postBundlePreview: PlatformHandler = async (services, request, actor) => {
   if (!parsed.ok) {
     return invalidRequest(parsed.defects);
   }
-  // 읽기만 한다. 결함·충돌은 오류가 아니라 응답에 담기고(200), 구성이 성립하지 않을 때만 404·409 이다.
+  // 묶음·상태·범위·감사는 바꾸지 않는다(깨끗한 구성이면 서버가 확인값 기록 하나를 쓴다). 결함·충돌은 오류가 아니라 응답에 담기고(200), 구성이 성립하지 않을 때만 404·409 이다.
+  // services.deps 는 시계와 식별자 생성기를 가진다: 확인값은 그 생성기에서 파생한 예측할 수 없는 값이다.
   return ok(previewBundlePublish(services.deps, actor, { baseBundleId: parsed.baseBundleId, mappings: parsed.mappings }));
 };
 

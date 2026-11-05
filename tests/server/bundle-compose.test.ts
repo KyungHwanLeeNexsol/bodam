@@ -9,6 +9,7 @@ import type { ItemVersionRef } from '../../src/server/domain/items';
 import { TEST_FIXTURE_HA_1, TEST_FIXTURE_PO_1, TEST_FIXTURE_RV_AUTHOR } from '../fixtures/server/actors.fixture';
 import { T1 } from '../fixtures/server/base-fee.fixture';
 import { T3, approvedMapping, composeWorld } from '../fixtures/server/bundle-compose.fixture';
+import { changedKeys } from '../fixtures/server/catalog-structure.fixture';
 import { makeTreatmentVersion } from '../fixtures/server/entities.fixture';
 import { catchDomainError } from '../fixtures/server/errors.fixture';
 import { TEST_FIXTURE_RV_SUSPENDER } from '../fixtures/server/governance.fixture';
@@ -29,14 +30,16 @@ const baseMappingRef = (base: RuleBundleVersion, treatmentId: string): ItemVersi
 const newBundlesOf = (repo: ReturnType<typeof composeWorld>['world']['repo'], base: RuleBundleVersion) => repo.listRuleBundleVersions().filter((bundle) => bundle.id !== base.id);
 
 describe('미리보기 (previewBundlePublish)', () => {
-  it('기준 묶음의 항목 전부(BASE)와 고른 매핑(ADDED)을 요청 순서(프로필 → 매핑 → 서류 규칙 묶음)로 낸다. 결함·충돌이 없으면 확인값이 있고 저장소는 그대로다', () => {
+  it('기준 묶음의 항목 전부(BASE)와 고른 매핑(ADDED)을 요청 순서(프로필 → 매핑 → 서류 규칙 묶음)로 낸다. 결함·충돌이 없으면 확인값이 있고 저장소에서 바뀌는 것은 확인값 기록 하나뿐이다', () => {
     const { world, base } = composeWorld();
     const added = approvedMapping(world, 'TEST_FIXTURE_MAPPING_ADDED_T3');
     const before = snapshotOf(world.repo);
 
     const preview = previewBundlePublish(world.deps, RV, choice(base, added));
 
-    expect(snapshotOf(world.repo)).toEqual(before);
+    // (이전 단언: 저장소 전체가 그대로 — 확인값을 계산만 하던 때의 약속이라 지금은 맞지 않는다.) 바뀌는 영역은 bundleConfirmations 하나이고 그 기록도 확인값 하나를 담는다.
+    expect(changedKeys(before, snapshotOf(world.repo))).toEqual(['bundleConfirmations']);
+    expect(world.repo.getBundleConfirmation(preview.publishConfirmation as string)).toMatchObject({ actorId: RV.id, baseBundleId: base.id, chosen: [added], consumedAt: null, resultBundleId: null });
     expect(preview.defects).toEqual([]);
     expect(preview.conflicts).toEqual([]);
     expect(preview.publishConfirmation).toMatch(/^[0-9a-f]{64}$/);
@@ -54,7 +57,8 @@ describe('미리보기 (previewBundlePublish)', () => {
     expect(addedItem).toMatchObject({ id: added.id, version: added.version, state: 'APPROVED', label: { treatmentId: T3, decision: 'COVERED', scope: [CELL] } });
   });
 
-  it('같은 입력이면 확인값이 같고, 고른 매핑의 순서는 확인값에 영향을 주지 않는다', () => {
+  it('미리보기마다 새 확인값을 발급한다 (이전 값은 입력이 같아도 반복되지 않는다). 고른 매핑의 순서는 기록에 영향을 주지 않는다', () => {
+    // (이전 단언: 같은 입력이면 확인값이 같다 — 확인값이 입력의 해시였을 때의 성질이다. 지금은 서버가 발급한 일회용 값이라 미리보기마다 다르다.)
     const { world, base } = composeWorld();
     const a = approvedMapping(world, 'TEST_FIXTURE_MAPPING_A', T3, { scope: [CELL] });
     const b = approvedMapping(world, 'TEST_FIXTURE_MAPPING_B', T3, { scope: [OTHER_CELL] });
@@ -63,9 +67,37 @@ describe('미리보기 (previewBundlePublish)', () => {
     const again = previewBundlePublish(world.deps, RV, choice(base, a, b));
     const swapped = previewBundlePublish(world.deps, RV, choice(base, b, a));
 
-    expect(first.publishConfirmation).not.toBeNull();
-    expect(again.publishConfirmation).toBe(first.publishConfirmation);
-    expect(swapped.publishConfirmation).toBe(first.publishConfirmation);
+    const tokens = [first, again, swapped].map((preview) => preview.publishConfirmation);
+    expect(tokens.every((token) => typeof token === 'string' && /^[0-9a-f]{64}$/.test(token))).toBe(true);
+    expect(new Set(tokens).size).toBe(3);
+    expect(world.repo.getBundleConfirmation(swapped.publishConfirmation as string)?.chosen).toEqual(world.repo.getBundleConfirmation(first.publishConfirmation as string)?.chosen);
+    // 고른 순서가 다른 요청도 같은 구성으로 본다.
+    const bundle = publishBundleFromBase(world.deps, RV, { ...choice(base, b, a), publishConfirmation: first.publishConfirmation as string });
+    expect(world.repo.getBundleConfirmation(first.publishConfirmation as string)).toMatchObject({ resultBundleId: bundle.id });
+  });
+
+  it('결함이나 충돌이 있으면 확인값을 발급하지 않고 기록도 쓰지 않는다', () => {
+    const { world, base } = composeWorld();
+    const clash = approvedMapping(world, 'TEST_FIXTURE_MAPPING_T1_CLASH', T1);
+    const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord(T3, { id: 'TEST_FIXTURE_MAPPING_DRAFT' }).content).ref;
+    const before = snapshotOf(world.repo);
+
+    expect(previewBundlePublish(world.deps, RV, choice(base, clash)).publishConfirmation).toBeNull();
+    expect(previewBundlePublish(world.deps, RV, choice(base, draft)).publishConfirmation).toBeNull();
+    expect(snapshotOf(world.repo)).toEqual(before);
+  });
+
+  it('미리보기는 묶음·묶음 상태·항목 상태·병원 범위·감사 기록을 바꾸지 않는다 (확인값 기록 하나만 쓴다)', () => {
+    const { world, base } = composeWorld();
+    const added = approvedMapping(world, 'TEST_FIXTURE_MAPPING_ADDED_T3');
+    const before = snapshotOf(world.repo);
+
+    previewBundlePublish(world.deps, RV, choice(base, added));
+
+    const after = snapshotOf(world.repo);
+    for (const key of Object.keys(before).filter((name) => name !== 'bundleConfirmations')) {
+      expect(after[key], key).toEqual(before[key]);
+    }
   });
 
   it('확인값은 관리자·기준 묶음·고른 매핑에 묶인다', () => {
@@ -298,16 +330,45 @@ describe('게시 (publishBundleFromBase)', () => {
     expect(snapshotOf(world.repo)).toEqual(suspendedBefore);
   });
 
-  it('승인되지 않은 매핑은 기존 게시 전제(ITEM_STATE_NOT_PUBLISHABLE)가 거절한다: 매핑이 PUBLISHED 가 되지도, 묶음이 생기지도 않는다', () => {
+  it('승인되지 않은 매핑은 미리보기가 확인값을 내주지 않으므로, 입력에서 계산한 값으로는 PREVIEW_REQUIRED 로 거절된다 (매핑이 PUBLISHED 가 되지도, 묶음이 생기지도 않는다)', () => {
+    // (이전 단언: 이 요청이 기존 게시 전제 ITEM_STATE_NOT_PUBLISHABLE 로 거절된다 — 확인값을 계산만 해도 통과하던 때의 경로다. 지금은 확인값 기록 대조가 먼저 거절한다.
+    //  아래 시험이 기록이 있어도 게시 전제가 그대로 남아 있음을 따로 본다.)
     const { world, base } = composeWorld();
     const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord(T3, { id: 'TEST_FIXTURE_MAPPING_DRAFT' }).content).ref;
     const before = snapshotOf(world.repo);
 
+    expect(previewBundlePublish(world.deps, RV, choice(base, draft)).publishConfirmation).toBeNull();
     const error = catchDomainError(() => publishBundleFromBase(world.deps, RV, { ...choice(base, draft), publishConfirmation: computeBundlePublishConfirmation(world.deps, RV, choice(base, draft)) }));
+
+    expect(error.code).toBe('STATE_CONFLICT');
+    expect(error.defects).toEqual([{ code: 'PREVIEW_REQUIRED', path: 'publishConfirmation' }]);
+    expect(snapshotOf(world.repo)).toEqual(before);
+    expect(newBundlesOf(world.repo, base)).toEqual([]);
+  });
+
+  it('확인값 기록이 있어도 기존 게시 전제는 그대로 막는다: 서버에 심은 기록으로 승인되지 않은 매핑을 게시해도 ITEM_STATE_NOT_PUBLISHABLE 이고 기록은 소비되지 않는다', () => {
+    const { world, base } = composeWorld();
+    const draft = createDraft(world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord(T3, { id: 'TEST_FIXTURE_MAPPING_DRAFT' }).content).ref;
+    const token = 'c'.repeat(64);
+    world.repo.putBundleConfirmation({
+      token,
+      actorId: RV.id,
+      role: 'RV',
+      baseBundleId: base.id,
+      chosen: [draft],
+      configurationDigest: computeBundlePublishConfirmation(world.deps, RV, choice(base, draft)),
+      issuedAt: world.clock.now(),
+      consumedAt: null,
+      resultBundleId: null,
+    });
+    const before = snapshotOf(world.repo);
+
+    const error = catchDomainError(() => publishBundleFromBase(world.deps, RV, { ...choice(base, draft), publishConfirmation: token }));
 
     expect(error.code).toBe('PUBLISH_VALIDATION_FAILED');
     expect(error.defects).toContainEqual({ code: 'ITEM_STATE_NOT_PUBLISHABLE', path: 'bundle.mappings[3].state' });
     expect(snapshotOf(world.repo)).toEqual(before);
+    expect(world.repo.getBundleConfirmation(token)).toMatchObject({ consumedAt: null, resultBundleId: null });
     expect(newBundlesOf(world.repo, base)).toEqual([]);
   });
 

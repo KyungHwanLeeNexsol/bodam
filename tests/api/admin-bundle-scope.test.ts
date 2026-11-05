@@ -257,7 +257,8 @@ describe('RV · 개요 (GET /bundle-publish)', () => {
 });
 
 describe('RV · 미리보기 (POST /bundle-publish/preview)', () => {
-  it('깨끗한 구성: 합친 항목 · 결함 없음 · 충돌 없음 · 확인값. 저장 상태는 그대로다', async () => {
+  it('깨끗한 구성: 합친 항목 · 결함 없음 · 충돌 없음 · 확인값. 저장 상태에서 바뀌는 것은 확인값 기록(bundleConfirmations)뿐이다', async () => {
+    // (이전 단언: 저장 상태 전체가 그대로 — 확인값을 계산만 하던 때의 약속이다. 지금은 서버가 확인값 기록 하나를 쓴다. 세부 시험은 admin-bundle-confirmation.test.ts.)
     const world = setup();
     const added = approvedMapping(world.world, 'TEST_FIXTURE_MAPPING_ADDED_T3');
     const before = world.state();
@@ -274,7 +275,7 @@ describe('RV · 미리보기 (POST /bundle-publish/preview)', () => {
     expect(body.defects).toEqual([]);
     expect(body.conflicts).toEqual([]);
     expect(body.publishConfirmation).toMatch(/^[0-9a-f]{64}$/);
-    expect(world.state()).toEqual(before);
+    expect(changedKeys(before, world.state())).toEqual(['bundleConfirmations']);
   });
 
   it('충돌이나 결함이 있어도 200 이고 이유를 담는다 (확인값은 null). 저장 상태는 그대로다', async () => {
@@ -336,7 +337,9 @@ describe('RV · 게시 (POST /bundle-publish)', () => {
     expect(body.bundle.itemRefs).toContainEqual(added);
 
     const after = world.state();
-    expect(changedKeys(before, after)).toEqual(['auditLog', 'bundleEvents', 'bundles', 'itemStates']);
+    // 확인값 기록(bundleConfirmations)이 소비돼 바뀐다. (이전 목록에는 없던 키다.)
+    expect(changedKeys(before, after)).toEqual(['auditLog', 'bundleConfirmations', 'bundleEvents', 'bundles', 'itemStates']);
+    expect(world.repo.getBundleConfirmation(confirmation)).toMatchObject({ consumedAt: '2026-10-18T09:00:00.000Z', resultBundleId: body.bundle.id });
     expect(world.repo.getItemState(added)?.state).toBe('PUBLISHED');
     expect(world.repo.getClinicRuleScope(CLINIC_1)?.ruleBundleVersionId).toBe(world.base.id);
     expect(world.repo.getClinicRuleScope(CLINIC_2)).toBeNull();
@@ -391,17 +394,15 @@ describe('RV · 게시 (POST /bundle-publish)', () => {
     expect(world.state()).toEqual(suspendedBefore);
   });
 
-  it('승인되지 않은 매핑은 400 (기존 게시 전제 ITEM_STATE_NOT_PUBLISHABLE), 승인 뒤 치료가 바뀌었으면 400 FINGERPRINT_STALE 이다. 저장 상태가 그대로다', async () => {
+  it('승인되지 않은 매핑은 확인값을 받을 수 없어 409 PREVIEW_REQUIRED, 미리보기 뒤 치료가 바뀌었으면 400 FINGERPRINT_STALE 이다. 저장 상태가 그대로다', async () => {
+    // (이전 단언: 승인되지 않은 매핑 게시가 400 ITEM_STATE_NOT_PUBLISHABLE — 입력에서 계산한 확인값이 통과하던 때의 경로다. 그 전제는 서비스 시험(bundle-compose.test.ts)이 서버에 심은 기록으로 따로 본다.)
     const world = setup();
     const draft = createDraft(world.world.deps, TEST_FIXTURE_RV_AUTHOR, 'MAPPING', mappingRecord(T3, { id: 'TEST_FIXTURE_MAPPING_DRAFT' }).content).ref;
     const rv = { id: identityOf('rv-1').userId, role: 'RV' } as const;
     const before = world.state();
 
     const notApproved = await call(world.as('rv-1'), 'POST', 'bundle-publish', publishBody(world.base.id, computeBundlePublishConfirmation(world.world.deps, rv, { baseBundleId: world.base.id, mappings: [draft] }), draft));
-    expect(notApproved.status).toBe(400);
-    const notApprovedBody = await json(notApproved);
-    expect(notApprovedBody.error).toBe('INVALID_REQUEST');
-    expect(notApprovedBody.defects).toContainEqual({ code: 'ITEM_STATE_NOT_PUBLISHABLE', path: 'bundle.mappings[3].state' });
+    expect([notApproved.status, await json(notApproved)]).toEqual([409, { error: 'CONFLICT', reason: 'PREVIEW_REQUIRED' }]);
     expect(world.state()).toEqual(before);
 
     const added = approvedMapping(world.world, 'TEST_FIXTURE_MAPPING_ADDED_T3');

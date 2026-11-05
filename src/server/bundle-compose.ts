@@ -1,5 +1,5 @@
 import type { Generation, InsurerType, LifecycleState } from '../engine/types';
-import { bundleConfirmationOf, confirmsBundlePublish } from './bundle-confirmation';
+import { bundleConfirmationOf, issueBundleConfirmationToken, sameRefLists, sortedRefs } from './bundle-confirmation';
 import type { ConfirmationInput } from './bundle-confirmation';
 import { collectBundlePublishDefects, publishRuleBundle } from './bundle-publish';
 import { describeCoverageTarget } from './coverage-target-label';
@@ -8,7 +8,7 @@ import type { ServiceDeps } from './deps';
 import { canonicalDigest } from './digest';
 import { requireRole } from './domain/actor';
 import type { Actor } from './domain/actor';
-import type { BundleAvailability, RuleBundleVersion } from './domain/entities';
+import type { BundleAvailability, BundlePublishConfirmation, RuleBundleVersion } from './domain/entities';
 import { DomainError } from './domain/errors';
 import type { Defect } from './domain/errors';
 import { isMappingRecord } from './domain/items';
@@ -17,8 +17,8 @@ import type { Repository } from './repo/interfaces';
 import { isPlainObject } from './validate/shape';
 
 // 묶음 구성 서비스 (SPEC-REIMBURSEMENT-001 M7 묶음 구성, 역할 RV): "기준 묶음 + 승인된 매핑" → 새 RuleBundleVersion.
-//   previewBundlePublish   — 읽기 전용. 합친 항목 목록, 게시 판정의 결함, 충돌, (깨끗할 때만) 게시 확인값
-//   publishBundleFromBase  — 한 저장소 트랜잭션: 구성 확인 → 충돌 → 확인값 → 기존 publishRuleBundle. 어느 병원에도 범위를 지정하지 않는다(지정은 PO, rule-scope-admin.ts)
+//   previewBundlePublish   — 묶음·상태·범위·감사를 바꾸지 않는다. 합친 항목 목록, 게시 판정의 결함, 충돌, (깨끗할 때만) 게시 확인값. 확인값을 발급할 때 서버 기록 하나(BundlePublishConfirmation)만 쓴다
+//   publishBundleFromBase  — 한 저장소 트랜잭션: 구성 확인 → 충돌 → 확인값 기록 대조 → 기존 publishRuleBundle → 확인값 소비. 어느 병원에도 범위를 지정하지 않는다(지정은 PO, rule-scope-admin.ts)
 // 구성 모델: 새 묶음의 항목 = 기준 묶음(ACTIVE)의 항목 전부(프로필·매핑·서류 규칙 묶음) + 고른 매핑(현재 APPROVED). 기준 묶음에 이미 있는 매핑을 바꾸거나 대체하는 일은 지원하지 않는다.
 // 이 층이 더하는 것은 기존 게시 서비스가 보지 않던 세 가지다: 기준 묶음이 ACTIVE 인가, 고른 매핑이 이미 기준 묶음에 있지 않은가, 고른 매핑이 같은 치료·겹치는 칸의 다른 매핑과 겹치지 않는가.
 // 나머지(항목 상태·유효 기간·참조-내용 일치·고정 지문·검증기)는 publishRuleBundle 의 판정을 collectBundlePublishDefects 로 그대로 쓴다: 미리보기와 게시가 한 판정을 공유한다.
@@ -208,8 +208,9 @@ function confirmationInputOf(repo: Repository, actor: Actor, composition: Compos
 }
 
 /**
- * 이 관리자·이 구성에 대한 확인값을 계산한다. 결함·충돌 여부는 보지 않는다 — 미리보기만 깨끗한 구성에 대해 이 값을 응답에 싣는다.
- * 구성이 성립하지 않으면(기준 묶음 없음 등) compose 와 같은 오류를 던진다. 저장소를 바꾸지 않는다.
+ * 이 관리자·이 구성의 "구성 해시"(configurationDigest)를 계산한다. 결함·충돌 여부는 보지 않는다. 이 값은 더 이상 게시 확인값이 아니다:
+ * 서버 기록(BundlePublishConfirmation)에 남겨 두었다가 게시 때 현재 저장소에서 다시 계산한 값과 비교하는 묶음 입력일 뿐이며 응답에 싣지 않는다.
+ * 이 값을 계산할 수 있어도 서버가 발급해 기록한 확인값이 없으면 게시할 수 없다. 구성이 성립하지 않으면(기준 묶음 없음 등) compose 와 같은 오류를 던진다. 저장소를 바꾸지 않는다.
  */
 export function computeBundlePublishConfirmation(deps: Pick<ServiceDeps, 'repo'>, actor: Actor, choice: BundleChoice): string {
   return bundleConfirmationOf(confirmationInputOf(deps.repo, actor, compose(deps.repo, choice)));
@@ -234,10 +235,12 @@ function labelOf(repo: Repository, record: ItemVersionRecord | undefined): Bundl
 // @MX:ANCHOR: [AUTO] 묶음 구성 미리보기의 단일 진입점. 관리자 API(preview 경로)와 구성 시험이 부른다.
 // @MX:REASON: 미리보기는 읽기만 해야 하고, 결함 판정은 게시와 같은 collectBundlePublishDefects 를 써야 한다. 둘 중 하나가 어긋나면 "게시할 수 있다"는 화면의 말이 게시의 거절과 갈라진다.
 /**
- * RV 가 구성의 미리보기를 본다. 저장소에 아무것도 쓰지 않는다. 구성이 성립하지 않으면 던진다(compose 의 오류: 기준 묶음 없음·ACTIVE 아님·고른 매핑 없음·이미 기준 묶음에 있음).
- * 충돌과 게시 판정의 결함은 던지지 않고 응답에 담는다: 화면이 이유를 보여 줄 수 있어야 하기 때문이다. 확인값은 결함도 충돌도 없을 때만 싣는다.
+ * RV 가 구성의 미리보기를 본다. 묶음·묶음 상태 사건·항목 상태·병원 범위·감사 기록은 바꾸지 않는다. 구성이 성립하지 않으면 던진다(compose 의 오류: 기준 묶음 없음·ACTIVE 아님·고른 매핑 없음·이미 기준 묶음에 있음).
+ * 충돌과 게시 판정의 결함은 던지지 않고 응답에 담는다: 화면이 이유를 보여 줄 수 있어야 하기 때문이다.
+ * 확인값은 결함도 충돌도 없을 때만 발급한다. 발급은 서버 기록 하나(BundlePublishConfirmation)를 쓰는 유일한 쓰기이고, 결함이나 충돌이 있으면 아무것도 쓰지 않고 null 을 돌려준다.
+ * 이 기록은 "서버가 이 관리자에게 이 구성의 미리보기를 만들었다"는 증거이지 사람이 화면을 읽었다는 증명이 아니다. 같은 구성을 다시 미리보면 새 확인값을 발급한다(이전 확인값은 그대로 유효하다).
  */
-export function previewBundlePublish(deps: Pick<ServiceDeps, 'repo' | 'clock'>, actor: Actor, choice: BundleChoice): BundlePreview {
+export function previewBundlePublish(deps: Pick<ServiceDeps, 'repo' | 'clock' | 'ids'>, actor: Actor, choice: BundleChoice): BundlePreview {
   requireRole(actor, 'RV');
   const composition = compose(deps.repo, choice);
   const conflicts = findConflicts(deps.repo, composition);
@@ -259,8 +262,39 @@ export function previewBundlePublish(deps: Pick<ServiceDeps, 'repo' | 'clock'>, 
     items: listed,
     defects,
     conflicts,
-    publishConfirmation: clean ? bundleConfirmationOf(confirmationInputOf(deps.repo, actor, composition)) : null,
+    publishConfirmation: clean ? issueConfirmation(deps, actor, composition) : null,
   };
+}
+
+/** 깨끗한 구성에 대한 확인값을 발급하고 서버 기록 하나를 쓴다(한 트랜잭션). 돌려주는 값은 token 뿐이다. */
+function issueConfirmation(deps: Pick<ServiceDeps, 'repo' | 'clock' | 'ids'>, actor: Actor, composition: Composition): string {
+  const token = issueBundleConfirmationToken(deps.ids.next('BUNDLE_CONFIRMATION'));
+  const record: BundlePublishConfirmation = {
+    token,
+    actorId: actor.id,
+    role: actor.role,
+    baseBundleId: composition.base.id,
+    chosen: sortedRefs(composition.chosen.map((entry) => entry.ref)),
+    configurationDigest: bundleConfirmationOf(confirmationInputOf(deps.repo, actor, composition)),
+    issuedAt: deps.clock.now(),
+    consumedAt: null,
+    resultBundleId: null,
+  };
+  deps.repo.transaction(() => deps.repo.putBundleConfirmation(record));
+  return token;
+}
+
+/**
+ * 받은 확인값이 이 관리자·이 구성에 대해 서버가 발급했고 아직 쓰이지 않은 기록을 가리키는가. 못 찾음·이미 쓰임·다른 관리자·다른 기준 묶음/고른 매핑·미리보기 뒤에 구성이 바뀜은
+ * 모두 같은 결과(거짓)다: 호출한 쪽은 원인을 구별할 수 없다.
+ */
+function acceptedRecord(repo: Repository, actor: Actor, composition: Composition, provided: string): BundlePublishConfirmation | null {
+  const record = repo.getBundleConfirmation(provided);
+  if (record === null || record.consumedAt !== null) {
+    return null;
+  }
+  const sameRequest = record.actorId === actor.id && record.baseBundleId === composition.base.id && sameRefLists(record.chosen, composition.chosen.map((entry) => entry.ref));
+  return sameRequest && record.configurationDigest === bundleConfirmationOf(confirmationInputOf(repo, actor, composition)) ? record : null;
 }
 
 // ───────────────────────── 게시 ─────────────────────────
@@ -268,8 +302,10 @@ export function previewBundlePublish(deps: Pick<ServiceDeps, 'repo' | 'clock'>, 
 // @MX:ANCHOR: [AUTO] 기준 묶음 + 승인된 매핑으로 새 묶음을 게시하는 단일 진입점. 관리자 API(publish 경로)와 구성 시험이 부른다.
 // @MX:REASON: 구성 확인·충돌·확인값·기존 게시가 한 트랜잭션에서 차례로 일어나야 한다. 충돌 검사가 빠지면 엔진이 조용히 보류하는 묶음이 게시되고, 이 함수가 병원 범위를 지정하면 PO 의 지정 권한(DD-17)이 우회된다.
 /**
- * RV 가 구성을 게시한다. 순서: 역할 → 구성 확인(compose) → 충돌(STATE_CONFLICT MAPPING_CONFLICT) → 확인값 일치(STATE_CONFLICT PREVIEW_REQUIRED) → publishRuleBundle
- * (검증기와 서비스 전제: 항목 상태·유효 기간·참조-내용 일치·고정 지문, 결함이면 PUBLISH_VALIDATION_FAILED). 하나의 트랜잭션이고 어느 단계의 거절이든 아무것도 쓰지 않는다.
+ * RV 가 구성을 게시한다. 순서: 역할 → 구성 확인(compose) → 충돌(STATE_CONFLICT MAPPING_CONFLICT) → 확인값 기록 대조(STATE_CONFLICT PREVIEW_REQUIRED) → publishRuleBundle
+ * (검증기와 서비스 전제: 항목 상태·유효 기간·참조-내용 일치·고정 지문, 결함이면 PUBLISH_VALIDATION_FAILED) → 확인값 소비(consumedAt·resultBundleId). 하나의 트랜잭션이고 어느 단계의 거절이든
+ * 아무것도 쓰지 않는다: 게시가 거절되면 확인값 기록은 소비되지 않은 채로 남고, 소비가 던지면 묶음·상태 사건·항목 상태·감사 기록도 함께 되돌려진다.
+ * 확인값 기록 대조: 서버가 미리보기에서 발급해 기록한 값이어야 한다. 없는 값·이미 쓰인 값·다른 관리자에게 발급된 값·다른 기준 묶음/매핑 집합의 값·미리보기 뒤 구성이 바뀐 값은 모두 같은 PREVIEW_REQUIRED 다.
  * 충돌을 확인값보다 먼저 보는 것은 [문서에 없음] 선택이다: 충돌이 있는 구성은 어떤 미리보기도 확인값을 내주지 않으므로 확인값을 먼저 보면 충돌이 늘 PREVIEW_REQUIRED 로 가려진다.
  * 새 묶음을 어느 병원에도 지정하지 않는다: 규칙 사용 범위는 PO 만 지정한다(assignRuleScopeChecked).
  */
@@ -281,9 +317,12 @@ export function publishBundleFromBase(deps: ServiceDeps, actor: Actor, input: Bu
     if (conflicts.length > 0) {
       throw conflict('고른 매핑이 같은 치료·겹치는 칸의 다른 매핑과 겹친다', conflicts.map((entry) => ({ code: 'MAPPING_CONFLICT', path: entry.path })));
     }
-    if (!confirmsBundlePublish(confirmationInputOf(deps.repo, actor, composition), input.publishConfirmation)) {
+    const record = typeof input.publishConfirmation === 'string' ? acceptedRecord(deps.repo, actor, composition, input.publishConfirmation) : null;
+    if (record === null) {
       throw conflict('이 구성의 미리보기를 먼저 받아야 게시할 수 있다 (확인값이 없거나 맞지 않는다)', [{ code: 'PREVIEW_REQUIRED', path: 'publishConfirmation' }]);
     }
-    return publishRuleBundle(deps, actor, composition.request);
+    const bundle = publishRuleBundle(deps, actor, composition.request);
+    deps.repo.markBundleConfirmationConsumed(record.token, deps.clock.now(), bundle.id);
+    return bundle;
   });
 }
