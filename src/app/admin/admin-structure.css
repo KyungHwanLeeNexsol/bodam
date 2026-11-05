@@ -366,3 +366,29 @@
   border-radius: 12px;
   padding: 2px 10px;
 }
+
+/* 병원 관리자 검토 요청 표: 한글은 공백에서만 줄을 바꾸고(글자 중간에서 끊지 않는다), 긴 영문 코드만 어느 글자에서든 줄을 바꾼다. 상태 칸에는 최소 너비를 준다. */
+.admin-table--review th[scope='row'],
+.admin-table--review td,
+.admin-table--review .admin-sub2,
+.admin-table--review .admin-pill--wrap,
+.admin-queue-entry .admin-banner,
+.admin-queue-entry .admin-hint {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.admin-table--review td:nth-child(5) {
+  min-width: 240px;
+}
+
+.admin-table--review .admin-sub2 {
+  margin-top: 4px;
+}
+
+[data-admin-review-sent] td,
+[data-admin-review-sent] .admin-sub2,
+[data-admin-review-sent] .admin-pill--wrap {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}

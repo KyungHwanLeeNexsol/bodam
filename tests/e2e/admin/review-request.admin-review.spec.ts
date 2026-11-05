@@ -307,13 +307,13 @@ test('거절: 중복 · 없는 치료 · 다른 병원 치료 · 위조·잘못�
   }
 });
 
-test('검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전 요청을 현재 게시값과 제안값을 나란히 읽는다 (처리 동작이 없다)', async ({ page }) => {
+test('검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전 요청을 현재 게시값과 제안값을 나란히 읽는다 (매핑 처리는 별도 시험 admin-mapping 이 본다: 여기서는 초안 작성 단추 말고 처리 동작이 없다)', async ({ page }) => {
   const published = (before.adminTreatments['treatments'] as Json[]).find((entry) => entry['treatmentId'] === T1) as Json;
 
   await login(page, 'rv-1');
   await expect(page).toHaveURL(/\/admin\/review-queue$/);
   await expect(page.locator('[data-admin-page="review-queue"]')).toBeVisible();
-  await expect(page.locator('[data-admin-queue-note]')).toContainText('확인만');
+  await expect(page.locator('[data-admin-queue-note]')).toContainText('검토 기록');
   // 거절된 시도가 아무리 많아도 열린 요청은 정확히 하나다.
   const rows = page.locator('[data-admin-queue-row]');
   await expect(rows).toHaveCount(1);
@@ -338,11 +338,12 @@ test('검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전
   await expect(current.locator('[data-differs]')).toHaveCount(0);
   expect(await proposed.locator('[data-differs="true"]').count()).toBeGreaterThanOrEqual(2);
 
-  // 읽기 전용: 단추도 입력칸도 없고, 처리 동작 문구도 없다.
-  await expect(page.locator('main').getByRole('button')).toHaveCount(0);
+  // 매핑 초안 전이라 단추는 "매핑 초안 작성" 하나뿐이고, 승인·반려 단추와 입력칸·양식은 없다(양식은 단추를 눌러야 열린다).
+  await expect(page.locator('main').getByRole('button')).toHaveCount(1);
+  await expect(page.locator('main').getByRole('button', { name: '매핑 초안 작성', exact: true })).toBeEnabled();
   await expect(page.locator('main input, main select, main textarea, main form')).toHaveCount(0);
   const text = await page.locator('main').innerText();
-  expect(text).not.toMatch(/승인하기|반려하기|매핑 만들기|규칙 묶음|게시하기/);
+  expect(text).not.toMatch(/승인하기|반려하기|매핑 만들기|게시하기/);
   await shoot(page, 'rv-queue');
 
   // 입구 화면: 검토 담당자에게는 대기열 링크만 있다(병원 링크 없음).
@@ -433,7 +434,7 @@ test('화면의 서버 거절 문장: 열어 둔 사이에 같은 치료의 요�
   await shoot(page, 'ha-conflict-message');
 });
 
-test('숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남고 "현재 게시 목록에 없음"으로 보인다 (이 시험은 마지막이다)', async ({ page, browser }) => {
+test('숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남고 "숨긴 치료입니다"로 보인다 (이 시험은 마지막이다)', async ({ page, browser }) => {
   await login(page, 'ha-clinic-1');
   // 기존 흐름(초안 → 미리보기 → 게시)으로 치료 B 를 숨긴다. 이 게시는 위 BEFORE/AFTER 비교가 끝난 뒤에만 한다.
   expect((await page.request.put(`${API_1}/catalog/draft`, { data: { deactivations: [T2] } })).status()).toBe(200);
@@ -458,7 +459,9 @@ test('숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서
   const rv = await openAs(browser, 'rv-1');
   await expect(rv.page.locator('[data-admin-queue-row]')).toHaveCount(2);
   const hiddenRow = rv.page.locator('[data-admin-queue-row]', { hasText: NAME_B });
-  await expect(hiddenRow.locator('[data-admin-queue-values="current"] [data-admin-queue-not-published]')).toHaveText('현재 게시 목록에 없음');
+  // 숨긴 치료는 "숨긴 치료입니다"로 보이고, "현재 게시 목록에 없습니다"(목록에서 빠진 치료)와 구분된다.
+  await expect(hiddenRow.locator('[data-admin-queue-current-state="HIDDEN"] [data-admin-queue-hidden]')).toHaveText('숨긴 치료입니다(현재 게시값 없음)');
+  await expect(hiddenRow.locator('[data-admin-queue-not-published]')).toHaveCount(0);
   await expect(hiddenRow.locator('[data-admin-queue-values="current"] [data-admin-queue-field]')).toHaveCount(0);
   const keptRow = rv.page.locator('[data-admin-queue-row]', { hasText: NAME_A });
   await expect(keptRow.locator('[data-admin-queue-values="current"] [data-admin-queue-field="benefit"]')).toHaveText('급여');

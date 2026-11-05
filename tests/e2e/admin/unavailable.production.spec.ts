@@ -21,7 +21,7 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
     }
   });
 
-  test('보장 검토 요청 화면과 검토 대기열 화면도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다)', async ({ page }) => {
+  test('보장 검토 요청 화면과 검토 대기열 화면(매핑 검토 단추 포함)도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다)', async ({ page }) => {
     for (const path of [`/admin/${CLINIC}/review-requests`, '/admin/review-queue']) {
       const response = await page.goto(path);
       expect(response?.status(), path).toBe(200);
@@ -30,7 +30,7 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
       await expect(page.locator('[data-admin-state] .admin-banner--error')).toContainText('로그인이 필요합니다');
       await expect(page.getByRole('button')).toHaveCount(0);
       await expect(page.locator('input, select, textarea')).toHaveCount(0);
-      expect(await page.locator('body').innerText()).not.toMatch(/TEST_FIXTURE|검토 요청 보내기|현재 게시값/);
+      expect(await page.locator('body').innerText()).not.toMatch(/TEST_FIXTURE|검토 요청 보내기|현재 게시값|매핑 초안 작성|처리 완료/);
     }
   });
 
@@ -47,6 +47,15 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
       ['POST', `/api/admin/clinics/${CLINIC}/treatments/TEST_FIXTURE_TREATMENT_1/review-requests`, { proposed: { benefitType: 'NON_BENEFIT', procedureCodes: [], calcClass: 'GENERAL_NON_BENEFIT' } }],
       ['GET', `/api/admin/clinics/${CLINIC}/review-requests`],
       ['GET', '/api/admin/review-queue'],
+      // 매핑 검토(M7): 이력 · 초안 작성 · 제출 · 승인 · 반려 — 운영 구성에서는 다섯 모두 쓸 수 없다.
+      ['GET', '/api/admin/review-history'],
+      ['POST', '/api/admin/review-requests/TEST_FIXTURE_REVIEW_REQUEST_1/mappings', { mapping: { scope: [{ generation: 'GEN4_C4', insurerType: 'NON_LIFE' }], decision: 'COVERED', groupKey: 'TEST_FIXTURE_GROUP', validity: { from: '2026-01-01', to: '2026-12-31' }, policySources: [] } }],
+      ['POST', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/submit', { reviewRequestId: 'TEST_FIXTURE_REVIEW_REQUEST_1' }],
+      ['POST', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/approve', { reviewRequestId: 'TEST_FIXTURE_REVIEW_REQUEST_1' }],
+      ['POST', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/reject', { reviewRequestId: 'TEST_FIXTURE_REVIEW_REQUEST_1', reason: 'TEST_FIXTURE 사유' }],
+      // 경로·메서드가 틀려도 인증이 먼저다.
+      ['DELETE', '/api/admin/review-history'],
+      ['GET', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/approve'],
     ];
     const spoof = { cookie: 'bodam_test_session=TEST_FIXTURE_SESSION_1_ha-clinic-1; role=HA', 'x-role': 'HA', 'x-clinic-id': CLINIC, authorization: 'Bearer HA' };
     for (const [method, path, body] of paths) {
