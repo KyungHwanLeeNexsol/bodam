@@ -1,19 +1,17 @@
 # M7 묶음 게시 · 규칙 사용 범위 브라우저 시험 실행 기록 — 아래는 이 작업 폴더에서 실제로 실행해 관찰한 출력이다(명령·종료 코드·출력 꼬리). 가공하지 않았다.
+# 이 기록은 미리보기 우회 방지 보강(게시 확인값을 서버가 발급·기록하는 일회용 값으로 바꿈) 뒤에 다시 실행한 것이다. 이전 기록(커밋 1f22795)과 달라진 곳: 저장소 사본의 달라진 영역에 bundleConfirmations 가 들어가고, 우회 시도 · 재전송 확인이 더해졌다.
 # 브라우저: Playwright channel 'chrome'(설치된 실제 Chrome, headless), 화면 1280x900(관리자) · 키오스크 1080x1920. 요청 가로채기 없음(모든 요청이 실제 HTTP 로 시험 앞단의 실제 관리자·공개 핸들러를 지난다).
 # 시험 세계: 묶음 시연 세계(--bundle-demo, TEST_FIXTURE 시험 자료). 운영 자료·운영 인증이 아니다.
 
 === 명령과 종료 코드 ===
 npx tsc --noEmit                                                         → exit 0 (출력 없음)
-npx vitest run                                                           → exit 1: Test Files 1 failed | 192 passed (193), Tests 2 failed | 9508 passed (9510)
+npx vitest run                                                           → exit 1: Test Files 1 failed | 194 passed (195), Tests 2 failed | 9546 passed (9548)
                                                                            실패 2건은 알려진 tests/kiosk/state/request-static.test.ts (이 작업 폴더의 CRLF 줄바꿈 때문, 이 단계와 무관). 그 밖의 실패 없음.
 npm run build                                                            → exit 0
 npx playwright test --project=production --project=admin --project=admin-catalog --project=admin-review --project=admin-mapping --project=admin-bundle --project=admin-bundle-reject --project=real-portrait --project=real-landscape --project=preview-portrait --project=preview-landscape
-                                                                         → exit 0: 129 passed, 24 skipped (24 = tests/e2e/kiosk/inventory.real.spec.ts, SHOTS=1 일 때만 도는 사진 시험)
+                                                                         → exit 0: 129 passed, 24 skipped (24 skipped = tests/e2e/kiosk/inventory.real.spec.ts, SHOTS=1 일 때만 도는 사진 시험)
                                                                            프로젝트별 통과: production 12 · admin 9 · admin-catalog 10 · admin-review 8 · admin-mapping 8 · admin-bundle 7 · admin-bundle-reject 9 · real-portrait 27 · real-landscape 27 · preview-portrait 6 · preview-landscape 6
-npx playwright test --project=intercept-portrait                         → exit 0: 756 passed, 67 skipped (SHOTS=1 사진 시험)
-(실행하지 않은 것: intercept-landscape, Strict Mode 설정 playwright.dev.config.ts)
-(첫 전체 실행에서는 admin-review 1건이 실패했다: 관리자 입구의 검토 담당자 링크가 묶음 게시 링크가 더해져 1개에서 2개가 된 의도된 변경 때문이다. 그 시험의 링크 수 확인을 고쳐 커밋(7ff3c24)한 뒤 다시 실행한 결과가 위 129 passed 다.
- vitest 와 build 는 그 시험 전용 수정 전에 마지막으로 실행했고(수정은 tests/e2e 시험 파일 한 곳이라 둘에 영향이 없다), tsc 는 모든 커밋 뒤에 다시 실행해 exit 0 이었다.)
+(실행하지 않은 것: intercept-portrait · intercept-landscape(이 보강은 공개 키오스크 화면·가로채기 시험에 닿지 않아 돌리지 않았다), Strict Mode 설정 playwright.dev.config.ts)
 
 === tsc ===
 (출력 없음, exit 0)
@@ -22,12 +20,11 @@ npx playwright test --project=intercept-portrait                         → exi
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
  FAIL  tests/kiosk/state/request-static.test.ts > AC-016j 7: 요청 결말에 따라 화면을 바꾸는 길은 request.ts 밖에 없다 > machine.ts 의 결말 사건 세 줄은 settleOnEvent 를 부르기만 한다
  FAIL  tests/kiosk/state/request-static.test.ts > DD-09 갱신: activeRefresh 를 푸는 곳은 settleRefresh 하나다 (AC-020f·AC-020g 의 정적 약속) > machine.ts 의 갱신 결말 사건 세 줄은 settleRefreshOnEvent 를 부르기만 한다
- Test Files  1 failed | 192 passed (193)
-      Tests  2 failed | 9508 passed (9510)
+ Test Files 1 failed | 194 passed (195)
+      Tests 2 failed | 9546 passed (9548)
 
 === build 꼬리 ===
-  Generating static pages using 11 workers (0/2) ...
-✓ Generating static pages using 11 workers (2/2) in 125ms
+✓ Generating static pages using 11 workers (2/2) in 99ms
   Finalizing page optimization ...
 Route (app)
 ┌ ○ /_not-found
@@ -46,28 +43,26 @@ Route (app)
 ƒ  (Dynamic)  server-rendered on demand
 
 === Playwright 마지막 전체 실행의 묶음 두 프로젝트 통과 목록 ===
-  ✓  129 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:79:1 › S0 기준선: 로그인 이동(PO → 규칙 사용 범위, RV → 검토 대기열)과 시험 로그인 계정, 두 병원이 같은 기준 묶음을 쓰고 치료 C 는 매핑이 없어 계산 보류다 (2.6s)
-  ✓  133 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:137:1 › S1 선행 단계(실제 관리자 API): 병원 1 관리자가 C 에 검토 요청 → rv-1 이 매핑 초안·제출 → rv-2 가 승인. 승인은 검토 기록일 뿐이라 공개 자료가 게시 전과 같고, 승인된 매핑이 후보로 보인다 (2.1s)
-  ✓  135 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:162:1 › S2 묶음 게시 화면(rv-2): 후보에 승인된 매핑 C → 고르면 미리보기 단추가 열리고 게시는 닫혀 있다 → 미리보기(기준 묶음 항목 + 추가 1건) → 선택을 바꾸면 게시가 다시 닫힘 → 다시 미리보기 → 게시 (1.9s)
-  ✓  137 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:75:1 › S0 (준비) 기록을 비운다 (315ms)
-  ✓  140 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:80:1 › R-a 로그인 없음: 다섯 API 는 401 UNAUTHENTICATED(위조 쿠키·헤더도 같다), 두 화면은 안내만 보이고 단추·입력칸이 없다 (3.1s)
-  ✓  138 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:268:1 › S3 게시만으로는 아무 병원도 바뀌지 않는다: 병원 1·2 의 카탈로그 · 보험 선택지 · 계산 응답이 게시 전과 글자 그대로 같고, 새 묶음은 존재하며 범위 이력은 그대로, 감사 기록은 게시가 더한 두 건(ITEM_PUBLISH · BUNDLE_PUBLIS…
-  ✓  142 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:315:1 › S4 규칙 사용 범위 화면(po-1): 병원 1 현재 적용본(기준 묶음)과 바꿀 묶음(새 묶음)이 다른 자리에 보이고 "현재 → 바꿀" 줄이 나온다. 모든 병원에 한꺼번에 적용하는 조작은 없다. 병원 1 한 곳만 적용한다 (1.5s)
-  ✓  144 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:387:1 › S5 지정 뒤: 병원 1 의 보험 선택지가 새 묶음을 가리키고 치료 C 가 보류에서 계산으로 바뀐다. 병원 2 는 글자 그대로 같다. 이전 묶음을 본 요청은 병원 1 에서만 409 VERSION_MISMATCH 다. 감사 기록에는 CLINIC_SCOPE_AS…
-  ✓  141 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:111:1 › R-b 잘못된 역할: 병원 관리자·병원에 매인 검토 담당자·운영자는 RV 경로가, 검토 담당자·병원 관리자는 PO 경로가 403 FORBIDDEN 이고, 화면은 forbidden 안내만 보인다 (5.4s)
-  ✓  145 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:446:1 › S6 키오스크 화면(병원 1): 지정 뒤 치료 C 를 고르면 정상 결과가 나온다. 병원 2 의 키오스크 선택지는 그대로다 (3.0s)
-  ✓  147 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:158:1 › R-c 승인되지 않은 매핑(초안 · 검토 제출됨)은 후보에 없고, 참조를 직접 보내면 미리보기는 결함(확인값 null), 게시는 409 PREVIEW_REQUIRED 로 거절된다 (2.4s)
-  ✓  148 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:192:1 › R-d 승인 뒤 치료 정보가 바뀐 매핑: 미리보기를 본 뒤 바뀌면 게시는 400 FINGERPRINT_STALE 로 거절되고 화면이 한국어 거절 안내를 보인다. 바뀐 뒤의 후보는 STALE 경고, 미리보기는 결함과 확인값 null …
-  ✓  149 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:257:1 › R-e 겹치는 매핑: 기준 묶음의 매핑과 겹치거나 함께 고른 매핑끼리 겹치면 미리보기가 겹침 문장을 보이고(확인값 null) 게시가 닫히며, API 게시는 409 MAPPING_CONFLICT 로 거절된다 (2.3s)
-  ✓  150 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:317:1 › R-f 낡은 확인값: 다른 구성의 확인값·다른 관리자의 확인값·임의 확인값은 409 PREVIEW_REQUIRED 이고, 기준 묶음에 이미 있는 매핑은 409 MAPPING_ALREADY_IN_BASE 다 (1.8s)
-  ✓  151 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:356:1 › R-g 낡은 화면(SCOPE_CHANGED): 같은 병원을 연 두 운영자 화면 중 하나가 먼저 지정하면, 나중 화면의 지정은 409 로 거절되고 화면이 한국어 안내와 함께 실제 현재 적용본을 다시 보인다. 범위 이력은 거절로 늘지 …
-  ✓  153 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:418:1 › R-h 없는 병원·묶음·매핑: 지정은 404 NOT_FOUND(병원 없음 · 묶음 없음), 낡은 현재 범위는 409 SCOPE_CHANGED, 미리보기·게시는 404(기준 묶음 없음 · 매핑 없음)이고 저장 상태가 그대로다 (2.4…
+  ✓  129 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:85:1 › S0 기준선: 로그인 이동(PO → 규칙 사용 범위, RV → 검토 대기열)과 시험 로그인 계정, 두 병원이 같은 기준 묶음을 쓰고 치료 C 는 매핑이 없어 계산 보류다 (2.6s)
+  ✓  133 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:143:1 › S1 선행 단계(실제 관리자 API): 병원 1 관리자가 C 에 검토 요청 → rv-1 이 매핑 초안·제출 → rv-2 가 승인. 승인은 검토 기록일 뿐이라 공개 자료가 게시 전과 같고, 승인된 매핑이 후보로 보인다 (2.1s)
+  ✓  135 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:168:1 › S2 묶음 게시 화면(rv-2): 후보에 승인된 매핑 C → 고르면 미리보기 단추가 열리고 게시는 닫혀 있다 → 미리보기(기준 묶음 항목 + 추가 1건) → 선택을 바꾸면 게시가 다시 닫힘 → 다시 미리보기 → 게시 (2.4s)
+  ✓  137 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:77:1 › S0 (준비) 기록을 비운다 (299ms)
+  ✓  140 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:82:1 › R-a 로그인 없음: 다섯 API 는 401 UNAUTHENTICATED(위조 쿠키·헤더도 같다), 두 화면은 안내만 보이고 단추·입력칸이 없다 (3.3s)
+  ✓  139 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:310:1 › S3 게시만으로는 아무 병원도 바뀌지 않는다: 병원 1·2 의 카탈로그 · 보험 선택지 · 계산 응답이 게시 전과 글자 그대로 같고, 새 묶음은 존재하며 범위 이력은 그대로, 감사 기록은 게시가 더한 두 건(ITEM_PUBLISH · BUNDLE_PUBLISH 한 건)만 늘었다 (4.9s)
+  ✓  143 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:361:1 › S4 규칙 사용 범위 화면(po-1): 병원 1 현재 적용본(기준 묶음)과 바꿀 묶음(새 묶음)이 다른 자리에 보이고 "현재 → 바꿀" 줄이 나온다. 모든 병원에 한꺼번에 적용하는 조작은 없다. 병원 1 한 곳만 적용한다 (1.5s)
+  ✓  144 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:433:1 › S5 지정 뒤: 병원 1 의 보험 선택지가 새 묶음을 가리키고 치료 C 가 보류에서 계산으로 바뀐다. 병원 2 는 글자 그대로 같다. 이전 묶음을 본 요청은 병원 1 에서만 409 VERSION_MISMATCH 다. 감사 기록에는 CLINIC_SCOPE_ASSIGN 한 건이 더해진다 (2.9s)
+  ✓  141 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:113:1 › R-b 잘못된 역할: 병원 관리자·병원에 매인 검토 담당자·운영자는 RV 경로가, 검토 담당자·병원 관리자는 PO 경로가 403 FORBIDDEN 이고, 화면은 forbidden 안내만 보인다 (6.3s)
+  ✓  147 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:160:1 › R-c 승인되지 않은 매핑(초안 · 검토 제출됨)은 후보에 없고, 참조를 직접 보내면 미리보기는 결함(확인값 null), 게시는 409 PREVIEW_REQUIRED 로 거절된다 (2.5s)
+  ✓  146 [admin-bundle] › tests\e2e\admin\bundle-publish.admin-bundle.spec.ts:492:1 › S6 키오스크 화면(병원 1): 지정 뒤 치료 C 를 고르면 정상 결과가 나온다. 병원 2 의 키오스크 선택지는 그대로다 (3.0s)
+  ✓  148 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:194:1 › R-d 승인 뒤 치료 정보가 바뀐 매핑: 미리보기를 본 뒤 바뀌면 게시는 400 FINGERPRINT_STALE 로 거절되고 화면이 한국어 거절 안내를 보인다. 바뀐 뒤의 후보는 STALE 경고, 미리보기는 결함과 확인값 null 이다 (2.0s)
+  ✓  149 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:259:1 › R-e 겹치는 매핑: 기준 묶음의 매핑과 겹치거나 함께 고른 매핑끼리 겹치면 미리보기가 겹침 문장을 보이고(확인값 null) 게시가 닫히며, API 게시는 409 MAPPING_CONFLICT 로 거절된다 (2.0s)
+  ✓  150 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:323:1 › R-f 낡은 확인값: 다른 구성의 확인값·다른 관리자의 확인값·임의 확인값은 409 PREVIEW_REQUIRED 이고, 기준 묶음에 이미 있는 매핑은 409 MAPPING_ALREADY_IN_BASE 다 (1.4s)
+  ✓  151 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:366:1 › R-g 낡은 화면(SCOPE_CHANGED): 같은 병원을 연 두 운영자 화면 중 하나가 먼저 지정하면, 나중 화면의 지정은 409 로 거절되고 화면이 한국어 안내와 함께 실제 현재 적용본을 다시 보인다. 범위 이력은 거절로 늘지 않는다 (3.1s)
+  ✓  153 [admin-bundle-reject] › tests\e2e\admin\bundle-refusals.admin-bundle-reject.spec.ts:428:1 › R-h 없는 병원·묶음·매핑: 지정은 404 NOT_FOUND(병원 없음 · 묶음 없음), 낡은 현재 범위는 409 SCOPE_CHANGED, 미리보기·게시는 404(기준 묶음 없음 · 매핑 없음)이고 저장 상태가 그대로다 (1.9s)
 
-=== Playwright 마지막 줄(전체 실행 / intercept-portrait) ===
+=== Playwright 마지막 줄(전체 실행) ===
   24 skipped
   129 passed (1.5m)
-  67 skipped
-  756 passed (5.3m)
 pw exit 0
 
 === 흐름 시험(admin-bundle) 관찰 기록: BEFORE / AFTER 응답 발췌 · 감사 기록 ===
@@ -82,9 +77,12 @@ BEFORE 병원 2 보험 선택지(앞부분): {"ruleBundleVersion":"TEST_FIXTURE_
 BEFORE 병원 2 계산 응답(앞부분): {"versions":{"catalogVersion":"TEST_FIXTURE_CATALOG_2","ruleBundleVersion":"TEST_FIXTURE_BUNDLE_1","ruleBundleStatus":"ACTIVE","profile":{"id":"TEST_FIXTURE_PROFILE_1","version":"v1","origin":"TEST_FIXTURE"}},"origin":"TEST_FIXTURE","result":{"state":"ON_HOLD","amounts":{"hospitalPayment":36300,"baseFeeIncluded":"INCLUDED","expectedInsurancePayout":null,"expectedOutOfPocketAfterPayout":null},"line …(1478자 중 앞 400자)
 선행: 검토 요청 TEST_FIXTURE_REVIEW_REQUEST_1 → 매핑 TEST_FIXTURE_MAPPING_1 v1 초안(rv-1) → 제출(rv-1) → 승인(rv-2) [API]
 선행 직후 감사 기록 33건 (이후 이 흐름이 더한 것만 센다)
+화면 미리보기 직후: 저장소에서 달라진 영역 = bundleConfirmations 하나 (확인값 기록 1건)
+우회 시도(API): 발급된 적 없는 확인값 → 409 PREVIEW_REQUIRED, rv-1 이 받은 확인값을 rv-2 가 사용 → 409 PREVIEW_REQUIRED (저장소 그대로)
 게시(rv-2, 화면): 새 묶음 TEST_FIXTURE_BUNDLE_2, assignedClinics=[] — 문장: 새 규칙 묶음 TEST_FIXTURE_BUNDLE_2 을(를) 게시했습니다. 아직 어느 병원에도 적용되지 않았습니다. 병원에 적용하려면 플랫폼 운영자가 규칙 사용 범위에서 병원별로 지정해야 합니다.
 게시 응답(앞부분): {"bundle":{"id":"TEST_FIXTURE_BUNDLE_2","contentHash":"1fcb619462101c1f02cc326e246d67b5c6430cdf69d389dfe575d262b3a05aed","publishedAt":"2026-10-16T09:00:00.000Z","publishedBy":"TEST_FIXTURE_RV_PERSON_2","itemRefs":[{"kind":"DOCUMENT_RULE_SET","id":"TEST_FIXTURE_DOCUMENT_RULE_SET_1","version":"v1"},{"kind":"MAPPING","id":"TEST_FIXTURE_MAPPING_1","version":"1"},{"kind":"MAPPING","id":"TEST_FIXTURE_MAPPING_TEST_FIXTURE_BASE_FEE_A","version":"v1"},{"kind":"MAPPING","id":"TEST_FIXTURE_MAPPING_TEST_FI …(727자 중 앞 500자)
-게시 직후(지정 전): 병원 1·2 의 카탈로그·보험 선택지·계산 응답이 BEFORE 와 글자 그대로 같다. 저장소에서 달라진 영역: auditLog, bundleEvents, bundles, itemStates (scopeHistory·clinics·catalogs 는 그대로)
+같은 게시 요청을 다시 보냄 → 409 PREVIEW_REQUIRED, 새 묶음은 TEST_FIXTURE_BUNDLE_2 하나뿐(저장소 그대로)
+게시 직후(지정 전): 병원 1·2 의 카탈로그·보험 선택지·계산 응답이 BEFORE 와 글자 그대로 같다. 저장소에서 달라진 영역: auditLog, bundleConfirmations, bundleEvents, bundles, itemStates (scopeHistory·clinics·catalogs 는 그대로; 확인값 기록 3건 중 소비된 것은 새 묶음 TEST_FIXTURE_BUNDLE_2 로 간 1건)
 감사 기록 추가분: [{"action":"ITEM_PUBLISH","target":"MAPPING/TEST_FIXTURE_MAPPING_1/1","before":"APPROVED","after":"PUBLISHED","actor":"TEST_FIXTURE_RV_PERSON_2","role":"RV"},{"action":"BUNDLE_PUBLISH","target":"BUNDLE/TEST_FIXTURE_BUNDLE_2","before":null,"after":"TEST_FIXTURE_BUNDLE_2","actor":"TEST_FIXTURE_RV_PERSON_2","role":"RV"}]
 키오스크 병원 1 (지정 전): 치료 C → 화면 data-result=hold, 서버 state=ON_HOLD
 규칙 사용 범위 화면(po-1): 병원 1 현재 적용본=TEST_FIXTURE_BUNDLE_1, 바꿀 묶음 선택=TEST_FIXTURE_BUNDLE_2, 줄: 현재 …URE_BUNDLE_1 → 바꿀 …URE_BUNDLE_2
@@ -151,6 +149,7 @@ rv-2 · 지정(PO) → 403 {"error":"FORBIDDEN"}
 게시 · 확인값 없음 → 400 {"error":"INVALID_REQUEST","defects":[{"code":"VALUE_MISSING","path":"publishConfirmation"}]}
 미리보기 · 기준 묶음에 이미 있는 매핑 → 409 {"error":"CONFLICT","reason":"MAPPING_ALREADY_IN_BASE"}
 게시 · 기준 묶음에 이미 있는 매핑 → 409 {"error":"CONFLICT","reason":"MAPPING_ALREADY_IN_BASE"}
+거절된 시도(다른 구성·다른 관리자·임의 값)는 확인값을 소비하지 않았다 → 받은 rv-2 가 같은 구성으로 게시 200
 지정(화면 B, 낡은 화면) → 409 {"error":"CONFLICT","reason":"SCOPE_CHANGED"}
 화면의 거절 문장: 이 병원의 현재 적용본이 화면을 불러온 뒤 다른 곳에서 바뀌었습니다. 최신 상태를 다시 불러왔으니 확인하고 다시 골라 주세요. 이 병원의 지정은 바뀌지 않았습니다.
 범위 이력의 지정 기록 3건(병원 1: 기준 묶음 + 화면 A 의 지정, 병원 2: 기준 묶음) — 거절된 화면 B 의 시도는 더하지 않았다(거절 전 사본과 글자 그대로 같다)
