@@ -646,7 +646,7 @@ describe('불변식: 요청은 제안 기록일 뿐이다', () => {
     expect(world.state()).toEqual(before);
   });
 
-  it('I5b. 라우터의 경로 표가 이 기능 이전 여섯 경로에 검토 요청 두 경로를 더한 것뿐이다 (HA 쓰기는 초안 저장·버리기·미리보기·게시·검토 요청 제출 다섯 가지)', () => {
+  it('I5b. 라우터의 경로 표가 이 기능 이전 여섯 경로에 검토 요청 두 경로와 무조작 정책 두 경로(M7 병원별 무조작 정책 설정)를 더한 것뿐이다 (HA 쓰기는 초안 저장·버리기·미리보기·게시·검토 요청 제출·무조작 정책 저장 여섯 가지)', () => {
     const source = readFileSync(fileURLToPath(new URL('../../src/server/admin/router.ts', import.meta.url)), 'utf8');
     const routes = [...source.matchAll(/\{ method: '([A-Z]+)', tail: \[([^\]]*)\], handler: (\w+) \}/g)].map((match) => `${match[1]} ${match[2]!.replaceAll("'", '').replaceAll(' ', '')}`);
     expect(routes).toEqual([
@@ -658,6 +658,8 @@ describe('불변식: 요청은 제안 기록일 뿐이다', () => {
       'GET catalog,versions',
       'GET review-requests',
       'POST treatments,:treatmentId,review-requests',
+      'GET idle-policy',
+      'PUT idle-policy',
     ]);
   });
 });

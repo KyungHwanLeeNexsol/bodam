@@ -3612,6 +3612,83 @@ npm run preview:kiosk        # 빌드 후 띄움. 이미 빌드했다면 npm run
 6. 중지 결과 영역은 화면에만 남고 새로고침하면 사라진다(서버 상태는 그대로). 감사 기록 조회 화면은 없다.
 7. Strict Mode(`playwright.dev.config.ts`)·intercept 프로젝트는 실행하지 않았다.
 
+### M7 병원별 무조작 정책 설정 (base = PR #13 브랜치 2c9993f, 2026-11-05)
+
+**범위.** 병원 관리자(HA)가 자기 병원의 화면 종류 다섯 개의 경고·초기화 시간과 `completionHoldSeconds`를 화면(`/admin/{clinicId}/idle-policy`)과 `GET/PUT /api/admin/clinics/{clinicId}/idle-policy`로 읽고 저장한다. 기존 `readIdlePolicy`·`saveClinicIdlePolicy`와 키오스크의 `catalog.idlePolicy` 읽기·타이머는 그대로 재사용했고, 저장 서비스(PUT 전체 교체)와 공개 catalog 경로는 바꾸지 않았다. 범위 밖: 운영 인증·DB, 병원명·로고, 신규 치료 분류, 병합·배포.
+
+**구조.**
+- 서버: `src/server/idle-policy.ts` 에 관리자 읽기 보기(`readIdlePolicyAdminView`: 직접 저장한 화면 종류 `customizedScreens`, 기본값 `defaults`, 간격 하한 `minLeadSeconds`)를 더하고 `readIdlePolicy` 와 같은 계산을 쓰게 정리했다(동작 불변). `src/server/admin/router.ts` 병원 경로 표에 `GET`·`PUT idle-policy` 두 줄. 인증(401) → 소속·역할(403) → 병원(404) → 본문(400) 순서는 기존 단일 처리점이 그대로 보장한다.
+- 화면: `IdlePolicy.tsx`(+ `idle-policy-model.ts` 순수 계산, `idle-policy-copy.ts`, `idle-policy-types.ts`), 이동 줄·관리자 입구에 링크. 저장 본문에는 "기본값을 따르지 않는 종류"만 담아 PUT 전체 교체에서도 다른 설정을 잃지 않고, "기본값으로 되돌리기"는 그 종류를 본문에서 뺀다. 저장 성공 뒤 서버 값을 다시 읽고, 응답이 끊기거나 5xx·시간 제한(15초)이면 저장 여부를 단정하지 않고 다시 읽어 저장됨/저장 안 됨/확인 못 함을 알린다. 저장 직전에 서버 값이 화면의 근거와 달라졌으면(다른 창이 저장) 저장하지 않고 서버 값을 다시 보인다.
+- 시험 환경: 브라우저 프로젝트 `admin-idle-policy`(앞단 포트 3112, 기본 세계 + `--test-hooks`), `tests/e2e/harness/preview.ts` 안내문에 직접 써 보는 순서 추가.
+
+**검증 (이번에 실행한 것).** 출력은 `.moai/state/verify/m7-idle/` 에 남겼다(git 이 보지 않는다).
+
+| 확인 | 결과 |
+|------|------|
+| `npx tsc --noEmit` / `npx next build` | 종료 0 / 종료 0 (검토 반영 뒤 마지막 실행 포함) |
+| 전체 `vitest run` (마지막) | 198 파일 / 9687 중 9685 통과. 실패 2건은 `tests/kiosk/state/request-static.test.ts`(CRLF) 기존 문제이며, 변경 없는 PR #13 HEAD 2c9993f 작업 폴더(`bodam-wt-m7-suspend`)에서 같은 시험이 `2 failed \| 21 passed` 로 똑같이 실패함을 직접 확인 |
+| 신규 실패 1건과 처리 | 첫 전체 실행에서 `tests/api/admin-review-request.test.ts` I5b(라우터 경로 표를 글자 그대로 못 박은 가드)가 새 두 경로 때문에 실패 → 가드 목록에 `GET idle-policy`·`PUT idle-policy` 두 줄만 추가(다른 경로가 슬쩍 늘어나면 여전히 잡힌다) |
+| 실제 관리자 HTTP `tests/api/admin-idle-policy.test.ts` (57건) | 기본값 읽기 / 401·403(다른 병원 HA·RV·병원 매인 RV·PO·플랫폼 HA)·404 와 거절 때 저장소 전체 사본·감사 기록 불변 / 본문이 잘못돼도 권한이 먼저 / PUT 일부만 저장·전체 교체·빈 screens·다섯 종류 / 간격 정확히 20초 저장·19초 거절 / `completionHoldSeconds` null·1·5·3600 저장과 0·소수·글자·키 생략 거절 / 결함 23행(경로·코드) / `__proto__`·배열·2^53 경계 / 병원 B 불변 / 가격·치료·카탈로그 버전·선택지·계산 응답 글자 동일, 저장소에서 바뀐 영역은 `auditLog`·`idlePolicies` 뿐 |
+| 화면 순수 계산 `tests/admin/idle-policy-model.test.ts` (29건) + 이동 줄 시험 갱신 | 본문이 다른 설정을 잃지 않음 / 기본값으로 되돌리기 / 기본값 복귀 / 응답 끊김 비교 / 낡은 화면 판단 / 응답 모양 확인 / 거절 문장 |
+| 브라우저(실제 Chrome, 요청 가로채기 없음 — 응답 끊김만 `page.route`) `admin-idle-policy` 12건 | 기본값 표시 → 일부 저장 후 서버 재조회 → 두 번째 저장이 다른 설정 보존 → 기본값으로 되돌리기 → 잘못된 값 거절(저장소 사본·감사 불변, 입력 남음) → 낡은 창 저장 차단 → null·1초·5초 복귀 → 응답 끊김 네 가지·저장 전 확인 실패·무한 대기 → 접근(401·403, 병원 B 관리자는 B만) → 마무리(공개 응답 글자 동일). 키오스크는 가짜 시계: 새로 연 병원 A 는 20/40초와 5초 복귀, 저장 전에 열어 둔 키오스크는 열 때의 값(100초 경고·120초 초기화, 처음 화면을 거쳐 다시 시작해도 그대로), 정책 없는 병원 B 는 100/120초, 초기화 뒤 입력이 지워짐 |
+| 브라우저 전체(변경 직후, 검토 반영 전) | 1658 통과 / 0 실패 / 157 건너뜀(PR #13 기록의 1648 + 새 10건. 건너뛴 수는 PR #13 기록과 같다) |
+| 브라우저 관리자 프로젝트 전체(검토 반영 후, 마지막) | `admin` · `admin-catalog` · `admin-review` · `admin-mapping` · `admin-bundle` · `admin-bundle-reject` · `admin-bundle-suspend` · `admin-idle-policy` 69 통과 / 0 실패 |
+| 변이 점검 3건 | ① 시험의 경고 시간을 20→30 으로 틀리게 하자 "경고 4초 전에는 경고창이 없다" 실패 ② 화면 본문을 "모든 종류를 무조건 담기"로 바꾸자 모델 시험 4건 실패 ③ 저장 직전 확인을 자기 자신과 비교하게 하자 S5b 만 실패. 모두 복원하고 다시 빌드했다 |
+| 독립 검토(sync-auditor, 읽기 전용) | PASS-WITH-FINDINGS, Blocker 없음, 15건. 반영: F1(안내문의 "처음 화면에서 다시 시작할 때 읽는다"는 사실과 달라 수정 + 문서에 정확한 읽는 시점 명시) · F2(낡은 창 덮어쓰기: 저장 직전 확인) · F3(응답 대기 시간 제한) · F4(기본값 복귀 시 직접 설정이 되지 않게) · F5(확인 중 입력 보존) · F6(응답 모양 확인) · F7(저장 뒤 초점 이동) · F8(plan 개수) · F9~F12(시험 보강, 수용 기준 번호) · F14·F15(문구). 미반영: F13(알 수 없는 키·큰 정수는 기존 서비스 계약이고 키오스크가 타이머를 제한함 → 한계에 기록) |
+
+**기존 가드 갱신.** `tests/api/admin-review-request.test.ts` I5b 목록에 두 줄(위 표).
+
+**문서 동기화.** design.md DD-10(관리자 화면·API 규칙)·DD-14(새 지정 대상은 ACTIVE 만, 중지된 묶음을 가리키는 현재 범위는 조회 가능, 하위 `assignRuleScope` 계약 불변)·DD-19 표 두 행, acceptance.md `AC-023d` 보강과 `AC-023f`·`AC-023g`·`AC-025g` 추가, plan.md M7 닫는 AC 목록·개수. PR #13 진행 기록의 한계 3번("spec/design/acceptance 에 ACTIVE 만 받는다가 없다")은 이 변경으로 문서에 반영됐다(이전 PR 파일은 수정하지 않았다).
+
+**로컬 실행.** `npm run preview:kiosk`(빌드 후 띄움, 이미 빌드했으면 `npm run preview:kiosk:run`) → 안내문의 시험 로그인 주소에서 "병원 1 관리자 (HA)" → 이동 줄의 "무조작 시간". 자세한 순서는 실행기가 출력하는 "[관리자] 병원별 무조작 시간" 안내. 자동 시험: `npx next build && npx playwright test --project=admin-idle-policy`.
+
+**한계 (닫지 않음).**
+1. [아래 "M7 무조작 정책 동시 저장 방어"에서 서버 조건부 저장으로 닫았다. 당시 기록은 남긴다.] 낡은 창 방지는 화면이 저장 직전에 서버 값을 다시 읽어 비교하는 것이라, 읽기와 저장 사이의 아주 짧은 틈에서 두 창이 동시에 저장하면 뒤의 저장이 앞의 저장을 지울 수 있다. 막으려면 서버 쪽 `expectedDigest` 같은 비교가 필요한데 기존 저장 서비스 계약을 바꾸게 되어 이번에는 두지 않았다.
+2. 항상 켜 두는 키오스크는 처음 화면으로 돌아가는 것만으로는 바뀐 정책을 읽지 않는다(화면을 새로 열거나 버전 불일치 갱신 때만 읽는다). 운영에서 정책을 바꾼 뒤 기기를 어떻게 다시 열지는 운영 절차로 정해야 하며, 이 SPEC은 자동 갱신을 두지 않았다.
+3. 서버는 알 수 없는 최상위 키·화면 종류 항목 안의 알 수 없는 키를 조용히 무시하고(기존 저장 서비스 계약), 안전 정수 범위의 큰 값(예: 경고 0 / 초기화 2^53-1)도 받는다. 키오스크는 타이머 지연을 제한하므로 오작동하지 않지만 상한은 정해지지 않았다.
+4. 저장 중에는 입력과 단추를 `disabled` 로 막는다(저장 뒤 결과 안내로 초점을 옮겨 키보드 사용자가 자리를 잃지 않게 했다). 화면 낭독기로 직접 확인하지는 않았다.
+5. 실제 DB 어댑터의 동시성·격리와 운영 인증은 이번 범위 밖이라 검증하지 않았다. `playwright.dev.config.ts`(Strict Mode)는 실행하지 않았다.
+6. 문구는 시험용이며 최종 문구 승인이 아니다.
+
+### M7 무조작 정책 동시 저장 방어 (같은 Draft PR #14, 기준 HEAD 44e7325, 2026-11-05)
+
+**범위.** 위 "M7 병원별 무조작 정책 설정"의 한계 1(읽기와 저장 사이의 틈)을 서버까지 닫는다. 새 PR·다른 M7 기능은 하지 않았다. 바꾸지 않은 것: 무조작 시간 기준(경고·초기화·간격 하한 20초), 키오스크가 정책을 읽는 시점, 운영 인증·DB, 규칙 묶음·치료·카탈로그, 병합·배포.
+
+**수정 전 재현 (실행함).** 44e7325 코드에서 임시 시험 2건(`tests/api/admin-idle-policy-race-repro.test.ts`, 버그가 있음을 단언하는 시험이라 수정 뒤 삭제)을 실제 관리자 핸들러로 돌렸다. ① A·B 두 창이 같은 정책(저장한 적 없음)을 읽고, B 가 `HOLD_RESULT` 170/200 과 `completionHoldSeconds` 12 를 저장한 뒤, A 가 `INPUT` 만 담은 낡은 본문을 PUT → **200** 이고 최종 `customizedScreens` 는 `['INPUT']`, 자동 복귀는 null: B 의 설정이 사라졌다. ② 화면의 저장 직전 재조회(GET)를 통과(지문 대신 값이 같음)한 뒤 B 가 `RESULT`·복귀 7초를 저장하고 A 가 PUT → 같은 결과(200, B 의 설정 소실). 두 건 모두 `2 passed (2)` 로 버그가 실재함을 보였다(출력: `.moai/state/verify/m7-idle-digest/repro-before.txt`). 수정 뒤 같은 순서는 409 가 되며 정식 시험(`admin-idle-policy.test.ts` "수정 전 재현의 순서"·"둘째 순서")이 그 순서를 지킨다.
+
+**계약.**
+- `GET …/idle-policy` 응답에 `policyDigest`(소문자 16진수 64글자)가 더해졌다. 병원 id 와 저장소에 실제로 저장된 정책(직접 설정한 화면 종류·값·`completionHoldSeconds`)을 `canonicalDigest` 로 해시한다: 저장한 적 없음 · 비어 있게 저장 · 기본값과 같은 값을 직접 저장 · 직접 설정한 종류의 집합·값 · 복귀 값 · 다른 병원이 모두 다른 지문이다. 변경 감지용이며 비밀값도 미리보기 증명도 아니다.
+- `PUT` 본문은 `{ screens, completionHoldSeconds, expectedDigest }` 세 키가 필수다. 서버는 한 저장 트랜잭션 안에서 **현재 지문 비교 → 기존 값 검사 → 정책 저장 → 감사 기록** 순으로 처리한다(`saveClinicIdlePolicyChecked`).
+- 오류: 지문이 현재 저장 상태와 다르면 **409 `IDLE_POLICY_CHANGED`**(정책·감사 기록 불변). 지문 누락(키 없음·null)은 400 `VALUE_MISSING`, 형식 오류는 400 `VALUE_INVALID`(경로 `expectedDigest`, 값의 결함이 있으면 그 뒤에 함께). 낡은 지문과 틀린 값이 함께 오면 409 가 먼저. 인증(401)·소속·역할(403)·병원(404) 순서는 그대로이고 지문은 그 뒤다.
+- 응답(200)은 GET 과 같은 모양이고 새 `policyDigest` 를 담는다.
+- 화면: 읽은 지문을 `expectedDigest` 로 보낸다. 409 면 자동으로 덮어쓰거나 다시 보내지 않는다 — 입력을 남기고 "다른 창이나 다른 사람이 바꿨다, 아무것도 저장하지 않았다"를 알리며, 서버 값을 다시 읽기 전까지 저장 단추를 막고(`data-idle-stale`) 이유를 보인다. 다시 읽으면 근거 지문이 바뀌어 막힘이 풀린다. 기존 저장 직전 재조회·응답 불확실성 처리(끊김·5xx·15초)·저장 뒤 재조회는 그대로다.
+- 조건 없는 `saveClinicIdlePolicy` 는 시드·서비스 시험용 안쪽 길로 남겼고 관리자 API 는 조건부 저장만 부른다.
+
+**바뀐 파일.** 서버: `src/server/idle-policy.ts`(지문·조건부 저장·보기에 지문), `src/server/admin/router.ts`(GET 필드·조건부 저장 호출·409 사유 등록·경로 주석). 화면: `IdlePolicy.tsx`, `idle-policy-model.ts`, `idle-policy-types.ts`, `idle-policy-copy.ts`. 시험: `tests/api/admin-idle-policy.test.ts`, `tests/server/idle-policy.test.ts`, `tests/admin/idle-policy-model.test.ts`, `tests/e2e/admin/idle-policy.admin-idle-policy.spec.ts`. 문서: design.md DD-10·DD-19, acceptance.md `AC-023d`·`AC-023f`·경계 표, 이 파일.
+
+**검증 (이번에 실행한 것).** 출력은 `.moai/state/verify/m7-idle-digest/` 에 남겼다(git 이 보지 않는다).
+
+| 확인 | 결과 |
+|------|------|
+| `npx tsc --noEmit` / `npx next build` | 종료 0 / 종료 0 (변이 점검을 되돌린 뒤 다시 빌드한 것이 마지막) |
+| `tests/api/admin-idle-policy.test.ts` | 79건 통과(57 → +22): 기존 시험은 보내기 직전에 현재 지문을 읽어 담는 도우미로 옮겼고, 새 묶음은 지문 노출·상태별 지문 구분·되돌아오면 같은 지문·두 창 순서 두 가지의 409·재시도 없음·지문 한 번만 사용·비교가 값 검사보다 먼저·누락/형식 오류 11행·다른 병원 지문 409·성공 시 감사 한 건과 응답 지문·401/403/404 우선 순서 |
+| `tests/server/idle-policy.test.ts` | 79건 통과(70 → +9): 지문 성질·키 순서 무관·알 수 없는 키 반영·조건부 저장의 성공/409/400/순서·감사 기록 쓰기 실패 시 정책 저장도 되돌려짐 |
+| `tests/admin/idle-policy-model.test.ts` | 31건 통과(29 → +2): 저장 본문의 지문, 응답 모양에 지문 필수, 409 문장 |
+| 전체 `vitest run` | 198 파일 / 9720 중 9718 통과(이전 9687 + 33). 실패 2건은 `tests/kiosk/state/request-static.test.ts` 의 같은 두 시험이고 이번 변경에 `src/app/kiosk` 는 없다(`git diff --stat HEAD -- src/app/kiosk` 빈 출력). 이번에는 변경 없는 HEAD 에서 다시 돌려 비교하지 않았고 이전 기록(위 M7 무조작 정책 설정 표)과 시험 이름이 같다는 것까지만 확인했다 |
+| 브라우저(실제 Chrome) `admin-idle-policy` | 13건 통과(12 + `S5c`). `S5c` 는 두 번째 실제 창이 **A 창의 PUT 이 서버에 닿기 직전**(사전 재조회 통과 뒤)에 화면에서 저장하고, A 창이 409 안내를 받으며 저장소 전체 사본·감사 기록이 B 창의 저장 직후와 같고 PUT 이 한 번만 나가며 저장 단추가 막히고 입력이 남는지, 다시 읽은 뒤 고쳐 저장하면 두 설정이 모두 남는지 본다 |
+| 브라우저 관리자 프로젝트 전체 | `admin` 9 + (`admin-catalog` · `admin-review` · `admin-mapping` · `admin-bundle` · `admin-bundle-reject` · `admin-bundle-suspend` · `admin-idle-policy`) 61 = 70 통과 / 0 실패. 브라우저 전체(키오스크 프로젝트 포함)는 이번에 다시 돌리지 않았다 |
+| 사진 확인 | `.moai/state/shots/m7-idle/05c-policy-changed.png` 을 직접 봤다: 낡은 창의 입력(96/161)이 남아 있고, 빨간 안내와 회색(막힌) 저장 단추, "서버 값 다시 읽기" 안내가 보임 |
+| 변이 점검(서버, 단위·API 시험 158건) | ① 지문 비교 제거 → 7건 실패 ② 병원 id 를 지문에서 뺌 → 3건 ③ 지문을 저장 상태가 아닌 읽기 결과로 계산 → 3건 ④ 형식 검사 제거 → 10건 ⑤ 누락을 통과시킴 → 4건. 모두 원본과 해시가 같게 복원 |
+| 변이 점검(브라우저) | ⑥ 서버 지문 비교 제거 → `S5c` 실패(이후 5건은 실행되지 않음) ⑦ 화면의 막힘 제거(저장 단추 활성·저장 보호 제거, 빌드 포함) → `S5c` 가 `toBeDisabled` 에서 실패. 복원 뒤 다시 빌드 |
+
+**한계 (닫지 않음).**
+1. **실제 DB 동시성은 검증하지 않았다.** 비교와 저장이 저장소 트랜잭션 하나 안에 있고 저장소 인터페이스가 트랜잭션의 원자성을 약속하지만, 이번 시험은 메모리 저장소에 호출을 순서대로 끼워 넣은 것이다(메모리 저장소의 트랜잭션은 동기 함수이고 한 프로세스 안이다). 실제 DB 어댑터에서 격리 수준·동시 접근에도 이 비교가 지켜지는지는 어댑터를 붙일 때 따로 시험해야 한다.
+2. 지문은 저장 사건이 아니라 저장 상태를 견준다: 다른 창이 설정을 바꿨다가 원래대로 되돌렸다면(A → B → A) 낡은 지문이 현재 상태와 같아 받아들여진다. 시험으로 그 성질을 못 박았다(의도한 동작이며 덮어쓸 설정은 실제로 같다).
+3. 지문은 읽기로 누구나 얻는다(HA 만 읽을 수 있다). 변경 감지용이라 권한·미리보기 증명으로 쓰지 않는다.
+4. 안쪽 서비스 `saveClinicIdlePolicy` 는 조건 없이 저장한다. 관리자 API 는 부르지 않지만 이후 다른 경로가 이 함수를 부르면 방어를 우회한다(경로 표 가드 `admin-review-request` I5b 가 새 경로를 잡기는 하나 이 함수의 호출처는 막지 않는다).
+5. 충돌 뒤 막힌 저장 단추와 안내를 화면 낭독기로 직접 확인하지 않았다. 문구는 시험용이다. Strict Mode 개발 설정(`playwright.dev.config.ts`)은 실행하지 않았다.
+6. 이번 변경에는 독립 검토(sync-auditor)를 하지 않았다.
+
 ## §E.3 Run-phase Audit-Ready Signal
 
 _<pending run-phase>_

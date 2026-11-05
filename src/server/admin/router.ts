@@ -16,6 +16,7 @@ import { parseMappingDraftBody, parseReviewRejectBody, parseReviewRequestRefBody
 import { parseReviewRequestBody } from '../review-request-parse';
 import { readClinicReviewRequestViews, readReviewEntry, readReviewHistory, readReviewQueue, reviewRequestView } from '../review-request-read';
 import { submitCoverageReviewRequest } from '../review-request';
+import { readIdlePolicyAdminView, saveClinicIdlePolicyChecked } from '../idle-policy';
 import { findAffectedClinics } from '../rule-scope';
 import { assignRuleScopeChecked, readClinicScopeRow, readRuleScopeOverview } from '../rule-scope-admin';
 import { isPlainObject } from '../validate/shape';
@@ -37,6 +38,15 @@ import type { AdminServices } from './services';
 //   POST   /api/admin/clinics/{clinicId}/treatments/{treatmentId}/review-requests — 검토 요청 제출(HA 자기 병원, 본문 { proposed: { benefitType, procedureCodes, calcClass } }). 요청은 제안 기록일 뿐이라 치료·분류·매핑·규칙 묶음·카탈로그·키오스크 계산을 바꾸지 않는다. 치료가 병원의 현재 게시 활성 치료가 아니면 400, 열린 요청이 이미 있으면 409
 //   GET    /api/admin/clinics/{clinicId}/review-requests        — 병원 관리자의 읽기 전용 요청 목록(최신순). DD-19 표에는 없고 권한 표(HA 는 자기 병원 검토 요청의 상태·결과·반려 사유를 읽는다)에서 더한 경로다
 //   GET    /api/admin/review-queue                              — 검토 담당자(RV, 플랫폼 단위 소속)가 보는 모든 병원의 열린 요청(오래된 순). 병원 경로가 없다
+//   GET    /api/admin/clinics/{clinicId}/idle-policy            — (HA 자기 병원) 무조작 정책 읽기. 응답 { clinic, idlePolicy: { screens, completionHoldSeconds }, customizedScreens, defaults, minLeadSeconds, policyDigest }.
+//                                                                 idlePolicy 는 공개 catalog 응답의 idlePolicy 와 같은 값이다(다섯 화면 종류가 모두 있고, 저장하지 않은 종류는 기본값이다). customizedScreens 는 병원이 직접 저장한 화면 종류,
+//                                                                 defaults·minLeadSeconds 는 저장하지 않은 종류가 따르는 기본값과 경고-초기화 간격 하한(초)이다.
+//                                                                 policyDigest 는 읽은 순간의 저장 상태 지문(소문자 16진수 64글자)이다: 저장한 적 없음 · 직접 저장한 값(기본값과 같은 값 포함) · 직접 설정한 화면 종류가 서로 다른 지문이고, 변경 감지에만 쓴다(비밀값도 미리보기 증명도 아니다). 읽기만 한다
+//   PUT    /api/admin/clinics/{clinicId}/idle-policy            — (HA 자기 병원) 무조작 정책 저장. 본문 { screens: { <화면 종류>: { warnSeconds, resetSeconds } }(일부만 가능), completionHoldSeconds: 양의 정수 | null, expectedDigest: GET 이 알린 policyDigest }(세 키 모두 필수; null = 이용 완료 화면의 자동 복귀 없음).
+//                                                                 조건부 저장: 서버가 한 트랜잭션 안에서 현재 지문 비교(409 IDLE_POLICY_CHANGED) → 기존 값 검사(400) → 저장 → 감사 기록 순으로 처리한다. 지문이 없거나 형식이 틀리면(경로 expectedDigest) 400 이고, 지문이 현재 저장 상태와 다르면(그 사이 다른 창에서 저장됨) 409 이며 정책·감사 기록은 그대로다. 낡은 지문과 틀린 값이 함께 오면 409 가 먼저다.
+//                                                                 저장은 정책 전체를 바꾼다(PUT 전체 교체): 본문에 없는 화면 종류는 기본값으로 돌아간다. 서버가 화면 종류 이름·초 값(0 이상의 정수)·경고 < 초기화이고 간격 ≥ 20초(completionHoldSeconds 에는 이 하한이 없다)를 검사한다.
+//                                                                 응답은 GET 과 같은 모양(방금 저장한 값을 저장소에서 다시 읽은 것). 400: 어긋난 필드마다 { code, path }. 거절하면 정책 저장소도 감사 기록도 바뀌지 않는다. 성공하면 감사 기록은 IDLE_POLICY_SAVE 한 건이다.
+//                                                                 병원은 경로가 정한다(본문의 병원 id 는 읽지 않는다). 저장은 이미 열려 있는 키오스크 세션에는 닿지 않는다: 새로 연 키오스크가 catalog 응답의 idlePolicy 로 읽는다. 가격·보장 규칙·계산·카탈로그 버전은 바꾸지 않는다
 //
 // 검토 담당자(RV, 플랫폼 단위 소속) 전용 경로 — 매핑 검토 (M7 매핑 검토). DD-19 표는 초안 작성·승인·반려를 나열한다. 검토 제출(submit), 이력 조회(review-history),
 // 대기열·이력 보기의 확장(현재 게시 상태·매핑 요약·검토 기준 비교)은 DD-19 에 없고 권한 표(작성자의 검토 제출 · RV 의 처리 결과 조회)에서 이 라우터가 더한 것이다:
@@ -101,6 +111,8 @@ const CONFLICT_REASONS: readonly string[] = [
   'BASE_BUNDLE_NOT_ACTIVE',
   'BUNDLE_NOT_ACTIVE',
   'SCOPE_CHANGED',
+  // 무조작 정책(HA): 화면이 읽은 저장 상태 지문(expectedDigest)이 저장 시점의 현재 지문과 다름(다른 창·다른 사람이 그 사이 저장함).
+  'IDLE_POLICY_CHANGED',
 ];
 
 /**
@@ -252,6 +264,31 @@ const getVersions: Handler = (services, _request, _actor, clinic) => {
     .map((catalog) => ({ id: catalog.id, publishedBy: catalog.publishedBy.id, publishedAt: catalog.publishedAt, changeSummary: catalog.changeSummary, current: current !== null && current.id === catalog.id }))
     .reverse();
   return ok({ versions });
+};
+
+/** 무조작 정책의 관리자 보기. GET 과 PUT 의 응답이 같은 모양이다(PUT 은 방금 저장한 값을 저장소에서 다시 읽어 낸다). */
+function idlePolicyBody(services: AdminServices, clinic: Clinic) {
+  const view = readIdlePolicyAdminView(services.api.repo, clinic.id);
+  return {
+    clinic: { id: clinic.id, slug: clinic.slug, displayName: clinic.name },
+    idlePolicy: { screens: view.screens, completionHoldSeconds: view.completionHoldSeconds },
+    customizedScreens: view.customizedScreens,
+    defaults: view.defaults,
+    minLeadSeconds: view.minLeadSeconds,
+    policyDigest: view.policyDigest,
+  };
+}
+
+const getIdlePolicy: Handler = (services, _request, _actor, clinic) => ok(idlePolicyBody(services, clinic));
+
+const putIdlePolicy: Handler = async (services, request, actor, clinic) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  // 지문 비교(expectedDigest)·검사(화면 종류·초 값·간격·completionHoldSeconds)·저장·감사 기록은 서비스가 한 트랜잭션에서 이 순서로 한다: 거절(400·409)은 아무것도 쓰지 않는다. 병원은 경로가 정한다.
+  saveClinicIdlePolicyChecked(services.deps, actor, clinic.id, body.body);
+  return ok(idlePolicyBody(services, clinic));
 };
 
 const getReviewRequests: Handler = (services, _request, _actor, clinic) => ok({ reviewRequests: readClinicReviewRequestViews(services.api.repo, clinic.id) });
@@ -487,6 +524,8 @@ const CLINIC_ROUTES: readonly Route[] = [
   { method: 'GET', tail: ['catalog', 'versions'], handler: getVersions },
   { method: 'GET', tail: ['review-requests'], handler: getReviewRequests },
   { method: 'POST', tail: ['treatments', ':treatmentId', 'review-requests'], handler: postReviewRequest },
+  { method: 'GET', tail: ['idle-policy'], handler: getIdlePolicy },
+  { method: 'PUT', tail: ['idle-policy'], handler: putIdlePolicy },
 ];
 
 async function authenticate(services: AdminServices, request: Request): Promise<AdminIdentity | null> {
