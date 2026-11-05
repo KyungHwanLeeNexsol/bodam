@@ -14,7 +14,8 @@ import type { Repository } from './repo/interfaces';
 //   unreadable  — 읽다가 실패한 매핑. 후보가 없는 것처럼 숨기지 않고 이유 코드와 함께 남긴다.
 // 한 건을 읽지 못해도 던지지 않는다. 단, 이 보기는 판정이 아니다: 후보라는 표시가 게시할 수 있다는 뜻은 아니며, 게시 판정은 미리보기가 한다.
 
-export interface BundleBaseView {
+/** 게시된 묶음 한 건의 요약(항목 수는 종류별). 규칙 사용 범위 화면(rule-scope-admin.ts)도 같은 모양을 쓴다. */
+export interface BundleSummaryView {
   bundleId: string;
   /** 가용성 기록이 없는 묶음(서버 데이터 결함)은 null 이다. */
   status: BundleAvailability | null;
@@ -22,6 +23,9 @@ export interface BundleBaseView {
   publishedBy: string;
   contentHash: string;
   itemCounts: { profiles: number; mappings: number; documentRuleSets: number };
+}
+
+export interface BundleBaseView extends BundleSummaryView {
   /** 현재 범위가 이 묶음을 가리키는 병원. */
   clinics: AffectedClinic[];
 }
@@ -59,14 +63,8 @@ export interface BundlePublishOverview {
 
 const keyOf = (ref: ItemVersionRef): string => JSON.stringify([ref.kind, ref.id, ref.version]);
 
-function baseViews(repo: Repository): BundleBaseView[] {
-  const holders = new Map<string, AffectedClinic[]>();
-  for (const clinic of repo.listClinics()) {
-    const scope = repo.getClinicRuleScope(clinic.id);
-    if (scope !== null) {
-      holders.set(scope.ruleBundleVersionId, [...(holders.get(scope.ruleBundleVersionId) ?? []), { clinicId: clinic.id, slug: clinic.slug }]);
-    }
-  }
+/** 게시된 묶음 전부의 요약, 최신 게시가 먼저. */
+export function readBundleSummaries(repo: Pick<Repository, 'listRuleBundleVersions' | 'getBundleStatus'>): BundleSummaryView[] {
   return repo
     .listRuleBundleVersions()
     .map((bundle) => ({
@@ -80,9 +78,19 @@ function baseViews(repo: Repository): BundleBaseView[] {
         mappings: bundle.itemRefs.filter((ref) => ref.kind === 'MAPPING').length,
         documentRuleSets: bundle.itemRefs.filter((ref) => ref.kind === 'DOCUMENT_RULE_SET').length,
       },
-      clinics: holders.get(bundle.id) ?? [],
     }))
     .reverse();
+}
+
+function baseViews(repo: Repository): BundleBaseView[] {
+  const holders = new Map<string, AffectedClinic[]>();
+  for (const clinic of repo.listClinics()) {
+    const scope = repo.getClinicRuleScope(clinic.id);
+    if (scope !== null) {
+      holders.set(scope.ruleBundleVersionId, [...(holders.get(scope.ruleBundleVersionId) ?? []), { clinicId: clinic.id, slug: clinic.slug }]);
+    }
+  }
+  return readBundleSummaries(repo).map((summary) => ({ ...summary, clinics: holders.get(summary.bundleId) ?? [] }));
 }
 
 /** 검토 요청 연결: 매핑 키 → 요청 id. 결과 매핑이 초안 연결보다 앞선다. */
