@@ -5,7 +5,7 @@ import type { ReactElement } from 'react';
 import { formatSeoulMinute } from '../clock';
 import { AdminNav } from './AdminNav';
 import { REVIEW_COPY as COPY } from './review-copy';
-import { currentLines, differingFields, proposedLines, statusLabel } from './review-model';
+import { currentLines, differingFieldsOf, missingCurrentReason, proposedLines, publishedValuesOf, statusLabel } from './review-model';
 import type { ValueField, ValueLines } from './review-model';
 import type { ReviewQueueEntry, ReviewQueueResponse } from './review-types';
 import { adminRequest as request } from './transport';
@@ -16,13 +16,18 @@ import { adminRequest as request } from './transport';
 
 type Phase = 'loading' | 'unauthenticated' | 'forbidden' | 'error' | 'ready';
 
-function ValueBlock({ label, kind, lines, differs }: { label: string; kind: 'current' | 'proposed'; lines: ValueLines | null; differs: readonly ValueField[] }): ReactElement {
+function ValueBlock({ label, kind, lines, differs, missing }: { label: string; kind: 'current' | 'proposed'; lines: ValueLines | null; differs: readonly ValueField[]; missing: 'NOT_PUBLISHED' | 'UNREADABLE' | null }): ReactElement {
   const mark = (field: ValueField): { 'data-differs'?: 'true' } => (kind === 'proposed' && differs.includes(field) ? { 'data-differs': 'true' } : {});
   return (
     <div className="admin-queue-values" data-admin-queue-values={kind}>
       <span className="admin-sub2">{label}</span>
       {lines === null ? (
-        <span data-admin-queue-not-published>{COPY.notInPublished}</span>
+        // 값이 없는 이유가 둘이다: 숨김·목록에 없음은 "현재 게시 목록에 없음", 서버가 읽지 못한 것은 별도 문구(읽지 못한 것을 "목록에 없음"으로 보이지 않는다).
+        missing === 'UNREADABLE' ? (
+          <span data-admin-queue-unreadable>{COPY.currentUnreadable}</span>
+        ) : (
+          <span data-admin-queue-not-published>{COPY.notInPublished}</span>
+        )
       ) : (
         <dl className="admin-queue-lines">
           <div {...mark('benefitType')}>
@@ -114,7 +119,8 @@ export function ReviewQueue(): ReactElement {
             </thead>
             <tbody>
               {queue.map((entry) => {
-                const differs = differingFields(entry.current, entry.proposed);
+                const differs = differingFieldsOf(entry.current, entry.proposed);
+                const missing = missingCurrentReason(entry.current);
                 return (
                   <tr key={entry.id} data-admin-queue-row={entry.id}>
                     <td data-admin-queue-clinic>{entry.clinic.name}</td>
@@ -123,8 +129,8 @@ export function ReviewQueue(): ReactElement {
                     <td data-admin-queue-requester>{entry.requestedBy}</td>
                     <td className="admin-nowrap"><span className="admin-pill" data-admin-queue-status={entry.status}>{statusLabel(entry)}</span></td>
                     <td>
-                      <ValueBlock label={COPY.currentLabel} kind="current" lines={currentLines(entry.current)} differs={differs} />
-                      <ValueBlock label={COPY.proposedLabel} kind="proposed" lines={proposedLines(entry.proposed)} differs={differs} />
+                      <ValueBlock label={COPY.currentLabel} kind="current" lines={currentLines(publishedValuesOf(entry.current))} differs={differs} missing={missing} />
+                      <ValueBlock label={COPY.proposedLabel} kind="proposed" lines={proposedLines(entry.proposed)} differs={differs} missing={null} />
                     </td>
                   </tr>
                 );

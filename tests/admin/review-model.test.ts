@@ -6,16 +6,19 @@ import {
   codesToText,
   currentLines,
   differingFields,
+  differingFieldsOf,
   hasOpenRequest,
   initialReviewForm,
   latestByTreatment,
+  missingCurrentReason,
   parseCodesText,
   proposedLines,
+  publishedValuesOf,
   requestBodyOf,
   reviewFailureMessage,
   statusLabel,
 } from '../../src/app/admin/review-model';
-import type { CurrentTreatmentView, ProposedValues, ReviewRequestView } from '../../src/app/admin/review-types';
+import type { CurrentPublishedView, CurrentTreatmentView, ProposedValues, ReviewRequestView } from '../../src/app/admin/review-types';
 
 // 검토 요청 화면의 순수 계산 (화면 코드 밖). 시험 자료(TEST_FIXTURE)만 쓴다.
 // 서버가 권위이고 이 파일은 입력을 요청 본문 모양으로 옮기고, 치료마다 가장 최근 요청을 고르고, 거절을 문장으로 바꾸는 일만 한다.
@@ -229,6 +232,38 @@ describe('대기열의 값 줄: 현재 게시값과 제안값', () => {
 
   it('현재 값이 없으면 어느 칸도 비교할 수 없어 셋 모두 달라지는 것으로 본다', () => {
     expect(differingFields(null, proposed)).toEqual(['benefitType', 'procedureCodes', 'calcClass']);
+  });
+});
+
+// 서버가 현재 게시값을 네 가지 상태로 나눠 준다. 화면은 값이 있는 상태(PUBLISHED)에서만 줄을 만들고, 값이 없는 이유를 둘로 나눠 보인다:
+// 숨김·목록에 없음 = "현재 게시 목록에 없음", 읽지 못함 = 별도 문구(읽지 못한 것을 "목록에 없음"으로 보이지 않는다).
+describe('대기열의 현재 게시 상태', () => {
+  const published: CurrentPublishedView = { state: 'PUBLISHED', displayName: 'TEST_FIXTURE 시험 치료 A', treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_1'], calcClass: 'GENERAL_BENEFIT' };
+
+  it('게시된 값만 값 줄이 된다 (그 밖의 상태는 null)', () => {
+    expect(publishedValuesOf(published)).toMatchObject({ treatmentCode: 'TEST_FIXTURE_TC_1', calcClass: 'GENERAL_BENEFIT' });
+    expect(publishedValuesOf({ state: 'HIDDEN' })).toBeNull();
+    expect(publishedValuesOf({ state: 'NOT_IN_CATALOG' })).toBeNull();
+    expect(publishedValuesOf({ state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' })).toBeNull();
+  });
+
+  it('값이 없는 이유: 숨김·목록에 없음은 NOT_PUBLISHED, 읽지 못함은 UNREADABLE, 값이 있으면 null', () => {
+    expect(missingCurrentReason(published)).toBeNull();
+    expect(missingCurrentReason({ state: 'HIDDEN' })).toBe('NOT_PUBLISHED');
+    expect(missingCurrentReason({ state: 'NOT_IN_CATALOG' })).toBe('NOT_PUBLISHED');
+    expect(missingCurrentReason({ state: 'UNREADABLE', defectCode: 'TREATMENT_VERSION_MISSING' })).toBe('UNREADABLE');
+  });
+
+  it('읽지 못한 문구는 "현재 게시 목록에 없음" 문구와 다르다', () => {
+    expect(REVIEW_COPY.currentUnreadable).not.toBe(REVIEW_COPY.notInPublished);
+    expect(REVIEW_COPY.currentUnreadable).toContain('읽지 못');
+  });
+
+  it('읽지 못해 비교할 수 없으면 달라지는 칸을 표시하지 않는다 (값이 없는 다른 상태와 달리)', () => {
+    const proposed: ProposedValues = { benefitType: 'NON_BENEFIT', procedureCodes: [], calcClass: 'GENERAL_NON_BENEFIT' };
+    expect(differingFieldsOf({ state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' }, proposed)).toEqual([]);
+    expect(differingFieldsOf({ state: 'HIDDEN' }, proposed)).toEqual(['benefitType', 'procedureCodes', 'calcClass']);
+    expect(differingFieldsOf(published, proposed)).toEqual(['benefitType', 'procedureCodes', 'calcClass']);
   });
 });
 

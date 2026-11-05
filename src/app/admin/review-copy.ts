@@ -86,6 +86,7 @@ export const REVIEW_COPY = {
   currentLabel: '현재 게시값',
   proposedLabel: '병원이 제안한 값',
   notInPublished: '현재 게시 목록에 없음',
+  currentUnreadable: '현재 게시값을 읽지 못했습니다',
   fieldBenefitShort: '급여 구분',
   fieldProcedureShort: '행위 코드',
   fieldCalcClassShort: '보험 계산 분류',

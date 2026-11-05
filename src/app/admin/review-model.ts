@@ -1,6 +1,6 @@
 import type { ApiFailure, BenefitType, TreatmentRow } from './api-types';
 import { REVIEW_COPY as COPY } from './review-copy';
-import type { CalcClass, CurrentTreatmentView, ProposedValues, ReviewRequestView } from './review-types';
+import type { CalcClass, CurrentPublishedView, CurrentTreatmentView, ProposedValues, ReviewRequestView } from './review-types';
 import type { Api } from './transport';
 
 // 검토 요청 화면의 순수 계산 (SPEC-REIMBURSEMENT-001 M7 검토 요청). React·네트워크·시계를 쓰지 않는다.
@@ -87,6 +87,19 @@ export const proposedLines = (proposed: ProposedValues): ValueLines => linesOf(p
 
 /** 현재 게시본에 그 치료가 없으면(null) 값 줄도 없다. 화면이 "현재 게시 목록에 없음"을 보인다. */
 export const currentLines = (current: CurrentTreatmentView | null): ValueLines | null => (current === null ? null : linesOf(current.benefitType, current.procedureCodes, current.calcClass));
+
+/** 현재 게시 상태에서 값이 있는 경우(PUBLISHED)만 판단 필드를 낸다. 숨김·목록에 없음·읽지 못함은 null. */
+export const publishedValuesOf = (current: CurrentPublishedView): CurrentTreatmentView | null => (current.state === 'PUBLISHED' ? current : null);
+
+/** 값이 없는 이유: 숨김·목록에 없음은 NOT_PUBLISHED("현재 게시 목록에 없음"), 서버가 읽지 못한 것은 UNREADABLE(별도 문구). 값이 있으면 null. */
+export function missingCurrentReason(current: CurrentPublishedView): 'NOT_PUBLISHED' | 'UNREADABLE' | null {
+  if (current.state === 'PUBLISHED') return null;
+  return current.state === 'UNREADABLE' ? 'UNREADABLE' : 'NOT_PUBLISHED';
+}
+
+/** 대기열 항목의 달라지는 칸. 읽지 못해 비교할 수 없으면 표시하지 않는다(없는 값과 다르다고 말하지 않는다). */
+export const differingFieldsOf = (current: CurrentPublishedView, proposed: ProposedValues): ValueField[] =>
+  current.state === 'UNREADABLE' ? [] : differingFields(publishedValuesOf(current), proposed);
 
 /** 제안값이 현재 게시값과 다른 칸. 행위 코드는 순서가 달라도 같은 목록으로 본다. 현재 값이 없으면 비교할 수 없어 셋 모두 다른 것으로 본다. */
 export function differingFields(current: CurrentTreatmentView | null, proposed: ProposedValues): ValueField[] {

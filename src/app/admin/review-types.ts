@@ -34,10 +34,15 @@ export interface CurrentTreatmentView {
   calcClass: CalcClass;
 }
 
+/**
+ * 현재 게시 상태 (서버가 네 가지로 나눠 준다). PUBLISHED 만 값이 있다.
+ * HIDDEN(숨김)·NOT_IN_CATALOG(목록에 없음)과 UNREADABLE(서버가 현재 게시값을 읽지 못함, defectCode)은 다른 말이며 읽지 못한 것을 "목록에 없음"으로 보이지 않는다.
+ */
+export type CurrentPublishedView = ({ state: 'PUBLISHED' } & CurrentTreatmentView) | { state: 'HIDDEN' } | { state: 'NOT_IN_CATALOG' } | { state: 'UNREADABLE'; defectCode: string };
+
 export interface ReviewQueueEntry extends ReviewRequestView {
   clinic: { id: string; name: string };
-  /** 그 병원의 현재 게시본에 그 치료가 없으면 null. */
-  current: CurrentTreatmentView | null;
+  current: CurrentPublishedView;
 }
 
 export interface ReviewRequestsResponse {
