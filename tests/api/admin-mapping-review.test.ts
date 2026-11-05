@@ -195,6 +195,15 @@ describe('인증·권한 표: 새 경로 다섯 개는 모두 플랫폼 단위 R
     },
   );
 
+  it('브라우저 시험이 쓰는 시험 계정과 같은 신원이다: rv-2 는 둘째 플랫폼 RV, rv-clinic-1 은 병원 1 에 매인 RV (RV 경로 403)', async () => {
+    expect(identityOf('rv-2')).toEqual(RV2);
+    expect(identityOf('rv-clinic-1').memberships).toEqual([{ clinicId: TEST_FIXTURE_CLINIC_ID, role: 'RV' }]);
+    const world = setup();
+    expect((await call(world.as('rv-2'), 'GET', HISTORY)).status).toBe(200);
+    expect((await call(world.as('rv-clinic-1'), 'GET', HISTORY)).status).toBe(403);
+    expect((await call(world.as('rv-clinic-1'), 'GET', QUEUE)).status).toBe(403);
+  });
+
   it('여러 소속: 병원 1 HA + 플랫폼 RV 이면 RV 경로를 쓸 수 있다 (HA 소속이 RV 권한을 막지 않고, RV 소속이 병원 권한을 넓히지도 않는다)', async () => {
     const world = setup();
     const both: AdminIdentity = { userId: 'TEST_FIXTURE_BOTH', memberships: [{ clinicId: TEST_FIXTURE_CLINIC_ID, role: 'HA' }, { clinicId: null, role: 'RV' }] };

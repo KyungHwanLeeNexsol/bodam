@@ -21,6 +21,10 @@ export const TEST_ACCOUNTS = {
   'ha-clinic-2': { userId: 'TEST_FIXTURE_HA_CLINIC_2', label: '병원 2 관리자 (HA)', home: OTHER_CLINIC_ID, memberships: [{ clinicId: OTHER_CLINIC_ID, role: 'HA' }] },
   /** 보험 기준 검토 담당자(RV): 가격 수정·카탈로그 게시 권한이 없다. */
   'rv-1': { userId: 'TEST_FIXTURE_RV_PERSON_1', label: '보험 기준 검토 담당자 (RV)', home: TEST_FIXTURE_CLINIC_ID, memberships: [{ clinicId: null, role: 'RV' }] },
+  /** 둘째 보험 기준 검토 담당자(RV, 플랫폼 단위 소속): 매핑 검토에서 작성자(rv-1)와 다른 사람으로 승인·반려한다. */
+  'rv-2': { userId: 'TEST_FIXTURE_RV_PERSON_2', label: '보험 기준 검토 담당자 2 (RV)', home: TEST_FIXTURE_CLINIC_ID, memberships: [{ clinicId: null, role: 'RV' }] },
+  /** 병원 1 에 매인 RV: 플랫폼 단위 소속이 아니므로 검토 대기열·매핑 검토 경로가 거절(403)된다. 로그인하면 병원 1 의 가격 관리 화면으로 들어간다. */
+  'rv-clinic-1': { userId: 'TEST_FIXTURE_RV_CLINIC_BOUND_1', label: '병원 1 소속 검토 담당자 (RV, 병원에 매임)', home: TEST_FIXTURE_CLINIC_ID, memberships: [{ clinicId: TEST_FIXTURE_CLINIC_ID, role: 'RV' }] },
   /** 플랫폼 운영자(PO): 가격 수정·카탈로그 게시 권한이 없다. */
   'po-1': { userId: 'TEST_FIXTURE_PO_PERSON_1', label: '플랫폼 운영자 (PO)', home: TEST_FIXTURE_CLINIC_ID, memberships: [{ clinicId: null, role: 'PO' }] },
 } as const;
