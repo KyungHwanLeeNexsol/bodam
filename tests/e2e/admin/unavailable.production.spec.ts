@@ -21,6 +21,19 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
     }
   });
 
+  test('보장 검토 요청 화면과 검토 대기열 화면도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다)', async ({ page }) => {
+    for (const path of [`/admin/${CLINIC}/review-requests`, '/admin/review-queue']) {
+      const response = await page.goto(path);
+      expect(response?.status(), path).toBe(200);
+      expect(response?.headers()['cache-control'], path).toBe('no-store');
+      await expect(page.locator('[data-admin-state="unauthenticated"]')).toBeVisible();
+      await expect(page.locator('[data-admin-state] .admin-banner--error')).toContainText('로그인이 필요합니다');
+      await expect(page.getByRole('button')).toHaveCount(0);
+      await expect(page.locator('input, select, textarea')).toHaveCount(0);
+      expect(await page.locator('body').innerText()).not.toMatch(/TEST_FIXTURE|검토 요청 보내기|현재 게시값/);
+    }
+  });
+
   test('모든 관리자 API 는 401 이다 (일반 요청, 시험 쿠키·역할 헤더·쿼리 위조 모두), 응답은 no-store 이다', async ({ request }) => {
     const paths: Array<[string, string, unknown?]> = [
       ['GET', '/api/admin/session'],
@@ -30,6 +43,10 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
       ['POST', `/api/admin/clinics/${CLINIC}/catalog/preview`, { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' }],
       ['POST', `/api/admin/clinics/${CLINIC}/catalog/publish`, { publishConfirmation: 'a'.repeat(64) }],
       ['GET', `/api/admin/clinics/${CLINIC}/catalog/versions`],
+      // 보장 검토 요청(M7): 제출 · 병원 관리자의 요청 목록 · 검토 담당자의 대기열 — 운영 구성에서는 셋 다 쓸 수 없다.
+      ['POST', `/api/admin/clinics/${CLINIC}/treatments/TEST_FIXTURE_TREATMENT_1/review-requests`, { proposed: { benefitType: 'NON_BENEFIT', procedureCodes: [], calcClass: 'GENERAL_NON_BENEFIT' } }],
+      ['GET', `/api/admin/clinics/${CLINIC}/review-requests`],
+      ['GET', '/api/admin/review-queue'],
     ];
     const spoof = { cookie: 'bodam_test_session=TEST_FIXTURE_SESSION_1_ha-clinic-1; role=HA', 'x-role': 'HA', 'x-clinic-id': CLINIC, authorization: 'Bearer HA' };
     for (const [method, path, body] of paths) {

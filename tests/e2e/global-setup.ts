@@ -15,6 +15,8 @@ export const NOTICE_PORT = 3104;
 export const ADMIN_PORT = 3105;
 /** 관리자 구조 편집 시험(*.admin-catalog.spec.ts) 전용 앞단. 가격 흐름 시험(ADMIN_PORT)과 저장소를 나눈다: 두 파일이 서로 다른 속도로 같은 저장소를 게시하면 앞선 게시가 뒤 시험의 기준을 바꾼다. */
 export const ADMIN_CATALOG_PORT = 3106;
+/** 관리자 보장 검토 요청 시험(*.admin-review.spec.ts) 전용 앞단. 위 두 인스턴스와 저장소를 나눈다: 이 시험은 "검토 요청만 새 자료이고 나머지는 그대로"를 전후 비교로 증명하므로 다른 시험의 게시가 끼면 안 된다. */
+export const ADMIN_REVIEW_PORT = 3107;
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -41,7 +43,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const noticeUrl = `http://127.0.0.1:${NOTICE_PORT}/__harness/health`;
   const adminUrl = `http://127.0.0.1:${ADMIN_PORT}/__harness/health`;
   const adminCatalogUrl = `http://127.0.0.1:${ADMIN_CATALOG_PORT}/__harness/health`;
-  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl]) {
+  const adminReviewUrl = `http://127.0.0.1:${ADMIN_REVIEW_PORT}/__harness/health`;
+  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl]) {
     if (await isUp(url)) throw new Error(`이미 쓰고 있는 주소다(다른 서버를 시험하지 않는다): ${url}`);
   }
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(APP_PORT)], { stdio: 'ignore', windowsHide: true });
@@ -64,13 +67,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_CATALOG_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`],
     { stdio: 'ignore', windowsHide: true },
   );
-  const children = [app, harness, notice, adminHarness, adminCatalogHarness];
+  const adminReviewHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_REVIEW_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`],
+    { stdio: 'ignore', windowsHide: true },
+  );
+  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness];
   try {
     await waitUntilUp(appUrl, app, '운영 구성 앱');
     await waitUntilUp(harnessUrl, harness, '실제 핸들러 앞단');
     await waitUntilUp(noticeUrl, notice, '시험 안내 띠 앞단');
     await waitUntilUp(adminUrl, adminHarness, '관리자 시험 앞단');
     await waitUntilUp(adminCatalogUrl, adminCatalogHarness, '관리자 구조 편집 시험 앞단');
+    await waitUntilUp(adminReviewUrl, adminReviewHarness, '관리자 검토 요청 시험 앞단');
   } catch (error) {
     for (const child of children) child.kill();
     throw error;

@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { ADMIN_CATALOG_PORT, ADMIN_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
+import { ADMIN_CATALOG_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
@@ -39,5 +39,8 @@ export default defineConfig({
     { name: 'admin', testMatch: /.*\.admin\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_PORT}`, viewport: { width: 1280, height: 900 } } },
     //  - *.admin-catalog.spec.ts : 관리자 구조 편집 흐름(M7: 새 치료 추가 · 숨김 · 표시 순서). 위와 같은 앞단이지만 저장소를 따로 가진 인스턴스(ADMIN_CATALOG_PORT)라 가격 흐름 시험과 순서에 상관없이 돈다.
     { name: 'admin-catalog', testMatch: /.*\.admin-catalog\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_CATALOG_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-review.spec.ts  : 보장 검토 요청 흐름(M7: 병원 관리자가 요청 → 검토 담당자가 읽기 전용 대기열에서 확인). 위와 같은 앞단이지만 저장소를 따로 가진 인스턴스(ADMIN_REVIEW_PORT)다.
+    //                              요청은 제안 기록일 뿐이라 공개 카탈로그·보험 선택지·계산·관리자 치료 목록이 전후로 같음을 함께 본다.
+    { name: 'admin-review', testMatch: /.*\.admin-review\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_REVIEW_PORT}`, viewport: { width: 1280, height: 900 } } },
   ],
 });
