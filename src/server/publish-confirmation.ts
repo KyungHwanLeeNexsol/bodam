@@ -6,7 +6,7 @@ import type { CatalogDraft } from './domain/entities';
 //
 //   확인값 = canonicalDigest([ 용도 표지, 초안 revision, 관리자 id, 병원 id, 기준 카탈로그 버전 id, 초안 내용 전체의 지문 ])
 //
-// - 초안 내용 전체 = 가격 수정 + 새 치료 + 숨김 + 표시 순서(draftContentDigest). 확인값은 가격만이 아니라 게시될 구조 전체에 묶인다: 순서나 숨김만 다른 초안의 확인값으로는 게시할 수 없다.
+// - 초안 내용 전체 = 가격 수정 + 공통 기본비용 금액 수정 + 새 치료 + 숨김 + 표시 순서(draftContentDigest). 확인값은 가격만이 아니라 게시될 구조 전체에 묶인다: 순서나 숨김, 기본비용 금액만 다른 초안의 확인값으로는 게시할 수 없다.
 // - 열쇠는 초안의 revision 이다. 저장할 때마다 서버가 새로 만들고(내용이 같아도 다르다) 어떤 응답에도 싣지 않으므로, 미리보기 응답을 받지 않은 쪽은 계산할 수 없다.
 //   목록·저장 응답의 draftDigest(내용 지문)는 revision 을 담지 않아 이 값을 만드는 데 쓸 수 없다.
 // - 초안을 다시 저장하거나 버렸다 새로 만들면 revision 이 바뀌어 이전 확인값은 맞지 않는다. 기준 카탈로그가 바뀐 뒤 같은 가격으로 다시 저장해도 마찬가지다.
@@ -22,8 +22,15 @@ const PURPOSE = 'bodam.publish-confirmation.v2';
  * 초안 내용 전체의 지문: 가격 수정·새 치료·숨김·표시 순서. 목록·저장·미리보기 응답의 draftDigest 와 감사 기록의 사유(DRAFT_OF)와 게시 확인값이 같은 함수를 쓴다.
  * 수정 시각·수정자·revision 은 내용이 아니므로 넣지 않는다(revision 은 확인값이 따로 묶는다).
  */
-export const draftContentDigest = (draft: Pick<CatalogDraft, 'priceEdits' | 'additions' | 'deactivations' | 'order'>): string =>
-  canonicalDigest({ priceEdits: draft.priceEdits, additions: draft.additions, deactivations: draft.deactivations, order: draft.order });
+export const draftContentDigest = (draft: Pick<CatalogDraft, 'priceEdits' | 'baseFeeEdits' | 'additions' | 'deactivations' | 'order'>): string =>
+  canonicalDigest({
+    priceEdits: draft.priceEdits,
+    // 기본비용 수정은 있을 때만 싣는다: 기본비용을 건드리지 않은 초안의 지문은 이 필드가 생기기 전과 같다.
+    ...(draft.baseFeeEdits.length > 0 ? { baseFeeEdits: draft.baseFeeEdits } : {}),
+    additions: draft.additions,
+    deactivations: draft.deactivations,
+    order: draft.order,
+  });
 
 /** 형식: 소문자 16진수 64자(canonicalDigest 의 출력). 이 모양이 아니면 확인값으로 보지 않는다. */
 export const PUBLISH_CONFIRMATION_PATTERN = /^[0-9a-f]{64}$/;

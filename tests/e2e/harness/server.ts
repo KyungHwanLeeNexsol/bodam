@@ -6,7 +6,7 @@ import { handleEstimate } from '../../../src/server/api/estimate';
 import { handleOptions } from '../../../src/server/api/options';
 import { TEST_SESSION_COOKIE } from '../../fixtures/server/admin.fixture';
 import type { TestAccountKey } from '../../fixtures/server/admin.fixture';
-import { addScopeOnlyClinics, auditEntries, changeCoverageJudgment, storeState } from './hooks';
+import { addScopeOnlyClinics, auditEntries, changeCoverageJudgment, publishWithoutBaseFees, storeState } from './hooks';
 import { ACCOUNT_KEYS, accountHome, loginPageHtml } from './login';
 import { previewFrameHtml } from './notice';
 import { HARNESS_BUNDLE_DEMO_TREATMENT, buildHarness } from './world';
@@ -76,6 +76,10 @@ async function testHook(request: IncomingMessage, response: ServerResponse, url:
   }
   if (url.pathname === '/__harness/test/add-scope-clinics' && request.method === 'POST') {
     sendJson(response, 200, { clinicIds: addScopeOnlyClinics(current.world) });
+    return true;
+  }
+  if (url.pathname === '/__harness/test/remove-base-fees' && request.method === 'POST') {
+    sendJson(response, 200, { catalogVersion: publishWithoutBaseFees(current.world) });
     return true;
   }
   if (url.pathname === '/__harness/test/change-coverage' && request.method === 'POST') {

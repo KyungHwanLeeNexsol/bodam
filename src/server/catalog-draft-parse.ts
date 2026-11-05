@@ -1,16 +1,18 @@
 import { isWon } from '../engine/numeric';
-import type { PriceEdit, TreatmentAddition } from './domain/entities';
+import type { BaseFeeEdit, PriceEdit, TreatmentAddition } from './domain/entities';
 import type { Defect } from './domain/errors';
 import { BENEFIT_TYPES, isNonEmptyString, isOneOf, isPlainObject } from './validate/shape';
 
 // 카탈로그 초안 요청 본문의 형식 검사 (M7 구조 편집: 가격 수정 + 새 치료 + 숨김 + 표시 순서). 순수 함수다: 저장소를 읽지 않고, 던지지 않고, 입력을 바꾸지 않는다.
 // 이 파일은 "모양"만 본다. 병원의 현재 게시 치료와 맞는지(없는 치료, 순열 여부, id 충돌)는 catalog-structure.ts 가 저장소를 읽어 본다.
 //
-// 본문: { priceEdits?, additions?, deactivations?, order? }. 네 키 모두 선택이고, 한 번의 PUT 이 원하는 초안 전체다(덮어쓴다). 다른 최상위 키는 UNKNOWN_FIELD 다.
+// 본문: { priceEdits?, baseFeeEdits?, additions?, deactivations?, order? }. 다섯 키 모두 선택이고, 한 번의 PUT 이 원하는 초안 전체다(덮어쓴다: 빠진 키는 비어 있는 것과 같다). 다른 최상위 키는 UNKNOWN_FIELD 다.
+// 기본비용 수정(baseFeeEdits[i])의 키는 { baseFeeId, amount } 둘뿐이다: 코드·급여 구분·이름·출처 같은 보장 판단 필드는 UNKNOWN_FIELD 다. 금액은 치료 가격과 같은 원화 계약(isWon)이다.
 // 새 치료(additions[i])의 키는 엄격하다: 아래 열 가지 말고는(calcClass·origin·id·sortOrder·active·clinicId 등) 모두 UNKNOWN_FIELD 다. 서버가 정하는 값을 요청이 정하는 길이 없다.
 
 const PRICE_EDIT_KEYS: readonly string[] = ['treatmentId', 'patientAmount'];
-const TOP_LEVEL_KEYS: readonly string[] = ['priceEdits', 'additions', 'deactivations', 'order'];
+const BASE_FEE_EDIT_KEYS: readonly string[] = ['baseFeeId', 'amount'];
+const TOP_LEVEL_KEYS: readonly string[] = ['priceEdits', 'baseFeeEdits', 'additions', 'deactivations', 'order'];
 const ADDITION_KEYS: readonly string[] = ['draftKey', 'displayName', 'description', 'benefitType', 'patientAmount', 'treatmentCode', 'procedureCodes', 'documentFlags', 'amountCondition', 'effectiveDate'];
 const DOCUMENT_FLAG_KEYS: readonly string[] = ['imaging', 'biopsy', 'opinionRequired'];
 const AMOUNT_CONDITION_KEYS: readonly string[] = ['patientType', 'assumption', 'referenceDate'];
@@ -75,6 +77,44 @@ function parsePriceEditList(out: Defect[], list: unknown[]): PriceEdit[] {
       } else {
         seen.add(treatmentId as string);
         edits.push({ treatmentId: treatmentId as string, patientAmount: patientAmount as number });
+      }
+    }
+  }
+  return edits;
+}
+
+/** 기본비용 수정 목록 `[{ baseFeeId, amount }]` 의 형식 검사. 결함은 out 에 쌓는다. 허용하는 키는 정확히 두 개다. 같은 baseFeeId 가 두 번 나오면 DUPLICATE_BASE_FEE_ID. */
+function parseBaseFeeEditList(out: Defect[], list: unknown[]): BaseFeeEdit[] {
+  const edits: BaseFeeEdit[] = [];
+  const seen = new Set<string>();
+  for (let index = 0; index < list.length; index += 1) {
+    const entry: unknown = list[index];
+    const at = `baseFeeEdits[${index}]`;
+    if (!isPlainObject(entry)) {
+      out.push({ code: 'NOT_OBJECT', path: at });
+      continue;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!BASE_FEE_EDIT_KEYS.includes(key)) {
+        out.push({ code: 'UNKNOWN_FIELD', path: `${at}.${key}` });
+      }
+    }
+    const { baseFeeId, amount } = entry;
+    let valid = true;
+    if (!isNonEmptyString(baseFeeId)) {
+      out.push({ code: baseFeeId === undefined ? 'VALUE_MISSING' : 'VALUE_INVALID', path: `${at}.baseFeeId` });
+      valid = false;
+    }
+    if (!isWon(amount)) {
+      out.push({ code: amount === undefined || amount === null ? 'VALUE_MISSING' : 'VALUE_INVALID', path: `${at}.amount` });
+      valid = false;
+    }
+    if (valid) {
+      if (seen.has(baseFeeId as string)) {
+        out.push({ code: 'DUPLICATE_BASE_FEE_ID', path: `${at}.baseFeeId` });
+      } else {
+        seen.add(baseFeeId as string);
+        edits.push({ baseFeeId: baseFeeId as string, amount: amount as number });
       }
     }
   }
@@ -247,6 +287,8 @@ function parseAddition(out: Defect[], entry: unknown, index: number, seenKeys: S
 /** 형식 검사를 통과한 요청. 아직 병원의 현재 게시 치료와 맞춰 보기 전이다(catalog-structure.ts). */
 export interface ParsedDraftRequest {
   priceEdits: PriceEdit[];
+  /** 요청에 적힌 순서 그대로(저장 때 코드 포인트 순으로 정렬한다). baseFeeId 중복 없음. 현재 금액과 같은지는 저장소를 읽는 쪽이 본다. */
+  baseFeeEdits: BaseFeeEdit[];
   additions: TreatmentAddition[];
   /** 요청에 적힌 순서 그대로(저장 때 코드 포인트 순으로 정렬한다). 중복 없음. */
   deactivations: string[];
@@ -282,7 +324,7 @@ function parseStringList(out: Defect[], value: unknown, name: string, duplicateC
 }
 
 /**
- * 초안 요청 본문 `{ priceEdits?, additions?, deactivations?, order? }` 의 형식 검사. 던지지 않는다. 결함은 모두 모아서 돌려준다.
+ * 초안 요청 본문 `{ priceEdits?, baseFeeEdits?, additions?, deactivations?, order? }` 의 형식 검사. 던지지 않는다. 결함은 모두 모아서 돌려준다.
  * 키가 없는 섹션은 비어 있는 것과 같다. 최상위의 다른 키는 UNKNOWN_FIELD(path `request.<키>`). 새 치료는 최대 MAX_ADDITIONS 건(TOO_MANY_ADDITIONS).
  * order 는 배열이거나 null/생략(기본 순서)이다. order 가 배열이면 항목 중복(DUPLICATE_ORDER_ENTRY)만 여기서 걸러 낸다. 순열 여부는 현재 게시 치료가 있어야 알 수 있다.
  */
@@ -303,6 +345,15 @@ export function parseDraftRequest(request: unknown): DraftParse {
       priceEdits = parsePriceEditList(defects, request.priceEdits);
     } else {
       defects.push({ code: 'NOT_ARRAY', path: 'priceEdits' });
+    }
+  }
+
+  let baseFeeEdits: BaseFeeEdit[] = [];
+  if (request.baseFeeEdits !== undefined) {
+    if (Array.isArray(request.baseFeeEdits)) {
+      baseFeeEdits = parseBaseFeeEditList(defects, request.baseFeeEdits);
+    } else {
+      defects.push({ code: 'NOT_ARRAY', path: 'baseFeeEdits' });
     }
   }
 
@@ -333,5 +384,5 @@ export function parseDraftRequest(request: unknown): DraftParse {
   if (defects.length > 0) {
     return { ok: false, defects };
   }
-  return { ok: true, request: { priceEdits, additions, deactivations, order, legacyPriceOnly: isLegacyPriceOnlyBody(request) } };
+  return { ok: true, request: { priceEdits, baseFeeEdits, additions, deactivations, order, legacyPriceOnly: isLegacyPriceOnlyBody(request) } };
 }

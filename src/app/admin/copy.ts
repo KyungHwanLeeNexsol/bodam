@@ -57,16 +57,28 @@ export const ADMIN_COPY = {
   discardDraft: '초안 버리기',
   preview: '미리보기',
   publish: '게시',
-  workingSummary: (summary: { priceChanged: number; added: number; hidden: number; reordered: boolean }): string => {
+  // 공통 기본비용: 치료를 고르면 자동으로 함께 계산되는 항목. 이 화면은 금액만 고친다(등록·삭제·코드·급여 구분 변경은 없다).
+  baseFeeTitle: '공통 기본비용',
+  baseFeeNote:
+    '공통 기본비용은 치료를 고르면 자동으로 함께 계산되는 항목입니다. 이 화면에서는 금액만 바꿀 수 있고, 새로 등록하거나 삭제하거나 급여 구분·코드를 바꿀 수 없습니다. 금액만 바꾼 게시는 승인된 보장 분류를 그대로 유지합니다.',
+  baseFeeNone: '등록된 공통 기본비용이 없습니다. 이 병원에는 고칠 수 있는 기본비용이 없습니다.',
+  baseFeeColName: '기본비용',
+  baseFeeColAmount: '게시된 금액',
+  baseFeeNewAmount: '새 금액 (원)',
+  baseFeeAmountLabel: (name: string): string => `${name} 새 금액`,
+  baseFeeChangesTitle: '공통 기본비용 금액 변경',
+  previewNeedsTreatment: '공통 기본비용 금액을 바꿨습니다. 계산 없이는 미리보기를 확인할 수 없으니 계산할 치료를 하나 이상 골라 주세요.',
+  workingSummary: (summary: { priceChanged: number; baseFeeChanged: number; added: number; hidden: number; reordered: boolean }): string => {
     const parts = [
       summary.priceChanged > 0 ? `가격 변경 ${summary.priceChanged}건` : '',
+      summary.baseFeeChanged > 0 ? `기본비용 변경 ${summary.baseFeeChanged}건` : '',
       summary.added > 0 ? `추가 ${summary.added}건` : '',
       summary.hidden > 0 ? `숨김 ${summary.hidden}건` : '',
       summary.reordered ? '순서 변경' : '',
     ].filter((part) => part !== '');
     return parts.length === 0 ? '화면에서 고친 내용이 없습니다.' : `화면에서 고친 내용: ${parts.join(' · ')}`;
   },
-  saveHint: '고친 내용이 있어야 초안을 저장할 수 있습니다. 가격을 바꾸거나, 치료를 숨기거나, 순서를 옮기거나, 새 치료를 더해 보세요.',
+  saveHint: '고친 내용이 있어야 초안을 저장할 수 있습니다. 가격이나 공통 기본비용 금액을 바꾸거나, 치료를 숨기거나, 순서를 옮기거나, 새 치료를 더해 보세요.',
   previewHint: '초안을 저장한 뒤 미리보기를 볼 수 있습니다. 입력을 바꿨다면 먼저 다시 저장해 주세요.',
   publishHint: '미리보기를 확인한 뒤에 게시할 수 있습니다.',
   draftStatusNone: '저장된 초안이 없습니다. 지금 키오스크에 보이는 목록과 가격은 위 "현재 가격"입니다.',
@@ -111,7 +123,7 @@ export const ADMIN_COPY = {
   cause: '치료 원인',
   previewTreatments: '계산할 치료',
   previewTreatmentsNote:
-    '가격을 바꾼 치료는 모두 계산에 포함되어야 게시할 수 있어서 항상 선택된 채로 고정됩니다. 나머지 치료는 함께 확인하고 싶을 때만 고르세요. 숨길 치료는 고를 수 없습니다. 가격을 바꾼 치료가 없으면 금액 비교는 만들지 않고 목록과 변경 내역만 보여 줍니다.',
+    '가격을 바꾼 치료는 모두 계산에 포함되어야 게시할 수 있어서 항상 선택된 채로 고정됩니다. 나머지 치료는 함께 확인하고 싶을 때만 고르세요. 숨길 치료는 고를 수 없습니다. 공통 기본비용은 고른 치료와 함께 자동으로 계산되며, 기본비용 금액을 바꿨다면 계산할 치료를 하나 이상 골라야 합니다. 가격을 바꾼 치료도 기본비용을 바꾼 내용도 없으면 금액 비교는 만들지 않고 목록과 변경 내역만 보여 줍니다.',
   previewRequiredPick: '가격 변경 · 항상 포함',
   runPreview: '미리보기 계산',
   before: '현재 게시본',
@@ -141,12 +153,13 @@ export const ADMIN_COPY = {
   historyNone: '게시 이력이 없습니다.',
   historyCurrent: '현재',
   historyPublishedBy: '게시자',
-  historySummary: (summary: { added: number; hidden: number; reordered: number; priceChanged: number }): string => {
+  historySummary: (summary: { added: number; hidden: number; reordered: number; priceChanged: number; baseFeesChanged?: boolean }): string => {
     const parts = [
       summary.added > 0 ? `추가 ${summary.added}건` : '',
       summary.hidden > 0 ? `숨김 ${summary.hidden}건` : '',
       summary.reordered > 0 ? `순서 변경 ${summary.reordered}건` : '',
       summary.priceChanged > 0 ? `가격 변경 ${summary.priceChanged}건` : '',
+      summary.baseFeesChanged === true ? '기본비용 변경' : '',
     ].filter((part) => part !== '');
     return parts.length === 0 ? '가격 변경 없음' : parts.join(' · ');
   },
@@ -191,6 +204,9 @@ export const ADMIN_COPY = {
       INVALID_REQUEST: '미리보기 조건이 올바르지 않습니다.',
       UNSUPPORTED_GENERATION: '지원하지 않는 세대입니다.',
       NO_TREATMENT_SELECTED: '계산할 치료를 고르지 않았습니다.',
+      BASE_FEE_NOT_IN_CATALOG: '현재 게시된 공통 기본비용이 아닌 항목이 있습니다. 화면을 새로 불러온 뒤 다시 시도해 주세요.',
+      DUPLICATE_BASE_FEE_ID: '같은 공통 기본비용이 두 번 들어 있습니다.',
+      BASE_FEE_PREVIEW_NEEDS_TREATMENT: '공통 기본비용 금액을 바꾼 초안은 계산할 치료를 하나 이상 골라야 미리보기를 만들 수 있습니다.',
     } as Readonly<Record<string, string>>,
   },
 } as const;
