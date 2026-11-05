@@ -85,17 +85,11 @@ const linesOf = (benefitType: BenefitType, procedureCodes: readonly string[], ca
 
 export const proposedLines = (proposed: ProposedValues): ValueLines => linesOf(proposed.benefitType, proposed.procedureCodes, proposed.calcClass);
 
-/** 현재 게시본에 그 치료가 없으면(null) 값 줄도 없다. 화면이 "현재 게시 목록에 없음"을 보인다. */
+/** 현재 게시값이 없으면(null) 값 줄도 없다. 왜 없는지(숨김·목록에 없음·읽지 못함)는 mapping-model.ts 의 currentStateDisplay 가 구분해 말한다. */
 export const currentLines = (current: CurrentTreatmentView | null): ValueLines | null => (current === null ? null : linesOf(current.benefitType, current.procedureCodes, current.calcClass));
 
 /** 현재 게시 상태에서 값이 있는 경우(PUBLISHED)만 판단 필드를 낸다. 숨김·목록에 없음·읽지 못함은 null. */
 export const publishedValuesOf = (current: CurrentPublishedView): CurrentTreatmentView | null => (current.state === 'PUBLISHED' ? current : null);
-
-/** 값이 없는 이유: 숨김·목록에 없음은 NOT_PUBLISHED("현재 게시 목록에 없음"), 서버가 읽지 못한 것은 UNREADABLE(별도 문구). 값이 있으면 null. */
-export function missingCurrentReason(current: CurrentPublishedView): 'NOT_PUBLISHED' | 'UNREADABLE' | null {
-  if (current.state === 'PUBLISHED') return null;
-  return current.state === 'UNREADABLE' ? 'UNREADABLE' : 'NOT_PUBLISHED';
-}
 
 /** 대기열 항목의 달라지는 칸. 읽지 못해 비교할 수 없으면 표시하지 않는다(없는 값과 다르다고 말하지 않는다). */
 export const differingFieldsOf = (current: CurrentPublishedView, proposed: ProposedValues): ValueField[] =>

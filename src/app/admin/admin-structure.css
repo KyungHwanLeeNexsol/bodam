@@ -203,3 +203,166 @@
     width: 100%;
   }
 }
+
+/* ───────── 검토 대기열 (M7 매핑 검토): 요청 하나가 카드 하나다. 현재 게시값·제안값·분류 안내·반영 안내·매핑 처리 단계를 위에서 아래로 놓는다. ───────── */
+.admin-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-queue-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 12px;
+  background: var(--kiosk-surface);
+}
+
+.admin-queue-entry--done {
+  background: var(--kiosk-surface-alt);
+}
+
+.admin-queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-queue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+
+.admin-queue-meta dt {
+  color: var(--kiosk-text-muted);
+  font-size: 14px;
+}
+
+.admin-queue-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 현재 게시값과 제안값을 나란히 놓고, 좁아지면 위아래로 쌓는다. */
+.admin-queue-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.admin-queue-columns .admin-queue-values + .admin-queue-values,
+.admin-queue-columns > div > .admin-queue-values {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-queue-notice {
+  border-color: var(--kiosk-warn, var(--kiosk-border));
+  background: var(--kiosk-warn-soft);
+}
+
+.admin-queue-reflection {
+  margin: 0;
+}
+
+.admin-queue-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--kiosk-border);
+}
+
+.admin-queue-stage .admin-actions {
+  margin: 4px 0;
+}
+
+.admin-queue-mapping dt {
+  min-width: 96px;
+}
+
+.admin-queue-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px dashed var(--kiosk-border);
+  border-radius: 12px;
+}
+
+.admin-queue-form .admin-input--text {
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.admin-queue-fieldset {
+  align-items: flex-start;
+}
+
+.admin-queue-scope {
+  width: auto;
+  min-width: 0;
+}
+
+.admin-queue-scope th,
+.admin-queue-scope td {
+  padding: 4px 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.admin-queue-scope tbody th {
+  text-align: left;
+}
+
+.admin-queue-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.admin-queue-dates .admin-input {
+  width: 11em;
+  text-align: left;
+}
+
+.admin-queue-problems {
+  margin: 0;
+  padding-left: 32px;
+}
+
+.admin-queue-reject {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-queue-reject .admin-textarea {
+  max-width: 560px;
+}
+
+.admin-textarea {
+  width: 100%;
+  resize: vertical;
+  text-align: left;
+}
+
+/* 긴 상태 문장(검토 승인됨 — 환자 화면에는 아직 반영되지 않았습니다)은 알약 안에서 줄을 바꾼다. */
+.admin-pill--wrap,
+.admin-table--review .admin-pill--wrap {
+  white-space: normal;
+  border-radius: 12px;
+  padding: 2px 10px;
+}

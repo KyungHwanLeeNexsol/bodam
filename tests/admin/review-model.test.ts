@@ -10,7 +10,6 @@ import {
   hasOpenRequest,
   initialReviewForm,
   latestByTreatment,
-  missingCurrentReason,
   parseCodesText,
   proposedLines,
   publishedValuesOf,
@@ -34,6 +33,7 @@ const view = (id: string, treatmentId: string, requestedAt: string, status: Revi
   rejectionReason,
   requestedAt,
   requestedBy: 'TEST_FIXTURE_HA_CLINIC_1',
+  classification: 'CLASSIFIED',
 });
 
 const treatment = (benefitType: 'BENEFIT' | 'NON_BENEFIT', procedureCodes: string[]): TreatmentRow => ({
@@ -130,7 +130,7 @@ describe('상태 표시', () => {
   it('요청이 없으면 "요청 없음", 있으면 상태 이름이다', () => {
     expect(statusLabel(undefined)).toBe('요청 없음');
     expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z'))).toBe('검토 요청됨 (대기 중)');
-    expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z', 'APPROVED'))).toBe('승인됨');
+    expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z', 'APPROVED'))).toBe('검토 승인됨 — 환자 화면에는 아직 반영되지 않았습니다');
     expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z', 'REJECTED', 'TEST_FIXTURE 사유'))).toBe('반려됨');
   });
 
@@ -235,8 +235,7 @@ describe('대기열의 값 줄: 현재 게시값과 제안값', () => {
   });
 });
 
-// 서버가 현재 게시값을 네 가지 상태로 나눠 준다. 화면은 값이 있는 상태(PUBLISHED)에서만 줄을 만들고, 값이 없는 이유를 둘로 나눠 보인다:
-// 숨김·목록에 없음 = "현재 게시 목록에 없음", 읽지 못함 = 별도 문구(읽지 못한 것을 "목록에 없음"으로 보이지 않는다).
+// 서버가 현재 게시값을 네 가지 상태로 나눠 준다. 화면은 값이 있는 상태(PUBLISHED)에서만 줄을 만들고, 값이 없는 이유(숨김·목록에 없음·읽지 못함)는 mapping-model.test.ts 가 구분해 본다.
 describe('대기열의 현재 게시 상태', () => {
   const published: CurrentPublishedView = { state: 'PUBLISHED', displayName: 'TEST_FIXTURE 시험 치료 A', treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_1'], calcClass: 'GENERAL_BENEFIT' };
 
@@ -245,18 +244,6 @@ describe('대기열의 현재 게시 상태', () => {
     expect(publishedValuesOf({ state: 'HIDDEN' })).toBeNull();
     expect(publishedValuesOf({ state: 'NOT_IN_CATALOG' })).toBeNull();
     expect(publishedValuesOf({ state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' })).toBeNull();
-  });
-
-  it('값이 없는 이유: 숨김·목록에 없음은 NOT_PUBLISHED, 읽지 못함은 UNREADABLE, 값이 있으면 null', () => {
-    expect(missingCurrentReason(published)).toBeNull();
-    expect(missingCurrentReason({ state: 'HIDDEN' })).toBe('NOT_PUBLISHED');
-    expect(missingCurrentReason({ state: 'NOT_IN_CATALOG' })).toBe('NOT_PUBLISHED');
-    expect(missingCurrentReason({ state: 'UNREADABLE', defectCode: 'TREATMENT_VERSION_MISSING' })).toBe('UNREADABLE');
-  });
-
-  it('읽지 못한 문구는 "현재 게시 목록에 없음" 문구와 다르다', () => {
-    expect(REVIEW_COPY.currentUnreadable).not.toBe(REVIEW_COPY.notInPublished);
-    expect(REVIEW_COPY.currentUnreadable).toContain('읽지 못');
   });
 
   it('읽지 못해 비교할 수 없으면 달라지는 칸을 표시하지 않는다 (값이 없는 다른 상태와 달리)', () => {
@@ -268,8 +255,8 @@ describe('대기열의 현재 게시 상태', () => {
 });
 
 describe('대기열 문구', () => {
-  it('읽기 전용임을 말하고 빈 대기열 문구가 고정되어 있다', () => {
-    expect(REVIEW_COPY.queueNote).toContain('확인만');
+  it('승인이 검토 기록임을 말하고 빈 대기열 문구가 고정되어 있다', () => {
+    expect(REVIEW_COPY.queueNote).toContain('검토 기록');
     expect(REVIEW_COPY.queueEmpty).toBe('처리 전 요청이 없습니다');
   });
 });
