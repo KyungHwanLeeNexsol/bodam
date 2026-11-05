@@ -29,11 +29,15 @@ import { isPlainObject } from './validate/shape';
 // 쓸 수 없게 된다(계산은 항목 상태를 요청마다 읽는다). 그러면 규칙 사용 범위를 다시 지정하기 전에 병원들이 보류된다(DD-14 복구 경로와 맞지 않음).
 // 대체는 markSuperseded 의 명시 동작으로 남긴다.
 
-/** 항목 하나를 해석한 결과. 검증기가 해석기로 읽은 값을 서비스가 그대로 쓰도록 모아 둔다(같은 읽기를 두 번 하지 않는다). */
-interface Resolved {
+/** 게시 판정이 읽은 항목 하나: 참조, 바뀌지 않는 내용, 방금 읽은 현재 상태. 미리보기가 같은 읽기 결과를 쓴다. */
+export interface BundlePublishItem {
   ref: ItemVersionRef;
   record: ItemVersionRecord;
   state: ItemStateSnapshot;
+}
+
+/** 항목 하나를 해석한 결과. 검증기가 해석기로 읽은 값을 서비스가 그대로 쓰도록 모아 둔다(같은 읽기를 두 번 하지 않는다). */
+interface Resolved extends BundlePublishItem {
   engine: StandardAssumptionProfile | TreatmentCoverageMapping | DocumentRuleSet;
 }
 
@@ -176,17 +180,29 @@ interface AuditChoice {
   reason: string | null;
 }
 
+// @MX:ANCHOR: [AUTO] 게시 결함 판정의 단일 구현. 규칙 묶음 게시(publishNew)와 묶음 구성 미리보기(bundle-compose.ts)가 부른다.
+// @MX:REASON: 미리보기가 "게시할 수 있다"고 말한 판정과 게시가 실제로 거절하는 판정이 한 함수에서 나와야 한다. 둘이 갈라지면 미리보기를 통과한 구성이 게시에서 거절되거나, 그 반대가 된다.
+/**
+ * 게시가 쓰기 전에 보는 판정을 읽기만 하고 돌려준다: 검증기의 결함 뒤에 서비스 전제(참조-내용 일치·상태·유효 기간·매핑 지문)의 결함이 붙는다.
+ * 던지지 않고 아무것도 쓰지 않는다(deps 에서 읽는 것은 저장소 읽기와 시계 한 번뿐이다). items 는 요청이 가리키는 항목 가운데 해석된 것(중복 참조는 하나)이며
+ * (종류, id, 버전) 코드 포인트 순이다. 결함이 없으면 요청이 가리키는 항목 전부다.
+ */
+export function collectBundlePublishDefects(deps: Pick<ServiceDeps, 'repo' | 'clock'>, request: unknown): { defects: Defect[]; items: BundlePublishItem[] } {
+  const seen: Seen = new Map();
+  const today = deps.clock.now().slice(0, 10);
+  const defects = validateRuleBundlePublish(request, buildResolver(deps.repo, seen));
+  defects.push(...preconditionDefects(deps.repo, request, seen, today));
+  const items = [...seen.values()].sort((a, b) => compareRefs(a.ref, b.ref));
+  return { defects, items };
+}
+
 function publishNew(deps: ServiceDeps, actor: Actor, request: unknown, audit: AuditChoice): RuleBundleVersion {
   requireRole(actor, 'RV');
   return deps.repo.transaction(() => {
-    const seen: Seen = new Map();
-    const today = deps.clock.now().slice(0, 10);
-    const defects = validateRuleBundlePublish(request, buildResolver(deps.repo, seen));
-    defects.push(...preconditionDefects(deps.repo, request, seen, today));
+    const { defects, items } = collectBundlePublishDefects(deps, request);
     assertNoDefects(defects);
 
-    // 아래부터 쓰기다. 검증이 통과하면 seen 은 요청이 가리키는 항목 전부(중복 참조는 하나)이고 교차 검사가 같은 칸·같은 매핑 id 의 중복을 막았다.
-    const items = [...seen.values()].sort((a, b) => compareRefs(a.ref, b.ref));
+    // 아래부터 쓰기다. 검증이 통과하면 items 는 요청이 가리키는 항목 전부(중복 참조는 하나)이고 교차 검사가 같은 칸·같은 매핑 id 의 중복을 막았다.
     const at = deps.clock.now();
     const bundle: RuleBundleVersion = {
       id: deps.ids.next('BUNDLE'),
