@@ -145,11 +145,45 @@ export function readIdlePolicy(repo: Pick<Repository, 'getClinic' | 'getIdlePoli
   if (repo.getClinic(clinicId) === null) {
     throw new DomainError('NOT_FOUND', `병원 '${clinicId}' 이(가) 없다`);
   }
-  const stored = repo.getIdlePolicy(clinicId);
+  return resolveStored(clinicId, repo.getIdlePolicy(clinicId));
+}
+
+/** 저장된 정책(없으면 null)을 다섯 화면 종류가 모두 있는 읽기 결과로 채운다. readIdlePolicy 와 관리자 보기가 같은 계산을 쓴다. */
+function resolveStored(clinicId: string, stored: IdlePolicy | null): ResolvedIdlePolicy {
   const screens = {} as Record<IdleScreenKind, IdleThreshold>;
   for (const kind of IDLE_SCREEN_KINDS) {
     const source = stored?.screens[kind] ?? DEFAULT_IDLE_THRESHOLDS[kind];
     screens[kind] = { warnSeconds: source.warnSeconds, resetSeconds: source.resetSeconds };
   }
   return { clinicId, screens, completionHoldSeconds: stored?.completionHoldSeconds ?? null };
+}
+
+/**
+ * 관리자 화면이 읽는 보기: 읽기 결과(catalog 응답 `idlePolicy` 와 같은 값)에 더해, 어느 화면 종류가 병원이 직접 저장한 값인지(customizedScreens)와
+ * 저장하지 않은 화면 종류가 따르는 기본값(defaults)·간격 하한(minLeadSeconds)을 알린다.
+ * 저장(PUT)은 정책 전체를 바꾸고 생략한 화면 종류는 기본값으로 돌아가므로, 화면이 일부만 고쳐도 다른 설정을 잃지 않으려면 어느 종류가 직접 저장된 값인지 알아야 한다.
+ * 저장소에 직접 쓰여 닫힌 목록 밖의 키가 남아 있어도 싣지 않는다. 저장소를 바꾸지 않고 항상 새 사본을 돌려준다. 없는 병원은 NOT_FOUND.
+ */
+export interface IdlePolicyAdminView extends ResolvedIdlePolicy {
+  /** 병원이 직접 저장한 화면 종류(닫힌 목록 순서). 나머지는 기본값을 따른다. */
+  customizedScreens: IdleScreenKind[];
+  defaults: Record<IdleScreenKind, IdleThreshold>;
+  minLeadSeconds: number;
+}
+
+export function readIdlePolicyAdminView(repo: Pick<Repository, 'getClinic' | 'getIdlePolicy'>, clinicId: string): IdlePolicyAdminView {
+  if (repo.getClinic(clinicId) === null) {
+    throw new DomainError('NOT_FOUND', `병원 '${clinicId}' 이(가) 없다`);
+  }
+  const stored = repo.getIdlePolicy(clinicId);
+  const defaults = {} as Record<IdleScreenKind, IdleThreshold>;
+  for (const kind of IDLE_SCREEN_KINDS) {
+    defaults[kind] = { warnSeconds: DEFAULT_IDLE_THRESHOLDS[kind].warnSeconds, resetSeconds: DEFAULT_IDLE_THRESHOLDS[kind].resetSeconds };
+  }
+  return {
+    ...resolveStored(clinicId, stored),
+    customizedScreens: IDLE_SCREEN_KINDS.filter((kind) => stored !== null && stored.screens[kind] !== undefined),
+    defaults,
+    minLeadSeconds: MIN_IDLE_LEAD_SECONDS,
+  };
 }

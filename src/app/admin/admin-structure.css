@@ -529,3 +529,41 @@
   outline: 3px solid var(--kiosk-accent);
   outline-offset: 2px;
 }
+
+/* 병원 무조작 정책 화면 (M7 병원별 무조작 정책 설정): 초 값 칸은 좁게, 표의 보조 줄은 줄바꿈을 허용한다. */
+.admin-input--seconds {
+  width: 6em;
+}
+
+.admin-table--idle .admin-sub2 {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.admin-table--idle td:nth-child(4) {
+  min-width: 150px;
+}
+
+.admin-fieldset > .admin-note,
+.admin-fieldset > .admin-sub2,
+.admin-idle-hold-row {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.admin-idle-hold-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  align-items: center;
+}
+
+.admin-pill--plain {
+  background: var(--kiosk-surface-alt);
+  color: var(--kiosk-text-body);
+}
+
+.admin-fieldset input[type='checkbox']:focus-visible {
+  outline: 3px solid var(--kiosk-accent);
+  outline-offset: 2px;
+}

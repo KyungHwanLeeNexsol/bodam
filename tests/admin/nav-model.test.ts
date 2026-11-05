@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLE_COPY, SCOPE_COPY } from '../../src/app/admin/bundle-copy';
+import { IDLE_COPY } from '../../src/app/admin/idle-policy-copy';
 import { navLinksOf, navTitleOf } from '../../src/app/admin/nav-model';
 import { REVIEW_COPY } from '../../src/app/admin/review-copy';
 import { ADMIN_COPY } from '../../src/app/admin/copy';
@@ -29,12 +30,17 @@ describe('이동 줄 링크', () => {
     expect(navLinksOf({ current: 'rule-scope' }).map((link) => link.href)).not.toContain('/admin/bundles');
   });
 
-  it('병원 화면의 줄은 지금처럼 병원 id 가 붙은 두 링크(가격 관리 · 검토 요청)이고 플랫폼 링크가 없다', () => {
+  it('병원 화면의 줄은 병원 id 가 붙은 세 링크(가격 관리 · 검토 요청 · 무조작 시간)이고 플랫폼 링크가 없다', () => {
     const links = navLinksOf({ clinicId: 'TEST_FIXTURE_CLINIC_1', current: 'review-requests' });
-    expect(links.map((link) => link.href)).toEqual(['/admin/TEST_FIXTURE_CLINIC_1/treatments', '/admin/TEST_FIXTURE_CLINIC_1/review-requests']);
-    expect(links.map((link) => link.label)).toEqual([REVIEW_COPY.navTreatments, REVIEW_COPY.navReviewRequests]);
+    expect(links.map((link) => link.href)).toEqual(['/admin/TEST_FIXTURE_CLINIC_1/treatments', '/admin/TEST_FIXTURE_CLINIC_1/review-requests', '/admin/TEST_FIXTURE_CLINIC_1/idle-policy']);
+    expect(links.map((link) => link.label)).toEqual([REVIEW_COPY.navTreatments, REVIEW_COPY.navReviewRequests, IDLE_COPY.navIdlePolicy]);
     expect(links.filter((link) => link.current).map((link) => link.key)).toEqual(['review-requests']);
     expect(links.map((link) => link.href).join()).not.toMatch(/bundles|rule-scope|review-queue/);
+  });
+
+  it('무조작 시간 화면에서는 그 링크에 현재 표시가 붙는다', () => {
+    const links = navLinksOf({ clinicId: 'TEST_FIXTURE_CLINIC_1', current: 'idle-policy' });
+    expect(links.filter((link) => link.current).map((link) => link.key)).toEqual(['idle-policy']);
   });
 
   it('병원 id 는 주소 조각으로 안전하게 바뀐다', () => {
@@ -49,5 +55,6 @@ describe('이동 줄 제목', () => {
     expect(navTitleOf('rule-scope')).toBe(SCOPE_COPY.title);
     expect(navTitleOf('treatments')).toBe(ADMIN_COPY.title);
     expect(navTitleOf('review-requests')).toBe(REVIEW_COPY.title);
+    expect(navTitleOf('idle-policy')).toBe(IDLE_COPY.title);
   });
 });

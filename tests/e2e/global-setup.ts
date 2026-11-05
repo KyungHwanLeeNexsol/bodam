@@ -34,6 +34,11 @@ export const ADMIN_BUNDLE_REJECT_PORT = 3110;
  * 이 시험은 병원 C·D 를 더하고 묶음을 중지하는 상태 변화를 순서대로 이어 가므로 다른 시험(게시 흐름·거절)의 세계와 섞이면 안 된다.
  */
 export const ADMIN_BUNDLE_SUSPEND_PORT = 3111;
+/**
+ * 병원별 무조작 정책 설정 시험(*.admin-idle-policy.spec.ts) 전용 앞단. 기본 세계(묶음 시연 아님)와 시험 전용 끝점(--test-hooks: 감사 기록·저장소 읽기, 세계 새로 만들기)을 켠다.
+ * 이 시험은 "병원 A 만 바뀌고 B 는 그대로, 가격·규칙·계산·카탈로그 버전은 그대로"를 전후 비교로 증명하고 정책을 여러 번 바꾸므로 다른 시험의 세계와 섞이면 안 된다: 저장소를 따로 가진다.
+ */
+export const ADMIN_IDLE_POLICY_PORT = 3112;
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -65,7 +70,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const adminBundleUrl = `http://127.0.0.1:${ADMIN_BUNDLE_PORT}/__harness/health`;
   const adminBundleRejectUrl = `http://127.0.0.1:${ADMIN_BUNDLE_REJECT_PORT}/__harness/health`;
   const adminBundleSuspendUrl = `http://127.0.0.1:${ADMIN_BUNDLE_SUSPEND_PORT}/__harness/health`;
-  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl, adminBundleUrl, adminBundleRejectUrl, adminBundleSuspendUrl]) {
+  const adminIdlePolicyUrl = `http://127.0.0.1:${ADMIN_IDLE_POLICY_PORT}/__harness/health`;
+  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl, adminBundleUrl, adminBundleRejectUrl, adminBundleSuspendUrl, adminIdlePolicyUrl]) {
     if (await isUp(url)) throw new Error(`이미 쓰고 있는 주소다(다른 서버를 시험하지 않는다): ${url}`);
   }
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(APP_PORT)], { stdio: 'ignore', windowsHide: true });
@@ -113,7 +119,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_BUNDLE_SUSPEND_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--bundle-demo', '--test-hooks'],
     { stdio: 'ignore', windowsHide: true },
   );
-  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness, adminBundleHarness, adminBundleRejectHarness, adminBundleSuspendHarness];
+  const adminIdlePolicyHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_IDLE_POLICY_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--test-hooks'],
+    { stdio: 'ignore', windowsHide: true },
+  );
+  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness, adminBundleHarness, adminBundleRejectHarness, adminBundleSuspendHarness, adminIdlePolicyHarness];
   try {
     await waitUntilUp(appUrl, app, '운영 구성 앱');
     await waitUntilUp(harnessUrl, harness, '실제 핸들러 앞단');
@@ -125,6 +136,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await waitUntilUp(adminBundleUrl, adminBundleHarness, '관리자 묶음 게시 시험 앞단');
     await waitUntilUp(adminBundleRejectUrl, adminBundleRejectHarness, '관리자 묶음 게시 거절 시험 앞단');
     await waitUntilUp(adminBundleSuspendUrl, adminBundleSuspendHarness, '관리자 묶음 중지 시험 앞단');
+    await waitUntilUp(adminIdlePolicyUrl, adminIdlePolicyHarness, '관리자 무조작 정책 시험 앞단');
   } catch (error) {
     for (const child of children) child.kill();
     throw error;
