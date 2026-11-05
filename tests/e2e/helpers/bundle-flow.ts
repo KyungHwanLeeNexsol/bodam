@@ -58,6 +58,7 @@ export const json = async (response: APIResponse): Promise<Json> => (await respo
 
 export const SHOTS = path.resolve('.moai/state/shots/m7-bundle');
 export const LOG_FILE = path.join(SHOTS, 'bundle-flow-log.txt');
+export const REJECT_LOG_FILE = path.join(SHOTS, 'bundle-reject-log.txt');
 
 export async function shoot(page: Page, name: string): Promise<void> {
   mkdirSync(SHOTS, { recursive: true });
@@ -98,6 +99,11 @@ export async function openAs(browser: Browser, account: Account | null): Promise
 
 export async function closeAll(...sessions: Session[]): Promise<void> {
   for (const session of sessions) await session.context.close();
+}
+
+/** 선행 단계(검토 요청·초안·제출·승인)를 하는 세 계정의 문맥: 병원 1 관리자, 검토 담당자 1·2. */
+export async function openRoles(browser: Browser): Promise<Roles> {
+  return { ha: await openAs(browser, 'ha-clinic-1'), rv1: await openAs(browser, 'rv-1'), rv2: await openAs(browser, 'rv-2') };
 }
 
 // ───────────────────────── 시험 전용 끝점 ─────────────────────────
@@ -237,9 +243,9 @@ export async function approvedMapping(roles: Roles, treatmentId: string, options
 }
 
 /** 검토 요청 → 초안까지(승인 전). 제출 여부를 고른다. */
-export async function unapprovedMapping(roles: Roles, treatmentId: string, submit: boolean): Promise<MappingRef & { reviewRequestId: string }> {
+export async function unapprovedMapping(roles: Roles, treatmentId: string, submit: boolean, options: DraftOptions = {}): Promise<MappingRef & { reviewRequestId: string }> {
   const reviewRequestId = await requestReview(roles.ha, treatmentId);
-  const ref = await draftMapping(roles.rv1, reviewRequestId);
+  const ref = await draftMapping(roles.rv1, reviewRequestId, options);
   if (submit) await submitMapping(roles.rv1, ref, reviewRequestId);
   return { ...ref, reviewRequestId };
 }
