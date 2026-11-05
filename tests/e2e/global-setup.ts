@@ -19,6 +19,16 @@ export const ADMIN_CATALOG_PORT = 3106;
 export const ADMIN_REVIEW_PORT = 3107;
 /** 관리자 매핑 검토 시험(*.admin-mapping.spec.ts) 전용 앞단. 위 세 인스턴스와 저장소를 나눈다: 이 시험은 "승인은 검토 기록일 뿐이고 공개 자료는 그대로"를 전후 비교로 증명하고 마지막에 카탈로그를 바꾸므로 다른 시험의 게시가 끼면 안 된다. */
 export const ADMIN_MAPPING_PORT = 3108;
+/**
+ * 묶음 게시·규칙 사용 범위 흐름 시험(*.admin-bundle.spec.ts) 전용 앞단. 묶음 시연 세계(--bundle-demo: 병원 1 에 치료 C 추가, 병원 2 도 기준 묶음 사용)와 시험 전용 끝점(--test-hooks)을 켠다.
+ * 이 시험은 "게시만으로는 아무 병원도 안 바뀌고, 지정한 병원만 바뀐다"를 전후 비교로 증명하므로 다른 시험의 게시·지정이 끼면 안 된다: 저장소를 따로 가진다.
+ */
+export const ADMIN_BUNDLE_PORT = 3109;
+/**
+ * 묶음 게시·규칙 사용 범위의 거절 시험(*.admin-bundle-reject.spec.ts) 전용 앞단. 위와 같은 세계·끝점이지만 인스턴스를 따로 쓴다: 거절 시험은 시험마다 /__harness/reset 으로 세계를 통째로 새로 만들어 서로의 순서에 기대지 않는데,
+ * 같은 인스턴스를 흐름 시험(ADMIN_BUNDLE_PORT)과 나눠 쓰면 새로 만드는 일이 흐름 시험의 상태를 지운다.
+ */
+export const ADMIN_BUNDLE_REJECT_PORT = 3110;
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -47,7 +57,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const adminCatalogUrl = `http://127.0.0.1:${ADMIN_CATALOG_PORT}/__harness/health`;
   const adminReviewUrl = `http://127.0.0.1:${ADMIN_REVIEW_PORT}/__harness/health`;
   const adminMappingUrl = `http://127.0.0.1:${ADMIN_MAPPING_PORT}/__harness/health`;
-  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl]) {
+  const adminBundleUrl = `http://127.0.0.1:${ADMIN_BUNDLE_PORT}/__harness/health`;
+  const adminBundleRejectUrl = `http://127.0.0.1:${ADMIN_BUNDLE_REJECT_PORT}/__harness/health`;
+  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl, adminBundleUrl, adminBundleRejectUrl]) {
     if (await isUp(url)) throw new Error(`이미 쓰고 있는 주소다(다른 서버를 시험하지 않는다): ${url}`);
   }
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(APP_PORT)], { stdio: 'ignore', windowsHide: true });
@@ -80,7 +92,17 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_MAPPING_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`],
     { stdio: 'ignore', windowsHide: true },
   );
-  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness];
+  const adminBundleHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_BUNDLE_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--bundle-demo', '--test-hooks'],
+    { stdio: 'ignore', windowsHide: true },
+  );
+  const adminBundleRejectHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_BUNDLE_REJECT_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--bundle-demo', '--test-hooks'],
+    { stdio: 'ignore', windowsHide: true },
+  );
+  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness, adminBundleHarness, adminBundleRejectHarness];
   try {
     await waitUntilUp(appUrl, app, '운영 구성 앱');
     await waitUntilUp(harnessUrl, harness, '실제 핸들러 앞단');
@@ -89,6 +111,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await waitUntilUp(adminCatalogUrl, adminCatalogHarness, '관리자 구조 편집 시험 앞단');
     await waitUntilUp(adminReviewUrl, adminReviewHarness, '관리자 검토 요청 시험 앞단');
     await waitUntilUp(adminMappingUrl, adminMappingHarness, '관리자 매핑 검토 시험 앞단');
+    await waitUntilUp(adminBundleUrl, adminBundleHarness, '관리자 묶음 게시 시험 앞단');
+    await waitUntilUp(adminBundleRejectUrl, adminBundleRejectHarness, '관리자 묶음 게시 거절 시험 앞단');
   } catch (error) {
     for (const child of children) child.kill();
     throw error;

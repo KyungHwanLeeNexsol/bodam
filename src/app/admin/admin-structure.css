@@ -392,3 +392,139 @@
   word-break: keep-all;
   overflow-wrap: break-word;
 }
+
+/* ───────── 규칙 묶음 게시 · 규칙 사용 범위 (M7 묶음 구성) ─────────
+   상태·출처·경고는 색만으로 구분하지 않는다: 늘 글자(상태 알약, "기준 묶음"/"추가", 경고 문장)가 함께 있고 색·굵기는 보조다. */
+.admin-bundle-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 한글은 공백에서만 줄을 바꾸고, 긴 영문 id 만 어느 글자에서든 줄을 바꾼다. */
+.admin-table--bundle,
+.admin-table--scope,
+.admin-bundle-section .admin-table {
+  font-size: 14px;
+}
+
+.admin-table--bundle th,
+.admin-table--bundle td,
+.admin-table--scope th,
+.admin-table--scope td,
+.admin-bundle-section .admin-banner,
+.admin-preview-items li {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.admin-table--bundle .admin-name,
+.admin-table--scope .admin-name {
+  overflow-wrap: anywhere;
+}
+
+.admin-table tr[data-selected='true'] {
+  background: var(--kiosk-accent-soft);
+}
+
+.admin-table tr[data-unavailable='true'] {
+  color: var(--kiosk-text-muted);
+}
+
+.admin-bundle-warning,
+.admin-bundle-note,
+.admin-bundle-change {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.admin-bundle-warning {
+  color: var(--kiosk-warn);
+  font-weight: 700;
+}
+
+.admin-bundle-note {
+  color: var(--kiosk-text-muted);
+}
+
+.admin-bundle-change {
+  margin-top: 6px;
+  color: var(--kiosk-navy);
+  font-weight: 700;
+}
+
+.admin-preview-items {
+  list-style: none;
+  padding-left: 0;
+}
+
+.admin-preview-items li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--kiosk-border);
+}
+
+.admin-pill--added {
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent);
+  font-weight: 700;
+}
+
+.admin-pill--base {
+  background: var(--kiosk-surface-alt);
+  color: var(--kiosk-text-body);
+}
+
+.admin-table--scope td:nth-child(3) .admin-select {
+  max-width: 100%;
+  min-width: 240px;
+}
+
+.admin-table--scope td:nth-child(4) .admin-banner {
+  margin-top: 8px;
+}
+
+/* 브라우저로 본 뒤의 자리 잡기(M7 묶음 구성): 머리글·알약·단추는 줄을 바꾸지 않고("기준"이 두 줄로, "사용 가능"이 알약 안에서 두 줄로 쪼개지던 것), 이름 칸과 결과 문장 칸에 최소 너비를 준다.
+   긴 영문 id(승인자·병원 slug)만 어느 글자에서든 줄을 바꾸고, 한글 문장은 공백에서만 바꾼다. 표가 좁은 화면보다 넓으면 .admin-table-wrap 이 표만 가로로 민다. */
+.admin-bundle-section .admin-table thead th,
+.admin-table--scope thead th {
+  white-space: nowrap;
+}
+
+.admin-bundle-section .admin-pill,
+.admin-table--scope .admin-pill,
+.admin-table--scope .admin-btn {
+  white-space: nowrap;
+}
+
+.admin-bundle-section .admin-table th[scope='row'],
+.admin-table--scope th[scope='row'] {
+  min-width: 150px;
+}
+
+.admin-table--scope td:nth-child(2) {
+  min-width: 200px;
+}
+
+.admin-table--scope td:nth-child(4) {
+  min-width: 250px;
+}
+
+.admin-table--bundle td[data-admin-candidate-approver],
+.admin-table--scope .admin-sub2 {
+  overflow-wrap: anywhere;
+}
+
+.admin-table--bundle td[data-admin-candidate-clinic] {
+  min-width: 130px;
+}
+
+.admin-select:focus-visible,
+.admin-table input:focus-visible {
+  outline: 3px solid var(--kiosk-accent);
+  outline-offset: 2px;
+}

@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { ADMIN_CATALOG_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
+import { ADMIN_BUNDLE_PORT, ADMIN_BUNDLE_REJECT_PORT, ADMIN_CATALOG_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
@@ -45,5 +45,11 @@ export default defineConfig({
     //  - *.admin-mapping.spec.ts : 매핑 검토 흐름(M7: 검토 담당자가 매핑 초안 작성 → 제출 → 다른 검토 담당자가 승인·반려 → 병원 관리자가 상태 확인). 위와 같은 앞단이지만 저장소를 따로 가진 인스턴스(ADMIN_MAPPING_PORT)다.
     //                              승인은 검토 기록일 뿐이라 공개 카탈로그·보험 선택지·계산·관리자 치료 목록이 전후로 같음을 함께 본다. 이 시험이 카탈로그를 바꾸는 단계는 마지막이다.
     { name: 'admin-mapping', testMatch: /.*\.admin-mapping\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_MAPPING_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-bundle.spec.ts  : 묶음 게시·규칙 사용 범위 흐름(M7 묶음 구성: 승인된 매핑 → 검토 담당자가 새 규칙 묶음 게시 → 플랫폼 운영자가 한 병원에 지정 → 그 병원의 키오스크 선택지·계산이 새 묶음을 쓴다).
+    //                              묶음 시연 세계(--bundle-demo)와 시험 전용 끝점(--test-hooks: 감사 기록·저장소 읽기)을 켠 인스턴스(ADMIN_BUNDLE_PORT)다. 게시만으로는 아무 병원도 안 바뀌고 지정한 병원만 바뀜을 전후 비교(응답 본문 글자 그대로)로 본다.
+    { name: 'admin-bundle', testMatch: /.*\.admin-bundle\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_BUNDLE_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-bundle-reject.spec.ts : 위 두 화면·다섯 API 의 거절(인증 없음 · 역할 · 게시할 수 없는 상태 · 승인 뒤 바뀐 치료 · 겹치는 매핑 · 낡은 확인값 · 낡은 화면 · 없는 병원/묶음). 시험마다 /__harness/reset 으로 세계를 새로 만들고
+    //                                 거절 전후의 저장소 전체 사본이 같음을 본다. 같은 세계지만 인스턴스를 따로 쓴다(ADMIN_BUNDLE_REJECT_PORT): reset 이 흐름 시험의 상태를 지우지 않게 한다.
+    { name: 'admin-bundle-reject', testMatch: /.*\.admin-bundle-reject\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_BUNDLE_REJECT_PORT}`, viewport: { width: 1280, height: 900 } } },
   ],
 });

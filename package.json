@@ -15,7 +15,9 @@
     "test:e2e:real": "playwright test --project=real-portrait --project=real-landscape",
     "test:e2e:strict": "playwright test -c playwright.dev.config.ts",
     "preview:kiosk": "next build && node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts",
-    "preview:kiosk:run": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts"
+    "preview:kiosk:run": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts",
+    "preview:bundle": "next build && node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts --bundle-demo",
+    "preview:bundle:run": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts --bundle-demo"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

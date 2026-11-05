@@ -1,7 +1,12 @@
+import { assignRuleScope } from '../../../src/server/rule-scope';
+import { TEST_FIXTURE_PO_1 } from '../../fixtures/server/actors.fixture';
 import { CLINIC_1_SLUG, CLINIC_2_SLUG, createTestServices, publishSecondClinicCatalog } from '../../fixtures/server/api-composition.fixture';
+import { T3, addThirdTreatment } from '../../fixtures/server/catalog-structure.fixture';
 import { makeTreatment } from '../../fixtures/server/entities.fixture';
 import { buildWorld } from '../../fixtures/server/estimate-world.fixture';
+import type { World } from '../../fixtures/server/lifecycle.fixture';
 import { validCatalogRequest } from '../../fixtures/server/publish.fixture';
+import { OTHER_CLINIC_ID } from '../../fixtures/server/versioning.fixture';
 import type { AdminServices } from '../../../src/server/admin/services';
 import { createAdminServices } from '../../../src/server/admin/services';
 import type { ApiServices } from '../../../src/server/api/services';
@@ -21,6 +26,19 @@ export const HARNESS_HOLD_CLINIC_SLUG = CLINIC_2_SLUG;
 /** 병원 1 의 두 치료의 하네스 전용 이름. 둘 다 시험 자료임이 이름에서 드러난다. */
 export const HARNESS_TREATMENT_NAMES = { first: 'TEST_FIXTURE 시험 치료 A (급여)', second: 'TEST_FIXTURE 시험 치료 B (비급여)' } as const;
 
+// 묶음 시연 세계(buildHarness({ bundleDemo: true }), M7 묶음 구성): 위 세계에 두 가지를 더한다. 옵션을 켠 인스턴스만 이 세계를 쓰고, 기본 세계를 쓰는 다른 시험·미리보기는 영향을 받지 않는다.
+//  - 병원 1 의 카탈로그에 치료 C "시험 치료 C (묶음 시험)"(급여, 11,000원, 분류·계산 분류는 이미 확인된 값)를 더해 다시 게시한다. 기준 묶음에는 C 의 매핑이 없다 → C 를 계산하면 보류(MAPPING_ABSENT)다.
+//    검토 요청 → 매핑 초안 → 제출 → 다른 검토 담당자의 승인 → 묶음 게시 → 병원 1 지정을 거쳐야 C 가 계산된다.
+//  - 병원 2 도 기준 묶음을 쓰게 한다(병원 1·2 가 같은 기준 묶음 위에 있다). 병원 1 에만 새 묶음을 지정했을 때 병원 2 가 달라지지 않음을 보이기 위해서다.
+
+/** 묶음 시연 세계에서 병원 1 에 더해지는 치료 C 의 이름과 치료 id. 기준 묶음에는 이 치료의 매핑이 없다. */
+export const HARNESS_BUNDLE_DEMO_TREATMENT = { id: T3, name: 'TEST_FIXTURE 시험 치료 C (묶음 시험)' } as const;
+
+export interface HarnessOptions {
+  /** 묶음 시연 세계(치료 C 추가 + 병원 2 도 기준 묶음 사용). 생략하면 기본 세계다. */
+  bundleDemo?: boolean;
+}
+
 export interface Harness {
   /** 공개 API(키오스크)가 쓰는 서비스. */
   services: ApiServices;
@@ -28,12 +46,14 @@ export interface Harness {
   admin: AdminServices;
   /** 시험 로그인이 세션을 만드는 시험 인증기(tests/ 에만 있다). 운영 구성에는 없다. */
   authenticator: TestAdminAuthenticator;
+  /** 시험 세계(저장소·시계·식별자 생성기). 시험 전용 끝점(감사 기록·저장 상태 읽기, 시험이 만드는 상태 변경)이 쓴다. 운영 구성에는 없다. */
+  world: World;
 }
 
 /** 두 병원의 세계 하나와 그 위의 공개 서비스·관리자 서비스. 같은 저장소·시계·식별자 생성기를 쓴다. */
-export function buildHarness(): Harness {
+export function buildHarness(options: HarnessOptions = {}): Harness {
   const [first, second] = validCatalogRequest().treatmentVersions;
-  const { world } = buildWorld({
+  const { world, bundle } = buildWorld({
     treatments: [
       { ...first!, displayName: HARNESS_TREATMENT_NAMES.first },
       { ...second!, displayName: HARNESS_TREATMENT_NAMES.second },
@@ -43,10 +63,14 @@ export function buildHarness(): Harness {
   world.repo.saveTreatment(makeTreatment({ id: first!.treatmentId, sortOrder: 1 }));
   world.repo.saveTreatment(makeTreatment({ id: second!.treatmentId, sortOrder: 2 }));
   publishSecondClinicCatalog(world);
+  if (options.bundleDemo === true) {
+    addThirdTreatment(world, HARNESS_BUNDLE_DEMO_TREATMENT.name);
+    assignRuleScope(world.deps, TEST_FIXTURE_PO_1, OTHER_CLINIC_ID, bundle!.id);
+  }
   const services = createTestServices({ repo: world.repo });
   const authenticator = new TestAdminAuthenticator();
   const admin = createAdminServices({ api: services, clock: world.clock, ids: world.ids, authenticator, newTreatmentOrigin: 'TEST_FIXTURE' });
-  return { services, admin, authenticator };
+  return { services, admin, authenticator, world };
 }
 
 export function buildHarnessServices(): ApiServices {

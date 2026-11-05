@@ -2,9 +2,12 @@ import { priceConditionOf } from '../api/catalog';
 import { guarded } from '../api/integrity';
 import { readPublishedCatalog } from '../api/published-catalog';
 import { discardCatalogDraft, publishCatalogDraft, saveCatalogDraft } from '../catalog-draft';
+import { parseBundlePreviewBody, parseBundlePublishBody, parseRuleScopeAssignBody } from '../bundle-admin-parse';
+import { previewBundlePublish, publishBundleFromBase } from '../bundle-compose';
+import { readBundlePublishOverview } from '../bundle-overview';
 import { structureDefects } from '../catalog-structure';
-import type { Actor } from '../domain/actor';
-import type { CatalogDraft, Clinic } from '../domain/entities';
+import type { Actor, Role } from '../domain/actor';
+import type { CatalogDraft, Clinic, RuleBundleVersion } from '../domain/entities';
 import { DomainError } from '../domain/errors';
 import { draftContentDigest, issuePublishConfirmation, PUBLISH_CONFIRMATION_PATTERN } from '../publish-confirmation';
 import { approveMappingForReviewRequest, createMappingDraftForReviewRequest, rejectMappingForReviewRequest, submitMappingForReviewRequest } from '../mapping-review';
@@ -12,6 +15,8 @@ import { parseMappingDraftBody, parseReviewRejectBody, parseReviewRequestRefBody
 import { parseReviewRequestBody } from '../review-request-parse';
 import { readClinicReviewRequestViews, readReviewEntry, readReviewHistory, readReviewQueue, reviewRequestView } from '../review-request-read';
 import { submitCoverageReviewRequest } from '../review-request';
+import { findAffectedClinics } from '../rule-scope';
+import { assignRuleScopeChecked, readClinicScopeRow, readRuleScopeOverview } from '../rule-scope-admin';
 import { isPlainObject } from '../validate/shape';
 import { actorForClinic, actorForPlatformRole, normalizeIdentity } from './auth';
 import type { AdminIdentity } from './auth';
@@ -48,7 +53,20 @@ import type { AdminServices } from './services';
 // 신원·역할·병원은 AdminAuthenticator 가 검증한 값에서만 온다. 요청의 헤더·쿼리·본문에서는 읽지 않는다.
 // 병원 경로의 역할은 HA 만 허용한다(권한 표: 카탈로그 초안 저장·미리보기·게시·이력 조회·검토 요청 제출과 읽기는 HA 자기 병원). RV·PO 는 이 경로에서 403 이다.
 // 대기열과 위 매핑 검토 경로는 반대로 플랫폼 단위 RV 만 허용한다(HA·PO·병원에 매인 RV 는 403). 병원 관리자의 쓰기는 초안·게시와 검토 요청 제출뿐이다:
-// 병원 경로에는 승인·반려·닫기·매핑 수정이 없다. RV 경로에도 매핑 게시(PUBLISHED)·규칙 묶음 게시·치료 분류 전환은 없다(이 범위 밖).
+// 병원 경로에는 승인·반려·닫기·매핑 수정이 없다. 매핑 검토 경로에는 매핑 게시(PUBLISHED)·치료 분류 전환이 없다(승인은 검토 기록일 뿐이다).
+//
+// 묶음 구성(RV)과 규칙 사용 범위 지정(PO) — M7 묶음 구성. 흐름: 승인된 매핑 → RV 가 새 규칙 묶음 게시 → PO 가 한 병원에 명시 지정 → 그 병원의 옵션·계산이 새 묶음을 쓴다.
+// 경로마다 역할이 정해져 있고(PlatformRoute.role) 둘 다 병원에 매이지 않은 플랫폼 단위 소속만 인정한다. 게시는 어느 병원도 지정하지 않는다: RV 는 지정할 수 없고 PO 는 게시할 수 없다.
+//   GET    /api/admin/bundle-publish                            — (RV) 기준이 될 묶음(ACTIVE · SUSPENDED, 최신순)과 현재 APPROVED 인 후보 매핑. 응답 { bases, candidates, unreadable }. 읽기만 한다
+//   POST   /api/admin/bundle-publish/preview                    — (RV) 본문 { baseBundleId, mappings: [{ id, version }] }. 기준 묶음의 항목 전부 + 고른 매핑을 합친 구성을 평가한다. 묶음·상태·범위·감사 기록은 바꾸지 않는다. 응답 { base, items, defects, conflicts, publishConfirmation }.
+//                                                                 결함(게시와 같은 판정)과 충돌은 오류가 아니라 응답에 담기고(200) 확인값은 둘 다 없을 때만 있다(아니면 null). 확인값은 서버가 이 RV 에게 이 구성으로 발급해 서버에 기록해 둔 예측할 수 없는 일회용 값이다
+//                                                                 (입력에서 다시 계산할 수 없다). 발급이 쓰는 것은 확인값 기록 하나뿐이고 결함·충돌이 있으면 아무것도 쓰지 않는다. 기록은 사람이 화면을 읽었다는 증명이 아니라 "서버가 미리보기를 만들었다"는 증거다. 구성이 성립하지 않으면 404(기준 묶음·매핑 없음) · 409(BASE_BUNDLE_NOT_ACTIVE · MAPPING_ALREADY_IN_BASE)
+//   POST   /api/admin/bundle-publish                            — (RV) 본문 { baseBundleId, mappings, publishConfirmation }. 응답 { bundle: { id, contentHash, publishedAt, publishedBy, itemRefs, status }, assignedClinics }.
+//                                                                 assignedClinics 는 새 묶음을 현재 범위로 가진 병원이며 게시는 지정하지 않으므로 빈 목록이다. 409: MAPPING_CONFLICT · MAPPING_ALREADY_IN_BASE · BASE_BUNDLE_NOT_ACTIVE · PREVIEW_REQUIRED(서버가 발급한 적 없는 값 · 이미 쓰인 값 · 다른 관리자에게 발급된 값 · 다른 구성의 값 · 미리보기 뒤 구성이 바뀐 값; 원인은 구별해 알리지 않는다).
+//                                                                 400: 기존 게시 전제(PUBLISH_VALIDATION_FAILED 의 defects: ITEM_STATE_NOT_PUBLISHABLE · FINGERPRINT_STALE …). 404: 기준 묶음·매핑 없음. 감사 기록은 기존 BUNDLE_PUBLISH 한 건이다. 게시는 확인값을 한 번 소비한다(같은 요청을 다시 보내면 409 PREVIEW_REQUIRED)
+//   GET    /api/admin/rule-scope                                — (PO) 병원별 현재 범위(묶음·가용성·지정 시각·지정자)와 게시된 묶음 목록. 응답 { clinics, bundles }. 읽기만 한다
+//   POST   /api/admin/rule-scope/clinics/{clinicId}             — (PO) 본문 { ruleBundleVersionId, expectedCurrentBundleId }(키 필수, null = 범위가 없다고 보았다). 응답 { clinic: 갱신된 병원 줄, scope }. 병원은 경로가 정하고 본문에서 받지 않는다.
+//                                                                 404: 병원·묶음 없음(역할 확인 뒤에만). 409 SCOPE_CHANGED: 화면이 본 현재 범위가 그 사이 바뀜. 감사 기록은 기존 CLINIC_SCOPE_ASSIGN 한 건이다. 중지된 묶음의 지정은 기존 계약대로 막지 않는다(화면이 막는다)
 
 /** 경로의 `:이름` 조각이 잡은 (디코딩된) 값. */
 type RouteParams = Readonly<Record<string, string>>;
@@ -70,6 +88,11 @@ const CONFLICT_REASONS: readonly string[] = [
   'REVIEW_REQUEST_CLOSED',
   'MAPPING_DRAFT_ALREADY_EXISTS',
   'TRANSITION_NOT_ALLOWED',
+  // 묶음 구성(RV)과 규칙 사용 범위 지정(PO): 겹치는 매핑, 이미 기준 묶음에 있는 매핑, ACTIVE 가 아닌 기준 묶음, 화면이 본 뒤 바뀐 현재 범위.
+  'MAPPING_CONFLICT',
+  'MAPPING_ALREADY_IN_BASE',
+  'BASE_BUNDLE_NOT_ACTIVE',
+  'SCOPE_CHANGED',
 ];
 
 /**
@@ -312,19 +335,95 @@ const postMappingReject: PlatformHandler = async (services, request, actor, para
   return entryResponse(services, parsed.reviewRequestId);
 };
 
+// ───────────────────────── 묶음 구성(RV)과 규칙 사용 범위 지정(PO) ─────────────────────────
+
+/** 게시한 묶음의 응답용 요약. 방금 쓴 묶음의 가용성이 읽히지 않으면 서버 결함이라 던져 500 이 된다. */
+function bundleView(services: AdminServices, bundle: RuleBundleVersion) {
+  const status = services.api.repo.getBundleStatus(bundle.id);
+  if (status === null) {
+    throw new Error('게시한 규칙 묶음의 가용성을 읽을 수 없다');
+  }
+  return {
+    id: bundle.id,
+    contentHash: bundle.contentHash,
+    publishedAt: bundle.publishedAt,
+    publishedBy: bundle.publishedBy.id,
+    itemRefs: bundle.itemRefs.map((ref) => ({ kind: ref.kind, id: ref.id, version: ref.version })),
+    status,
+  };
+}
+
+const getBundlePublish: PlatformHandler = (services) => ok(readBundlePublishOverview(services.api.repo));
+
+const postBundlePreview: PlatformHandler = async (services, request, actor) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  const parsed = parseBundlePreviewBody(body.body);
+  if (!parsed.ok) {
+    return invalidRequest(parsed.defects);
+  }
+  // 묶음·상태·범위·감사는 바꾸지 않는다(깨끗한 구성이면 서버가 확인값 기록 하나를 쓴다). 결함·충돌은 오류가 아니라 응답에 담기고(200), 구성이 성립하지 않을 때만 404·409 이다.
+  // services.deps 는 시계와 식별자 생성기를 가진다: 확인값은 그 생성기에서 파생한 예측할 수 없는 값이다.
+  return ok(previewBundlePublish(services.deps, actor, { baseBundleId: parsed.baseBundleId, mappings: parsed.mappings }));
+};
+
+const postBundlePublish: PlatformHandler = async (services, request, actor) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  const parsed = parseBundlePublishBody(body.body);
+  if (!parsed.ok) {
+    return invalidRequest(parsed.defects);
+  }
+  const bundle = publishBundleFromBase(services.deps, actor, { baseBundleId: parsed.baseBundleId, mappings: parsed.mappings, publishConfirmation: parsed.publishConfirmation });
+  // assignedClinics 는 방금 만든 묶음을 현재 범위로 가진 병원이다. 게시는 범위를 지정하지 않으므로 늘 빈 목록이고, 읽어서 낸다(지정은 PO 의 일이다).
+  return ok({ bundle: bundleView(services, bundle), assignedClinics: findAffectedClinics(services.api.repo, bundle.id) });
+};
+
+const getRuleScope: PlatformHandler = (services) => ok(readRuleScopeOverview(services.api.repo));
+
+const postRuleScopeAssign: PlatformHandler = async (services, request, actor, params) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  const parsed = parseRuleScopeAssignBody(body.body);
+  if (!parsed.ok) {
+    return invalidRequest(parsed.defects);
+  }
+  // 병원은 경로가 정한다(본문에서 받지 않는다). 병원·묶음이 없으면 404, 화면이 본 현재 범위와 다르면 409 SCOPE_CHANGED.
+  const clinicId = params.clinicId ?? '';
+  const scope = assignRuleScopeChecked(services.deps, actor, clinicId, parsed.ruleBundleVersionId, parsed.expectedCurrentBundleId);
+  const clinic = readClinicScopeRow(services.api.repo, clinicId);
+  if (clinic === null) {
+    throw new Error('범위를 지정한 병원을 읽을 수 없다');
+  }
+  return ok({ clinic, scope: { clinicId: scope.clinicId, ruleBundleVersionId: scope.ruleBundleVersionId, assignedAt: scope.assignedAt, assignedBy: scope.assignedBy.id } });
+};
+
 interface PlatformRoute {
   method: string;
+  /** 이 경로를 열 수 있는 플랫폼 단위 역할(병원에 매이지 않은 소속). */
+  role: Role;
   /** 경로 전체. `:이름` 조각은 어떤 비어 있지 않은 값이든 잡아 처리기의 params 로 넘긴다. */
   segments: readonly string[];
   handler: PlatformHandler;
 }
 
 const PLATFORM_ROUTES: readonly PlatformRoute[] = [
-  { method: 'GET', segments: ['review-history'], handler: getReviewHistory },
-  { method: 'POST', segments: ['review-requests', ':reviewRequestId', 'mappings'], handler: postMappingDraft },
-  { method: 'POST', segments: ['mappings', ':mappingId', 'versions', ':version', 'submit'], handler: postMappingSubmit },
-  { method: 'POST', segments: ['mappings', ':mappingId', 'versions', ':version', 'approve'], handler: postMappingApprove },
-  { method: 'POST', segments: ['mappings', ':mappingId', 'versions', ':version', 'reject'], handler: postMappingReject },
+  { method: 'GET', role: 'RV', segments: ['review-history'], handler: getReviewHistory },
+  { method: 'POST', role: 'RV', segments: ['review-requests', ':reviewRequestId', 'mappings'], handler: postMappingDraft },
+  { method: 'POST', role: 'RV', segments: ['mappings', ':mappingId', 'versions', ':version', 'submit'], handler: postMappingSubmit },
+  { method: 'POST', role: 'RV', segments: ['mappings', ':mappingId', 'versions', ':version', 'approve'], handler: postMappingApprove },
+  { method: 'POST', role: 'RV', segments: ['mappings', ':mappingId', 'versions', ':version', 'reject'], handler: postMappingReject },
+  { method: 'GET', role: 'RV', segments: ['bundle-publish'], handler: getBundlePublish },
+  { method: 'POST', role: 'RV', segments: ['bundle-publish', 'preview'], handler: postBundlePreview },
+  { method: 'POST', role: 'RV', segments: ['bundle-publish'], handler: postBundlePublish },
+  { method: 'GET', role: 'PO', segments: ['rule-scope'], handler: getRuleScope },
+  { method: 'POST', role: 'PO', segments: ['rule-scope', 'clinics', ':clinicId'], handler: postRuleScopeAssign },
 ];
 
 /** 도메인 거절은 응답으로 바꾸고, 서버 결함(바꾸지 못하는 오류)은 다시 던져 500 이 되게 한다. */
@@ -409,7 +508,8 @@ export function handleAdmin(services: AdminServices, request: Request, segments:
       // 병원 경로가 없는 자원이라 병원 소속이 아니라 플랫폼 단위 RV 소속만 본다. 읽기만 한다.
       return actorForPlatformRole(identity, 'RV') === null ? adminError('FORBIDDEN') : ok({ queue: readReviewQueue(services.api.repo) });
     }
-    // 검토 담당자(RV) 전용 경로: 병원 경로가 없으므로 병원 소속이 아니라 플랫폼 단위 RV 소속만 본다. 경로 → 메서드(405) → 소속과 역할(403) → 본문(400) → 서비스 순서는 병원 경로와 같다.
+    // 플랫폼 단위 경로(RV 매핑 검토 · RV 묶음 구성 · PO 범위 지정): 병원 경로가 없으므로 병원 소속이 아니라 경로마다 정해진 역할의 플랫폼 단위 소속만 본다.
+    // 경로 → 메서드(405) → 소속과 역할(403) → 본문(400) → 서비스 순서는 병원 경로와 같다.
     const platformMatches = PLATFORM_ROUTES.flatMap((route) => {
       const params = matchTail(route.segments, segments);
       return params === null ? [] : [{ route, params }];
@@ -419,11 +519,11 @@ export function handleAdmin(services: AdminServices, request: Request, segments:
       if (matched === undefined) {
         return adminError('METHOD_NOT_ALLOWED');
       }
-      const reviewer = actorForPlatformRole(identity, 'RV');
-      if (reviewer === null) {
+      const platformActor = actorForPlatformRole(identity, matched.route.role);
+      if (platformActor === null) {
         return adminError('FORBIDDEN');
       }
-      return runHandler(() => matched.route.handler(services, request, reviewer, matched.params));
+      return runHandler(() => matched.route.handler(services, request, platformActor, matched.params));
     }
     if (segments.length < 3 || segments[0] !== 'clinics') {
       return adminError('NOT_FOUND');

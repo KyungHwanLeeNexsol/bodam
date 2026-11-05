@@ -738,14 +738,19 @@ describe('거절은 모두 의도한 상태 코드와 사유를 내고 500 이 �
 describe('경로 표', () => {
   const source = readFileSync(fileURLToPath(new URL('../../src/server/admin/router.ts', import.meta.url)), 'utf8');
 
-  it('RV 전용 경로 표는 다섯 경로뿐이다 (병원 경로 표와 따로 둔다)', () => {
-    const routes = [...source.matchAll(/\{ method: '([A-Z]+)', segments: \[([^\]]*)\], handler: (\w+) \}/g)].map((match) => `${match[1]} ${match[2]!.replaceAll("'", '').replaceAll(' ', '')}`);
+  it('플랫폼 경로 표(병원 경로 표와 따로 둔다): 매핑 검토 RV 다섯 경로는 그대로이고, 묶음 구성 RV 셋 · 범위 지정 PO 둘이 경로마다 정해진 역할로 더해졌다', () => {
+    const routes = [...source.matchAll(/\{ method: '([A-Z]+)', role: '([A-Z]+)', segments: \[([^\]]*)\], handler: (\w+) \}/g)].map((match) => `${match[2]} ${match[1]} ${match[3]!.replaceAll("'", '').replaceAll(' ', '')}`);
     expect(routes).toEqual([
-      'GET review-history',
-      'POST review-requests,:reviewRequestId,mappings',
-      'POST mappings,:mappingId,versions,:version,submit',
-      'POST mappings,:mappingId,versions,:version,approve',
-      'POST mappings,:mappingId,versions,:version,reject',
+      'RV GET review-history',
+      'RV POST review-requests,:reviewRequestId,mappings',
+      'RV POST mappings,:mappingId,versions,:version,submit',
+      'RV POST mappings,:mappingId,versions,:version,approve',
+      'RV POST mappings,:mappingId,versions,:version,reject',
+      'RV GET bundle-publish',
+      'RV POST bundle-publish,preview',
+      'RV POST bundle-publish',
+      'PO GET rule-scope',
+      'PO POST rule-scope,clinics,:clinicId',
     ]);
   });
 

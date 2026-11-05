@@ -1,5 +1,6 @@
 import type {
   AuditLogEntry,
+  BundlePublishConfirmation,
   CatalogVersion,
   Clinic,
   ClinicRuleScope,
@@ -144,6 +145,22 @@ export function makeStatusEvent(overrides: Partial<RuleBundleStatusEvent> = {}):
     at: TEST_FIXTURE_NOW,
     reason: null,
     previousStatus: null,
+    ...overrides,
+  };
+}
+
+/** 소비되지 않은 묶음 게시 확인값 기록(M7 묶음 구성 보강). token 은 64자 소문자 16진수 모양의 가짜 값이다. */
+export function makeBundleConfirmation(overrides: Partial<BundlePublishConfirmation> = {}): BundlePublishConfirmation {
+  return {
+    token: 'a'.repeat(64),
+    actorId: TEST_FIXTURE_RV_AUTHOR.id,
+    role: 'RV',
+    baseBundleId: 'TEST_FIXTURE_BUNDLE_1',
+    chosen: [{ kind: 'MAPPING', id: 'TEST_FIXTURE_MAPPING_1', version: 'v1' }],
+    configurationDigest: 'b'.repeat(64),
+    issuedAt: TEST_FIXTURE_NOW,
+    consumedAt: null,
+    resultBundleId: null,
     ...overrides,
   };
 }

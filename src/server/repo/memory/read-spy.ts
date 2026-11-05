@@ -29,6 +29,7 @@ export const READ_QUERY_NAMES = [
   'listRuleBundleVersions',
   'getBundleStatus',
   'listBundleStatusEvents',
+  'getBundleConfirmation',
   'getClinicRuleScope',
   'listClinicRuleScopeHistory',
   'getIdlePolicy',

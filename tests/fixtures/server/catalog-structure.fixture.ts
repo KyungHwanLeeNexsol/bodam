@@ -13,9 +13,9 @@ export const T3 = 'TEST_FIXTURE_TREATMENT_3';
 
 /**
  * 병원 1 의 카탈로그를 치료 셋(T1·T2·T3)으로 다시 게시한다. T1·T2 의 sortOrder 는 둘 다 1(같으면 id 순)이고 T3 는 3, T3 의 가격은 11,000원이다.
- * 표시 순서는 T1, T2, T3 다. T3 에는 승인된 매핑이 없다. 새 카탈로그를 돌려준다.
+ * 표시 순서는 T1, T2, T3 다. T3 에는 승인된 매핑이 없다. 새 카탈로그를 돌려준다. displayName 을 생략하면 'TEST_FIXTURE 치료 3' 이다(브라우저 시험의 묶음 시연 세계가 눈에 띄는 이름을 넘긴다).
  */
-export function addThirdTreatment(world: World): CatalogVersion {
+export function addThirdTreatment(world: World, displayName: string = 'TEST_FIXTURE 치료 3'): CatalogVersion {
   world.repo.saveTreatment(makeTreatment({ id: T3, sortOrder: 3 }));
   const current = world.repo.getClinicCurrentCatalogVersion(TEST_FIXTURE_CLINIC_ID)!;
   const versions = current.treatmentVersionIds.map((id) => world.repo.getTreatmentVersion(id)!);
@@ -24,7 +24,7 @@ export function addThirdTreatment(world: World): CatalogVersion {
     TEST_FIXTURE_HA_1,
     TEST_FIXTURE_CLINIC_ID,
     {
-      treatmentVersions: [...versions, makeTreatmentVersion({ id: 'TEST_FIXTURE_TV_3', treatmentId: T3, displayName: 'TEST_FIXTURE 치료 3', patientAmount: 11_000 })],
+      treatmentVersions: [...versions, makeTreatmentVersion({ id: 'TEST_FIXTURE_TV_3', treatmentId: T3, displayName, patientAmount: 11_000 })],
       commonBaseFees: current.baseFeeIds.map((id) => world.repo.getCommonBaseFee(id)!),
     },
     TEST_CATALOG_CONFIG,

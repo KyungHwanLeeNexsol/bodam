@@ -34,6 +34,19 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
     }
   });
 
+  test('묶음 게시 화면과 규칙 사용 범위 화면도 안내만 보이고 단추·입력칸·선택칸이 없다 (묶음·병원·매핑 자료도 보이지 않는다)', async ({ page }) => {
+    for (const path of ['/admin/bundles', '/admin/rule-scope']) {
+      const response = await page.goto(path);
+      expect(response?.status(), path).toBe(200);
+      expect(response?.headers()['cache-control'], path).toBe('no-store');
+      await expect(page.locator('[data-admin-state="unauthenticated"]')).toBeVisible();
+      await expect(page.locator('[data-admin-state] .admin-banner--error')).toContainText('로그인이 필요합니다');
+      await expect(page.getByRole('button')).toHaveCount(0);
+      await expect(page.locator('input, select, textarea')).toHaveCount(0);
+      expect(await page.locator('body').innerText()).not.toMatch(/TEST_FIXTURE|기준 묶음|승인된 매핑|이 병원에 적용|현재 적용본/);
+    }
+  });
+
   test('모든 관리자 API 는 401 이다 (일반 요청, 시험 쿠키·역할 헤더·쿼리 위조 모두), 응답은 no-store 이다', async ({ request }) => {
     const paths: Array<[string, string, unknown?]> = [
       ['GET', '/api/admin/session'],
@@ -53,9 +66,18 @@ test.describe('운영 구성: 관리자 기능은 인증 공급자가 연결되�
       ['POST', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/submit', { reviewRequestId: 'TEST_FIXTURE_REVIEW_REQUEST_1' }],
       ['POST', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/approve', { reviewRequestId: 'TEST_FIXTURE_REVIEW_REQUEST_1' }],
       ['POST', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/reject', { reviewRequestId: 'TEST_FIXTURE_REVIEW_REQUEST_1', reason: 'TEST_FIXTURE 사유' }],
+      // 묶음 게시(RV)와 규칙 사용 범위 지정(PO, M7 묶음 구성): 다섯 경로 모두 운영 구성에서는 쓸 수 없다.
+      ['GET', '/api/admin/bundle-publish'],
+      ['POST', '/api/admin/bundle-publish/preview', { baseBundleId: 'TEST_FIXTURE_BUNDLE_1', mappings: [{ id: 'TEST_FIXTURE_MAPPING_1', version: '1' }] }],
+      ['POST', '/api/admin/bundle-publish', { baseBundleId: 'TEST_FIXTURE_BUNDLE_1', mappings: [{ id: 'TEST_FIXTURE_MAPPING_1', version: '1' }], publishConfirmation: 'a'.repeat(64) }],
+      ['GET', '/api/admin/rule-scope'],
+      ['POST', `/api/admin/rule-scope/clinics/${CLINIC}`, { ruleBundleVersionId: 'TEST_FIXTURE_BUNDLE_1', expectedCurrentBundleId: null }],
       // 경로·메서드가 틀려도 인증이 먼저다.
       ['DELETE', '/api/admin/review-history'],
       ['GET', '/api/admin/mappings/TEST_FIXTURE_MAPPING_1/versions/1/approve'],
+      ['PUT', '/api/admin/bundle-publish'],
+      ['GET', '/api/admin/bundle-publish/preview'],
+      ['DELETE', '/api/admin/rule-scope'],
     ];
     const spoof = { cookie: 'bodam_test_session=TEST_FIXTURE_SESSION_1_ha-clinic-1; role=HA', 'x-role': 'HA', 'x-clinic-id': CLINIC, authorization: 'Bearer HA' };
     for (const [method, path, body] of paths) {

@@ -54,7 +54,7 @@ async function login(page: Page, account: string): Promise<void> {
   await page.goto('/__harness/login');
   await page.locator(`[data-test-account="${account}"]`).click();
   // 플랫폼 단위 검토 담당자(rv-1)는 검토 대기열로, 나머지는 소속 병원의 가격 관리로 들어간다.
-  await expect(page).toHaveURL(/\/admin\/(?:[^/]+\/treatments|review-queue)$/);
+  await expect(page).toHaveURL(/\/admin\/(?:[^/]+\/treatments|review-queue|rule-scope)$/);
 }
 
 interface Session {
@@ -346,11 +346,12 @@ test('검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전
   expect(text).not.toMatch(/승인하기|반려하기|매핑 만들기|게시하기/);
   await shoot(page, 'rv-queue');
 
-  // 입구 화면: 검토 담당자에게는 대기열 링크만 있다(병원 링크 없음).
+  // 입구 화면: 검토 담당자에게는 대기열 링크와 묶음 게시 링크(M7 묶음 구성에서 더해진 RV 링크)만 있다(병원 링크·규칙 사용 범위 링크 없음).
   await page.goto('/admin');
   await expect(page.locator('[data-admin-state="ready"]')).toBeVisible();
   await expect(page.getByRole('link', { name: '검토 대기열' })).toBeVisible();
-  await expect(page.locator('main').getByRole('link')).toHaveCount(1);
+  await expect(page.locator('main').getByRole('link')).toHaveCount(2);
+  await expect(page.locator('main').getByRole('link', { name: '묶음 게시' })).toHaveAttribute('href', '/admin/bundles');
   await expect(page.locator('main .admin-banner')).toHaveCount(0);
 });
 
@@ -375,11 +376,12 @@ test('접근 거절 화면: 병원 관리자·PO 는 대기열이, 검토 담당
     expect(await page.locator('body').innerText()).not.toMatch(/TEST_FIXTURE_PROPOSED/);
     if (account === 'rv-1') await shoot(page, 'requests-forbidden-rv');
   }
-  // 병원 관리자 입구는 검토 담당자 링크를 만들지 않고, 소속이 없는 신원(PO)에는 안내만 보인다.
+  // 병원 관리자 입구는 검토 담당자 링크를 만들지 않는다. 플랫폼 운영자(PO)의 입구에는 병원 링크도 검토 링크도 없고 규칙 사용 범위 링크 하나만 있다(M7 묶음 구성에서 더해진 PO 링크).
   await login(page, 'po-1');
   await page.goto('/admin');
   await expect(page.locator('[data-admin-state="ready"]')).toBeVisible();
-  await expect(page.locator('main').getByRole('link')).toHaveCount(0);
+  await expect(page.locator('main').getByRole('link')).toHaveCount(1);
+  await expect(page.locator('main').getByRole('link')).toHaveAttribute('href', '/admin/rule-scope');
 
   const anonymous = await openAs(browser, null);
   for (const url of ['/admin/review-queue', `/admin/${CLINIC_1}/review-requests`]) {

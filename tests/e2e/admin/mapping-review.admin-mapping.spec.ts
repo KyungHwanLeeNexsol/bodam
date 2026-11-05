@@ -84,7 +84,7 @@ async function login(page: Page, account: string): Promise<void> {
   await page.goto('/__harness/login');
   await page.locator(`[data-test-account="${account}"]`).click();
   // 플랫폼 단위 검토 담당자(rv-1·rv-2)는 검토 대기열로, 나머지(병원에 매인 RV 포함)는 소속 병원의 가격 관리로 들어간다.
-  await expect(page).toHaveURL(/\/admin\/(?:[^/]+\/treatments|review-queue)$/);
+  await expect(page).toHaveURL(/\/admin\/(?:[^/]+\/treatments|review-queue|rule-scope)$/);
 }
 
 async function openAs(browser: Browser, account: string | null): Promise<Session> {

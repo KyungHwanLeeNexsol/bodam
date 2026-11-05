@@ -3,6 +3,7 @@ import { canonicalDigest } from '../../digest';
 import type {
   AuditLogEntry,
   BundleAvailability,
+  BundlePublishConfirmation,
   CatalogDraft,
   CatalogVersion,
   Clinic,
@@ -457,6 +458,30 @@ export class MemoryRepository implements Repository {
   getBundleStatus(bundleId: string): BundleAvailability | null {
     this.spy.record('getBundleStatus');
     return this.store.bundleEvents.get(bundleId)?.at(-1)?.status ?? null;
+  }
+
+  putBundleConfirmation(record: BundlePublishConfirmation): void {
+    if (this.store.bundleConfirmations.has(record.token)) {
+      throw new DomainError('DUPLICATE_KEY', '묶음 게시 확인값 기록이 이미 있다');
+    }
+    this.store.bundleConfirmations.set(record.token, deepCopy(record));
+  }
+
+  getBundleConfirmation(token: string): BundlePublishConfirmation | null {
+    this.spy.record('getBundleConfirmation');
+    return this.read(this.store.bundleConfirmations, token);
+  }
+
+  markBundleConfirmationConsumed(token: string, consumedAt: string, resultBundleId: string): void {
+    const existing = this.store.bundleConfirmations.get(token);
+    if (existing === undefined) {
+      throw new DomainError('NOT_FOUND', '묶음 게시 확인값 기록이 없다');
+    }
+    if (existing.consumedAt !== null) {
+      throw new DomainError('STATE_CONFLICT', '묶음 게시 확인값은 이미 쓰였다 (한 번만 쓸 수 있다)');
+    }
+    this.requireBundle(resultBundleId);
+    this.store.bundleConfirmations.set(token, { ...deepCopy(existing), consumedAt, resultBundleId });
   }
 
   assignClinicRuleScope(scope: ClinicRuleScope): void {
