@@ -9,6 +9,17 @@ import { TEST_NOTICE } from './notice';
 
 export const ACCOUNT_KEYS = Object.keys(TEST_ACCOUNTS) as TestAccountKey[];
 
+/**
+ * 로그인 직후 들어갈 화면. 플랫폼 단위 검토 담당자(RV, 병원에 묶이지 않은 소속)는 검토 대기열, 플랫폼 단위 운영자(PO)는 규칙 사용 범위(M7 묶음 구성)로 들어간다.
+ * 나머지 계정(병원 소속 HA · 병원에 매인 RV)은 소속 병원의 가격 관리로 들어간다. 여러 플랫폼 역할이 있으면 RV 가 먼저다(시험 계정에는 없다).
+ */
+export function accountHome(key: TestAccountKey): string {
+  const account = TEST_ACCOUNTS[key];
+  if (account.memberships.some((membership) => membership.role === 'RV' && membership.clinicId === null)) return '/admin/review-queue';
+  if (account.memberships.some((membership) => membership.role === 'PO' && membership.clinicId === null)) return '/admin/rule-scope';
+  return `/admin/${encodeURIComponent(account.home)}/treatments`;
+}
+
 export function loginPageHtml(): string {
   const buttons = ACCOUNT_KEYS.map((key) => {
     const account = TEST_ACCOUNTS[key];
