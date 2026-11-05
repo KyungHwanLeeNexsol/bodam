@@ -11,10 +11,13 @@ import { HARNESS_CLINIC_SLUG, HARNESS_HOLD_CLINIC_SLUG } from './world';
 //  - 운영 구성 앱을 앞단 없이 그대로 열면 키오스크 문서는 HTTP 200 이고 병원 조회 API 가 404(운영 저장소가 비어 있어 정상 동작)라 화면에 "이용할 수 없어요" 안내가 뜬다. 아래에서 그 주소도 알려 준다.
 //  - 두 서버 모두 루프백(127.0.0.1)에만 바인딩한다: 같은 네트워크의 다른 기기에서는 열 수 없다.
 // 실행: `npm run preview:kiosk` (빌드 후 띄움) · 빌드를 이미 했으면 `npm run preview:kiosk:run`. 끝내려면 Ctrl+C.
+// 묶음 게시·규칙 사용 범위(M7 묶음 구성)를 직접 써 보는 시연 세계는 켜야 열린다(기본 미리보기는 그대로다): `npm run preview:bundle`(빌드 후) · `npm run preview:bundle:run`, 또는 환경 변수 PREVIEW_BUNDLE_DEMO=1.
+// 시연 세계는 병원 1 에 치료 C 를 더하고 병원 2 도 기준 묶음을 쓰게 한 세계다(world.ts). 시험 전용 끝점(--test-hooks)은 열지 않는다.
 
 export const PREVIEW_APP_PORT = Number(process.env['PREVIEW_APP_PORT'] ?? 3201);
 export const PREVIEW_PORT = Number(process.env['PREVIEW_PORT'] ?? 3202);
 const LOOPBACK = '127.0.0.1';
+const BUNDLE_DEMO = process.argv.includes('--bundle-demo') || process.env['PREVIEW_BUNDLE_DEMO'] === '1';
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -35,6 +38,27 @@ async function waitUntilUp(url: string, child: ChildProcess, label: string): Pro
   throw new Error(`${label} 서버가 제때 뜨지 않았다: ${url}`);
 }
 
+/** 묶음 시연 세계의 단계별 안내(--bundle-demo). 계정 이름은 시험 로그인 화면의 단추 이름과 같다. */
+function bundleDemoLines(origin: string, kioskBase: string): string[] {
+  return [
+    '  [관리자] 묶음 게시 → 규칙 사용 범위 지정 → 키오스크 반영 (시연 세계: --bundle-demo, TEST_FIXTURE 시험 자료)',
+    '      병원 1 에 "시험 치료 C (묶음 시험)"가 더해져 있다. 기준 묶음에는 C 의 매핑이 없어서, 지금 병원 1 키오스크에서 C 를 고르면 계산이 보류(매핑 없음)다.',
+    '      병원 2 도 같은 기준 묶음을 쓴다. 아래 순서대로 하면 병원 1 에서만 C 가 계산되고 병원 2 는 그대로다. 계정을 바꿀 때는 로그인 화면(/__harness/login)으로 돌아가 다시 고른다.',
+    `      0. 키오스크 병원 1  : ${kioskBase}/${HARNESS_CLINIC_SLUG} → 4세대(C4) · 손해보험사 → "시험 치료 C (묶음 시험)"만 선택해 계산하면 보류다.`,
+    `      1. "병원 1 관리자 (HA)" → ${origin}/admin/TEST_FIXTURE_CLINIC_1/review-requests 에서 치료 C 에 검토를 요청한다 (보험 계산 분류는 "일반 급여" 를 고른다).`,
+    '      2. "보험 기준 검토 담당자 (RV)"(rv-1) → 검토 대기열에서 C 의 "매핑 초안 작성": 보장함, 그룹 키 TEST_GROUP_BENEFIT, 적용 범위 "4세대(C4) · 손해보험사",',
+    '         유효 기간 2026-01-01 ~ 2026-12-31, 약관 출처 여섯 칸은 아무 시험 값이나 채운다 → "초안 저장" → "검토 제출".',
+    '      3. "보험 기준 검토 담당자 2 (RV)"(rv-2) → 같은 항목을 "승인"한다. 승인만으로는 환자 화면이 바뀌지 않는다(키오스크 C 는 여전히 보류).',
+    `      4. rv-2 (또는 rv-1) → ${origin}/admin/bundles : 기준 묶음(사용 가능한 최신 묶음)이 골라져 있다. 승인된 매핑 C 를 체크 → "미리보기"(기준 묶음 항목과 "추가" 항목이 보인다) → "게시".`,
+    '         "새 규칙 묶음 … 을(를) 게시했습니다. 아직 어느 병원에도 적용되지 않았습니다. …"라고 나온다. 키오스크 병원 1·2 는 아직 그대로다(C 보류).',
+    `      5. "플랫폼 운영자 (PO)"(po-1) → ${origin}/admin/rule-scope (로그인하면 바로 이 화면으로 온다): 병원 1 의 "바꿀 묶음"에서 새 묶음을 고르면 "현재 … → 바꿀 …" 줄이 나온다 → "이 병원에 적용" (병원 1 한 곳만 바뀐다).`,
+    `      6. 키오스크 병원 1 을 새로 열어(${kioskBase}/${HARNESS_CLINIC_SLUG}) 같은 순서로 C 를 계산하면 이제 정상 결과다. 병원 2(${kioskBase}/${HARNESS_HOLD_CLINIC_SLUG}) 는 그대로다.`,
+    '      * 거절도 볼 수 있다: 승인 전 매핑은 후보에 없다 · 겹치는 매핑을 고르면 "겹치는 매핑" 문장과 함께 게시가 막힌다 · rv 계정이 규칙 사용 범위를, po 계정이 묶음 게시를 열면 권한 없음 안내(API 403)다.',
+    '      * 이 시연 세계의 상태는 이 서버가 떠 있는 동안만 메모리에 있다. 처음부터 다시 하려면 Ctrl+C 후 다시 띄운다.',
+    '',
+  ];
+}
+
 async function main(): Promise<void> {
   const appHealth = `http://${LOOPBACK}:${PREVIEW_APP_PORT}/kiosk/preview-probe`;
   const previewHealth = `http://${LOOPBACK}:${PREVIEW_PORT}/__harness/health`;
@@ -44,7 +68,7 @@ async function main(): Promise<void> {
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(PREVIEW_APP_PORT), '-H', LOOPBACK], { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true });
   const preview = spawn(
     process.execPath,
-    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(PREVIEW_PORT), '--upstream', `http://${LOOPBACK}:${PREVIEW_APP_PORT}`, '--test-notice'],
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(PREVIEW_PORT), '--upstream', `http://${LOOPBACK}:${PREVIEW_APP_PORT}`, '--test-notice', ...(BUNDLE_DEMO ? ['--bundle-demo'] : [])],
     { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true },
   );
   const stop = (): void => {
@@ -106,6 +130,7 @@ async function main(): Promise<void> {
       '      * 치료를 새로 추가해 게시하면 분류가 "추가 검토 필요"가 되어 계산이 보류된다. 그 치료의 매핑을 승인해도 분류는 바뀌지 않아 계산은 계속 보류다.',
       '      * 치료를 숨겨 게시한 뒤에는 그 치료의 대기 중 요청을 승인할 수 없다 (대기열에 "숨긴 치료입니다"로 보이고 승인 단추가 막힌다. 반려로 닫을 수 있다).',
       '',
+      ...(BUNDLE_DEMO ? bundleDemoLines(`http://${LOOPBACK}:${PREVIEW_PORT}`, base) : ['  [관리자] 묶음 게시 · 규칙 사용 범위: 이 미리보기에는 켜져 있지 않다. 써 보려면 `npm run preview:bundle:run`(빌드를 이미 했을 때) 또는 `npm run preview:bundle` 로 시연 세계를 띄운다.', '']),
       '  끝내려면 Ctrl+C',
       '',
     ].join('\n'),
