@@ -3,38 +3,31 @@ M7 보장 검토 요청 — 실행 기록 (2026-11-05, Windows 11, 실제 Chrome
 아래 각 구역은 해당 명령을 실제로 실행해 남긴 출력 그대로다(길면 끝부분만). 원본은 .moai/state/verify/review-request/ 에 있다(git 이 보지 않는 곳).
 시험 자료는 모두 TEST_FIXTURE 이고, 이 기록은 시험 통과의 근거일 뿐 운영 인증·실제 병원 자료·매핑·규칙 묶음 처리에 대한 증거가 아니다.
 
-종료 코드 요약
-  npx tsc --noEmit                                   exit 0
-  npx vitest run tests/boundary                      exit 0  (10 files, 360 tests)
-  npx vitest run (전체)                              exit 1  (175 files 통과, 1 file 실패: 2 tests — 아래 설명. 8975 통과 / 2 실패)
-  npm run build                                      exit 0
-  npx playwright test --project=admin-review         exit 0  (8 통과)
-  npx playwright test --project=admin                exit 0  (9 통과)
-  npx playwright test --project=admin-catalog        exit 0  (10 통과)
-  npx playwright test --project=production           exit 0  (11 통과)
+마지막 수정(대기열의 "현재 게시값"): 숨긴 치료의 요청은 대기열에 남되 current 가 null 이 되어 "현재 게시 목록에 없음"으로 보인다.
+현재 게시 치료의 정의는 제출 규칙과 같은 selectPublishedTreatments 하나다. 아래 출력은 이 수정 뒤에 다시 실행한 것이다.
 
-전체 단위 시험의 실패 2건은 tests/kiosk/state/request-static.test.ts 의 machine.ts 줄 끝 정규식(`$`)이 이 작업 폴더의 CRLF 줄바꿈 때문에 맞지 않아서 생긴다
-(받은 값이 "…settleOnEvent }," 로 같고 끝의 \r 만 다르다). 이 단계가 건드리지 않은 파일(src/app/kiosk, tests/kiosk)이라 이 단계의 변경과 무관하다
-(`git diff 5b4e9c3 --stat -- src/app/kiosk tests/kiosk` 가 비어 있다).
+종료 코드 요약
+  npx tsc --noEmit                                              exit 0
+  npx vitest run tests/api tests/server tests/boundary tests/admin   exit 0  (88 files, 4118 tests 통과)
+  npm run build                                                 exit 0
+  npx playwright test --project=admin-review --workers=1        exit 0  (8 통과)
+  npx playwright test --project=admin --workers=1               exit 0  (9 통과)
+  npx playwright test --project=admin-catalog --workers=1       exit 0  (10 통과)
+  npx playwright test --project=production --workers=1          exit 0  (11 통과)
+전체 단위 시험(npx vitest run)은 이 수정 뒤에는 돌리지 않았다. 수정 전에는 8975 통과 / 2 실패였고, 실패 2건은 tests/kiosk/state/request-static.test.ts 의
+machine.ts 줄 끝 정규식이 이 작업 폴더의 CRLF 줄바꿈과 맞지 않아서 생기는 것으로 이 단계와 무관하다(기준 커밋에서도 같다).
 
 ===== npx tsc --noEmit (출력 없음 = 오류 없음) =====
 
-===== npx vitest run tests/boundary (끝부분) =====
- RUN  v5.0.4 C:/Users/Nexsol/Documents/bodam-wt-m7-review
+===== npx vitest run tests/api tests/server tests/boundary tests/admin (끝부분) =====
+ Test Files  88 passed (88)
+      Tests  4118 passed (4118)
+   Start at  09:37:10
+   Duration  8.13s (tests 79%, import 16%, transform 4%, worker 1%)
 
+    Isolate  88 workers spawned · ~290ms startup each (spawn + environment, per file)
+             at least ~2.03s faster with isolate: false — reuses workers across files instead of one per file
 
- Test Files  10 passed (10)
-      Tests  360 passed (360)
-   Start at  09:32:30
-   Duration  1.10s (tests 61%, import 35%, transform 2%, worker 1%)
-
-
-===== npx vitest run (전체, 실패 요약과 끝부분) =====
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
- FAIL  tests/kiosk/state/request-static.test.ts > AC-016j 7: 요청 결말에 따라 화면을 바꾸는 길은 request.ts 밖에 없다 > machine.ts 의 결말 사건 세 줄은 settleOnEvent 를 부르기만 한다
- FAIL  tests/kiosk/state/request-static.test.ts > DD-09 갱신: activeRefresh 를 푸는 곳은 settleRefresh 하나다 (AC-020f·AC-020g 의 정적 약속) > machine.ts 의 갱신 결말 사건 세 줄은 settleRefreshOnEvent 를 부르기만 한다
- Test Files  1 failed | 175 passed (176)
-      Tests  2 failed | 8975 passed (8977)
 
 ===== npm run build =====
 
@@ -42,15 +35,15 @@ M7 보장 검토 요청 — 실행 기록 (2026-11-05, Windows 11, 실제 Chrome
 > next build
 
 ▲ Next.js 16.4.2 (Turbopack)
-✓ Running next.config.mjs took 20ms
+✓ Running next.config.mjs took 17ms
 
   Creating an optimized production build ...
-✓ Compiled successfully in 488ms
+✓ Compiled successfully in 826ms
   Running TypeScript ...
-  Finished TypeScript in 583ms ...
+  Finished TypeScript in 619ms ...
   Collecting page data using 11 workers ...
   Generating static pages using 11 workers (0/2) ...
-✓ Generating static pages using 11 workers (2/2) in 89ms
+✓ Generating static pages using 11 workers (2/2) in 96ms
   Finalizing page optimization ...
 
 Route (app)
@@ -74,64 +67,64 @@ Route (app)
 
 Running 8 tests using 1 worker
 
-  ✓  1 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:100:1 › BEFORE: 공개 카탈로그·보험 선택지·계산 결과·관리자 치료 목록을 기록하고, 요청이 하나도 없음을 확인한다 (736ms)
+  ✓  1 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:100:1 › BEFORE: 공개 카탈로그·보험 선택지·계산 결과·관리자 치료 목록을 기록하고, 요청이 하나도 없음을 확인한다 (890ms)
   ✓  2 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:112:1 › 병원 1 관리자: 입구와 이동 줄로 검토 요청 화면에 들어가 치료 A 에 검토를 요청한다 (보험 계산 분류를 고르지 않으면 보내지 않는다) (1.1s)
   ✓  3 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:202:1 › 거절: 중복 · 없는 치료 · 다른 병원 치료 · 위조·잘못된 본문 · 권한 없는 계정 · 인증 없음 · 잘못된 방법 — 모두 응답과 함께 저장 상태가 그대로다 (1.8s)
-  ✓  4 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:310:1 › 검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전 요청을 현재 게시값과 제안값을 나란히 읽는다 (처리 동작이 없다) (665ms)
+  ✓  4 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:310:1 › 검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전 요청을 현재 게시값과 제안값을 나란히 읽는다 (처리 동작이 없다) (538ms)
   ✓  5 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:356:1 › 접근 거절 화면: 병원 관리자·PO 는 대기열이, 검토 담당자·PO·다른 병원 관리자는 병원 1 의 검토 요청 화면이 거절되고 단추·입력칸이 없다. 인증이 없으면 로그인 안내다 (1.9s)
-  ✓  6 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:393:1 › AFTER: 요청이 쌓인 뒤에도 공개 카탈로그·보험 선택지·같은 조건의 계산 결과·관리자 치료 목록은 BEFORE 와 완전히 같다 (새 자료는 검토 요청뿐) (651ms)
-  ✓  7 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:411:1 › 화면의 서버 거절 문장: 열어 둔 사이에 같은 치료의 요청이 다른 세션에서 만들어졌다면(409) 안내가 뜨고 요청은 늘지 않으며 입력이 남는다 (치료 B) (959ms)
-  ✓  8 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:436:1 › 숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남는다 (이 시험은 마지막이다) (954ms)
+  ✓  6 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:393:1 › AFTER: 요청이 쌓인 뒤에도 공개 카탈로그·보험 선택지·같은 조건의 계산 결과·관리자 치료 목록은 BEFORE 와 완전히 같다 (새 자료는 검토 요청뿐) (615ms)
+  ✓  7 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:411:1 › 화면의 서버 거절 문장: 열어 둔 사이에 같은 치료의 요청이 다른 세션에서 만들어졌다면(409) 안내가 뜨고 요청은 늘지 않으며 입력이 남는다 (치료 B) (951ms)
+  ✓  8 [admin-review] › tests\e2e\admin\review-request.admin-review.spec.ts:436:1 › 숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남고 "현재 게시 목록에 없음"으로 보인다 (이 시험은 마지막이다) (970ms)
 
-  8 passed (10.9s)
+  8 passed (11.1s)
 
 ===== npx playwright test --project=admin --workers=1 =====
 
 Running 9 tests using 1 worker
 
-  ✓  1 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:58:1 › 로그인 전: 가격 관리 화면은 안내만 보이고, 관리자 API 는 401 이다 (453ms)
-  ✓  2 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:68:1 › 권한 없는 계정: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원의 관리자는 이 병원의 가격 관리에서 거절(403)되고 아무것도 바뀌지 않는다 (695ms)
-  ✓  3 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:86:1 › 병원 1 관리자: 기존 가격 확인 → 수정 → 초안 저장 → 키오스크는 기존 가격 유지 (1.5s)
-  ✓  4 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:140:1 › 미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보이고, 미리보기 뒤에만 게시할 수 있다 (774ms)
-  ✓  5 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:183:1 › 미리보기를 본 뒤 같은 가격으로 초안이 다시 저장되면 게시는 거절되고(PREVIEW_REQUIRED), 미리보기를 다시 해야 게시할 수 있다. 아무것도 게시되지 않는다 (779ms)
-  ✓  6 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:205:1 › 게시: 새 카탈로그 버전이 만들어지고 키오스크의 가격과 계산 결과가 새 값으로 바뀐다 (1.4s)
-  ✓  7 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:231:1 › 게시 뒤에는 초안이 없고 같은 초안을 다시 게시할 수 없다 (409 DRAFT_ABSENT), 가격을 바꾸지 않은 저장은 거절된다 (372ms)
-  ✓  8 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:252:1 › 초안 버리기: 저장한 초안을 버려도 키오스크 가격은 그대로다 (545ms)
+  ✓  1 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:58:1 › 로그인 전: 가격 관리 화면은 안내만 보이고, 관리자 API 는 401 이다 (478ms)
+  ✓  2 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:68:1 › 권한 없는 계정: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원의 관리자는 이 병원의 가격 관리에서 거절(403)되고 아무것도 바뀌지 않는다 (671ms)
+  ✓  3 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:86:1 › 병원 1 관리자: 기존 가격 확인 → 수정 → 초안 저장 → 키오스크는 기존 가격 유지 (1.6s)
+  ✓  4 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:140:1 › 미리보기: 같은 엔진으로 현재와 초안 계산을 나란히 보이고, 미리보기 뒤에만 게시할 수 있다 (828ms)
+  ✓  5 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:183:1 › 미리보기를 본 뒤 같은 가격으로 초안이 다시 저장되면 게시는 거절되고(PREVIEW_REQUIRED), 미리보기를 다시 해야 게시할 수 있다. 아무것도 게시되지 않는다 (697ms)
+  ✓  6 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:205:1 › 게시: 새 카탈로그 버전이 만들어지고 키오스크의 가격과 계산 결과가 새 값으로 바뀐다 (1.5s)
+  ✓  7 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:231:1 › 게시 뒤에는 초안이 없고 같은 초안을 다시 게시할 수 없다 (409 DRAFT_ABSENT), 가격을 바꾸지 않은 저장은 거절된다 (411ms)
+  ✓  8 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:252:1 › 초안 버리기: 저장한 초안을 버려도 키오스크 가격은 그대로다 (682ms)
   ✓  9 [admin] › tests\e2e\admin\price-flow.admin.spec.ts:266:1 › 치료 두 개의 가격을 바꾸면 둘 다 계산 대상에 고정되고, 미리보기 → 게시 → 키오스크에 두 가격이 모두 반영된다 (일부만 계산하는 길은 서버가 막는다) (1.6s)
 
-  9 passed (10.3s)
+  9 passed (10.6s)
 
 ===== npx playwright test --project=admin-catalog --workers=1 =====
 
 Running 10 tests using 1 worker
 
-  ✓   1 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:167:1 › 사전 상태: 키오스크 목록은 치료 A, B 순서이고 관리자 화면도 같은 목록을 보인다 (1.6s)
+  ✓   1 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:167:1 › 사전 상태: 키오스크 목록은 치료 A, B 순서이고 관리자 화면도 같은 목록을 보인다 (1.7s)
   ✓   2 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:211:1 › 화면에서 새 치료 추가 · 숨기기 · 순서 · 가격을 고쳐 초안으로 저장한다: 저장만으로는 키오스크도 공개 자료도 바뀌지 않는다 (2.0s)
-  ✓   3 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:318:1 › 화면을 거치지 않고 API 로 직접 게시하려 해도 미리보기 확인값이 없으면 서버가 거절한다: 공개 자료와 초안은 그대로다 (421ms)
+  ✓   3 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:318:1 › 화면을 거치지 않고 API 로 직접 게시하려 해도 미리보기 확인값이 없으면 서버가 거절한다: 공개 자료와 초안은 그대로다 (428ms)
   ✓   4 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:339:1 › 접근 거절: 검토 담당자(RV)·플랫폼 운영자(PO)·다른 병원 관리자는 403, 로그인하지 않으면 401 이고 초안과 공개 자료는 그대로다 (1.5s)
-  ✓   5 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:384:1 › 미리보기: 추가·숨김·가격을 변경 내역과 목록으로 보이고, 새 치료는 계산 보류이며 보험금 숫자가 없다. 숨길 치료는 계산 대상으로 고를 수 없다 (671ms)
-  ✓   6 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:432:1 › 미리보기를 본 뒤 초안이 바뀌면 다시 미리보기를 해야 게시할 수 있다: 옛 확인값은 서버도 거절한다 (759ms)
-  ✓   7 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:472:1 › 게시가 서버에서 거절되면(다른 창이 같은 초안을 다시 저장) 아무것도 바뀌지 않고 입력은 화면에 남는다 (784ms)
-  ✓   8 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:510:1 › 게시: 새 목록·순서가 키오스크에 반영된다 (숨긴 치료는 사라지고, 새 치료는 고를 수 있지만 계산은 보류, 기존 치료는 그대로 계산된다) (3.5s)
+  ✓   5 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:384:1 › 미리보기: 추가·숨김·가격을 변경 내역과 목록으로 보이고, 새 치료는 계산 보류이며 보험금 숫자가 없다. 숨길 치료는 계산 대상으로 고를 수 없다 (627ms)
+  ✓   6 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:432:1 › 미리보기를 본 뒤 초안이 바뀌면 다시 미리보기를 해야 게시할 수 있다: 옛 확인값은 서버도 거절한다 (921ms)
+  ✓   7 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:472:1 › 게시가 서버에서 거절되면(다른 창이 같은 초안을 다시 저장) 아무것도 바뀌지 않고 입력은 화면에 남는다 (814ms)
+  ✓   8 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:510:1 › 게시: 새 목록·순서가 키오스크에 반영된다 (숨긴 치료는 사라지고, 새 치료는 고를 수 있지만 계산은 보류, 기존 치료는 그대로 계산된다) (3.7s)
   ✓   9 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:558:1 › 순서만 바꾼 초안도 저장·미리보기·게시된다: 금액 비교는 만들지 않고 목록과 변경 내역만 보인다 (1.5s)
-  ✓  10 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:603:1 › 서버가 거절한 저장은 입력을 지우지 않고 이유를 말한다. 초안 버리기는 화면을 게시된 상태로 되돌린다 (825ms)
+  ✓  10 [admin-catalog] › tests\e2e\admin\catalog-structure.admin-catalog.spec.ts:603:1 › 서버가 거절한 저장은 입력을 지우지 않고 이유를 말한다. 초안 버리기는 화면을 게시된 상태로 되돌린다 (883ms)
 
-  10 passed (15.6s)
+  10 passed (16.6s)
 
 ===== npx playwright test --project=production --workers=1 =====
 
 Running 11 tests using 1 worker
 
-  ✓   1 [production] › tests\e2e\admin\unavailable.production.spec.ts:11:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › /admin 과 가격 관리 화면은 안내만 보이고 가격 입력·초안 저장·게시 단추가 없다 (431ms)
-  ✓   2 [production] › tests\e2e\admin\unavailable.production.spec.ts:24:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 보장 검토 요청 화면과 검토 대기열 화면도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다) (333ms)
-  ✓   3 [production] › tests\e2e\admin\unavailable.production.spec.ts:37:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 모든 관리자 API 는 401 이다 (일반 요청, 시험 쿠키·역할 헤더·쿼리 위조 모두), 응답은 no-store 이다 (239ms)
-  ✓   4 [production] › tests\e2e\admin\unavailable.production.spec.ts:62:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 시험 로그인은 운영 구성에 없다 (/__harness 는 앱이 모르는 경로 404) (165ms)
-  ✓   5 [production] › tests\e2e\admin\unavailable.production.spec.ts:67:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 브라우저 저장소에는 아무것도 쓰지 않는다 (240ms)
-  ✓   6 [production] › tests\e2e\kiosk\not-found.production.spec.ts:12:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 찾을 수 없는 병원: 안내 화면만 보이고 시작할 길이 없다 (환자 문구에 코드·상태 번호가 없다) (266ms)
-  ✓   7 [production] › tests\e2e\kiosk\not-found.production.spec.ts:34:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 구성에는 시험 전용 안내가 없다: 시험 데이터 안내 문장도, 안내 띠·앱 틀(iframe)도 화면과 문서에 없다 (295ms)
-  ✓   8 [production] › tests\e2e\kiosk\not-found.production.spec.ts:44:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 다른 slug(한글·특수 문자 포함)도 같다. 병원 자료가 없으므로 병원명·토글이 없다 (357ms)
-  ✓   9 [production] › tests\e2e\kiosk\not-found.production.spec.ts:53:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 데이터가 없는 곳에서도 브라우저 저장소에는 아무것도 쓰지 않는다 (254ms)
-  ✓  10 [production] › tests\e2e\kiosk\not-found.production.spec.ts:68:3 › AC-021g: 키오스크 문서의 응답 헤더 › /kiosk/{slug} 문서는 Cache-Control: no-store 이다 (실제 next start 응답) (248ms)
-  ✓  11 [production] › tests\e2e\kiosk\not-found.production.spec.ts:74:3 › AC-021g: 키오스크 문서의 응답 헤더 › 다른 slug·쿼리가 붙어도 같고, API 응답도 no-store 다 (AC-021e 와 함께 본다) (151ms)
+  ✓   1 [production] › tests\e2e\admin\unavailable.production.spec.ts:11:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › /admin 과 가격 관리 화면은 안내만 보이고 가격 입력·초안 저장·게시 단추가 없다 (507ms)
+  ✓   2 [production] › tests\e2e\admin\unavailable.production.spec.ts:24:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 보장 검토 요청 화면과 검토 대기열 화면도 안내만 보이고 단추·입력칸이 없다 (요청 자료도 보이지 않는다) (341ms)
+  ✓   3 [production] › tests\e2e\admin\unavailable.production.spec.ts:37:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 모든 관리자 API 는 401 이다 (일반 요청, 시험 쿠키·역할 헤더·쿼리 위조 모두), 응답은 no-store 이다 (260ms)
+  ✓   4 [production] › tests\e2e\admin\unavailable.production.spec.ts:62:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 시험 로그인은 운영 구성에 없다 (/__harness 는 앱이 모르는 경로 404) (182ms)
+  ✓   5 [production] › tests\e2e\admin\unavailable.production.spec.ts:67:3 › 운영 구성: 관리자 기능은 인증 공급자가 연결되기 전까지 쓸 수 없다 › 브라우저 저장소에는 아무것도 쓰지 않는다 (266ms)
+  ✓   6 [production] › tests\e2e\kiosk\not-found.production.spec.ts:12:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 찾을 수 없는 병원: 안내 화면만 보이고 시작할 길이 없다 (환자 문구에 코드·상태 번호가 없다) (270ms)
+  ✓   7 [production] › tests\e2e\kiosk\not-found.production.spec.ts:34:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 구성에는 시험 전용 안내가 없다: 시험 데이터 안내 문장도, 안내 띠·앱 틀(iframe)도 화면과 문서에 없다 (299ms)
+  ✓   8 [production] › tests\e2e\kiosk\not-found.production.spec.ts:44:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 다른 slug(한글·특수 문자 포함)도 같다. 병원 자료가 없으므로 병원명·토글이 없다 (393ms)
+  ✓   9 [production] › tests\e2e\kiosk\not-found.production.spec.ts:53:3 › 운영 구성: 키오스크 문서는 HTTP 200, 병원 조회 API 는 404, 화면은 이용 불가 안내 › 운영 데이터가 없는 곳에서도 브라우저 저장소에는 아무것도 쓰지 않는다 (352ms)
+  ✓  10 [production] › tests\e2e\kiosk\not-found.production.spec.ts:68:3 › AC-021g: 키오스크 문서의 응답 헤더 › /kiosk/{slug} 문서는 Cache-Control: no-store 이다 (실제 next start 응답) (327ms)
+  ✓  11 [production] › tests\e2e\kiosk\not-found.production.spec.ts:74:3 › AC-021g: 키오스크 문서의 응답 헤더 › 다른 slug·쿼리가 붙어도 같고, API 응답도 no-store 다 (AC-021e 와 함께 본다) (156ms)
 
-  11 passed (5.2s)
+  11 passed (5.6s)

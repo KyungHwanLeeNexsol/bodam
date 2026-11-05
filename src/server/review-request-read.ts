@@ -1,6 +1,8 @@
 import { compareCodePoints } from '../engine/validate';
 import type { BenefitType, CalcClass } from '../engine/types';
 import type { CoverageReviewRequest, ReviewRequestStatus } from './domain/entities';
+import { selectPublishedTreatments } from './published-treatments';
+import type { PublishedTreatment } from './published-treatments';
 import type { Repository } from './repo/interfaces';
 
 // 검토 요청의 읽기 보기 (M7 검토 요청). 읽기만 한다: 저장소를 바꾸지 않고, 쓰기 메서드를 부르지 않는다(Pick 으로 읽기 메서드만 받는다).
@@ -29,7 +31,7 @@ export interface CurrentTreatmentView {
   calcClass: CalcClass;
 }
 
-/** RV 대기열 항목: 요청 보기 + 병원 + 현재 게시본의 치료 내용(그 병원의 현재 카탈로그에 그 치료가 없으면 null). */
+/** RV 대기열 항목: 요청 보기 + 병원 + 현재 게시본의 치료 내용(그 병원의 현재 게시 치료가 아니면 — 카탈로그에 없거나 숨긴 치료이면 — null). */
 export interface ReviewQueueEntry extends ReviewRequestView {
   clinic: { id: string; name: string };
   current: CurrentTreatmentView | null;
@@ -37,7 +39,23 @@ export interface ReviewQueueEntry extends ReviewRequestView {
 
 type ViewReads = Pick<Repository, 'listTreatmentVersions'>;
 type ClinicViewReads = Pick<Repository, 'listCoverageReviewRequests' | 'listTreatmentVersions'>;
-type QueueReads = Pick<Repository, 'listClinics' | 'listCoverageReviewRequests' | 'listTreatmentVersions' | 'getClinicCurrentCatalogVersion' | 'getTreatmentVersion'>;
+type QueueReads = Pick<Repository, 'listClinics' | 'listCoverageReviewRequests' | 'listTreatmentVersions' | 'getClinicCurrentCatalogVersion' | 'getTreatmentVersion' | 'getTreatment'>;
+
+/**
+ * 병원의 "현재 게시된 치료" 목록. 정의는 제출 규칙(submitCoverageReviewRequest)·공개 카탈로그·준비 상태와 같은 selectPublishedTreatments 하나다: 숨긴(active=false) 치료는 들어 있지 않다.
+ * 대기열은 깨진 참조(서버 데이터 결함)에서 던지지 않는다: 그런 병원은 현재 게시값을 읽을 수 없는 것으로 보고 빈 목록(그 병원 요청의 current 는 모두 null)으로 읽는다.
+ */
+function currentPublished(repo: QueueReads, clinicId: string): PublishedTreatment[] {
+  const catalog = repo.getClinicCurrentCatalogVersion(clinicId);
+  if (catalog === null) return [];
+  try {
+    return selectPublishedTreatments(repo, clinicId, catalog, (defect) => {
+      throw new Error(`현재 카탈로그의 참조가 저장소와 맞지 않는다 (${defect.code})`);
+    });
+  } catch {
+    return [];
+  }
+}
 
 /** 요청 한 건의 보기. 제안 값과 행위 코드는 복사본이다. */
 export function reviewRequestView(repo: ViewReads, request: CoverageReviewRequest): ReviewRequestView {
@@ -64,7 +82,7 @@ export function readClinicReviewRequestViews(repo: ClinicViewReads, clinicId: st
 
 /**
  * RV 대기열: 모든 병원의 열린 요청(REVIEW_REQUESTED)만, 오래된 순으로: 요청 시각 오름차순, 같으면 병원 id, 요청 id 의 코드 포인트 순.
- * current 는 그 병원의 현재 카탈로그가 담은 그 치료의 버전이다(카탈로그에 그 치료가 없으면 null). 깨진 참조는 null 로 읽고 던지지 않는다.
+ * current 는 그 병원의 현재 게시 치료(selectPublishedTreatments: 현재 카탈로그가 담은 활성 치료)의 버전이다(카탈로그에 없거나 숨긴 치료면 null). 깨진 참조는 null 로 읽고 던지지 않는다.
  */
 export function readReviewQueue(repo: QueueReads): ReviewQueueEntry[] {
   const entries: Array<{ clinicId: string; entry: ReviewQueueEntry }> = [];
@@ -73,19 +91,15 @@ export function readReviewQueue(repo: QueueReads): ReviewQueueEntry[] {
     if (open.length === 0) {
       continue;
     }
-    const catalog = repo.getClinicCurrentCatalogVersion(clinic.id);
     const currentByTreatment = new Map<string, CurrentTreatmentView>();
-    for (const versionId of catalog === null ? [] : catalog.treatmentVersionIds) {
-      const version = repo.getTreatmentVersion(versionId);
-      if (version !== null) {
-        currentByTreatment.set(version.treatmentId, {
-          displayName: version.displayName,
-          treatmentCode: version.treatmentCode,
-          benefitType: version.benefitType,
-          procedureCodes: [...version.procedureCodes],
-          calcClass: version.calcClass,
-        });
-      }
+    for (const { treatment, version } of currentPublished(repo, clinic.id)) {
+      currentByTreatment.set(treatment.id, {
+        displayName: version.displayName,
+        treatmentCode: version.treatmentCode,
+        benefitType: version.benefitType,
+        procedureCodes: [...version.procedureCodes],
+        calcClass: version.calcClass,
+      });
     }
     for (const request of open) {
       entries.push({ clinicId: clinic.id, entry: { ...reviewRequestView(repo, request), clinic: { id: clinic.id, name: clinic.name }, current: currentByTreatment.get(request.treatmentId) ?? null } });

@@ -472,6 +472,21 @@ describe('GET /review-queue: 검토 담당자(RV)의 대기열', () => {
     expect([...collectKeys(body)].filter((key) => /mapping/i.test(key))).toEqual([]);
   });
 
+  it('요청을 낸 뒤 그 치료를 숨겨 게시하면 요청은 대기열에 남고 current 만 null 이다 (현재 게시 치료의 정의는 제출 규칙과 같다)', async () => {
+    const world = setup();
+    const submitted = (await json(await submit(world, 'ha-clinic-1', T2))).reviewRequest;
+    const keptOther = (await json(await submit(world, 'ha-clinic-1', T1))).reviewRequest;
+    await publishDraft(world, { deactivations: [T2] });
+    const before = world.state();
+    const body = await json(await call(world.as('rv-1'), 'GET', QUEUE));
+    expect(world.state()).toEqual(before);
+    expect(body.queue.map((row: Json) => row.id).sort()).toEqual([submitted.id, keptOther.id].sort());
+    const hidden = body.queue.find((row: Json) => row.id === submitted.id);
+    expect(hidden).toEqual({ ...submitted, clinic: { id: TEST_FIXTURE_CLINIC_ID, name: world.repo.getClinic(TEST_FIXTURE_CLINIC_ID)!.name }, current: null });
+    // 숨기지 않은 치료의 현재 게시값은 그대로 채워진다.
+    expect(body.queue.find((row: Json) => row.id === keptOther.id).current).toMatchObject({ treatmentCode: 'TEST_FIXTURE_TC_1' });
+  });
+
   it('요청이 없으면 { queue: [] } 이다', async () => {
     const world = setup();
     expect(await json(await call(world.as('rv-1'), 'GET', QUEUE))).toEqual({ queue: [] });

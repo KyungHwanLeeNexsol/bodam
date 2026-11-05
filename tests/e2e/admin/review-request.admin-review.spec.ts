@@ -433,7 +433,7 @@ test('화면의 서버 거절 문장: 열어 둔 사이에 같은 치료의 요�
   await shoot(page, 'ha-conflict-message');
 });
 
-test('숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남는다 (이 시험은 마지막이다)', async ({ page, browser }) => {
+test('숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서 빠지고 그 치료로 보내는 요청은 400 이다. 이미 있던 요청은 대기열에 남고 "현재 게시 목록에 없음"으로 보인다 (이 시험은 마지막이다)', async ({ page, browser }) => {
   await login(page, 'ha-clinic-1');
   // 기존 흐름(초안 → 미리보기 → 게시)으로 치료 B 를 숨긴다. 이 게시는 위 BEFORE/AFTER 비교가 끝난 뒤에만 한다.
   expect((await page.request.put(`${API_1}/catalog/draft`, { data: { deactivations: [T2] } })).status()).toBe(200);
@@ -453,13 +453,16 @@ test('숨긴 치료: 치료 B 를 숨겨 게시하면 요청 후보 목록에서
   await expect(page.locator(`[data-admin-review-row="${T2}"]`)).toHaveCount(0);
   await shoot(page, 'ha-hidden-not-offered');
 
-  // 숨기기 전에 낸 치료 B 의 요청은 닫히지 않고 대기열에 남고, 병원이 제안한 값도 그대로 보인다.
-  // 관찰(서버 동작): 대기열의 "현재 게시값"(current)은 현재 카탈로그가 담은 치료 버전에서 읽으므로 숨긴 치료도 마지막으로 게시한 값이 채워진다
-  // (치료의 active 를 보지 않는다). 그래서 이 행에서는 "현재 게시 목록에 없음" 문구가 나오지 않는다 — 문구가 나오는 null 경로는 단위 시험(currentLines(null))이 본다.
+  // 숨기기 전에 낸 치료 B 의 요청은 닫히지 않고 대기열에 남고 병원이 제안한 값도 그대로 보인다.
+  // 현재 게시 목록(제출 규칙과 같은 정의)에 그 치료가 없으므로 "현재 게시값"은 그 사실을 말하고, 숨기지 않은 치료 A 의 행은 현재 값을 그대로 보인다.
   const rv = await openAs(browser, 'rv-1');
   await expect(rv.page.locator('[data-admin-queue-row]')).toHaveCount(2);
   const hiddenRow = rv.page.locator('[data-admin-queue-row]', { hasText: NAME_B });
-  await expect(hiddenRow.locator('[data-admin-queue-values="current"]')).toBeVisible();
+  await expect(hiddenRow.locator('[data-admin-queue-values="current"] [data-admin-queue-not-published]')).toHaveText('현재 게시 목록에 없음');
+  await expect(hiddenRow.locator('[data-admin-queue-values="current"] [data-admin-queue-field]')).toHaveCount(0);
+  const keptRow = rv.page.locator('[data-admin-queue-row]', { hasText: NAME_A });
+  await expect(keptRow.locator('[data-admin-queue-values="current"] [data-admin-queue-field="benefit"]')).toHaveText('급여');
+  await expect(keptRow.locator('[data-admin-queue-not-published]')).toHaveCount(0);
   await expect(hiddenRow.locator('[data-admin-queue-values="proposed"] [data-admin-queue-field="calcClass"]')).toHaveText('일반 비급여');
   await shoot(rv.page, 'rv-queue-hidden-treatment');
   await rv.context.close();
