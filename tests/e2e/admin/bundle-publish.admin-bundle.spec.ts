@@ -46,7 +46,7 @@ import type { Json, MappingRef, PublicSnapshot, Session } from '../helpers/bundl
 //   - 지정한 병원만 바뀐다: 병원 1 에 지정한 뒤 병원 1 의 보험 선택지가 새 묶음을 가리키고 치료 C 가 보류(MAPPING_ABSENT)에서 계산(ESTIMATED)으로 바뀐다. 병원 2 의 응답은 글자 그대로 같고, 규칙 사용 범위 화면의 병원 2 줄도 그대로다.
 //   - 이전 묶음을 본 계산 요청은 병원 1 에서만 409 VERSION_MISMATCH(최신 묶음 = 새 묶음, ruleChanged), 병원 2 에서는 그대로 통한다.
 //   - 감사 기록은 이 흐름이 BUNDLE_PUBLISH 한 건 · CLINIC_SCOPE_ASSIGN 한 건만 더했음을 보인다(대상 · 이전/이후 버전 · 행위자 역할).
-// 한 파일 안에서 순서대로 돈다: 앞 단계가 만든 매핑·묶음을 뒤 단계가 이어받는다. 사진은 .moai/state/shots/m7-bundle/ 에 남고 기록은 bundle-flow-log.txt 에 쌓인다(육안 검토용 자료이며 시험 결과가 아니다).
+// 한 파일 안에서 순서대로 돈다: 앞 단계가 만든 매핑·묶음을 뒤 단계가 이어받는다. 사진은 .moai/state/shots/m7-bundle/ 에 남고(육안 검토용 자료이며 시험 결과가 아니다), 실행 기록(bundle-flow-log.txt)은 환경 변수 KIOSK_E2E_EVIDENCE_DIR 을 정했을 때만 그 폴더에 쌓인다(helpers/evidence.ts).
 
 test.describe.configure({ mode: 'serial' });
 

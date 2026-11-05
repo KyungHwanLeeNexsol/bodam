@@ -27,6 +27,18 @@ export function appendEvidence(file: string, record: unknown): void {
   if (full !== null) appendFileSync(full, `${JSON.stringify(record)}\n`);
 }
 
+/** 텍스트 파일(실행 기록)에 한 줄을 덧붙인다. 증거 폴더가 정해지지 않았으면 아무것도 하지 않는다. */
+export function appendEvidenceLine(file: string, line: string): void {
+  const full = target(file);
+  if (full !== null) appendFileSync(full, `${line}\n`);
+}
+
+/** 텍스트 파일(실행 기록)을 비운다. 시험의 첫 단계가 한 번 부른다. 증거 폴더가 정해지지 않았으면 아무것도 하지 않는다. */
+export function resetEvidenceFile(file: string): void {
+  const full = target(file);
+  if (full !== null) writeFileSync(full, '');
+}
+
 /** JSON 파일 하나를 쓴다(있으면 덮어쓴다). 증거 폴더가 정해지지 않았으면 아무것도 하지 않는다. */
 export function writeEvidenceFile(file: string, data: unknown): void {
   const full = target(file);

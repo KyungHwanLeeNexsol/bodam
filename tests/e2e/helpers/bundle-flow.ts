@@ -1,6 +1,7 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { APIRequestContext, APIResponse, Browser, BrowserContext, Page } from '@playwright/test';
+import { appendEvidenceLine, resetEvidenceFile } from './evidence';
 import { expect } from './test';
 
 // 시험 자료(TEST_FIXTURE). 묶음 게시·규칙 사용 범위 브라우저 시험(*.admin-bundle.spec.ts · *.admin-bundle-reject.spec.ts)이 함께 쓰는 도우미 (M7 묶음 구성).
@@ -57,8 +58,10 @@ export const json = async (response: APIResponse): Promise<Json> => (await respo
 // ───────────────────────── 사진·기록 ─────────────────────────
 
 export const SHOTS = path.resolve('.moai/state/shots/m7-bundle');
-export const LOG_FILE = path.join(SHOTS, 'bundle-flow-log.txt');
-export const REJECT_LOG_FILE = path.join(SHOTS, 'bundle-reject-log.txt');
+// 실행 기록(텍스트)은 증거 도구(evidence.ts) 한 곳만 쓴다: 환경 변수 KIOSK_E2E_EVIDENCE_DIR 이 있을 때만 그 폴더 아래에 남고, 없으면 아무것도 쓰지 않는다(시험을 돌려도 저장소에 파일이 생기지 않는다).
+// 예: KIOSK_E2E_EVIDENCE_DIR=.moai/state/shots/m7-bundle npx playwright test --project=admin-bundle --project=admin-bundle-reject. 사진(SHOTS)은 육안 검토용이라 늘 남는다(.moai/state 는 git 이 보지 않는다).
+export const LOG_FILE = 'bundle-flow-log.txt';
+export const REJECT_LOG_FILE = 'bundle-reject-log.txt';
 
 export async function shoot(page: Page, name: string): Promise<void> {
   mkdirSync(SHOTS, { recursive: true });
@@ -67,14 +70,12 @@ export async function shoot(page: Page, name: string): Promise<void> {
 
 /** 실행 기록에 한 줄을 더한다(병렬이 아니라 한 파일 안에서 순서대로 도는 시험이 쓴다). */
 export function note(line: string, file: string = LOG_FILE): void {
-  mkdirSync(SHOTS, { recursive: true });
-  appendFileSync(file, `${line}\n`);
+  appendEvidenceLine(file, line);
 }
 
 /** 기록 파일을 비운다(시험 첫 단계에서 한 번). */
 export function resetNote(file: string = LOG_FILE): void {
-  mkdirSync(SHOTS, { recursive: true });
-  writeFileSync(file, '');
+  resetEvidenceFile(file);
 }
 
 /** 긴 응답 본문을 기록에 넣을 때 쓰는 앞부분(잘랐으면 표시한다). */

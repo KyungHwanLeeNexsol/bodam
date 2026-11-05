@@ -49,7 +49,7 @@ import type { Json, MappingRef, Session } from '../helpers/bundle-flow';
 //   - 승인되지 않은 매핑(초안·검토 제출됨)을 게시하는 경로: 미리보기는 200 이고 결함(ITEM_STATE_NOT_PUBLISHABLE)을 담되 확인값은 null 이다. 결함 있는 구성은 어떤 미리보기도 확인값을 내주지 않으므로 HTTP 로는 유효한 확인값을 만들 수 없고,
 //     게시는 400(결함)이 아니라 409 PREVIEW_REQUIRED 로 거절된다. 400 의 결함 목록은 "확인값을 받은 뒤에 구성이 바뀐" 경우(아래 FINGERPRINT_STALE)에만 HTTP 로 닿는다. 결함 자체는 단위·서비스 시험이 확인값을 직접 계산해 400 으로 본다(tests/api/admin-bundle-scope.test.ts).
 //   - 겹치는 매핑 게시도 같다: 겹침이 확인값 확인보다 먼저 판정되므로 아무 확인값으로도 409 MAPPING_CONFLICT 이다.
-// 사진은 .moai/state/shots/m7-bundle/ 에, 관찰한 응답은 bundle-reject-log.txt 에 남는다(육안 검토용 자료이며 시험 결과가 아니다).
+// 사진은 .moai/state/shots/m7-bundle/ 에 남고(육안 검토용 자료이며 시험 결과가 아니다), 관찰한 응답의 기록(bundle-reject-log.txt)은 환경 변수 KIOSK_E2E_EVIDENCE_DIR 을 정했을 때만 그 폴더에 쌓인다(helpers/evidence.ts).
 
 test.describe.configure({ mode: 'serial' });
 
