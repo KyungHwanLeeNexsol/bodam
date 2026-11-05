@@ -1,5 +1,6 @@
 import type {
   AuditLogEntry,
+  BundlePublishConfirmation,
   CatalogDraft,
   CatalogVersion,
   Clinic,
@@ -33,6 +34,7 @@ export interface Store {
   itemStates: Map<string, ItemStateRecord>;
   bundles: Map<string, RuleBundleVersion>;
   bundleEvents: Map<string, RuleBundleStatusEvent[]>;
+  bundleConfirmations: Map<string, BundlePublishConfirmation>;
   scopeHistory: Map<string, ClinicRuleScope[]>;
   idlePolicies: Map<string, IdlePolicy>;
   auditLog: Map<string, AuditLogEntry>;
@@ -53,6 +55,7 @@ export function emptyStore(): Store {
     itemStates: new Map(),
     bundles: new Map(),
     bundleEvents: new Map(),
+    bundleConfirmations: new Map(),
     scopeHistory: new Map(),
     idlePolicies: new Map(),
     auditLog: new Map(),

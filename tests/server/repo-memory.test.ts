@@ -6,6 +6,7 @@ import { TEST_FIXTURE_CLINIC_ID, TEST_FIXTURE_HA_1, TEST_FIXTURE_PO_1, TEST_FIXT
 import {
   TEST_FIXTURE_NOW,
   makeAuditEntry,
+  makeBundleConfirmation,
   makeBundleVersion,
   makeCatalogVersion,
   makeClinic,
@@ -37,6 +38,8 @@ function mutateEverything(repo: MemoryRepository, world: ReturnType<typeof seedW
   repo.appendBundleStatusEvent(makeStatusEvent({ bundleId: 'TEST_FIXTURE_BUNDLE_TX' }));
   repo.appendBundleStatusEvent(makeStatusEvent({ bundleId: world.bundleId, status: 'SUSPENDED', previousStatus: 'ACTIVE', reason: 'TEST_FIXTURE 중지' }));
   repo.assignClinicRuleScope(makeScope({ ruleBundleVersionId: 'TEST_FIXTURE_BUNDLE_TX' }));
+  repo.putBundleConfirmation(makeBundleConfirmation({ token: 'd'.repeat(64), baseBundleId: world.bundleId }));
+  repo.markBundleConfirmationConsumed('d'.repeat(64), TEST_FIXTURE_NOW, world.bundleId);
   repo.saveIdlePolicy(makeIdlePolicy({ completionHoldSeconds: 30 }));
   repo.appendAuditLog(makeAuditEntry({ id: 'TEST_FIXTURE_AUDIT_TX' }));
 }
@@ -528,6 +531,7 @@ describe('읽기 감시 (spy)', () => {
     ['listRuleBundleVersions', (repo) => repo.listRuleBundleVersions()],
     ['getBundleStatus', (repo, w) => repo.getBundleStatus(w.bundleId)],
     ['listBundleStatusEvents', (repo, w) => repo.listBundleStatusEvents(w.bundleId)],
+    ['getBundleConfirmation', (repo) => repo.getBundleConfirmation('a'.repeat(64))],
     ['getClinicRuleScope', (repo, w) => repo.getClinicRuleScope(w.clinicId)],
     ['listClinicRuleScopeHistory', (repo, w) => repo.listClinicRuleScopeHistory(w.clinicId)],
     ['getIdlePolicy', (repo, w) => repo.getIdlePolicy(w.clinicId)],

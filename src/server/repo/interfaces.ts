@@ -1,6 +1,7 @@
 import type {
   AuditLogEntry,
   BundleAvailability,
+  BundlePublishConfirmation,
   CatalogDraft,
   CatalogVersion,
   Clinic,
@@ -144,6 +145,15 @@ export interface Repository {
   listBundleStatusEvents(bundleId: string): RuleBundleStatusEvent[];
   /** 현재 상태 = 마지막 사건의 status. 사건이 없으면 null. */
   getBundleStatus(bundleId: string): BundleAvailability | null;
+
+  /**
+   * (M7 묶음 구성 보강) 묶음 게시 확인값의 서버 기록. putBundleConfirmation 은 write-once(키는 token): 같은 token 은 DUPLICATE_KEY 이고 어떤 이유로든 저장소는 그대로다.
+   * getBundleConfirmation 은 token 으로 읽는다(없으면 null). markBundleConfirmationConsumed 는 원자적 한 번 소비다: 기록이 없으면 NOT_FOUND, 이미 소비됐으면 STATE_CONFLICT,
+   * 결과 묶음이 없으면 NOT_FOUND 이고 저장소는 그대로다. 기록은 쓸 때 복사해 저장하고 읽을 때 복사해 돌려주며 트랜잭션에서 함께 되돌려진다.
+   */
+  putBundleConfirmation(record: BundlePublishConfirmation): void;
+  getBundleConfirmation(token: string): BundlePublishConfirmation | null;
+  markBundleConfirmationConsumed(token: string, consumedAt: string, resultBundleId: string): void;
 
   /** 규칙 사용 범위를 지정한다: 이력에 더하고 현재 값이 된다. 병원·묶음이 있어야 한다. 묶음이 중지돼도 바뀌지 않는다. */
   assignClinicRuleScope(scope: ClinicRuleScope): void;

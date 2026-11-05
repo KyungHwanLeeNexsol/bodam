@@ -244,6 +244,28 @@ export interface RuleBundleVersion {
   publishedAt: string;
 }
 
+/**
+ * [문서에 없음] (M7 묶음 구성 보강) 묶음 게시 확인값의 서버 기록. 서버가 깨끗한 미리보기를 만들 때 쓰고(확인값 = token), 게시가 한 번 소비한다.
+ * 이 기록은 "서버가 이 관리자에게 이 구성의 미리보기를 만들었다"는 증거일 뿐 사람이 읽었다는 증명이 아니다.
+ * token 은 예측할 수 없는 값(주입한 식별자 생성기에서 파생)이고 응답에 실리는 유일한 값이다. configurationDigest 는 구성에 묶인 입력의 해시로 서버 안에만 있고 어떤 응답에도 싣지 않는다.
+ * 쓰기 전용 한 번(token 마다), 소비(consumedAt·resultBundleId 채움)는 한 번만.
+ */
+export interface BundlePublishConfirmation {
+  token: string;
+  actorId: string;
+  role: Role;
+  baseBundleId: string;
+  /** 고른 매핑 참조, (종류, id, 버전) 코드 포인트 순. */
+  chosen: ItemVersionRef[];
+  /** 발급 때의 구성 해시(관리자·기준 묶음·고른 매핑의 내용/상태/지문·합친 항목 참조). 게시 때 현재 저장소에서 다시 계산해 비교한다. */
+  configurationDigest: string;
+  issuedAt: string;
+  /** 소비 시각. 아직 쓰이지 않았으면 null. */
+  consumedAt: string | null;
+  /** 이 확인값으로 게시된 묶음 id. 아직 쓰이지 않았으면 null. */
+  resultBundleId: string | null;
+}
+
 /** 묶음 가용성 사건. 추가 전용이며 현재 상태는 마지막 사건이다. 중지는 되돌리지 않는다 (DD-14). */
 export interface RuleBundleStatusEvent {
   bundleId: string;
