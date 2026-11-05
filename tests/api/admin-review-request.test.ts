@@ -121,7 +121,10 @@ function closeByRejection(world: Setup, requestId: string, treatmentId: string =
   reject(deps, TEST_FIXTURE_RV_APPROVER, draft.ref, 'TEST_FIXTURE 반려 사유');
 }
 
-const VIEW_KEYS = ['id', 'proposed', 'rejectionReason', 'requestedAt', 'requestedBy', 'status', 'treatmentId', 'treatmentName'];
+// 병원 관리자 보기의 키. M7 매핑 검토에서 분류 표지(classification)가 더해졌다 — RV 내부 자료(매핑·검토 기준·작성자)는 여전히 없다.
+const VIEW_KEYS = ['classification', 'id', 'proposed', 'rejectionReason', 'requestedAt', 'requestedBy', 'status', 'treatmentId', 'treatmentName'];
+// RV 대기열 항목이 보기에 더하는 키 (병원 · 현재 게시 상태 · 매핑 요약 · 검토 기준 비교 · 승인 차단 사유).
+const QUEUE_EXTRA_KEYS = ['approvalBlockedReason', 'basis', 'clinic', 'current', 'mapping'];
 
 describe('인증·권한 표: 역할 × 자원 × 동작 (거절은 모두 저장 상태가 그대로다)', () => {
   const HA1_REQUESTS = requestPath(CLINIC, T1);
@@ -253,6 +256,7 @@ describe('POST …/treatments/{treatmentId}/review-requests: 제출', () => {
       rejectionReason: null,
       requestedAt: '2026-10-17T05:30:00.000Z',
       requestedBy: 'TEST_FIXTURE_HA_CLINIC_1',
+      classification: 'CLASSIFIED',
     });
     // 저장된 기록과 감사 기록
     expect(world.repo.getCoverageReviewRequest('TEST_FIXTURE_REVIEW_REQUEST_1')).toMatchObject({ clinicId: TEST_FIXTURE_CLINIC_ID, requestedBy: { id: 'TEST_FIXTURE_HA_CLINIC_1', role: 'HA' }, status: 'REVIEW_REQUESTED', draftMappingRef: null, resultMappingRef: null });
@@ -461,18 +465,23 @@ describe('GET /review-queue: 검토 담당자(RV)의 대기열', () => {
     expect(Object.keys(body)).toEqual(['queue']);
     expect(body.queue.map((row: Json) => row.id)).toEqual([second.id, third.id, first.id]);
     expect(body.queue.map((row: Json) => row.clinic.id)).toEqual([OTHER_CLINIC_ID, TEST_FIXTURE_CLINIC_ID, TEST_FIXTURE_CLINIC_ID]);
-    expect(Object.keys(body.queue[0]).sort()).toEqual([...VIEW_KEYS, 'clinic', 'current'].sort());
+    expect(Object.keys(body.queue[0]).sort()).toEqual([...VIEW_KEYS, ...QUEUE_EXTRA_KEYS].sort());
     expect(body.queue[2]).toEqual({
       ...first,
       clinic: { id: TEST_FIXTURE_CLINIC_ID, name: world.repo.getClinic(TEST_FIXTURE_CLINIC_ID)!.name },
-      current: { displayName: first.treatmentName, treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_A', 'TEST_FIXTURE_PROC_B'], calcClass: 'GENERAL_BENEFIT' },
+      current: { state: 'PUBLISHED', displayName: first.treatmentName, treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_A', 'TEST_FIXTURE_PROC_B'], calcClass: 'GENERAL_BENEFIT' },
+      // 매핑 초안이 아직 없다.
+      mapping: null,
+      basis: { check: 'MISSING', changedFields: [], reviewed: null },
+      approvalBlockedReason: null,
     });
     expect(body.queue[0].clinic).toEqual({ id: OTHER_CLINIC_ID, name: world.repo.getClinic(OTHER_CLINIC_ID)!.name });
     expect(body.queue[0].current).toMatchObject({ displayName: 'TEST_FIXTURE 병원2 치료' });
-    expect([...collectKeys(body)].filter((key) => /mapping/i.test(key))).toEqual([]);
+    // 매핑 초안이 없는 요청은 매핑 요약이 null 이고, 매핑 참조(ref)·결과 연결 같은 키가 새지 않는다.
+    expect([...collectKeys(body)].filter((key) => /mapping/i.test(key))).toEqual(['mapping']);
   });
 
-  it('요청을 낸 뒤 그 치료를 숨겨 게시하면 요청은 대기열에 남고 current 만 null 이다 (현재 게시 치료의 정의는 제출 규칙과 같다)', async () => {
+  it('요청을 낸 뒤 그 치료를 숨겨 게시하면 요청은 대기열에 남고 current 는 { state: HIDDEN } 이다 ("목록에 없음"과 구분된다. 현재 게시 치료의 정의는 제출 규칙과 같다)', async () => {
     const world = setup();
     const submitted = (await json(await submit(world, 'ha-clinic-1', T2))).reviewRequest;
     const keptOther = (await json(await submit(world, 'ha-clinic-1', T1))).reviewRequest;
@@ -482,7 +491,16 @@ describe('GET /review-queue: 검토 담당자(RV)의 대기열', () => {
     expect(world.state()).toEqual(before);
     expect(body.queue.map((row: Json) => row.id).sort()).toEqual([submitted.id, keptOther.id].sort());
     const hidden = body.queue.find((row: Json) => row.id === submitted.id);
-    expect(hidden).toEqual({ ...submitted, clinic: { id: TEST_FIXTURE_CLINIC_ID, name: world.repo.getClinic(TEST_FIXTURE_CLINIC_ID)!.name }, current: null });
+    // 숨겨진 치료는 현재 게시값을 알 수 없으므로 분류 표지도 UNKNOWN 이다.
+    expect(hidden).toEqual({
+      ...submitted,
+      classification: 'UNKNOWN',
+      clinic: { id: TEST_FIXTURE_CLINIC_ID, name: world.repo.getClinic(TEST_FIXTURE_CLINIC_ID)!.name },
+      current: { state: 'HIDDEN' },
+      mapping: null,
+      basis: { check: 'UNCHECKABLE', changedFields: [], reviewed: null },
+      approvalBlockedReason: null,
+    });
     // 숨기지 않은 치료의 현재 게시값은 그대로 채워진다.
     expect(body.queue.find((row: Json) => row.id === keptOther.id).current).toMatchObject({ treatmentCode: 'TEST_FIXTURE_TC_1' });
   });

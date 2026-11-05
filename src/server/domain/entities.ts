@@ -188,6 +188,20 @@ export interface ProposedCoverageInfo {
 
 export type ReviewRequestStatus = 'REVIEW_REQUESTED' | 'APPROVED' | 'REJECTED';
 
+/**
+ * [문서에 없음] (M7 매핑 검토) RV 가 요청에서 매핑 초안을 만든 순간에 읽은 "검토 기준": 그 시점의 현재 게시 치료 버전의 보장 판단 필드와 그 지문.
+ * 승인은 현재 게시 버전의 지문이 이 값과 같을 때만 통과한다(검토한 값과 다른 값에 승인이 찍히지 않게). 행위 코드는 코드 포인트 순으로 정렬한 사본이다.
+ * 가격은 판단 필드가 아니므로 담지 않는다. 한 번 쓰면 바꾸지 않는다.
+ */
+export interface ReviewedBasis {
+  fingerprint: string;
+  fields: { treatmentCode: string; procedureCodes: string[]; benefitType: BenefitType; calcClass: CalcClass };
+  /** 검토 기준을 읽은 시점의 병원 현재 카탈로그 버전 id. */
+  catalogVersionId: string;
+  /** ISO 8601 시각 (주입한 시계). */
+  capturedAt: string;
+}
+
 /** HA 가 만들고 RV 가 처리하는 검토 요청 기록. HA 의 요청은 이 기록만 만들고 매핑을 만들지 않는다 (결정 #34). */
 export interface CoverageReviewRequest {
   id: string;
@@ -205,6 +219,11 @@ export interface CoverageReviewRequest {
   draftMappingRef: ItemVersionRef | null;
   /** 결과 매핑 버전. 승인으로 닫혔을 때만 채운다. 처리 전이거나 반려면 null. */
   resultMappingRef: ItemVersionRef | null;
+  /**
+   * [문서에 없음] (M7 매핑 검토) 매핑 초안을 만든 순간의 검토 기준. 없을 수 있다(이 필드가 생기기 전의 요청, 또는 옛 서비스로 만든 초안):
+   * 없으면 승인은 확인할 수 없으므로 거절한다(mapping-review.ts REVIEW_BASIS_MISSING, 닫는 쪽으로 실패).
+   */
+  reviewedBasis?: ReviewedBasis;
 }
 
 // ───────────────────────── 규칙 묶음 ─────────────────────────

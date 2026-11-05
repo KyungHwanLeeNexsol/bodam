@@ -6,16 +6,18 @@ import {
   codesToText,
   currentLines,
   differingFields,
+  differingFieldsOf,
   hasOpenRequest,
   initialReviewForm,
   latestByTreatment,
   parseCodesText,
   proposedLines,
+  publishedValuesOf,
   requestBodyOf,
   reviewFailureMessage,
   statusLabel,
 } from '../../src/app/admin/review-model';
-import type { CurrentTreatmentView, ProposedValues, ReviewRequestView } from '../../src/app/admin/review-types';
+import type { CurrentPublishedView, CurrentTreatmentView, ProposedValues, ReviewRequestView } from '../../src/app/admin/review-types';
 
 // 검토 요청 화면의 순수 계산 (화면 코드 밖). 시험 자료(TEST_FIXTURE)만 쓴다.
 // 서버가 권위이고 이 파일은 입력을 요청 본문 모양으로 옮기고, 치료마다 가장 최근 요청을 고르고, 거절을 문장으로 바꾸는 일만 한다.
@@ -31,6 +33,7 @@ const view = (id: string, treatmentId: string, requestedAt: string, status: Revi
   rejectionReason,
   requestedAt,
   requestedBy: 'TEST_FIXTURE_HA_CLINIC_1',
+  classification: 'CLASSIFIED',
 });
 
 const treatment = (benefitType: 'BENEFIT' | 'NON_BENEFIT', procedureCodes: string[]): TreatmentRow => ({
@@ -127,7 +130,7 @@ describe('상태 표시', () => {
   it('요청이 없으면 "요청 없음", 있으면 상태 이름이다', () => {
     expect(statusLabel(undefined)).toBe('요청 없음');
     expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z'))).toBe('검토 요청됨 (대기 중)');
-    expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z', 'APPROVED'))).toBe('승인됨');
+    expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z', 'APPROVED'))).toBe('검토 승인됨 — 환자 화면에는 아직 반영되지 않았습니다');
     expect(statusLabel(view('R1', 'T1', '2026-11-01T01:00:00.000Z', 'REJECTED', 'TEST_FIXTURE 사유'))).toBe('반려됨');
   });
 
@@ -232,9 +235,28 @@ describe('대기열의 값 줄: 현재 게시값과 제안값', () => {
   });
 });
 
+// 서버가 현재 게시값을 네 가지 상태로 나눠 준다. 화면은 값이 있는 상태(PUBLISHED)에서만 줄을 만들고, 값이 없는 이유(숨김·목록에 없음·읽지 못함)는 mapping-model.test.ts 가 구분해 본다.
+describe('대기열의 현재 게시 상태', () => {
+  const published: CurrentPublishedView = { state: 'PUBLISHED', displayName: 'TEST_FIXTURE 시험 치료 A', treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_1'], calcClass: 'GENERAL_BENEFIT' };
+
+  it('게시된 값만 값 줄이 된다 (그 밖의 상태는 null)', () => {
+    expect(publishedValuesOf(published)).toMatchObject({ treatmentCode: 'TEST_FIXTURE_TC_1', calcClass: 'GENERAL_BENEFIT' });
+    expect(publishedValuesOf({ state: 'HIDDEN' })).toBeNull();
+    expect(publishedValuesOf({ state: 'NOT_IN_CATALOG' })).toBeNull();
+    expect(publishedValuesOf({ state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' })).toBeNull();
+  });
+
+  it('읽지 못해 비교할 수 없으면 달라지는 칸을 표시하지 않는다 (값이 없는 다른 상태와 달리)', () => {
+    const proposed: ProposedValues = { benefitType: 'NON_BENEFIT', procedureCodes: [], calcClass: 'GENERAL_NON_BENEFIT' };
+    expect(differingFieldsOf({ state: 'UNREADABLE', defectCode: 'TREATMENT_MISSING' }, proposed)).toEqual([]);
+    expect(differingFieldsOf({ state: 'HIDDEN' }, proposed)).toEqual(['benefitType', 'procedureCodes', 'calcClass']);
+    expect(differingFieldsOf(published, proposed)).toEqual(['benefitType', 'procedureCodes', 'calcClass']);
+  });
+});
+
 describe('대기열 문구', () => {
-  it('읽기 전용임을 말하고 빈 대기열 문구가 고정되어 있다', () => {
-    expect(REVIEW_COPY.queueNote).toContain('확인만');
+  it('승인이 검토 기록임을 말하고 빈 대기열 문구가 고정되어 있다', () => {
+    expect(REVIEW_COPY.queueNote).toContain('검토 기록');
     expect(REVIEW_COPY.queueEmpty).toBe('처리 전 요청이 없습니다');
   });
 });

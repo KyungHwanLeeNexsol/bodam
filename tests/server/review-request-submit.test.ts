@@ -195,7 +195,7 @@ describe('읽기 보기: reviewRequestView · readClinicReviewRequestViews', () 
     const world = setup();
     const created = submit(world, T1);
     const view = reviewRequestView(world.repo, created);
-    expect(Object.keys(view).sort()).toEqual(['id', 'proposed', 'rejectionReason', 'requestedAt', 'requestedBy', 'status', 'treatmentId', 'treatmentName']);
+    expect(Object.keys(view).sort()).toEqual(['classification', 'id', 'proposed', 'rejectionReason', 'requestedAt', 'requestedBy', 'status', 'treatmentId', 'treatmentName']);
     expect(view).toEqual({
       id: created.id,
       treatmentId: T1,
@@ -205,6 +205,7 @@ describe('읽기 보기: reviewRequestView · readClinicReviewRequestViews', () 
       rejectionReason: null,
       requestedAt: created.requestedAt,
       requestedBy: HA.id,
+      classification: 'CLASSIFIED',
     });
     expect(JSON.stringify(view)).not.toMatch(/draftMappingRef|resultMappingRef|clinicId/);
   });
@@ -286,15 +287,19 @@ describe('읽기 보기: readReviewQueue (RV 대기열)', () => {
     expect(entry).toEqual({
       ...reviewRequestView(world.repo, created),
       clinic: { id: CLINIC, name: world.repo.getClinic(CLINIC)!.name },
-      current: { displayName: world.repo.listTreatmentVersions(T1).at(-1)!.displayName, treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_A', 'TEST_FIXTURE_PROC_B'], calcClass: 'GENERAL_BENEFIT' },
+      current: { state: 'PUBLISHED', displayName: world.repo.listTreatmentVersions(T1).at(-1)!.displayName, treatmentCode: 'TEST_FIXTURE_TC_1', benefitType: 'BENEFIT', procedureCodes: ['TEST_FIXTURE_PROC_A', 'TEST_FIXTURE_PROC_B'], calcClass: 'GENERAL_BENEFIT' },
+      // 매핑 초안이 아직 없다: 매핑 칸은 비고, 검토 기준도 없으며, 승인할 대상이 없으므로 승인 차단 사유도 없다.
+      mapping: null,
+      basis: { check: 'MISSING', changedFields: [], reviewed: null },
+      approvalBlockedReason: null,
     });
   });
 
-  it('현재 카탈로그에 그 치료가 없으면 current 는 null 이다', () => {
+  it('현재 카탈로그가 없으면 current 는 { state: NOT_IN_CATALOG } 이다 (null 이 아니다)', () => {
     const world = setup();
     submit(world, T1);
     const empty = repoWith(world.repo, { getClinicCurrentCatalogVersion: () => null });
-    expect(readReviewQueue(empty)[0]!.current).toBeNull();
+    expect(readReviewQueue(empty)[0]!.current).toEqual({ state: 'NOT_IN_CATALOG' });
   });
 
   it('요청이 하나도 없으면 빈 목록이다', () => {

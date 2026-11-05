@@ -6,6 +6,7 @@ import { formatSeoulMinute } from '../clock';
 import type { SessionResponse, TreatmentsResponse } from './api-types';
 import { AdminNav } from './AdminNav';
 import { REVIEW_COPY as COPY } from './review-copy';
+import { haClassificationNotice } from './mapping-model';
 import { CALC_CLASS_CHOICES, benefitLabel, calcClassLabel, codesToText, hasOpenRequest, initialReviewForm, latestByTreatment, requestBodyOf, reviewFailureMessage, statusLabel } from './review-model';
 import type { ReviewForm } from './review-model';
 import type { CalcClass, ReviewRequestView, ReviewRequestsResponse, SubmitResponse } from './review-types';
@@ -194,9 +195,12 @@ export function ReviewRequests({ clinicId }: { clinicId: string }): ReactElement
                         <td>{treatment.treatmentCode}</td>
                         <td>{treatment.procedureCodes.length === 0 ? COPY.noProcedure : codesToText(treatment.procedureCodes)}</td>
                         <td>
-                          <span className="admin-pill" data-admin-review-status={current === undefined ? 'NONE' : current.status}>{statusLabel(current)}</span>
+                          <span className="admin-pill admin-pill--wrap" data-admin-review-status={current === undefined ? 'NONE' : current.status}>{statusLabel(current)}</span>
                           {current !== undefined && current.status === 'REJECTED' && current.rejectionReason !== null ? (
                             <span className="admin-sub2" data-admin-review-reason>{COPY.rejectionReasonLabel}: {current.rejectionReason}</span>
+                          ) : null}
+                          {current !== undefined && haClassificationNotice(current) !== null ? (
+                            <span className="admin-sub2" data-admin-review-classification={current.classification}>{haClassificationNotice(current)}</span>
                           ) : null}
                         </td>
                         <td>
@@ -302,9 +306,12 @@ export function ReviewRequests({ clinicId }: { clinicId: string }): ReactElement
                       )}
                     </td>
                     <td>
-                      <span className="admin-pill" data-admin-review-sent-status={entry.status}>{statusLabel(entry)}</span>
+                      <span className="admin-pill admin-pill--wrap" data-admin-review-sent-status={entry.status}>{statusLabel(entry)}</span>
                       {entry.status === 'REJECTED' && entry.rejectionReason !== null ? (
-                        <span className="admin-sub2">{COPY.rejectionReasonLabel}: {entry.rejectionReason}</span>
+                        <span className="admin-sub2" data-admin-review-sent-reason>{COPY.rejectionReasonLabel}: {entry.rejectionReason}</span>
+                      ) : null}
+                      {haClassificationNotice(entry) !== null ? (
+                        <span className="admin-sub2" data-admin-review-sent-classification={entry.classification}>{haClassificationNotice(entry)}</span>
                       ) : null}
                     </td>
                   </tr>
