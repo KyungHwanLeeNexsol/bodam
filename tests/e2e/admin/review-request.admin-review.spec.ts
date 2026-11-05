@@ -346,11 +346,12 @@ test('검토 담당자: 로그인하면 검토 대기열로 들어가 처리 전
   expect(text).not.toMatch(/승인하기|반려하기|매핑 만들기|게시하기/);
   await shoot(page, 'rv-queue');
 
-  // 입구 화면: 검토 담당자에게는 대기열 링크만 있다(병원 링크 없음).
+  // 입구 화면: 검토 담당자에게는 대기열 링크와 묶음 게시 링크(M7 묶음 구성에서 더해진 RV 링크)만 있다(병원 링크·규칙 사용 범위 링크 없음).
   await page.goto('/admin');
   await expect(page.locator('[data-admin-state="ready"]')).toBeVisible();
   await expect(page.getByRole('link', { name: '검토 대기열' })).toBeVisible();
-  await expect(page.locator('main').getByRole('link')).toHaveCount(1);
+  await expect(page.locator('main').getByRole('link')).toHaveCount(2);
+  await expect(page.locator('main').getByRole('link', { name: '묶음 게시' })).toHaveAttribute('href', '/admin/bundles');
   await expect(page.locator('main .admin-banner')).toHaveCount(0);
 });
 
