@@ -488,6 +488,41 @@
   margin-top: 8px;
 }
 
+/* 브라우저로 본 뒤의 자리 잡기(M7 묶음 구성): 머리글·알약·단추는 줄을 바꾸지 않고("기준"이 두 줄로, "사용 가능"이 알약 안에서 두 줄로 쪼개지던 것), 이름 칸과 결과 문장 칸에 최소 너비를 준다.
+   긴 영문 id(승인자·병원 slug)만 어느 글자에서든 줄을 바꾸고, 한글 문장은 공백에서만 바꾼다. 표가 좁은 화면보다 넓으면 .admin-table-wrap 이 표만 가로로 민다. */
+.admin-bundle-section .admin-table thead th,
+.admin-table--scope thead th {
+  white-space: nowrap;
+}
+
+.admin-bundle-section .admin-pill,
+.admin-table--scope .admin-pill,
+.admin-table--scope .admin-btn {
+  white-space: nowrap;
+}
+
+.admin-bundle-section .admin-table th[scope='row'],
+.admin-table--scope th[scope='row'] {
+  min-width: 150px;
+}
+
+.admin-table--scope td:nth-child(2) {
+  min-width: 200px;
+}
+
+.admin-table--scope td:nth-child(4) {
+  min-width: 250px;
+}
+
+.admin-table--bundle td[data-admin-candidate-approver],
+.admin-table--scope .admin-sub2 {
+  overflow-wrap: anywhere;
+}
+
+.admin-table--bundle td[data-admin-candidate-clinic] {
+  min-width: 130px;
+}
+
 .admin-select:focus-visible,
 .admin-table input:focus-visible {
   outline: 3px solid var(--kiosk-accent);

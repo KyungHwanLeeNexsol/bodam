@@ -5,7 +5,10 @@
 
 import { ADMIN_COPY } from './copy';
 
-const PUBLISH_NOTHING_CHANGED = '아무것도 게시되지 않았고 어느 병원의 규칙도 바뀌지 않았습니다. 고른 내용은 화면에 그대로 남아 있습니다.';
+/** 버전 글자 앞에 "v" 를 붙인다. 이미 "v1" 처럼 시작하는 버전은 "vv1" 이 되지 않게 그대로 둔다(브라우저로 본 뒤의 수정: 시험 자료 항목의 버전은 "v1" 이고 관리자가 만든 매핑의 버전은 "1" 이다). */
+export const versionLabel = (version: string): string => (/^v\d/i.test(version) ? version : `v${version}`);
+
+const PUBLISH_NOTHING_CHANGED ='아무것도 게시되지 않았고 어느 병원의 규칙도 바뀌지 않았습니다. 고른 내용은 화면에 그대로 남아 있습니다.';
 
 export const BUNDLE_COPY = {
   // 이동 · 제목
@@ -99,7 +102,7 @@ export const BUNDLE_COPY = {
     SUSPENDED: '중지됨',
   } as Readonly<Record<string, string>>,
   stateUnknown: '상태를 읽지 못함',
-  itemVersion: (version: string): string => `v${version}`,
+  itemVersion: (version: string): string => versionLabel(version),
   profileLabel: (generation: string, insurer: string): string => `${generation} · ${insurer}`,
   defectsTitle: '게시를 막는 문제',
   conflictsTitle: '겹치는 매핑',
@@ -127,8 +130,8 @@ export const BUNDLE_COPY = {
   } as Readonly<Record<string, (who: string) => string>>,
   defectUnknown: (who: string, code: string): string => `${who}: 알 수 없는 문제로 게시할 수 없습니다 (코드 ${code}).`,
   conflictLine: (name: string, other: string, cells: string): string => `${name}: ${other} 과(와) 같은 치료에서 적용 범위(${cells})가 겹칩니다. 둘 중 하나를 빼야 게시할 수 있습니다.`,
-  conflictOtherBase: (id: string, version: string): string => `기준 묶음의 매핑 ${id} v${version}`,
-  conflictOtherAdded: (id: string, version: string): string => `함께 고른 매핑 ${id} v${version}`,
+  conflictOtherBase: (id: string, version: string): string => `기준 묶음의 매핑 ${id} ${versionLabel(version)}`,
+  conflictOtherAdded: (id: string, version: string): string => `함께 고른 매핑 ${id} ${versionLabel(version)}`,
 
   // 게시
   publishButton: '게시',

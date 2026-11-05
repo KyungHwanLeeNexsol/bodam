@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUNDLE_COPY, SCOPE_COPY } from '../../src/app/admin/bundle-copy';
+import { BUNDLE_COPY, SCOPE_COPY, versionLabel } from '../../src/app/admin/bundle-copy';
 
 // 묶음 게시·규칙 사용 범위 화면이 분명히 말해야 하는 것: 게시는 병원에 적용되지 않는다 · 지정은 병원 한 곳씩이다 · 거절 문장에 서버 코드가 나오지 않는다.
 
@@ -9,6 +9,17 @@ describe('묶음 게시 문구', () => {
     expect(BUNDLE_COPY.note).toContain('플랫폼 운영자');
     expect(BUNDLE_COPY.publishHintReady).toContain('어느 병원에도 바로 적용되지는 않습니다');
     expect(BUNDLE_COPY.publishedNotApplied('X')).toContain('아직 어느 병원에도 적용되지 않았습니다');
+  });
+
+  it('버전 글자는 "v" 를 한 번만 붙인다: "1" → "v1", 이미 "v1" 인 시험 자료 항목은 그대로 (브라우저로 본 "vv1" 수정)', () => {
+    expect(versionLabel('1')).toBe('v1');
+    expect(versionLabel('12')).toBe('v12');
+    expect(versionLabel('v1')).toBe('v1');
+    expect(versionLabel('V2')).toBe('V2');
+    expect(BUNDLE_COPY.itemVersion('v1')).toBe('v1');
+    expect(BUNDLE_COPY.itemVersion('3')).toBe('v3');
+    expect(BUNDLE_COPY.conflictOtherBase('M', 'v1')).toBe('기준 묶음의 매핑 M v1');
+    expect(BUNDLE_COPY.conflictOtherAdded('M', '2')).toBe('함께 고른 매핑 M v2');
   });
 
   it('후보 목록 안내는 승인이 검토 기록일 뿐 환자 화면 반영이 아니라고 말한다', () => {
