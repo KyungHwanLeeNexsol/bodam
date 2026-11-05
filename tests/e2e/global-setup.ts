@@ -17,6 +17,8 @@ export const ADMIN_PORT = 3105;
 export const ADMIN_CATALOG_PORT = 3106;
 /** 관리자 보장 검토 요청 시험(*.admin-review.spec.ts) 전용 앞단. 위 두 인스턴스와 저장소를 나눈다: 이 시험은 "검토 요청만 새 자료이고 나머지는 그대로"를 전후 비교로 증명하므로 다른 시험의 게시가 끼면 안 된다. */
 export const ADMIN_REVIEW_PORT = 3107;
+/** 관리자 매핑 검토 시험(*.admin-mapping.spec.ts) 전용 앞단. 위 세 인스턴스와 저장소를 나눈다: 이 시험은 "승인은 검토 기록일 뿐이고 공개 자료는 그대로"를 전후 비교로 증명하고 마지막에 카탈로그를 바꾸므로 다른 시험의 게시가 끼면 안 된다. */
+export const ADMIN_MAPPING_PORT = 3108;
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -44,7 +46,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const adminUrl = `http://127.0.0.1:${ADMIN_PORT}/__harness/health`;
   const adminCatalogUrl = `http://127.0.0.1:${ADMIN_CATALOG_PORT}/__harness/health`;
   const adminReviewUrl = `http://127.0.0.1:${ADMIN_REVIEW_PORT}/__harness/health`;
-  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl]) {
+  const adminMappingUrl = `http://127.0.0.1:${ADMIN_MAPPING_PORT}/__harness/health`;
+  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl]) {
     if (await isUp(url)) throw new Error(`이미 쓰고 있는 주소다(다른 서버를 시험하지 않는다): ${url}`);
   }
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(APP_PORT)], { stdio: 'ignore', windowsHide: true });
@@ -72,7 +75,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_REVIEW_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`],
     { stdio: 'ignore', windowsHide: true },
   );
-  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness];
+  const adminMappingHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_MAPPING_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`],
+    { stdio: 'ignore', windowsHide: true },
+  );
+  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness];
   try {
     await waitUntilUp(appUrl, app, '운영 구성 앱');
     await waitUntilUp(harnessUrl, harness, '실제 핸들러 앞단');
@@ -80,6 +88,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await waitUntilUp(adminUrl, adminHarness, '관리자 시험 앞단');
     await waitUntilUp(adminCatalogUrl, adminCatalogHarness, '관리자 구조 편집 시험 앞단');
     await waitUntilUp(adminReviewUrl, adminReviewHarness, '관리자 검토 요청 시험 앞단');
+    await waitUntilUp(adminMappingUrl, adminMappingHarness, '관리자 매핑 검토 시험 앞단');
   } catch (error) {
     for (const child of children) child.kill();
     throw error;

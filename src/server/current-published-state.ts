@@ -26,9 +26,13 @@ export type CurrentPublishedState =
 type StateReads = Pick<Repository, 'getClinicCurrentCatalogVersion' | 'getTreatmentVersion' | 'getTreatment'>;
 
 /** selectPublishedTreatments 의 fail 콜백(돌아오지 않는다)이 던지는 이 파일 안의 표지. 밖으로 새지 않고 아래에서 잡는다. */
+// 매개변수 속성(constructor(readonly code))은 쓰지 않는다: 브라우저 시험 앞단이 TypeScript 를 형 지우기만 하는 방식(node strip-only)으로 읽는데 그 방식은 매개변수 속성을 지원하지 않는다.
 class CatalogDefectSignal extends Error {
-  constructor(readonly code: PublishedTreatmentDefect['code']) {
+  readonly code: PublishedTreatmentDefect['code'];
+
+  constructor(code: PublishedTreatmentDefect['code']) {
     super(`현재 카탈로그의 참조가 저장소와 맞지 않는다 (${code})`);
+    this.code = code;
   }
 }
 
