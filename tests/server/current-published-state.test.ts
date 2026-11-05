@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readCurrentPublishedState } from '../../src/server/current-published-state';
+import type { Treatment } from '../../src/server/domain/entities';
 import { TEST_FIXTURE_CLINIC_ID } from '../fixtures/server/actors.fixture';
 import { makeCatalogVersion, makeClinic, makeTreatment, makeTreatmentVersion } from '../fixtures/server/entities.fixture';
 import { TEST_FIXTURE_TREATMENT_ID, newWorld, seedTreatment } from '../fixtures/server/lifecycle.fixture';
@@ -77,13 +78,15 @@ describe('readCurrentPublishedState', () => {
     expect(readCurrentPublishedState(world.repo, CLINIC, 'TEST_FIXTURE_OTHER_HIDDEN')).toEqual({ kind: 'NOT_IN_CATALOG' });
   });
 
-  it.each([
+  const BROKEN: Array<[string, Parameters<typeof repoWith>[1]]> = [
     ['TREATMENT_VERSION_MISSING', { getTreatmentVersion: () => null }],
     ['TREATMENT_MISSING', { getTreatment: () => null }],
-    ['TREATMENT_CLINIC_MISMATCH', { getTreatment: () => makeTreatment({ clinicId: 'TEST_FIXTURE_CLINIC_2' }) }],
-  ] as const)('UNREADABLE: 카탈로그 참조가 저장소와 맞지 않으면(%s) 던지지 않고 결함 코드를 낸다 — "목록에 없음"이 아니다', (code, override) => {
+    ['TREATMENT_CLINIC_MISMATCH', { getTreatment: (): Treatment => makeTreatment({ clinicId: 'TEST_FIXTURE_CLINIC_2' }) }],
+  ];
+
+  it.each(BROKEN)('UNREADABLE: 카탈로그 참조가 저장소와 맞지 않으면(%s) 던지지 않고 결함 코드를 낸다 — "목록에 없음"이 아니다', (code, override) => {
     const world = setup();
-    const repo = repoWith(world.repo, override as Parameters<typeof repoWith>[1]);
+    const repo = repoWith(world.repo, override);
     expect(readCurrentPublishedState(repo, CLINIC, T1)).toEqual({ kind: 'UNREADABLE', code });
   });
 
