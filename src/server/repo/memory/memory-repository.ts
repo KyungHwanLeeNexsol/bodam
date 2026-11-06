@@ -263,6 +263,16 @@ export class MemoryRepository implements Repository {
         throw new DomainError('REF_CONTENT_MISMATCH', `치료 '${treatment.id}' 은(는) 병원 '${draft.clinicId}' 의 것이 아니다`);
       }
     }
+    // 기본비용 수정은 모두 이 병원의 공통 기본비용(안정 식별자)이어야 한다.
+    for (const edit of draft.baseFeeEdits) {
+      const versions = [...this.store.baseFees.values()].filter((fee) => fee.baseFeeId === edit.baseFeeId);
+      if (versions.length === 0) {
+        throw notFound('공통 기본비용', edit.baseFeeId);
+      }
+      if (versions.some((fee) => fee.clinicId !== draft.clinicId)) {
+        throw new DomainError('REF_CONTENT_MISMATCH', `공통 기본비용 '${edit.baseFeeId}' 은(는) 병원 '${draft.clinicId}' 의 것이 아니다`);
+      }
+    }
     this.store.catalogDrafts.set(draft.clinicId, deepCopy(draft));
   }
 

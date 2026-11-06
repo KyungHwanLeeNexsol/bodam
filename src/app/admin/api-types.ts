@@ -28,9 +28,19 @@ export interface TreatmentAdditionView {
   effectiveDate: string;
 }
 
+/** 현재 게시된 공통 기본비용 한 줄(읽기 전용 표시 + 금액만 고칠 수 있다). baseFeeId 는 안정 식별자다. */
+export interface BaseFeeRow {
+  baseFeeId: string;
+  displayName: string;
+  benefitType: string;
+  amount: number;
+}
+
 export interface DraftView {
   baseCatalogVersionId: string;
   priceEdits: Array<{ treatmentId: string; patientAmount: number }>;
+  /** 공통 기본비용의 새 금액들. 기본비용을 건드리지 않은 초안은 빈 배열이다. */
+  baseFeeEdits: Array<{ baseFeeId: string; amount: number }>;
   additions: TreatmentAdditionView[];
   deactivations: string[];
   /** null 이면 기본 순서(남는 기존 치료는 지금 순서 그대로, 새 치료는 뒤에). */
@@ -45,7 +55,7 @@ export interface TreatmentsResponse {
   clinic: { id: string; slug: string; displayName: string };
   catalogVersion: string | null;
   treatments: TreatmentRow[];
-  baseFees: Array<{ baseFeeId: string; displayName: string; benefitType: string; amount: number }>;
+  baseFees: BaseFeeRow[];
   draft: DraftView | null;
 }
 
@@ -101,6 +111,14 @@ export interface AddedCalculation {
   holdReasons: string[];
 }
 
+/** 공통 기본비용 한 건의 금액 변경(미리보기 변경 목록). */
+export interface PreviewBaseFeeChange {
+  baseFeeId: string;
+  displayName: string;
+  before: number;
+  after: number;
+}
+
 export interface PreviewResponse {
   basedOnCatalogVersion: string;
   request: { generation: string; insurerType: string; cause: string; treatmentIds: string[] };
@@ -112,6 +130,8 @@ export interface PreviewResponse {
   afterList: PreviewListRow[];
   changes: {
     priceChanges: PreviewPriceChange[];
+    /** 금액이 바뀌는 공통 기본비용. 기본비용을 건드리지 않은 초안은 빈 목록이다. */
+    baseFeeChanges: PreviewBaseFeeChange[];
     added: Array<{ draftKey: string; displayName: string; patientAmount: number; benefitType: string; calculation: AddedCalculation }>;
     deactivated: Array<{ treatmentId: string; displayName: string }>;
     /** before·after 는 beforeList·afterList 에서의 1부터 시작하는 위치. */

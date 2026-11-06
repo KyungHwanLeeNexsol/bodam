@@ -12,8 +12,8 @@ const defectsOf = (body: unknown) => {
 };
 
 describe('parseDraftRequest: 올바른 본문', () => {
-  it('네 섹션 모두 선택이다: 빈 객체는 빈 섹션들과 같다', () => {
-    expect(parse({})).toEqual({ ok: true, request: { priceEdits: [], additions: [], deactivations: [], order: null, legacyPriceOnly: false } });
+  it('다섯 섹션 모두 선택이다: 빈 객체는 빈 섹션들과 같다', () => {
+    expect(parse({})).toEqual({ ok: true, request: { priceEdits: [], baseFeeEdits: [], additions: [], deactivations: [], order: null, legacyPriceOnly: false } });
   });
 
   it('새 치료는 입력과 같은 값으로 읽히고 입력 객체를 바꾸지 않는다 (배열·객체는 복사본)', () => {

@@ -1,7 +1,8 @@
-import type { BenefitType, DraftView, TreatmentAdditionView, TreatmentRow } from './api-types';
+import type { BaseFeeRow, BenefitType, DraftView, TreatmentAdditionView, TreatmentRow } from './api-types';
 
-// 관리자 화면의 "원하는 초안 전체"를 다루는 순수 함수 (SPEC-REIMBURSEMENT-001 M7 구조 편집).
-// 화면은 가격 글자·숨김·줄 순서·새 치료를 한 덩어리(WorkingState)로 들고 있고, 여기서 PUT 본문을 만들고 서버가 돌려준 초안과 구조로 비교한다.
+// 관리자 화면의 "원하는 초안 전체"를 다루는 순수 함수 (SPEC-REIMBURSEMENT-001 M7 구조 편집 · 공통 기본비용 금액 수정).
+// 화면은 가격 글자·기본비용 금액 글자·숨김·줄 순서·새 치료를 한 덩어리(WorkingState)로 들고 있고, 여기서 PUT 본문을 만들고 서버가 돌려준 초안과 구조로 비교한다.
+// PUT 은 초안 전체의 교체라서 본문은 늘 치료·기본비용·구조 편집을 함께 담는다: 기본비용만 따로 저장하는 길이 없어 치료 초안을 지우지 않는다.
 // 서버가 정한 규칙을 같은 모양으로 따른다(순서의 기본값 = 남는 기존 치료는 지금 순서 그대로 + 새 치료를 적은 순서대로 뒤에, 같은 순서는 null 로 줄임, 현재 가격과 같은 가격 수정은 변경이 아님).
 // 서버가 권위다: 여기 검사는 입력 실수를 먼저 알려 주는 용도이고, 보험금·한도·공제·보장 분류는 이 파일에 없다. 시계·무작위·저장소·네트워크를 쓰지 않는다.
 
@@ -11,6 +12,8 @@ export type NewTreatment = TreatmentAdditionView;
 export interface WorkingState {
   /** 기존 치료 id → 입력 중인 가격 글자. */
   priceTexts: Record<string, string>;
+  /** 공통 기본비용 baseFeeId → 입력 중인 금액 글자. */
+  baseFeeTexts: Record<string, string>;
   /** 숨길 기존 치료 id. */
   hidden: string[];
   /** 새 치료(만든 순서). */
@@ -22,6 +25,7 @@ export interface WorkingState {
 /** PUT /catalog/draft 본문 = 원하는 초안 전체. */
 export interface DraftBody {
   priceEdits: Array<{ treatmentId: string; patientAmount: number }>;
+  baseFeeEdits: Array<{ baseFeeId: string; amount: number }>;
   additions: NewTreatment[];
   deactivations: string[];
   order: string[] | null;
@@ -71,8 +75,9 @@ export const listVisibility = (catalogVersion: string | null, rowCount: number):
  * 서버가 준 치료 목록과 초안(없을 수 있다)으로 작업 상태를 다시 세운다. 초안이 있으면 초안의 값, 없으면 게시된 값이다.
  * 숨긴 줄은 초안의 순서에 없으므로, 게시 목록에서 바로 앞이던 줄 뒤에 놓아 화면에서 제자리 가까이에 남게 한다.
  */
-export function restoreWorking(rows: readonly TreatmentRow[], draft: DraftView | null): WorkingState {
+export function restoreWorking(rows: readonly TreatmentRow[], draft: DraftView | null, baseFees: readonly BaseFeeRow[] = []): WorkingState {
   const edits = new Map((draft?.priceEdits ?? []).map((edit) => [edit.treatmentId, edit.patientAmount]));
+  const feeEdits = new Map((draft?.baseFeeEdits ?? []).map((edit) => [edit.baseFeeId, edit.amount]));
   const publishedIds = rows.map((row) => row.treatmentId);
   const hidden = draft === null ? [] : draft.deactivations.filter((id) => publishedIds.includes(id));
   const additions = draft === null ? [] : draft.additions.map((entry) => structuredClone(entry));
@@ -96,6 +101,7 @@ export function restoreWorking(rows: readonly TreatmentRow[], draft: DraftView |
   }
   return {
     priceTexts: Object.fromEntries(rows.map((row) => [row.treatmentId, String(edits.get(row.treatmentId) ?? row.patientAmount)])),
+    baseFeeTexts: Object.fromEntries(baseFees.map((fee) => [fee.baseFeeId, String(feeEdits.get(fee.baseFeeId) ?? fee.amount)])),
     hidden,
     additions,
     rowOrder,
@@ -115,9 +121,19 @@ const defaultOrderOf = (rows: readonly TreatmentRow[], working: WorkingState): s
   ...working.additions.map((entry) => entry.draftKey),
 ];
 
-export function draftBodyOf(working: WorkingState, rows: readonly TreatmentRow[]): { body: DraftBody; invalid: boolean } {
+export function draftBodyOf(working: WorkingState, rows: readonly TreatmentRow[], baseFees: readonly BaseFeeRow[] = []): { body: DraftBody; invalid: boolean } {
   let invalid = false;
   const priceEdits: DraftBody['priceEdits'] = [];
+  const baseFeeEdits: DraftBody['baseFeeEdits'] = [];
+  for (const fee of baseFees) {
+    const text = working.baseFeeTexts[fee.baseFeeId] ?? String(fee.amount);
+    if (!isAmountText(text)) {
+      invalid = true;
+    } else if (Number(text.trim()) !== fee.amount) {
+      baseFeeEdits.push({ baseFeeId: fee.baseFeeId, amount: Number(text.trim()) });
+    }
+  }
+  baseFeeEdits.sort((a, b) => compareCodePoints(a.baseFeeId, b.baseFeeId));
   for (const row of rows) {
     if (isHidden(working, row.treatmentId)) continue;
     const text = working.priceTexts[row.treatmentId] ?? String(row.patientAmount);
@@ -133,6 +149,7 @@ export function draftBodyOf(working: WorkingState, rows: readonly TreatmentRow[]
     invalid,
     body: {
       priceEdits,
+      baseFeeEdits,
       additions: working.additions.map((entry) => structuredClone(entry)),
       deactivations: working.hidden.filter((id) => rows.some((row) => row.treatmentId === id)).sort(compareCodePoints),
       order: sameList(finalOrder, defaultOrderOf(rows, working)) ? null : finalOrder,
@@ -140,7 +157,8 @@ export function draftBodyOf(working: WorkingState, rows: readonly TreatmentRow[]
   };
 }
 
-export const isEmptyBody = (body: DraftBody): boolean => body.priceEdits.length === 0 && body.additions.length === 0 && body.deactivations.length === 0 && body.order === null;
+export const isEmptyBody = (body: DraftBody): boolean =>
+  body.priceEdits.length === 0 && body.baseFeeEdits.length === 0 && body.additions.length === 0 && body.deactivations.length === 0 && body.order === null;
 
 // ───────────────────────── 서버가 돌려준 초안과 구조 비교 ─────────────────────────
 
@@ -163,6 +181,7 @@ function normalizedAddition(entry: NewTreatment): NewTreatment {
 const normalizedBody = (body: DraftBody) =>
   JSON.stringify({
     priceEdits: [...body.priceEdits].sort((a, b) => compareCodePoints(a.treatmentId, b.treatmentId)).map((edit) => ({ treatmentId: edit.treatmentId, patientAmount: edit.patientAmount })),
+    baseFeeEdits: [...body.baseFeeEdits].sort((a, b) => compareCodePoints(a.baseFeeId, b.baseFeeId)).map((edit) => ({ baseFeeId: edit.baseFeeId, amount: edit.amount })),
     additions: body.additions.map(normalizedAddition),
     deactivations: [...body.deactivations].sort(compareCodePoints),
     order: body.order,
@@ -171,6 +190,7 @@ const normalizedBody = (body: DraftBody) =>
 /** 서버가 저장해 돌려준 초안을 비교용 본문 모양으로. 서버는 이미 정규형(같은 순서는 null)으로 저장한다. */
 export const bodyOfDraft = (draft: DraftView): DraftBody => ({
   priceEdits: draft.priceEdits.map((edit) => ({ treatmentId: edit.treatmentId, patientAmount: edit.patientAmount })),
+  baseFeeEdits: draft.baseFeeEdits.map((edit) => ({ baseFeeId: edit.baseFeeId, amount: edit.amount })),
   additions: draft.additions.map((entry) => structuredClone(entry)),
   deactivations: [...draft.deactivations],
   order: draft.order === null ? null : [...draft.order],
@@ -309,14 +329,48 @@ export function rowViews(working: WorkingState, rows: readonly TreatmentRow[]): 
   });
 }
 
+/** 공통 기본비용 한 줄의 화면 보기. 금액만 고칠 수 있고 이름·급여 구분은 읽기 전용이다. */
+export interface BaseFeeView {
+  baseFeeId: string;
+  displayName: string;
+  benefitType: string;
+  currentAmount: number;
+  amountText: string;
+  amountInvalid: boolean;
+  amountChanged: boolean;
+}
+
+export function baseFeeViews(working: WorkingState, baseFees: readonly BaseFeeRow[]): BaseFeeView[] {
+  return baseFees.map((fee) => {
+    const text = working.baseFeeTexts[fee.baseFeeId] ?? String(fee.amount);
+    const valid = isAmountText(text);
+    return {
+      baseFeeId: fee.baseFeeId,
+      displayName: fee.displayName,
+      benefitType: fee.benefitType,
+      currentAmount: fee.amount,
+      amountText: text,
+      amountInvalid: !valid,
+      amountChanged: valid && Number(text.trim()) !== fee.amount,
+    };
+  });
+}
+
 export interface BodySummary {
   priceChanged: number;
+  baseFeeChanged: number;
   added: number;
   hidden: number;
   reordered: boolean;
 }
 
-export const summaryOf = (body: DraftBody): BodySummary => ({ priceChanged: body.priceEdits.length, added: body.additions.length, hidden: body.deactivations.length, reordered: body.order !== null });
+export const summaryOf = (body: DraftBody): BodySummary => ({
+  priceChanged: body.priceEdits.length,
+  baseFeeChanged: body.baseFeeEdits.length,
+  added: body.additions.length,
+  hidden: body.deactivations.length,
+  reordered: body.order !== null,
+});
 
 // ───────────────────────── 새 치료 입력칸 ─────────────────────────
 
@@ -396,18 +450,16 @@ export function buildAddition(form: AddForm, draftKey: string): { ok: true; addi
 /**
  * 미리보기의 "계산할 치료". 숨길 치료는 제안도 선택도 되지 않는다(서버도 TREATMENT_DEACTIVATED_IN_DRAFT 로 거절한다).
  * 저장된 초안이 가격을 바꾼 치료는 항상 들어간다(required). 나머지는 사용자가 고른 것만. 순서는 게시 목록 순서를 따른다.
+ * needsTreatment: 저장된 초안에 기본비용 금액 수정이 있는데 계산할 치료가 하나도 없다. 서버는 계산 없는 미리보기로 확인값을 내지 않으므로(BASE_FEE_PREVIEW_NEEDS_TREATMENT) 치료를 하나 골라야 한다.
  */
 export function previewSelection(
   rows: readonly TreatmentRow[],
   draft: DraftView | null,
   picked: Readonly<Record<string, boolean>>,
-): { offered: TreatmentRow[]; required: Set<string>; treatmentIds: string[] } {
+): { offered: TreatmentRow[]; required: Set<string>; treatmentIds: string[]; needsTreatment: boolean } {
   const hidden = new Set(draft?.deactivations ?? []);
   const offered = rows.filter((row) => !hidden.has(row.treatmentId));
   const required = new Set((draft?.priceEdits ?? []).map((edit) => edit.treatmentId));
-  return {
-    offered,
-    required,
-    treatmentIds: offered.filter((row) => required.has(row.treatmentId) || picked[row.treatmentId] === true).map((row) => row.treatmentId),
-  };
+  const treatmentIds = offered.filter((row) => required.has(row.treatmentId) || picked[row.treatmentId] === true).map((row) => row.treatmentId);
+  return { offered, required, treatmentIds, needsTreatment: (draft?.baseFeeEdits ?? []).length > 0 && treatmentIds.length === 0 };
 }

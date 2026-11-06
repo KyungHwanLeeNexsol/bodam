@@ -6,7 +6,7 @@ import { parseEstimateRequest } from '../api/estimate-request';
 import type { EstimateRequest } from '../api/estimate-request';
 import type { PublishedCatalog } from '../api/published-catalog';
 import type { ApiServices } from '../api/services';
-import { treatmentVersionOfAddition, versionWithPrice } from '../catalog-draft-request';
+import { baseFeeWithAmount, treatmentVersionOfAddition, versionWithPrice } from '../catalog-draft-request';
 import { finalOrderOf, structureSummary } from '../catalog-structure';
 import type { CatalogDraft, Clinic, TreatmentVersion } from '../domain/entities';
 import type { Defect } from '../domain/errors';
@@ -17,6 +17,8 @@ import { isPlainObject } from '../validate/shape';
 // "게시하면 환자 계산이 어떻게 달라지는가"를 같은 계산 함수(api/estimate.ts 의 calculate)로 두 번 계산해 나란히 보인다:
 //   before — 병원의 현재 게시 카탈로그, after — 같은 카탈로그에서 초안을 적용한 가상의 카탈로그(가격 수정 · 숨김 제외 · 새 치료 추가 · 표시 순서).
 // 가격 수정이 없는 초안(새 치료·숨김·순서만)은 계산할 치료가 없어 before·after 계산을 하지 않는다(null). 목록(beforeList·afterList)과 변경 목록(changes)은 늘 나간다.
+// 공통 기본비용 금액 수정이 든 초안은 다르다: 계산 없는 목록 미리보기만으로 확인값을 내지 않는다. 계산할 치료를 하나 이상 골라야 하고(아니면 400 BASE_FEE_PREVIEW_NEEDS_TREATMENT),
+// 등록된 기본비용은 기존 규칙대로 자동 포함되므로 같은 엔진이 현재 게시본(옛 금액)과 초안 적용본(새 금액)을 각각 계산한다.
 // 읽기만 한다: 저장소를 쓰지 않고 식별자도 만들지 않는다(가상 치료 버전의 id 는 `PREVIEW:<원본 id>`, 새 치료는 `PREVIEW:NEW:<draftKey>` 이고 저장되지 않는다).
 // 규칙 묶음·매핑·프로필은 병원의 현재 규칙 사용 범위 그대로 읽는다.
 // 숨길 치료는 계산에 억지로 넣지 않는다(계산 대상으로 고르면 거절): 숨긴 뒤에는 환자가 고를 수 없는 치료다. 변경 목록에서 "숨김"으로 보인다.
@@ -52,7 +54,13 @@ export function draftCatalogView(published: PublishedCatalog, draft: CatalogDraf
     const entry = entries.get(key) as PublishedTreatment;
     return { treatment: { ...entry.treatment, sortOrder: index + 1 }, version: entry.version };
   });
-  return { ...published, treatments };
+  // 금액이 바뀌는 공통 기본비용은 가상의 새 버전(`PREVIEW:<원본 버전 id>`, 저장되지 않는다)이고 나머지는 현재 게시본 그대로다. 보장 판단 필드는 한 글자도 바뀌지 않는다.
+  const feeEdits = new Map(draft.baseFeeEdits.map((edit) => [edit.baseFeeId, edit]));
+  const baseFees = published.baseFees.map((fee) => {
+    const edit = feeEdits.get(fee.baseFeeId);
+    return edit === undefined ? fee : baseFeeWithAmount(fee, edit, `PREVIEW:${fee.id}`);
+  });
+  return { ...published, treatments, baseFees };
 }
 
 export type PreviewParse = { ok: true; request: EstimateRequest } | { ok: false; defects: Defect[] };
@@ -64,6 +72,8 @@ export type PreviewParse = { ok: true; request: EstimateRequest } | { ok: false;
  * 숨길 치료를 고르면 TREATMENT_DEACTIVATED_IN_DRAFT(path request.treatmentIds)로 거절한다.
  * 게시 확인값은 미리보기가 성공해야 나가므로, 계산 대상에는 초안이 가격을 바꾼 치료가 **모두** 들어 있어야 한다. 명시한 treatmentIds 에 하나라도 빠지면
  * CHANGED_TREATMENT_NOT_INCLUDED 로 거절한다(변경 안 한 치료만 고른 경우도 같다). 정상적인 추가 선택(변경 치료 전부 + 다른 치료)은 허용한다.
+ * 초안에 공통 기본비용 금액 수정이 있으면 계산할 치료가 하나 이상 있어야 한다: 없으면 BASE_FEE_PREVIEW_NEEDS_TREATMENT(path request.treatmentIds)로 거절한다
+ * (기본비용만 바꾼 초안은 변경 치료가 없어 treatmentIds 를 생략할 수 있지만, 그때도 계산 없이 확인값이 나가지 않는다).
  * 두 거절이 겹치면 둘 다 알린다(숨김 거절이 먼저). 판단은 파싱을 마친 계산 요청(실제 계산에 쓰이는 값)에 대해 한다.
  */
 export function parsePreviewRequest(body: unknown, draft: CatalogDraft): PreviewParse {
@@ -94,11 +104,22 @@ export function parsePreviewRequest(body: unknown, draft: CatalogDraft): Preview
   if (draft.priceEdits.some((edit) => !calculated.has(edit.treatmentId))) {
     defects.push({ code: 'CHANGED_TREATMENT_NOT_INCLUDED', path: 'request.treatmentIds' });
   }
+  if (draft.baseFeeEdits.length > 0 && request.treatmentIds.length === 0) {
+    defects.push({ code: 'BASE_FEE_PREVIEW_NEEDS_TREATMENT', path: 'request.treatmentIds' });
+  }
   return defects.length > 0 ? { ok: false, defects } : { ok: true, request };
 }
 
 export interface PriceChangeRow {
   treatmentId: string;
+  displayName: string;
+  before: number;
+  after: number;
+}
+
+/** 공통 기본비용 한 건의 금액 변경. baseFeeId 는 안정 식별자다. */
+export interface BaseFeeChangeRow {
+  baseFeeId: string;
   displayName: string;
   before: number;
   after: number;
@@ -137,6 +158,8 @@ export interface PreviewResponse {
   afterList: PreviewListRow[];
   changes: {
     priceChanges: PriceChangeRow[];
+    /** 금액이 바뀌는 공통 기본비용(baseFeeId 의 코드 포인트 순). 기본비용을 건드리지 않은 초안은 빈 목록이다. */
+    baseFeeChanges: BaseFeeChangeRow[];
     added: Array<{ draftKey: string; displayName: string; patientAmount: number; benefitType: string; calculation: AddedTreatmentCalculation }>;
     deactivated: Array<{ treatmentId: string; displayName: string }>;
     /** before·after 는 beforeList·afterList 에서의 1부터 시작하는 위치. */
@@ -184,6 +207,13 @@ export function buildPreview(api: ApiServices, clinic: Clinic, published: Publis
     before: versionOf.get(edit.treatmentId)?.patientAmount ?? 0,
     after: edit.patientAmount,
   }));
+  const feeOf = new Map(published.baseFees.map((fee) => [fee.baseFeeId, fee]));
+  const baseFeeChanges: BaseFeeChangeRow[] = draft.baseFeeEdits.map((edit) => ({
+    baseFeeId: edit.baseFeeId,
+    displayName: feeOf.get(edit.baseFeeId)?.displayName ?? edit.baseFeeId,
+    before: feeOf.get(edit.baseFeeId)?.amount ?? 0,
+    after: edit.amount,
+  }));
   const beforeList = listRowsOf(published.treatments);
   const afterList = listRowsOf(draftView.treatments);
   const positionIn = (rows: readonly PreviewListRow[], id: string): number => (rows.find((row) => row.treatmentId === id) as PreviewListRow).position;
@@ -216,6 +246,7 @@ export function buildPreview(api: ApiServices, clinic: Clinic, published: Publis
     afterList,
     changes: {
       priceChanges,
+      baseFeeChanges,
       added,
       deactivated: summary.deactivatedTreatmentIds.map((id) => ({ treatmentId: id, displayName: versionOf.get(id)?.displayName ?? id })),
       reordered: summary.reorderedTreatmentIds.map((id) => ({

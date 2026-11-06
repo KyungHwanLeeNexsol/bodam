@@ -6,6 +6,7 @@ import { parseBundlePreviewBody, parseBundlePublishBody, parseBundleSuspendBody,
 import { previewBundlePublish, publishBundleFromBase } from '../bundle-compose';
 import { readBundlePublishOverview } from '../bundle-overview';
 import { suspendRuleBundle } from '../bundle-status';
+import { baseFeeEditDefects } from '../catalog-base-fee';
 import { structureDefects } from '../catalog-structure';
 import type { Actor, Role } from '../domain/actor';
 import type { CatalogDraft, Clinic, RuleBundleVersion } from '../domain/entities';
@@ -30,9 +31,14 @@ import type { AdminServices } from './services';
 //
 //   GET    /api/admin/session                                   — 로그인한 신원(사용자 id·소속). 인증이 없으면 401.
 //   GET    /api/admin/clinics/{clinicId}/treatments             — 현재 게시 치료·가격과 초안(있으면)
-//   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 초안 전체를 저장(덮어씀): { priceEdits?, additions?, deactivations?, order? } = 가격 수정 · 새 치료 · 숨김 · 표시 순서. 이전 모양 { priceEdits } 도 그대로 받는다
+//   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 초안 전체를 저장(덮어씀): { priceEdits?, baseFeeEdits?, additions?, deactivations?, order? } = 가격 수정 · 공통 기본비용 금액 수정 · 새 치료 · 숨김 · 표시 순서. 이전 모양 { priceEdits } 도 그대로 받는다.
+//                                                                 baseFeeEdits 는 [{ baseFeeId, amount }] (키 둘뿐, amount 는 치료 가격과 같은 원화 계약): 현재 게시 카탈로그에 든 자기 병원 공통 기본비용의 금액만 고친다. 없는 것·다른 병원의 baseFeeId 는 400 BASE_FEE_NOT_IN_CATALOG(같은 코드),
+//                                                                 중복은 DUPLICATE_BASE_FEE_ID, 현재 금액과 같은 수정은 변경이 아니므로 걸러진다. 신규 등록·삭제·코드·급여 구분(보장 판단 필드) 변경은 길이 없다(알 수 없는 키는 UNKNOWN_FIELD).
+//                                                                 PUT 은 초안 전체의 교체다: 빠진 키는 비어 있는 것과 같으므로 화면은 늘 치료·기본비용·구조 편집을 한 본문에 담아 보낸다(기본비용만 따로 저장하는 길은 없다)
 //   DELETE /api/admin/clinics/{clinicId}/catalog/draft          — 초안 버리기
-//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 계산 대상에 초안이 가격을 바꾼 치료가 모두 들어 있고 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다. 가격 수정이 없는 초안은 계산 없이(before·after null) 목록·변경 목록만 낸다
+//   POST   /api/admin/clinics/{clinicId}/catalog/preview        — 초안을 게시했을 때의 계산을 현재와 나란히(같은 엔진, 읽기만). 계산 대상에 초안이 가격을 바꾼 치료가 모두 들어 있고 성공했을 때만 게시 확인값(publishConfirmation)을 싣는다. 가격 수정이 없는 초안은 계산 없이(before·after null) 목록·변경 목록만 낸다.
+//                                                                 단, 공통 기본비용 금액 수정이 든 초안은 계산 없는 목록 미리보기로 확인값을 내지 않는다: 계산할 치료를 하나 이상 골라야 하고(아니면 400 BASE_FEE_PREVIEW_NEEDS_TREATMENT) 등록된 기본비용은 자동 포함되어
+//                                                                 현재 게시본(옛 금액)과 초안 적용본(새 금액)이 같은 엔진으로 계산된다. 변경 목록 changes.baseFeeChanges 는 [{ baseFeeId, displayName, before, after }]. 확인값은 기본비용 수정 내용까지 묶는다
 //   POST   /api/admin/clinics/{clinicId}/catalog/publish        — 본문 { publishConfirmation }: 서버가 이 관리자에게 이 초안의 미리보기를 만들어 줬을 때 발급한 값이어야 게시한다
 //   GET    /api/admin/clinics/{clinicId}/catalog/versions       — 게시 이력
 //   POST   /api/admin/clinics/{clinicId}/treatments/{treatmentId}/review-requests — 검토 요청 제출(HA 자기 병원, 본문 { proposed: { benefitType, procedureCodes, calcClass } }). 요청은 제안 기록일 뿐이라 치료·분류·매핑·규칙 묶음·카탈로그·키오스크 계산을 바꾸지 않는다. 치료가 병원의 현재 게시 활성 치료가 아니면 400, 열린 요청이 이미 있으면 409
@@ -157,6 +163,8 @@ async function readJson(request: Request): Promise<{ ok: true; body: unknown } |
 const draftView = (draft: CatalogDraft, currentCatalogVersion: string | null) => ({
   baseCatalogVersionId: draft.baseCatalogVersionId,
   priceEdits: draft.priceEdits.map((edit) => ({ treatmentId: edit.treatmentId, patientAmount: edit.patientAmount })),
+  /** 공통 기본비용의 새 금액들(baseFeeId 의 코드 포인트 순). 금액 말고 보장 판단 필드는 담지 않는다. 기본비용을 건드리지 않은 초안은 빈 배열이다. */
+  baseFeeEdits: draft.baseFeeEdits.map((edit) => ({ baseFeeId: edit.baseFeeId, amount: edit.amount })),
   /** 새 치료 초안(요청에 적은 표시 필드만). 분류·출처·치료 id 는 서버가 게시 때 정하므로 없다. */
   additions: draft.additions.map((addition) => structuredClone(addition)),
   deactivations: [...draft.deactivations],
@@ -219,7 +227,7 @@ const postPreview: Handler = async (services, request, actor, clinic) => {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
   // 저장한 뒤 치료 기록이 바뀌어(숨길 치료가 이미 비활성이 되는 등) 초안의 구조가 현재 게시 치료와 맞지 않으면 낡은 초안처럼 다룬다: 게시도 같은 이유로 거절하므로 확인값을 내지 않는다.
-  if (structureDefects(services.api.repo, clinic.id, published.treatments, draft).length > 0) {
+  if (structureDefects(services.api.repo, clinic.id, published.treatments, draft).length > 0 || baseFeeEditDefects(published.baseFees, draft.baseFeeEdits).length > 0) {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
   const parsed = parsePreviewRequest(body.body, draft);

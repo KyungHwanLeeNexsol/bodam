@@ -6,7 +6,7 @@ import { formatSeoulMinute } from '../clock';
 import type { ApiFailure, CatalogVersionRow, OptionsResponse, PreviewResponse, SessionResponse, TreatmentsResponse } from './api-types';
 import { AdminNav } from './AdminNav';
 import { ADMIN_COPY as COPY } from './copy';
-import { EMPTY_ADD_FORM, appendAddition, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, listVisibility, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden } from './draft-model';
+import { EMPTY_ADD_FORM, appendAddition, baseFeeViews, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, listVisibility, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden } from './draft-model';
 import type { AddError, AddField, AddForm, WorkingState } from './draft-model';
 import { failureMessage } from './failure-message';
 import type { FailureKind } from './failure-message';
@@ -44,7 +44,7 @@ function TextField(props: { label: string; value: string; onChange: (value: stri
   );
 }
 
-const EMPTY_WORKING: WorkingState = { priceTexts: {}, hidden: [], additions: [], rowOrder: [] };
+const EMPTY_WORKING: WorkingState = { priceTexts: {}, baseFeeTexts: {}, hidden: [], additions: [], rowOrder: [] };
 
 export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElement {
   const base = `/api/admin/clinics/${encodeURIComponent(clinicId)}`;
@@ -67,7 +67,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   /** 서버가 준 데이터로 화면 상태를 다시 세운다: 초안이 있으면 초안의 값, 없으면 게시된 값. */
   const adopt = useCallback((next: TreatmentsResponse) => {
     setData(next);
-    setWorking(restoreWorking(next.treatments, next.draft));
+    setWorking(restoreWorking(next.treatments, next.draft, next.baseFees));
   }, []);
 
   useEffect(() => {
@@ -103,9 +103,11 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   }, [base, adopt, reloadKey]);
 
   const rows = data?.treatments ?? [];
+  const baseFees = data?.baseFees ?? [];
   const draft = data?.draft ?? null;
-  const { body, invalid } = useMemo(() => draftBodyOf(working, rows), [working, rows]);
+  const { body, invalid } = useMemo(() => draftBodyOf(working, rows, baseFees), [working, rows, baseFees]);
   const views = useMemo(() => rowViews(working, rows), [working, rows]);
+  const feeViews = useMemo(() => baseFeeViews(working, baseFees), [working, baseFees]);
   const summary = summaryOf(body);
   const hasChange = !isEmptyBody(body);
   /** 화면의 원하는 초안이 서버에 저장된 초안과 구조까지 같은가(가격·새 치료 내용·숨김·순서). */
@@ -258,7 +260,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   const visibility = listVisibility(data?.catalogVersion ?? null, rows.length);
   const noCatalog = visibility === 'none';
   const canSave = !busy && !invalid && hasChange && !(draft !== null && savedMatches);
-  const canPreview = !busy && draft !== null && !draft.stale && savedMatches;
+  const canPreview = !busy && draft !== null && !draft.stale && savedMatches && !selection.needsTreatment;
   const canPublish = !busy && previewCurrent && draft !== null && !draft.stale;
 
   return (
@@ -420,6 +422,59 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
             </table>
           </div>
 
+          <div className="admin-basefee" data-admin-basefee-section>
+            <h3 className="admin-h3">{COPY.baseFeeTitle}</h3>
+            <p className="admin-note" data-admin-basefee-note>{COPY.baseFeeNote}</p>
+            {feeViews.length === 0 ? (
+              <p className="admin-banner" data-admin-basefee-none>{COPY.baseFeeNone}</p>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table" data-admin-basefee-list>
+                  <thead>
+                    <tr>
+                      <th scope="col">{COPY.baseFeeColName}</th>
+                      <th scope="col" className="admin-nowrap">{COPY.colBenefit}</th>
+                      <th scope="col" className="admin-num">{COPY.baseFeeColAmount}</th>
+                      <th scope="col" className="admin-num">{COPY.baseFeeNewAmount}</th>
+                      <th scope="col" className="admin-nowrap">{COPY.colStatus}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {feeViews.map((fee) => (
+                      <tr key={fee.baseFeeId} data-admin-basefee={fee.baseFeeId} data-changed={fee.amountChanged}>
+                        <th scope="row">
+                          <span className="admin-name">{fee.displayName}</span>
+                          <span className="admin-sub2">ID {fee.baseFeeId}</span>
+                        </th>
+                        <td className="admin-nowrap">{benefitLabel(fee.benefitType)}</td>
+                        <td className="admin-num" data-admin-basefee-current>{won(fee.currentAmount)}</td>
+                        <td className="admin-num">
+                          <input
+                            className="admin-input"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            aria-label={COPY.baseFeeAmountLabel(fee.displayName)}
+                            aria-invalid={fee.amountInvalid}
+                            value={fee.amountText}
+                            disabled={busy}
+                            onChange={(event) => {
+                              const text = event.target.value;
+                              edit((state) => ({ ...state, baseFeeTexts: { ...state.baseFeeTexts, [fee.baseFeeId]: text } }));
+                            }}
+                          />
+                          {fee.amountInvalid ? <span role="alert" className="admin-field-error">{COPY.priceInvalid}</span> : null}
+                        </td>
+                        <td className="admin-nowrap" data-admin-basefee-status>
+                          {fee.amountChanged ? <span className="admin-pill admin-pill--changed" data-admin-badge="changed">{COPY.changed}</span> : <span className="admin-status-none" data-admin-badge="none">{COPY.unchanged}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <p className="admin-working-summary" data-admin-working-summary>{COPY.workingSummary(summary)}</p>
           <p className="admin-draft-status" data-admin-draft={draft === null ? 'none' : draft.stale ? 'stale' : 'saved'}>
             {draft === null ? COPY.draftStatusNone : draft.stale ? COPY.draftStale : COPY.draftStatusSaved}
@@ -548,6 +603,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
               {COPY.runPreview}
             </button>
           </div>
+          {draft !== null && selection.needsTreatment ? <p className="admin-hint" data-admin-preview-needs-treatment>{COPY.previewNeedsTreatment}</p> : null}
           {!canPreview ? <p className="admin-hint">{COPY.previewHint}</p> : null}
 
           {preview !== null ? (
@@ -560,6 +616,18 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                     <ul className="admin-changes">
                       {preview.changes.priceChanges.map((change) => (
                         <li key={change.treatmentId} data-admin-change={change.treatmentId}>
+                          {change.displayName}: {won(change.before)} → <strong>{won(change.after)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {preview.changes.baseFeeChanges.length > 0 ? (
+                  <>
+                    <h4 className="admin-h4">{COPY.baseFeeChangesTitle}</h4>
+                    <ul className="admin-changes">
+                      {preview.changes.baseFeeChanges.map((change) => (
+                        <li key={change.baseFeeId} data-admin-basefee-change={change.baseFeeId}>
                           {change.displayName}: {won(change.before)} → <strong>{won(change.after)}</strong>
                         </li>
                       ))}
@@ -694,6 +762,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                     hidden: (version.changeSummary.deactivatedTreatmentIds ?? []).length,
                     reordered: (version.changeSummary.reorderedTreatmentIds ?? []).length,
                     priceChanged: version.changeSummary.priceChangedTreatmentIds.length,
+                    baseFeesChanged: version.changeSummary.baseFeesChanged,
                   })}
                 </span>
               </li>

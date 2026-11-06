@@ -11,6 +11,7 @@ const DRAFT: CatalogDraft = {
   baseCatalogVersionId: 'CATALOG_1',
   revision: 'REVISION_1',
   priceEdits: [{ treatmentId: 'T1', patientAmount: 12_000 }],
+  baseFeeEdits: [],
   additions: [],
   deactivations: [],
   order: null,
@@ -41,6 +42,8 @@ describe('issuePublishConfirmation / confirmsPublish', () => {
     ['표시 순서의 배열 순서만 다르다', { ...DRAFT, order: ['T2', 'T1'] }, ADMIN],
     ['새 치료만 다르다', { ...DRAFT, additions: [additionBody('NEW_A') as never] }, ADMIN],
     ['새 치료의 가격만 다르다', { ...DRAFT, additions: [additionBody('NEW_A', { patientAmount: 1 }) as never] }, ADMIN],
+    // 공통 기본비용 금액 수정도 확인값에 묶인다.
+    ['기본비용 수정이 더해졌다', { ...DRAFT, baseFeeEdits: [{ baseFeeId: 'FEE_A', amount: 6_000 }] }, ADMIN],
   ])('%s → 처음 발급된 확인값이 맞지 않는다', (_name, other, admin) => {
     const issued = issuePublishConfirmation(DRAFT, ADMIN);
     expect(issuePublishConfirmation(other, admin)).not.toBe(issued);
@@ -54,6 +57,22 @@ describe('issuePublishConfirmation / confirmsPublish', () => {
     expect(draftContentDigest(first)).not.toBe(draftContentDigest(second));
     expect(confirmsPublish(second, ADMIN, issuePublishConfirmation(first, ADMIN))).toBe(false);
     expect(confirmsPublish(first, ADMIN, issuePublishConfirmation(first, ADMIN))).toBe(true);
+  });
+
+  it('기본비용 수정만 다른 초안 둘은 서로의 확인값으로 게시할 수 없다 (금액·대상 기본비용 모두 묶인다)', () => {
+    const base: CatalogDraft = { ...DRAFT, priceEdits: [], baseFeeEdits: [{ baseFeeId: 'FEE_A', amount: 6_000 }] };
+    const otherAmount: CatalogDraft = { ...base, baseFeeEdits: [{ baseFeeId: 'FEE_A', amount: 6_001 }] };
+    const otherFee: CatalogDraft = { ...base, baseFeeEdits: [{ baseFeeId: 'FEE_B', amount: 6_000 }] };
+    expect(base.revision).toBe(otherAmount.revision);
+    for (const other of [otherAmount, otherFee]) {
+      expect(draftContentDigest(other)).not.toBe(draftContentDigest(base));
+      expect(confirmsPublish(other, ADMIN, issuePublishConfirmation(base, ADMIN))).toBe(false);
+    }
+    expect(confirmsPublish(base, ADMIN, issuePublishConfirmation(base, ADMIN))).toBe(true);
+  });
+
+  it('기본비용 수정이 없는 초안의 내용 지문은 이 필드가 생기기 전의 식과 같다 (기존 지문·감사 기록이 바뀌지 않는다)', () => {
+    expect(draftContentDigest(DRAFT)).toBe(canonicalDigest({ priceEdits: DRAFT.priceEdits, additions: DRAFT.additions, deactivations: DRAFT.deactivations, order: DRAFT.order }));
   });
 
   it('목록·저장 응답이 주는 초안 내용 지문(draftDigest)이나 초안 버전 값은 확인값이 아니다', () => {

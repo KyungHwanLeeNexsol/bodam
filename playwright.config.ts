@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { ADMIN_BUNDLE_PORT, ADMIN_BUNDLE_REJECT_PORT, ADMIN_BUNDLE_SUSPEND_PORT, ADMIN_CATALOG_PORT, ADMIN_IDLE_POLICY_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
+import { ADMIN_BASE_FEE_PORT, ADMIN_BUNDLE_PORT, ADMIN_BUNDLE_REJECT_PORT, ADMIN_BUNDLE_SUSPEND_PORT, ADMIN_CATALOG_PORT, ADMIN_IDLE_POLICY_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
@@ -58,5 +58,9 @@ export default defineConfig({
     //                                  서버 값을 다시 읽어 보이고, 병원 B 와 가격·규칙·계산·카탈로그 버전은 그대로이며, 새로 연 키오스크만 바뀐 시간을 쓴다(이미 열려 있던 키오스크는 그대로). 긴 대기는 모두 가짜 시계(page.clock)로 보낸다.
     //                                  기본 세계와 시험 전용 끝점(--test-hooks)을 켠 따로 쓰는 인스턴스(ADMIN_IDLE_POLICY_PORT)다. 한 파일 안에서 순서대로 돈다.
     { name: 'admin-idle-policy', testMatch: /.*\.admin-idle-policy\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_IDLE_POLICY_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-base-fee.spec.ts : 공통 기본비용 금액 수정(M7). 병원 관리자(HA)가 화면에서 자기 병원의 공통 기본비용 금액을 고쳐 초안으로 저장하면 키오스크 계산은 그대로이고(공개 상태 불변),
+    //                               미리보기(계산할 치료를 고른 같은 엔진 계산)를 거쳐야만 게시되며, 게시한 뒤 새 기본비용이 병원 결제액에 반영된다. 보장 판단 필드·매핑 상태·다른 병원은 그대로다.
+    //                               기본 세계와 시험 전용 끝점(--test-hooks)을 켠 따로 쓰는 인스턴스(ADMIN_BASE_FEE_PORT)다. 한 파일 안에서 순서대로 돈다.
+    { name: 'admin-base-fee', testMatch: /.*\.admin-base-fee\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_BASE_FEE_PORT}`, viewport: { width: 1280, height: 900 } } },
   ],
 });

@@ -136,7 +136,8 @@ describe('PUT draft: 구조 편집 저장', () => {
     const response = await putDraft(world.admin, FULL_DRAFT());
     expect(response.status).toBe(200);
     const draft = (await json(response)).draft as Json;
-    expect(Object.keys(draft).sort()).toEqual(['additions', 'baseCatalogVersionId', 'deactivations', 'draftDigest', 'order', 'priceEdits', 'stale', 'updatedAt', 'updatedBy']);
+    expect(Object.keys(draft).sort()).toEqual(['additions', 'baseCatalogVersionId', 'baseFeeEdits', 'deactivations', 'draftDigest', 'order', 'priceEdits', 'stale', 'updatedAt', 'updatedBy']);
+    expect(draft['baseFeeEdits']).toEqual([]);
     expect(draft).toMatchObject({ stale: false, priceEdits: [{ treatmentId: T1, patientAmount: 12_000 }], deactivations: [T2], order: [B, T3, T1, A] });
     expect(draft.additions).toEqual(FULL_DRAFT().additions);
     expect(draft.draftDigest).toMatch(/^[0-9a-f]{64}$/);

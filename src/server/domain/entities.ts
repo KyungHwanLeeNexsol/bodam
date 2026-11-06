@@ -117,6 +117,12 @@ export interface PriceEdit {
   patientAmount: Won;
 }
 
+/** 공통 기본비용 하나의 새 금액 한 건(M7 기본비용 금액 수정). 금액 말고는 어떤 필드도 담지 않는다: 코드·급여 구분(보장 판단 필드)·이름·출처는 바뀌지 않는다(DD-16). baseFeeId 는 안정 식별자다(버전 id 가 아니다). */
+export interface BaseFeeEdit {
+  baseFeeId: string;
+  amount: Won;
+}
+
 /**
  * 새 치료 한 건의 초안 (M7 구조 편집). 환자에게 보일 표시 필드와 서류 표시, 금액 조건만 담는다.
  * 보장 판단은 담지 않는다: 분류(calcClass)는 서버가 NEEDS_REVIEW 로 고정하고, 출처·치료 id·표시 순서·활성 여부도 서버가 정한다(요청에서 받지 않는다).
@@ -148,6 +154,8 @@ export interface CatalogDraft {
   /** 서버 비공개. publish-confirmation.ts 만 읽는다. */
   revision: string;
   priceEdits: PriceEdit[];
+  /** 현재 게시 카탈로그에 든 공통 기본비용의 새 금액들(baseFeeId 의 코드 포인트 순). 현재 금액과 같은 수정은 담지 않는다. 게시 전에는 어떤 기본비용 버전도 만들지 않는다. */
+  baseFeeEdits: BaseFeeEdit[];
   /** 새 치료들(초안에 적은 순서). 게시 전에는 어떤 치료 기록도 만들지 않는다. */
   additions: TreatmentAddition[];
   /** 숨길 게시 치료 id (코드 포인트 순). 게시 전에는 치료의 active 를 바꾸지 않는다. */
