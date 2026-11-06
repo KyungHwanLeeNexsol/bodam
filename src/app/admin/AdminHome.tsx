@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { SessionResponse } from './api-types';
 import { BUNDLE_COPY, SCOPE_COPY } from './bundle-copy';
+import { CHANGE_COPY } from './change-history-copy';
 import { ADMIN_COPY as COPY } from './copy';
 import { IDLE_COPY } from './idle-policy-copy';
 import { REVIEW_COPY } from './review-copy';
@@ -68,6 +69,8 @@ export function AdminHome(): ReactElement {
                 <a className="admin-link" href={`${base}/review-requests`}>{REVIEW_COPY.navReviewRequests} — {membership.clinicId}</a>
                 {' · '}
                 <a className="admin-link" href={`${base}/idle-policy`}>{IDLE_COPY.navIdlePolicy} — {membership.clinicId}</a>
+                {' · '}
+                <a className="admin-link" href={`${base}/change-history`}>{CHANGE_COPY.navChangeHistory} — {membership.clinicId}</a>
               </li>
             );
           })}

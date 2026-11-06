@@ -2,6 +2,7 @@ import { priceConditionOf } from '../api/catalog';
 import { guarded } from '../api/integrity';
 import { readPublishedCatalog } from '../api/published-catalog';
 import { discardCatalogDraft, publishCatalogDraft, saveCatalogDraft } from '../catalog-draft';
+import { readClinicChangeHistory } from '../change-history';
 import { parseBundlePreviewBody, parseBundlePublishBody, parseBundleSuspendBody, parseRuleScopeAssignBody } from '../bundle-admin-parse';
 import { previewBundlePublish, publishBundleFromBase } from '../bundle-compose';
 import { readBundlePublishOverview } from '../bundle-overview';
@@ -21,7 +22,7 @@ import { readIdlePolicyAdminView, saveClinicIdlePolicyChecked } from '../idle-po
 import { findAffectedClinics } from '../rule-scope';
 import { assignRuleScopeChecked, readClinicScopeRow, readRuleScopeOverview } from '../rule-scope-admin';
 import { isPlainObject } from '../validate/shape';
-import { actorForClinic, actorForPlatformRole, normalizeIdentity } from './auth';
+import { actorForClinic, actorForPlatformRole, haClinicIdsOf, normalizeIdentity } from './auth';
 import type { AdminIdentity } from './auth';
 import { buildPreview, parsePreviewRequest } from './catalog-preview';
 import { adminError, invalidRequest, ok } from './http';
@@ -53,6 +54,10 @@ import type { AdminServices } from './services';
 //                                                                 저장은 정책 전체를 바꾼다(PUT 전체 교체): 본문에 없는 화면 종류는 기본값으로 돌아간다. 서버가 화면 종류 이름·초 값(0 이상의 정수)·경고 < 초기화이고 간격 ≥ 20초(completionHoldSeconds 에는 이 하한이 없다)를 검사한다.
 //                                                                 응답은 GET 과 같은 모양(방금 저장한 값을 저장소에서 다시 읽은 것). 400: 어긋난 필드마다 { code, path }. 거절하면 정책 저장소도 감사 기록도 바뀌지 않는다. 성공하면 감사 기록은 IDLE_POLICY_SAVE 한 건이다.
 //                                                                 병원은 경로가 정한다(본문의 병원 id 는 읽지 않는다). 저장은 이미 열려 있는 키오스크 세션에는 닿지 않는다: 새로 연 키오스크가 catalog 응답의 idlePolicy 로 읽는다. 가격·보장 규칙·계산·카탈로그 버전은 바꾸지 않는다
+//   GET    /api/admin/audit-log                                 — (HA) 병원 관리자의 변경 이력 읽기(M7 변경 이력). DD-19 표의 `GET /api/admin/audit-log` 를 HA 몫으로만 구현한 것이다. 병원 id 가 경로에도 요청에도 없다: 병원은 서버가 검증한 신원의 HA 소속 병원 하나다.
+//                                                                 HA 소속이 없으면(RV·PO 만 가진 신원 포함) 403, 둘 이상이면 병원을 하나로 정할 수 없어 409 CLINIC_AMBIGUOUS, 소속 병원이 없으면 404. 이 자원은 요청의 쿼리·헤더·본문을 읽지 않는다: 조회 조건이 없고(건수 상한 100 은 서버 고정) 어떤 조작된 값도 결과를 바꾸지 못한다.
+//                                                                 응답 { clinic: { id, displayName }, coveredActions, entries, page: { limit, returned, total, truncated } }. entries 는 최신순(저장 순서의 역순)이고 각 항목은 { sequence, at, actor: { id, role }, action, target, beforeVersion, afterVersion, reason } 뿐이다.
+//                                                                 기존 감사 기록을 읽기만 한다(change-history.ts): 카탈로그 초안 저장·폐기·게시와 무조작 정책 저장, 이 병원의 것으로 확인된 기록만이다. 소유를 확인할 수 없는 기록은 나오지 않고 total 에도 세지 않는다. 모든 변경 이력이 아니다
 //
 // 검토 담당자(RV, 플랫폼 단위 소속) 전용 경로 — 매핑 검토 (M7 매핑 검토). DD-19 표는 초안 작성·승인·반려를 나열한다. 검토 제출(submit), 이력 조회(review-history),
 // 대기열·이력 보기의 확장(현재 게시 상태·매핑 요약·검토 기준 비교)은 DD-19 에 없고 권한 표(작성자의 검토 제출 · RV 의 처리 결과 조회)에서 이 라우터가 더한 것이다:
@@ -536,6 +541,22 @@ const CLINIC_ROUTES: readonly Route[] = [
   { method: 'PUT', tail: ['idle-policy'], handler: putIdlePolicy },
 ];
 
+/**
+ * 병원 관리자의 변경 이력. 병원은 요청이 아니라 검증된 신원의 HA 소속으로만 정한다(haClinicIdsOf). 읽기만 한다.
+ * 순서: 소속과 역할(403) → 병원을 하나로 정할 수 있는가(409) → 병원 존재(404) → 읽기. 앞선 거절은 저장소를 읽기 전에 나간다.
+ */
+function getChangeHistory(services: AdminServices, identity: AdminIdentity): Response {
+  const clinicIds = haClinicIdsOf(identity);
+  if (clinicIds.length === 0) {
+    return adminError('FORBIDDEN');
+  }
+  if (clinicIds.length > 1) {
+    return adminError('CONFLICT', { reason: 'CLINIC_AMBIGUOUS' });
+  }
+  const clinic = services.api.repo.getClinic(clinicIds[0] as string);
+  return clinic === null ? adminError('NOT_FOUND') : ok(readClinicChangeHistory(services.api.repo, clinic));
+}
+
 async function authenticate(services: AdminServices, request: Request): Promise<AdminIdentity | null> {
   try {
     return normalizeIdentity(await services.authenticator.authenticate(request));
@@ -586,6 +607,10 @@ export function handleAdmin(services: AdminServices, request: Request, segments:
       }
       // 병원 경로가 없는 자원이라 병원 소속이 아니라 플랫폼 단위 RV 소속만 본다. 읽기만 한다.
       return actorForPlatformRole(identity, 'RV') === null ? adminError('FORBIDDEN') : ok({ queue: readReviewQueue(services.api.repo) });
+    }
+    if (segments.length === 1 && segments[0] === 'audit-log') {
+      // 병원 경로가 없는 자원이라 병원 소속이 아니라 검증된 신원의 HA 소속으로 병원을 정한다. 요청에서는 메서드만 본다. 읽기만 한다.
+      return request.method === 'GET' ? getChangeHistory(services, identity) : adminError('METHOD_NOT_ALLOWED');
     }
     // 플랫폼 단위 경로(RV 매핑 검토 · RV 묶음 구성 · PO 범위 지정): 병원 경로가 없으므로 병원 소속이 아니라 경로마다 정해진 역할의 플랫폼 단위 소속만 본다.
     // 경로 → 메서드(405) → 소속과 역할(403) → 본문(400) → 서비스 순서는 병원 경로와 같다.
