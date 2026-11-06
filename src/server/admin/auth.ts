@@ -75,3 +75,17 @@ export function actorForPlatformRole(identity: AdminIdentity, role: Role): Actor
   const allowed = identity.memberships.some((membership) => membership.role === role && membership.clinicId === null);
   return allowed ? { id: identity.userId, role } : null;
 }
+
+/**
+ * 병원 id 를 요청에서 받지 않는 병원 관리자(HA) 자원(변경 이력 조회)이 병원을 정하는 방법: 검증된 신원의 HA 소속 병원 id 들(중복 없이, 소속 목록의 순서).
+ * 병원에 매이지 않은 소속(clinicId 가 null)과 HA 가 아닌 역할은 들어가지 않는다. 비어 있으면 이 자원의 권한이 없는 것이고, 둘 이상이면 병원을 하나로 정할 수 없다.
+ */
+export function haClinicIdsOf(identity: AdminIdentity): string[] {
+  const ids: string[] = [];
+  for (const membership of identity.memberships) {
+    if (membership.role === 'HA' && membership.clinicId !== null && !ids.includes(membership.clinicId)) {
+      ids.push(membership.clinicId);
+    }
+  }
+  return ids;
+}

@@ -567,3 +567,25 @@
   outline: 3px solid var(--kiosk-accent);
   outline-offset: 2px;
 }
+
+/* 변경 이력(읽기 전용): 기록된 값(대상·버전·지문·사유)은 길어도 줄을 바꿔 보여 주고, 표를 옆으로 늘리지 않는다. */
+.admin-mono {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.admin-table--changes td {
+  vertical-align: top;
+}
+
+/* 번호·시각·동작 이름은 줄을 바꾸지 않는다(머리글이 "번 / 호" 로 갈라지거나 이름표가 세 줄로 쪼개지지 않게). 길 수 있는 값은 위의 .admin-mono 가 줄을 바꾼다. */
+.admin-table--changes thead th,
+.admin-table--changes .admin-pill {
+  white-space: nowrap;
+}
+
+.admin-table--changes .admin-sub2 {
+  display: block;
+}

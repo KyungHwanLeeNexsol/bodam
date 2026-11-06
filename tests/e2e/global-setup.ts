@@ -44,6 +44,12 @@ export const ADMIN_IDLE_POLICY_PORT = 3112;
  * 이 시험은 "게시 전 공개 계산 불변 · 게시 뒤 새 기본비용 반영 · 보장 판단/매핑 상태 불변 · 다른 병원 불변"을 전후 비교로 증명하고 카탈로그를 여러 번 게시하므로 다른 시험의 세계와 섞이면 안 된다: 저장소를 따로 가진다.
  */
 export const ADMIN_BASE_FEE_PORT = 3113;
+/**
+ * 병원 관리자 변경 이력 조회 시험(*.admin-change-history.spec.ts) 전용 앞단. 기본 세계와 시험 전용 끝점(--test-hooks: 감사 기록·저장소 읽기, 세계 새로 만들기)을 켠다.
+ * 이 시험은 두 병원의 관리자가 실제 흐름(기본비용 게시·무조작 정책 저장)을 지난 뒤 이력 화면에 그 기록이 나타나는지, 조회 전후 저장소·감사 기록·공개 계산이 그대로인지를 전후 비교로 증명하므로
+ * 다른 시험의 세계와 섞이면 안 된다: 저장소를 따로 가진다.
+ */
+export const ADMIN_CHANGE_HISTORY_PORT = 3114;
 
 async function isUp(url: string): Promise<boolean> {
   try {
@@ -77,7 +83,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const adminBundleSuspendUrl = `http://127.0.0.1:${ADMIN_BUNDLE_SUSPEND_PORT}/__harness/health`;
   const adminIdlePolicyUrl = `http://127.0.0.1:${ADMIN_IDLE_POLICY_PORT}/__harness/health`;
   const adminBaseFeeUrl = `http://127.0.0.1:${ADMIN_BASE_FEE_PORT}/__harness/health`;
-  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl, adminBundleUrl, adminBundleRejectUrl, adminBundleSuspendUrl, adminIdlePolicyUrl, adminBaseFeeUrl]) {
+  const adminChangeHistoryUrl = `http://127.0.0.1:${ADMIN_CHANGE_HISTORY_PORT}/__harness/health`;
+  for (const url of [appUrl, harnessUrl, noticeUrl, adminUrl, adminCatalogUrl, adminReviewUrl, adminMappingUrl, adminBundleUrl, adminBundleRejectUrl, adminBundleSuspendUrl, adminIdlePolicyUrl, adminBaseFeeUrl, adminChangeHistoryUrl]) {
     if (await isUp(url)) throw new Error(`이미 쓰고 있는 주소다(다른 서버를 시험하지 않는다): ${url}`);
   }
   const app = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(APP_PORT)], { stdio: 'ignore', windowsHide: true });
@@ -135,7 +142,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_BASE_FEE_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--test-hooks'],
     { stdio: 'ignore', windowsHide: true },
   );
-  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness, adminBundleHarness, adminBundleRejectHarness, adminBundleSuspendHarness, adminIdlePolicyHarness, adminBaseFeeHarness];
+  const adminChangeHistoryHarness = spawn(
+    process.execPath,
+    ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'tests/e2e/harness/server.ts', '--port', String(ADMIN_CHANGE_HISTORY_PORT), '--upstream', `http://127.0.0.1:${APP_PORT}`, '--test-hooks'],
+    { stdio: 'ignore', windowsHide: true },
+  );
+  const children = [app, harness, notice, adminHarness, adminCatalogHarness, adminReviewHarness, adminMappingHarness, adminBundleHarness, adminBundleRejectHarness, adminBundleSuspendHarness, adminIdlePolicyHarness, adminBaseFeeHarness, adminChangeHistoryHarness];
   try {
     await waitUntilUp(appUrl, app, '운영 구성 앱');
     await waitUntilUp(harnessUrl, harness, '실제 핸들러 앞단');
@@ -149,6 +161,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     await waitUntilUp(adminBundleSuspendUrl, adminBundleSuspendHarness, '관리자 묶음 중지 시험 앞단');
     await waitUntilUp(adminIdlePolicyUrl, adminIdlePolicyHarness, '관리자 무조작 정책 시험 앞단');
     await waitUntilUp(adminBaseFeeUrl, adminBaseFeeHarness, '관리자 공통 기본비용 시험 앞단');
+    await waitUntilUp(adminChangeHistoryUrl, adminChangeHistoryHarness, '관리자 변경 이력 시험 앞단');
   } catch (error) {
     for (const child of children) child.kill();
     throw error;
