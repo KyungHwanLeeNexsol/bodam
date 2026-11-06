@@ -86,12 +86,23 @@ async function kioskToTreatments(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: '확인할 치료를 선택해 주세요' })).toBeVisible();
 }
 
-/** 키오스크에서 치료 A 하나를 골라 계산하고 병원 결제액(서버 응답)과 화면에 보이는 병원 결제액 글자를 돌려준다. */
-async function kioskCalculateA(browser: Browser, shotName?: string): Promise<{ hospital: number; shown: string }> {
+/** 지금 공개 카탈로그가 알리는 공통 기본비용 금액(키오스크가 선택 요약에 합산하는 값). */
+async function publicFeeAmount(request: APIRequestContext): Promise<unknown> {
+  return ((await publicCatalog(request))['baseFees'] as Json[]).find((fee) => fee['baseFeeId'] === FEE_ID)?.['amount'];
+}
+
+/** 병원 1 이 아닌 병원의 공통 기본비용 기록(저장소 사본의 글자 그대로). */
+const otherClinicFees = (state: Json): unknown[] => (state['baseFees'] as Array<[string, Json]>).filter(([, fee]) => fee['clinicId'] !== CLINIC_ID);
+
+/** 키오스크에서 치료 A 하나를 골라 계산하고 병원 결제액(서버 응답)과 화면에 보이는 병원 결제액 글자, 그리고 치료 선택 화면의 총 예상 결제액(기본비용 합산) 글자를 돌려준다. */
+async function kioskCalculateA(browser: Browser, shotName?: string): Promise<{ hospital: number; shown: string; summary: string }> {
   const context = await browser.newContext({ viewport: { width: 1080, height: 1920 }, locale: 'ko-KR' });
   const kiosk = await context.newPage();
   await kioskToTreatments(kiosk);
   await kiosk.getByRole('checkbox', { name: NAME_A }).check();
+  const summaryTotal = kiosk.locator('.kiosk-summary__total');
+  await expect(summaryTotal).not.toHaveClass(/--muted/); // 고른 치료가 있어 합계가 0 이 아닌 상태
+  const summary = (await summaryTotal.innerText()).trim();
   const response = kiosk.waitForResponse((entry) => entry.url().endsWith('/estimate') && entry.request().method() === 'POST');
   await kiosk.getByRole('button', { name: '예상 부담액 확인' }).click();
   const body = (await (await response).json()) as { result: { state: string; amounts: { hospitalPayment: number } } };
@@ -100,7 +111,7 @@ async function kioskCalculateA(browser: Browser, shotName?: string): Promise<{ h
   expect(body.result.state).toBe('ESTIMATED');
   if (shotName !== undefined) await shoot(kiosk, shotName);
   await context.close();
-  return { hospital: body.result.amounts.hospitalPayment, shown };
+  return { hospital: body.result.amounts.hospitalPayment, shown, summary };
 }
 
 test('세계를 새로 만든다 (이 파일의 시작 상태): 기본 세계의 병원 1 은 치료 둘과 기본비용 5,000원이다', async ({ request }) => {
@@ -153,6 +164,9 @@ test('병원 1 관리자: 기본비용 표(현재 5,000원)를 보고, 잘못된
   const kiosk = await kioskCalculateA(browser);
   expect(kiosk.hospital).toBe(15_000);
   expect(kiosk.shown).toBe('15,000원');
+  // 초안만 저장했으므로 공개 카탈로그의 기본비용과 치료 선택 화면의 총 예상 결제액(치료 10,000 + 기본비용 5,000)도 그대로다.
+  expect(await publicFeeAmount(page.request)).toBe(5_000);
+  expect(kiosk.summary).toBe('15,000원');
   // 게시는 아직 막혀 있다.
   await expect(button(page, '게시')).toBeDisabled();
 });
@@ -208,6 +222,9 @@ test('치료 A 를 골라 미리보기를 보면 현재 게시본 15,000원과 �
   // 미리보기는 읽기만 한다: 아직 키오스크는 15,000원이다.
   expect(hospitalOf(await publicEstimate(page.request, [T1]))).toBe(15_000);
   const itemsBefore = await storeState(page.request);
+  const otherFeesBefore = otherClinicFees(itemsBefore);
+  expect(otherFeesBefore.length).toBeGreaterThan(0); // 비교 대상이 비어 있으면 아래 "다른 병원 불변" 비교가 아무것도 보지 못한다
+  expect(await publicFeeAmount(page.request)).toBe(5_000);
   const otherBefore = await publicCatalog(page.request, OTHER_SLUG);
   const versionBefore = (await publicCatalog(page.request))['catalogVersion'] as string;
 
@@ -226,6 +243,9 @@ test('치료 A 를 골라 미리보기를 보면 현재 게시본 15,000원과 �
   const kiosk = await kioskCalculateA(browser, 'kiosk-after');
   expect(kiosk.hospital).toBe(17_000);
   expect(kiosk.shown).toBe('17,000원');
+  // 공개 카탈로그의 기본비용 금액과 치료 선택 화면의 총 예상 결제액(치료 10,000 + 기본비용 7,000)도 새 금액이다.
+  expect(await publicFeeAmount(page.request)).toBe(7_000);
+  expect(kiosk.summary).toBe('17,000원');
 
   // 보장 판단·매핑 상태는 그대로다: 항목 버전·항목 상태 기록이 전후 같다.
   const itemsAfter = await storeState(page.request);
@@ -236,8 +256,9 @@ test('치료 A 를 골라 미리보기를 보면 현재 게시본 15,000원과 �
   expect(fees).toHaveLength(2);
   expect(fees.map((fee) => fee['amount']).sort()).toEqual([5_000, 7_000]);
   expect(new Set(fees.map((fee) => `${String(fee['code'])}|${String(fee['benefitType'])}|${String(fee['displayName'])}`)).size).toBe(1);
-  // 다른 병원은 그대로다.
+  // 다른 병원은 그대로다: 공개 카탈로그와 그 병원의 기본비용 기록.
   expect(await publicCatalog(page.request, OTHER_SLUG)).toEqual(otherBefore);
+  expect(otherClinicFees(itemsAfter)).toEqual(otherFeesBefore);
 });
 
 test('옛 카탈로그 버전을 든 계산 요청은 게시 뒤 409 이고, 다른 병원의 기본비용 id 로는 초안을 저장할 수 없다', async ({ page }) => {
@@ -295,6 +316,8 @@ test('치료 수정·숨김과 기본비용 수정이 한 초안으로 함께 �
   const kiosk = await kioskCalculateA(browser);
   expect(kiosk.hospital).toBe(20_000);
   expect(kiosk.shown).toBe('20,000원');
+  expect(await publicFeeAmount(page.request)).toBe(8_000);
+  expect(kiosk.summary).toBe('20,000원'); // 치료 12,000 + 기본비용 8,000
 });
 
 test('감사 기록: 초안 저장·게시가 각각 남고, 기본비용 수정이 든 게시는 CATALOG_DRAFT_PUBLISH 로 기록된다', async ({ request }) => {
