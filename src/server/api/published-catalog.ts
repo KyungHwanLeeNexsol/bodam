@@ -2,7 +2,7 @@ import { compareCodePoints } from '../../engine/validate';
 import type { CatalogVersion, Clinic, CommonBaseFee } from '../domain/entities';
 import { selectPublishedBaseFees } from '../published-base-fees';
 import type { PublishedBaseFeeDefect } from '../published-base-fees';
-import { selectPublishedTreatments, sortForDisplay } from '../published-treatments';
+import { selectHiddenTreatments, selectPublishedTreatments, sortForDisplay } from '../published-treatments';
 import type { PublishedTreatment, PublishedTreatmentDefect } from '../published-treatments';
 import type { Repository } from '../repo/interfaces';
 import { ServerIntegrityError } from './integrity';
@@ -46,4 +46,12 @@ export function readPublishedCatalog(repo: CatalogReads, clinic: Clinic): Publis
   const baseFees = selectPublishedBaseFees(repo, clinic.id, catalog, integrityFailure);
   baseFees.sort((a, b) => compareCodePoints(a.baseFeeId, b.baseFeeId));
   return { catalog, treatments, baseFees };
+}
+
+/**
+ * 병원의 현재 카탈로그가 버전을 아직 담고 있지만 치료 기록이 비활성(숨김)인 치료, 예전 표시 순서(sortOrder 오름차순, 같으면 치료 id)로. 관리자 화면의 "다시 표시" 후보다.
+ * 공개 카탈로그·계산에는 쓰이지 않는다(숨긴 치료는 환자가 고를 수 없다). 깨진 참조는 readPublishedCatalog 와 같은 기준(selectHiddenTreatments)으로 서버 데이터 무결성 결함이다. 저장소를 바꾸지 않는다.
+ */
+export function readHiddenTreatments(repo: CatalogReads, clinic: Clinic, catalog: CatalogVersion | null): PublishedTreatment[] {
+  return catalog === null ? [] : sortForDisplay(selectHiddenTreatments(repo, clinic.id, catalog, integrityFailure));
 }

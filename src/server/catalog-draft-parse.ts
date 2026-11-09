@@ -12,7 +12,7 @@ import { BENEFIT_TYPES, isNonEmptyString, isOneOf, isPlainObject } from './valid
 
 const PRICE_EDIT_KEYS: readonly string[] = ['treatmentId', 'patientAmount'];
 const BASE_FEE_EDIT_KEYS: readonly string[] = ['baseFeeId', 'amount'];
-const TOP_LEVEL_KEYS: readonly string[] = ['priceEdits', 'baseFeeEdits', 'additions', 'deactivations', 'order'];
+const TOP_LEVEL_KEYS: readonly string[] = ['priceEdits', 'baseFeeEdits', 'additions', 'deactivations', 'reactivations', 'order'];
 const ADDITION_KEYS: readonly string[] = ['draftKey', 'displayName', 'description', 'benefitType', 'patientAmount', 'treatmentCode', 'procedureCodes', 'documentFlags', 'amountCondition', 'effectiveDate'];
 const DOCUMENT_FLAG_KEYS: readonly string[] = ['imaging', 'biopsy', 'opinionRequired'];
 const AMOUNT_CONDITION_KEYS: readonly string[] = ['patientType', 'assumption', 'referenceDate'];
@@ -292,6 +292,8 @@ export interface ParsedDraftRequest {
   additions: TreatmentAddition[];
   /** 요청에 적힌 순서 그대로(저장 때 코드 포인트 순으로 정렬한다). 중복 없음. */
   deactivations: string[];
+  /** 다시 표시할 숨긴 치료 id. 요청에 적힌 순서 그대로(저장 때 코드 포인트 순으로 정렬한다). 중복 없음. 숨긴 치료가 맞는지는 catalog-structure.ts 가 저장소를 읽어 본다. */
+  reactivations: string[];
   /** 요청에 적힌 순서 그대로. 키가 없거나 null 이면 null(기본 순서). 중복·순열 여부는 catalog-structure.ts 가 본다. */
   order: string[] | null;
   /** 본문이 priceEdits 키 하나뿐이었는가(이전 모양). */
@@ -375,6 +377,7 @@ export function parseDraftRequest(request: unknown): DraftParse {
   }
 
   const deactivations = request.deactivations === undefined ? [] : parseStringList(defects, request.deactivations, 'deactivations', 'DUPLICATE_TREATMENT_ID');
+  const reactivations = request.reactivations === undefined ? [] : parseStringList(defects, request.reactivations, 'reactivations', 'DUPLICATE_TREATMENT_ID');
 
   let order: string[] | null = null;
   if (request.order !== undefined && request.order !== null) {
@@ -384,5 +387,5 @@ export function parseDraftRequest(request: unknown): DraftParse {
   if (defects.length > 0) {
     return { ok: false, defects };
   }
-  return { ok: true, request: { priceEdits, baseFeeEdits, additions, deactivations, order, legacyPriceOnly: isLegacyPriceOnlyBody(request) } };
+  return { ok: true, request: { priceEdits, baseFeeEdits, additions, deactivations, reactivations, order, legacyPriceOnly: isLegacyPriceOnlyBody(request) } };
 }

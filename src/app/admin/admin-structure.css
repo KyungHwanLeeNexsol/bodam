@@ -37,6 +37,15 @@
   color: var(--kiosk-danger);
 }
 
+.admin-pill--reshown {
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent);
+}
+
+.admin-table tr[data-reshown='true'] {
+  background: var(--kiosk-accent-soft);
+}
+
 .admin-pill--changed,
 .admin-pill--moved {
   background: var(--kiosk-warn-soft);

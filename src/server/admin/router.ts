@@ -1,6 +1,6 @@
 import { priceConditionOf } from '../api/catalog';
 import { guarded } from '../api/integrity';
-import { readPublishedCatalog } from '../api/published-catalog';
+import { readHiddenTreatments, readPublishedCatalog } from '../api/published-catalog';
 import { discardCatalogDraft, publishCatalogDraft, saveCatalogDraft } from '../catalog-draft';
 import { readClinicChangeHistory } from '../change-history';
 import { parseBundlePreviewBody, parseBundlePublishBody, parseBundleSuspendBody, parseRuleScopeAssignBody } from '../bundle-admin-parse';
@@ -9,6 +9,7 @@ import { readBundlePublishOverview } from '../bundle-overview';
 import { suspendRuleBundle } from '../bundle-status';
 import { baseFeeEditDefects } from '../catalog-base-fee';
 import { structureDefects } from '../catalog-structure';
+import type { PublishedTreatment } from '../published-treatments';
 import type { Actor, Role } from '../domain/actor';
 import type { CatalogDraft, Clinic, RuleBundleVersion } from '../domain/entities';
 import { DomainError } from '../domain/errors';
@@ -31,8 +32,11 @@ import type { AdminServices } from './services';
 // 관리자 API 라우터 (SPEC-REIMBURSEMENT-001 M7 첫 기능: 치료 가격 수정 → 초안 저장 → 미리보기 → 게시, design.md DD-19 관리자 API (제안)).
 //
 //   GET    /api/admin/session                                   — 로그인한 신원(사용자 id·소속). 인증이 없으면 401.
-//   GET    /api/admin/clinics/{clinicId}/treatments             — 현재 게시 치료·가격과 초안(있으면)
-//   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 초안 전체를 저장(덮어씀): { priceEdits?, baseFeeEdits?, additions?, deactivations?, order? } = 가격 수정 · 공통 기본비용 금액 수정 · 새 치료 · 숨김 · 표시 순서. 이전 모양 { priceEdits } 도 그대로 받는다.
+//   GET    /api/admin/clinics/{clinicId}/treatments             — 현재 게시 치료·가격과 초안(있으면). hiddenTreatments 는 현재 카탈로그가 버전을 아직 담고 있지만 숨긴(비활성) 이 병원의 치료(예전 표시 순서)이고 "다시 표시"의 후보 전부다. 읽기만 하며 공개 목록은 바꾸지 않는다
+//   PUT    /api/admin/clinics/{clinicId}/catalog/draft          — 초안 전체를 저장(덮어씀): { priceEdits?, baseFeeEdits?, additions?, deactivations?, reactivations?, order? } = 가격 수정 · 공통 기본비용 금액 수정 · 새 치료 · 숨김 · 숨긴 치료 다시 표시 · 표시 순서. 이전 모양 { priceEdits } 도 그대로 받는다.
+//                                                                 reactivations 는 치료 id 목록이다. 대상은 자기 병원의 현재 카탈로그가 버전을 담은 숨긴 치료뿐이다: 없는 치료·다른 병원 치료·현재 카탈로그가 담지 않은 치료는 400 TREATMENT_NOT_IN_CATALOG(같은 코드, 존재를 드러내지 않는다),
+//                                                                 이미 표시 중인 치료는 TREATMENT_ALREADY_VISIBLE, 같은 초안이 숨김에도 적은 치료는 REACTIVATION_CONFLICTS_WITH_DEACTIVATION, 다시 표시할 치료의 가격 수정은 PRICE_EDIT_ON_REACTIVATED, 중복은 DUPLICATE_TREATMENT_ID.
+//                                                                 기본 표시 위치: 남는 기존 치료 → 다시 표시 치료(예전 표시 순서, 같으면 치료 id 순) → 새 치료. 저장·미리보기는 치료 기록·공개 목록·계산을 바꾸지 않고 게시 트랜잭션에서만 active 가 돌아온다. 다시 표시는 보장 승인이 아니다: 매핑·승인 지문·분류는 그대로다
 //                                                                 baseFeeEdits 는 [{ baseFeeId, amount }] (키 둘뿐, amount 는 치료 가격과 같은 원화 계약): 현재 게시 카탈로그에 든 자기 병원 공통 기본비용의 금액만 고친다. 없는 것·다른 병원의 baseFeeId 는 400 BASE_FEE_NOT_IN_CATALOG(같은 코드),
 //                                                                 중복은 DUPLICATE_BASE_FEE_ID, 현재 금액과 같은 수정은 변경이 아니므로 걸러진다. 신규 등록·삭제·코드·급여 구분(보장 판단 필드) 변경은 길이 없다(알 수 없는 키는 UNKNOWN_FIELD).
 //                                                                 PUT 은 초안 전체의 교체다: 빠진 키는 비어 있는 것과 같으므로 화면은 늘 치료·기본비용·구조 편집을 한 본문에 담아 보낸다(기본비용만 따로 저장하는 길은 없다)
@@ -173,7 +177,9 @@ const draftView = (draft: CatalogDraft, currentCatalogVersion: string | null) =>
   /** 새 치료 초안(요청에 적은 표시 필드만). 분류·출처·치료 id 는 서버가 게시 때 정하므로 없다. */
   additions: draft.additions.map((addition) => structuredClone(addition)),
   deactivations: [...draft.deactivations],
-  /** null 이면 기본 순서(남는 기존 치료는 지금 순서 그대로, 새 치료는 뒤에). */
+  /** 다시 표시할 숨긴 치료 id (코드 포인트 순). 다시 표시를 쓰지 않은 초안은 빈 배열이다. */
+  reactivations: [...draft.reactivations],
+  /** null 이면 기본 순서(남는 기존 치료는 지금 순서 그대로, 다시 표시할 치료는 그 뒤에 예전 순서대로, 새 치료는 맨 뒤에). */
   order: draft.order === null ? null : [...draft.order],
   updatedAt: draft.updatedAt,
   updatedBy: draft.updatedBy.id,
@@ -183,6 +189,19 @@ const draftView = (draft: CatalogDraft, currentCatalogVersion: string | null) =>
   stale: draft.baseCatalogVersionId !== currentCatalogVersion,
 });
 
+// 보장 판단 필드(급여 구분·치료 코드·행위 코드)는 읽기 전용으로 보인다. 가격 수정과 다시 표시는 이 값을 바꾸지 못한다.
+const treatmentRowOf = ({ treatment, version }: PublishedTreatment) => ({
+  treatmentId: treatment.id,
+  displayName: version.displayName,
+  description: version.description,
+  benefitType: version.benefitType,
+  treatmentCode: version.treatmentCode,
+  procedureCodes: version.procedureCodes,
+  patientAmount: version.patientAmount,
+  priceCondition: priceConditionOf(version.amountCondition),
+  order: treatment.sortOrder,
+});
+
 const getTreatments: Handler = (services, _request, _actor, clinic) => {
   const published = readPublishedCatalog(services.api.repo, clinic);
   const draft = services.api.repo.getCatalogDraft(clinic.id);
@@ -190,18 +209,10 @@ const getTreatments: Handler = (services, _request, _actor, clinic) => {
   return ok({
     clinic: { id: clinic.id, slug: clinic.slug, displayName: clinic.name },
     catalogVersion: currentVersion,
-    // 보장 판단 필드(급여 구분·치료 코드·행위 코드)는 읽기 전용으로 보인다. 가격 수정은 이 값을 바꾸지 못한다.
-    treatments: published.treatments.map(({ treatment, version }) => ({
-      treatmentId: treatment.id,
-      displayName: version.displayName,
-      description: version.description,
-      benefitType: version.benefitType,
-      treatmentCode: version.treatmentCode,
-      procedureCodes: version.procedureCodes,
-      patientAmount: version.patientAmount,
-      priceCondition: priceConditionOf(version.amountCondition),
-      order: treatment.sortOrder,
-    })),
+    treatments: published.treatments.map(treatmentRowOf),
+    // 숨긴 치료: 현재 카탈로그가 버전을 아직 담고 있지만 치료 기록이 비활성인 이 병원의 치료(예전 표시 순서). 공개 목록에는 나가지 않고 "다시 표시" 초안의 후보로만 쓰인다.
+    // order 는 숨기기 전의 노출 순서 번호다. 현재 카탈로그가 담지 않는 과거 치료와 다른 병원 치료는 여기에 없다.
+    hiddenTreatments: readHiddenTreatments(services.api.repo, clinic, published.catalog).map(treatmentRowOf),
     baseFees: published.baseFees.map((fee) => ({ baseFeeId: fee.baseFeeId, displayName: fee.displayName, benefitType: fee.benefitType, amount: fee.amount })),
     draft: draft === null ? null : draftView(draft, currentVersion),
   });
@@ -232,14 +243,15 @@ const postPreview: Handler = async (services, request, actor, clinic) => {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
   // 저장한 뒤 치료 기록이 바뀌어(숨길 치료가 이미 비활성이 되는 등) 초안의 구조가 현재 게시 치료와 맞지 않으면 낡은 초안처럼 다룬다: 게시도 같은 이유로 거절하므로 확인값을 내지 않는다.
-  if (structureDefects(services.api.repo, clinic.id, published.treatments, draft).length > 0 || baseFeeEditDefects(published.baseFees, draft.baseFeeEdits).length > 0) {
+  const hidden = readHiddenTreatments(services.api.repo, clinic, published.catalog);
+  if (structureDefects(services.api.repo, clinic.id, published.treatments, draft, hidden).length > 0 || baseFeeEditDefects(published.baseFees, draft.baseFeeEdits).length > 0) {
     return adminError('CONFLICT', { reason: 'DRAFT_STALE' });
   }
   const parsed = parsePreviewRequest(body.body, draft);
   if (!parsed.ok) {
     return invalidRequest(parsed.defects);
   }
-  const preview = buildPreview(services.api, clinic, published, draft, parsed.request, services.newTreatmentOrigin);
+  const preview = buildPreview(services.api, clinic, published, draft, parsed.request, services.newTreatmentOrigin, hidden);
   if (preview === null) {
     return invalidRequest([{ code: 'TREATMENT_NOT_IN_CATALOG', path: 'request.treatmentIds' }]);
   }

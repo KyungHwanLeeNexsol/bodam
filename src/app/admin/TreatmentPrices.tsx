@@ -6,14 +6,14 @@ import { formatSeoulMinute } from '../clock';
 import type { ApiFailure, CatalogVersionRow, OptionsResponse, PreviewResponse, SessionResponse, TreatmentsResponse } from './api-types';
 import { AdminNav } from './AdminNav';
 import { ADMIN_COPY as COPY } from './copy';
-import { EMPTY_ADD_FORM, appendAddition, baseFeeViews, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, listVisibility, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden } from './draft-model';
+import { EMPTY_ADD_FORM, appendAddition, baseFeeViews, bodyOfDraft, buildAddition, draftBodyOf, isEmptyBody, listVisibility, moveRow, nextDraftKey, previewSelection, removeAddition, restoreWorking, rowViews, sameBody, summaryOf, toggleHidden, toggleReshow } from './draft-model';
 import type { AddError, AddField, AddForm, WorkingState } from './draft-model';
 import { failureMessage } from './failure-message';
 import type { FailureKind } from './failure-message';
 import { adminRequest as request } from './transport';
 
 // 치료 관리 화면 (SPEC-REIMBURSEMENT-001 M7, 디자인 A02 치료 목록·A03 치료 수정·A04 게시 미리보기).
-// 가격 수정 · 새 치료 추가 · 숨기기 · 표시 순서 → 초안 저장 → 미리보기 → 게시. 모든 처리는 /api/admin/** 가 하고 이 화면은 서버가 준 값만 보인다(보험금·한도·공제·보장 분류를 화면에서 계산하거나 정하지 않는다).
+// 가격 수정 · 새 치료 추가 · 숨기기 · 숨긴 치료 다시 표시 · 표시 순서 → 초안 저장 → 미리보기 → 게시. 모든 처리는 /api/admin/** 가 하고 이 화면은 서버가 준 값만 보인다(보험금·한도·공제·보장 분류를 화면에서 계산하거나 정하지 않는다).
 // 권한·인증 판정은 서버가 한다: 이 화면은 401·403 응답을 안내로 보일 뿐 자기 판단으로 기능을 열지 않는다.
 // 화면이 들고 있는 것은 "원하는 초안 전체"(draft-model.ts 의 WorkingState)다. 세션 값(입력 중인 가격·새 치료 입력칸·미리보기 결과)은 화면 안에만 있고 저장소·주소·분석으로 내보내지 않는다.
 
@@ -44,7 +44,7 @@ function TextField(props: { label: string; value: string; onChange: (value: stri
   );
 }
 
-const EMPTY_WORKING: WorkingState = { priceTexts: {}, baseFeeTexts: {}, hidden: [], additions: [], rowOrder: [] };
+const EMPTY_WORKING: WorkingState = { priceTexts: {}, baseFeeTexts: {}, hidden: [], reshown: [], additions: [], rowOrder: [] };
 
 export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElement {
   const base = `/api/admin/clinics/${encodeURIComponent(clinicId)}`;
@@ -67,7 +67,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   /** 서버가 준 데이터로 화면 상태를 다시 세운다: 초안이 있으면 초안의 값, 없으면 게시된 값. */
   const adopt = useCallback((next: TreatmentsResponse) => {
     setData(next);
-    setWorking(restoreWorking(next.treatments, next.draft, next.baseFees));
+    setWorking(restoreWorking(next.treatments, next.draft, next.baseFees, next.hiddenTreatments ?? []));
   }, []);
 
   useEffect(() => {
@@ -104,9 +104,10 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
 
   const rows = data?.treatments ?? [];
   const baseFees = data?.baseFees ?? [];
+  const hiddenRows = useMemo(() => data?.hiddenTreatments ?? [], [data]);
   const draft = data?.draft ?? null;
-  const { body, invalid } = useMemo(() => draftBodyOf(working, rows, baseFees), [working, rows, baseFees]);
-  const views = useMemo(() => rowViews(working, rows), [working, rows]);
+  const { body, invalid } = useMemo(() => draftBodyOf(working, rows, baseFees, hiddenRows), [working, rows, baseFees, hiddenRows]);
+  const views = useMemo(() => rowViews(working, rows, hiddenRows), [working, rows, hiddenRows]);
   const feeViews = useMemo(() => baseFeeViews(working, baseFees), [working, baseFees]);
   const summary = summaryOf(body);
   const hasChange = !isEmptyBody(body);
@@ -114,7 +115,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
   const savedMatches = useMemo(() => draft !== null && sameBody(body, bodyOfDraft(draft)), [draft, body]);
   const previewCurrent = preview !== null && draft !== null && preview.draftDigest === draft.draftDigest && savedMatches;
   const selection = useMemo(() => previewSelection(rows, draft, picked), [rows, draft, picked]);
-  const lookup = useMemo(() => new Map(rows.map((row) => [row.treatmentId, row])), [rows]);
+  const lookup = useMemo(() => new Map([...rows, ...hiddenRows].map((row) => [row.treatmentId, row])), [rows, hiddenRows]);
 
   /** 화면 상태를 바꾼다. 이미 본 미리보기는 낡은 것이 되므로 버린다(다시 미리보기를 해야 게시할 수 있다). */
   const edit = (change: (state: WorkingState) => WorkingState): void => {
@@ -212,7 +213,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
       setAddStatus({ kind: 'error', text: COPY.addTooMany });
       return;
     }
-    const built = buildAddition(form, nextDraftKey(working, rows));
+    const built = buildAddition(form, nextDraftKey(working, rows, hiddenRows));
     if (!built.ok) {
       setFormErrors(built.errors);
       setAddStatus(null);
@@ -326,6 +327,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                       data-changed={view.priceChanged}
                       data-hidden={view.hidden}
                       data-new={view.isNew}
+                      data-reshown={view.reshown}
                     >
                       <td className="admin-num" data-admin-position>
                         {view.position === null ? <span title={COPY.positionHiddenNote}>{COPY.positionNone}</span> : view.position}
@@ -342,7 +344,12 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                         {view.currentPrice === null ? COPY.positionNone : won(view.currentPrice)}
                       </td>
                       <td className="admin-num">
-                        {view.isNew ? (
+                        {view.reshown ? (
+                          <>
+                            <span data-admin-reshown-price>{won(view.newPrice ?? 0)}</span>
+                            <span className="admin-sub2">{COPY.reshownPriceNote}</span>
+                          </>
+                        ) : view.isNew ? (
                           <span data-admin-new-price>{won(view.newPrice ?? 0)}</span>
                         ) : (
                           <>
@@ -365,10 +372,11 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                       </td>
                       <td className="admin-nowrap" data-admin-status>
                         {view.isNew ? <span className="admin-pill admin-pill--new" data-admin-badge="new">{COPY.newBadge}</span> : null}
+                        {view.reshown ? <span className="admin-pill admin-pill--reshown" data-admin-badge="reshown">{COPY.reshownBadge}</span> : null}
                         {view.hidden ? <span className="admin-pill admin-pill--hidden" data-admin-badge="hidden">{COPY.hiddenBadge}</span> : null}
                         {view.priceChanged ? <span className="admin-pill admin-pill--changed" data-admin-badge="changed">{COPY.changed}</span> : null}
                         {view.moved ? <span className="admin-pill admin-pill--moved" data-admin-badge="moved">{COPY.movedBadge}</span> : null}
-                        {!view.isNew && !view.hidden && !view.priceChanged && !view.moved ? <span className="admin-status-none" data-admin-badge="none">{COPY.unchanged}</span> : null}
+                        {!view.isNew && !view.reshown && !view.hidden && !view.priceChanged && !view.moved ? <span className="admin-status-none" data-admin-badge="none">{COPY.unchanged}</span> : null}
                       </td>
                       <td className="admin-nowrap admin-controls">
                         <button
@@ -402,6 +410,17 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                           >
                             {COPY.removeNew}
                           </button>
+                        ) : view.reshown ? (
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--small"
+                            data-admin-reshow="on"
+                            aria-label={COPY.unreshowLabel(view.displayName)}
+                            disabled={busy}
+                            onClick={() => edit((state) => toggleReshow(state, rows, hiddenRows, view.key))}
+                          >
+                            {COPY.unreshow}
+                          </button>
                         ) : (
                           <button
                             type="button"
@@ -420,6 +439,60 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="admin-hidden-treatments" data-admin-hidden-section>
+            <h3 className="admin-h3">{COPY.hiddenTitle}</h3>
+            <p className="admin-note" data-admin-hidden-note>{COPY.hiddenNote}</p>
+            {hiddenRows.length === 0 ? (
+              <p className="admin-banner" data-admin-hidden-none>{COPY.hiddenNone}</p>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table" data-admin-hidden-list>
+                  <thead>
+                    <tr>
+                      <th scope="col">{COPY.colTreatment}</th>
+                      <th scope="col" className="admin-nowrap">{COPY.colBenefit}</th>
+                      <th scope="col" className="admin-num">{COPY.hiddenColPrevious}</th>
+                      <th scope="col" className="admin-nowrap">{COPY.colStatus}</th>
+                      <th scope="col" className="admin-nowrap">{COPY.hiddenColControls}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hiddenRows.map((row) => {
+                      const reshown = working.reshown.includes(row.treatmentId);
+                      return (
+                        <tr key={row.treatmentId} data-admin-hidden-row={row.treatmentId} data-reshown={reshown}>
+                          <th scope="row">
+                            <span className="admin-name">{row.displayName}</span>
+                            <span className="admin-sub2">
+                              ID {row.treatmentId} · {COPY.code} {row.treatmentCode} · {COPY.procedure} {row.procedureCodes.join(', ')}
+                            </span>
+                          </th>
+                          <td className="admin-nowrap">{benefitLabel(row.benefitType)}</td>
+                          <td className="admin-num" data-admin-hidden-price>{won(row.patientAmount)}</td>
+                          <td className="admin-nowrap" data-admin-hidden-status>
+                            {reshown ? <span className="admin-pill admin-pill--reshown" data-admin-badge="reshown">{COPY.reshownBadge}</span> : <span className="admin-pill admin-pill--hidden" data-admin-badge="hidden-now">{COPY.hiddenTitle}</span>}
+                          </td>
+                          <td className="admin-nowrap admin-controls">
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--small"
+                              data-admin-reshow={reshown ? 'on' : 'off'}
+                              aria-label={reshown ? COPY.unreshowLabel(row.displayName) : COPY.reshowLabel(row.displayName)}
+                              disabled={busy}
+                              onClick={() => edit((state) => toggleReshow(state, rows, hiddenRows, row.treatmentId))}
+                            >
+                              {reshown ? COPY.unreshow : COPY.reshow}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="admin-basefee" data-admin-basefee-section>
@@ -667,6 +740,26 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                     </ul>
                   </>
                 ) : null}
+                {(preview.changes.reactivated ?? []).length > 0 ? (
+                  <>
+                    <h4 className="admin-h4">{COPY.reactivatedTitle}</h4>
+                    <p className="admin-hint" data-admin-reactivated-note>{COPY.reactivatedNote}</p>
+                    <ul className="admin-changes">
+                      {(preview.changes.reactivated ?? []).map((entry) => {
+                        const reasons = entry.calculation.holdReasons.length > 0 ? entry.calculation.holdReasons : entry.calculation.state === 'ON_HOLD' ? ['UNKNOWN'] : [];
+                        return (
+                          <li key={entry.treatmentId} data-admin-reactivated={entry.treatmentId}>
+                            <strong>{entry.displayName}</strong> · {COPY.reactivatedLine(benefitLabel(entry.benefitType), entry.patientAmount, entry.position)}
+                            <span className="admin-calc" data-admin-reactivated-state={entry.calculation.state}>
+                              {COPY.stateLabel(entry.calculation.state)}
+                              {reasons.length > 0 ? ` (${COPY.holdPrefix}: ${[...new Set(reasons.map((code) => COPY.holdReason(code)))].join(', ')})` : ''}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                ) : null}
                 {preview.changes.reordered.length > 0 ? (
                   <>
                     <h4 className="admin-h4">{COPY.reorderedTitle}</h4>
@@ -691,6 +784,9 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                         <li key={entry.key} data-admin-preview-row={entry.key} data-new={entry.isNew}>
                           {entry.displayName} · {won(entry.patientAmount)}
                           {entry.isNew ? <span className="admin-pill admin-pill--new"> {COPY.listNewMark}</span> : null}
+                          {side === 'after' && entry.treatmentId !== null && (preview.changes.reactivated ?? []).some((item) => item.treatmentId === entry.treatmentId) ? (
+                            <span className="admin-pill admin-pill--reshown" data-admin-preview-reshown> {COPY.listReshownMark}</span>
+                          ) : null}
                         </li>
                       ))}
                     </ol>
@@ -760,6 +856,7 @@ export function TreatmentPrices({ clinicId }: { clinicId: string }): ReactElemen
                   {COPY.historySummary({
                     added: version.changeSummary.addedTreatmentIds.length,
                     hidden: (version.changeSummary.deactivatedTreatmentIds ?? []).length,
+                    reshown: (version.changeSummary.reactivatedTreatmentIds ?? []).length,
                     reordered: (version.changeSummary.reorderedTreatmentIds ?? []).length,
                     priceChanged: version.changeSummary.priceChangedTreatmentIds.length,
                     baseFeesChanged: version.changeSummary.baseFeesChanged,

@@ -41,7 +41,33 @@ export function selectPublishedTreatments(
   catalog: CatalogVersion,
   fail: (defect: PublishedTreatmentDefect) => never,
 ): PublishedTreatment[] {
+  return walkCatalogTreatments(repo, clinicId, catalog, fail).published;
+}
+
+// @MX:NOTE: [AUTO] "숨긴 치료" = 병원의 현재 카탈로그가 버전을 아직 담고 있지만 치료 기록이 비활성(active=false)인 치료. 숨김은 카탈로그 스냅샷을 바꾸지 않으므로(불변) 이 집합이 "다시 표시"할 수 있는 전부다.
+// 과거 카탈로그에만 있던 치료·카탈로그에서 빠진 치료·다른 병원 치료는 여기에 없다. 선택 기준은 활성 치료와 한 번의 순회를 공유해서 둘이 어긋나지 않는다(같은 깨진 참조 확인, 같은 순서).
+/**
+ * 병원의 현재 카탈로그가 담은 치료 버전 가운데 치료 기록이 비활성인 (치료, 치료 버전) 짝. 깨진 참조 확인은 selectPublishedTreatments 와 같다(fail 은 돌아오지 않는다).
+ * 정렬하지 않는다(호출한 쪽이 sortForDisplay 로 정한다). 읽기만 하며 저장소를 바꾸지 않는다.
+ */
+export function selectHiddenTreatments(
+  repo: PublishedTreatmentReads,
+  clinicId: string,
+  catalog: CatalogVersion,
+  fail: (defect: PublishedTreatmentDefect) => never,
+): PublishedTreatment[] {
+  return walkCatalogTreatments(repo, clinicId, catalog, fail).hidden;
+}
+
+/** 카탈로그가 담은 치료 버전을 한 번 순회하며 활성/비활성으로 가른다. 확인 순서(치료 버전 → 치료 → 소유 병원 → 활성)와 처음 걸린 결함 하나만 알리는 것은 두 선택 함수가 공유한다. */
+function walkCatalogTreatments(
+  repo: PublishedTreatmentReads,
+  clinicId: string,
+  catalog: CatalogVersion,
+  fail: (defect: PublishedTreatmentDefect) => never,
+): { published: PublishedTreatment[]; hidden: PublishedTreatment[] } {
   const published: PublishedTreatment[] = [];
+  const hidden: PublishedTreatment[] = [];
   for (const treatmentVersionId of catalog.treatmentVersionIds) {
     const version = repo.getTreatmentVersion(treatmentVersionId);
     if (version === null) {
@@ -54,11 +80,9 @@ export function selectPublishedTreatments(
     if (treatment.clinicId !== clinicId) {
       return fail({ code: 'TREATMENT_CLINIC_MISMATCH', treatmentId: treatment.id, clinicId });
     }
-    if (treatment.active) {
-      published.push({ treatment, version });
-    }
+    (treatment.active ? published : hidden).push({ treatment, version });
   }
-  return published;
+  return { published, hidden };
 }
 
 /**

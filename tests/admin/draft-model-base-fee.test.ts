@@ -20,6 +20,7 @@ const draftOf = (overrides: Partial<DraftView> = {}): DraftView => ({
   baseFeeEdits: [],
   additions: [],
   deactivations: [],
+  reactivations: [],
   order: null,
   updatedAt: '2026-11-01T00:00:00.000Z',
   updatedBy: 'TEST_FIXTURE_HA',
@@ -110,7 +111,7 @@ describe('baseFeeViews · summaryOf · previewSelection', () => {
 
   it('요약은 기본비용 변경 건수를 센다', () => {
     const { body } = draftBodyOf({ ...fresh(), baseFeeTexts: { FEE_B: '3500', FEE_A: '6000' } }, ROWS, FEES);
-    expect(summaryOf(body)).toEqual({ priceChanged: 0, baseFeeChanged: 2, added: 0, hidden: 0, reordered: false });
+    expect(summaryOf(body)).toEqual({ priceChanged: 0, baseFeeChanged: 2, added: 0, hidden: 0, reshown: 0, reordered: false });
   });
 
   it('기본비용만 바꾼 저장된 초안은 치료를 하나 골라야 한다 (needsTreatment). 고르면 풀리고, 가격을 바꾼 치료가 있으면 이미 포함된다', () => {

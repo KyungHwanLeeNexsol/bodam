@@ -187,8 +187,8 @@ test('사전 상태: 키오스크 목록은 치료 A, B 순서이고 관리자 �
   await expect(button(page, '게시')).toBeDisabled();
   await expect(page.locator('[data-admin-add-note]')).toContainText("새 치료는 보장 검토 전까지 보험금이 계산되지 않고 '계산 보류'로 나옵니다");
   await shoot(page, 'admin-before');
-  // 숨기기는 게시한 뒤에는 이 화면에서 되돌릴 수 없다는 안내가 목록 위에 있다.
-  await expect(page.locator('.admin-note').first()).toContainText('숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다');
+  // 숨기기는 게시한 뒤에는 "숨긴 치료" 영역에서 다시 표시할 수 있다는 안내가 목록 위에 있다.
+  await expect(page.locator('.admin-note').first()).toContainText('숨긴 치료는 게시한 뒤에 아래 "숨긴 치료"에서 다시 표시할 수 있습니다');
 
   // 모든 치료를 숨기는 초안은 서버가 거절한다(최소 한 개는 남아야 한다): 저장은 되지 않고, 이유가 보이며, 입력은 화면에 남고, 공개 목록은 그대로다.
   const catalogBefore = await publicCatalog(page.request);
@@ -410,7 +410,7 @@ test('미리보기: 추가·숨김·가격을 변경 내역과 목록으로 보�
   // 새 치료의 계산 줄에는 숫자가 한 글자도 없다(보험금을 보이지 않는다).
   expect(await addedState.innerText()).not.toMatch(/\d/);
   await expect(preview.locator(`[data-admin-deactivated="${T2}"]`)).toContainText(NAME_B);
-  await expect(preview.locator(`[data-admin-deactivated="${T2}"]`)).toContainText('키오스크 목록에서 빠집니다. 숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다');
+  await expect(preview.locator(`[data-admin-deactivated="${T2}"]`)).toContainText('키오스크 목록에서 빠집니다. 숨긴 치료는 게시한 뒤 "숨긴 치료"에서 다시 표시할 수 있습니다');
   // 남는 기존 치료가 하나뿐이라 "순서 변경"은 없다(새 치료가 끼어들어 번호가 밀린 것은 순서 변경이 아니다).
   await expect(preview.locator('[data-admin-reordered]')).toHaveCount(0);
 

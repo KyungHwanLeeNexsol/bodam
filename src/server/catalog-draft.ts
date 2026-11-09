@@ -5,7 +5,7 @@ import { baseFeeEditDefects, changedBaseFeeEdits } from './catalog-base-fee';
 import { parseDraftRequest } from './catalog-draft-parse';
 import { catalogRequestOf, treatmentVersionOfAddition } from './catalog-draft-request';
 import { publishCatalog } from './catalog-publish';
-import { applyDeactivations, applyOrder, canonicalOrder, createAdditions, structureDefects, structureSummary } from './catalog-structure';
+import { applyDeactivations, applyOrder, applyReactivations, canonicalOrder, createAdditions, defaultOrderOf, structureDefects, structureSummary } from './catalog-structure';
 import type { ServiceDeps } from './deps';
 import { requireRole } from './domain/actor';
 import type { Actor } from './domain/actor';
@@ -14,14 +14,17 @@ import { DomainError } from './domain/errors';
 import type { Defect } from './domain/errors';
 import { confirmsPublish, draftContentDigest } from './publish-confirmation';
 import { selectPublishedBaseFees } from './published-base-fees';
-import { selectPublishedTreatments } from './published-treatments';
+import { selectHiddenTreatments, selectPublishedTreatments } from './published-treatments';
 import { assertNoDefects, validateCatalogPublish } from './publish-validate';
 import type { CatalogPublishConfig } from './publish-validate';
 
-// 카탈로그 초안: 치료 가격 수정 · 공통 기본비용 금액 수정(금액만, baseFeeEdits) · 새 치료 추가 · 치료 숨김 · 표시 순서 → 초안 저장 → (미리보기) → 게시 (SPEC-REIMBURSEMENT-001 M7, design.md DD-17 "카탈로그 초안 저장·미리보기·게시" 행, 역할 HA).
-//   saveCatalogDraft     — 한 번의 요청이 원하는 초안 전체(가격 수정·새 치료·숨김·순서)를 병원의 초안으로 저장한다(덮어쓴다). 게시된 기록은 건드리지 않는다.
+// 카탈로그 초안: 치료 가격 수정 · 공통 기본비용 금액 수정(금액만, baseFeeEdits) · 새 치료 추가 · 치료 숨김 · 숨긴 치료 다시 표시(reactivations) · 표시 순서 → 초안 저장 → (미리보기) → 게시 (SPEC-REIMBURSEMENT-001 M7, design.md DD-17 "카탈로그 초안 저장·미리보기·게시" 행, 역할 HA).
+//   saveCatalogDraft     — 한 번의 요청이 원하는 초안 전체(가격 수정·새 치료·숨김·다시 표시·순서)를 병원의 초안으로 저장한다(덮어쓴다). 게시된 기록은 건드리지 않는다.
 //   discardCatalogDraft  — 초안을 버린다.
-//   publishCatalogDraft  — 초안을 한 트랜잭션으로 게시한다: 새 치료 기록 → 기존 게시 서비스(publishCatalog)로 새 카탈로그 버전 → 숨김 → 표시 순서 → 초안 닫기.
+//   publishCatalogDraft  — 초안을 한 트랜잭션으로 게시한다: 새 치료 기록 → 기존 게시 서비스(publishCatalog)로 새 카탈로그 버전 → 숨김 → 다시 표시 → 표시 순서 → 초안 닫기.
+//
+// 다시 표시(reactivations): 이 병원의 현재 카탈로그가 버전을 아직 담고 있는 비활성 치료를 활성으로 되돌린다. 새 치료로 복제하지 않는다(치료 id·치료 버전·가격·보장 판단 필드 그대로, 새 치료 기록·새 치료 버전 없음).
+//   보장 승인도 분류 전환도 아니다: 매핑 상태·승인 지문·NEEDS_REVIEW 는 그대로이고 엔진이 보류시키는 줄은 계속 보류된다. 감사 기록은 기존 CATALOG_DRAFT_SAVE / CATALOG_DRAFT_PUBLISH 뿐이다(다시 표시 전용 동작이 없다).
 //
 // 지키는 약속:
 //  - 초안은 공개 상태에 영향을 주지 않는다: 저장·삭제는 초안 기록과 감사 기록만 쓰고 치료 기록(active·sortOrder)·치료 버전·카탈로그 버전·병원의 현재 카탈로그는 읽기만 한다.
@@ -41,11 +44,14 @@ function conflict(code: 'DRAFT_STALE' | 'DRAFT_ABSENT' | 'CATALOG_ABSENT' | 'PRE
   return new DomainError('STATE_CONFLICT', message, [{ code, path: 'draft' }]);
 }
 
-/** 병원의 현재 카탈로그(없으면 CATALOG_ABSENT)와 그 카탈로그에 든 활성 치료·공통 기본비용. 깨진 참조는 서버 데이터 결함이라 STATE_CONFLICT 로 낸다. */
+/**
+ * 병원의 현재 카탈로그(없으면 CATALOG_ABSENT)와 그 카탈로그에 든 활성 치료·숨긴 치료(버전이 카탈로그에 남은 비활성 치료)·공통 기본비용.
+ * 깨진 참조는 서버 데이터 결함이라 STATE_CONFLICT 로 낸다.
+ */
 function currentPublished(
   deps: ServiceDeps,
   clinicId: string,
-): { catalog: CatalogVersion; treatments: ReturnType<typeof selectPublishedTreatments>; baseFees: CommonBaseFee[] } {
+): { catalog: CatalogVersion; treatments: ReturnType<typeof selectPublishedTreatments>; hidden: ReturnType<typeof selectHiddenTreatments>; baseFees: CommonBaseFee[] } {
   const catalog = deps.repo.getClinicCurrentCatalogVersion(clinicId);
   if (catalog === null) {
     throw conflict('CATALOG_ABSENT', `병원 '${clinicId}' 은(는) 게시한 카탈로그가 없다`);
@@ -54,8 +60,9 @@ function currentPublished(
     throw new DomainError('STATE_CONFLICT', `현재 카탈로그의 참조가 저장소와 맞지 않는다 (${defect.code})`, [{ code: defect.code, path: 'catalog' }]);
   };
   const treatments = selectPublishedTreatments(deps.repo, clinicId, catalog, integrity);
+  const hidden = selectHiddenTreatments(deps.repo, clinicId, catalog, integrity);
   const baseFees = selectPublishedBaseFees(deps.repo, clinicId, catalog, integrity);
-  return { catalog, treatments, baseFees };
+  return { catalog, treatments, hidden, baseFees };
 }
 
 function requireClinic(deps: ServiceDeps, clinicId: string): void {
@@ -77,18 +84,19 @@ export function saveCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: stri
   requireRole(actor, 'HA');
   return deps.repo.transaction(() => {
     requireClinic(deps, clinicId);
-    const { catalog, treatments, baseFees } = currentPublished(deps, clinicId);
+    const { catalog, treatments, hidden, baseFees } = currentPublished(deps, clinicId);
     const parsed = parseDraftRequest(request);
     if (!parsed.ok) {
       throw new DomainError('INVALID_INPUT', `초안 요청이 형식을 어겼다 (결함 ${parsed.defects.length}건)`, parsed.defects);
     }
-    const { priceEdits, baseFeeEdits, additions, deactivations, order } = parsed.request;
-    const defects: Defect[] = [...structureDefects(deps.repo, clinicId, treatments, { priceEdits, additions, deactivations, order }), ...baseFeeEditDefects(baseFees, baseFeeEdits)];
+    const { priceEdits, baseFeeEdits, additions, deactivations, reactivations, order } = parsed.request;
+    const parts = { priceEdits, additions, deactivations, reactivations, order };
+    const defects: Defect[] = [...structureDefects(deps.repo, clinicId, treatments, parts, hidden), ...baseFeeEditDefects(baseFees, baseFeeEdits)];
     const priceOf = new Map(treatments.map(({ treatment, version }) => [treatment.id, version.patientAmount]));
     const changed = priceEdits.filter((edit) => priceOf.has(edit.treatmentId) && priceOf.get(edit.treatmentId) !== edit.patientAmount);
     const changedFees = changedBaseFeeEdits(baseFees, baseFeeEdits);
-    const storedOrder = defects.length === 0 ? canonicalOrder(treatments, { priceEdits, additions, deactivations, order }) : order;
-    if (defects.length === 0 && changed.length === 0 && changedFees.length === 0 && additions.length === 0 && deactivations.length === 0 && storedOrder === null) {
+    const storedOrder = defects.length === 0 ? canonicalOrder(treatments, parts, hidden) : order;
+    if (defects.length === 0 && changed.length === 0 && changedFees.length === 0 && additions.length === 0 && deactivations.length === 0 && reactivations.length === 0 && storedOrder === null) {
       defects.push(parsed.request.legacyPriceOnly ? { code: 'NO_PRICE_CHANGE', path: 'priceEdits' } : { code: 'NO_DRAFT_CHANGE', path: 'request' });
     }
     if (defects.length > 0) {
@@ -103,6 +111,7 @@ export function saveCatalogDraft(deps: ServiceDeps, actor: Actor, clinicId: stri
       baseFeeEdits: changedFees,
       additions,
       deactivations: [...deactivations].sort(compareCodePoints),
+      reactivations: [...reactivations].sort(compareCodePoints),
       order: storedOrder,
       updatedBy: { id: actor.id, role: actor.role },
       updatedAt: deps.clock.now(),
@@ -161,15 +170,16 @@ export function publishCatalogDraft(
     if (draft === null) {
       throw conflict('DRAFT_ABSENT', `병원 '${clinicId}' 의 초안이 없다`);
     }
-    const { catalog, treatments, baseFees } = currentPublished(deps, clinicId);
+    const { catalog, treatments, hidden, baseFees } = currentPublished(deps, clinicId);
     if (catalog.id !== draft.baseCatalogVersionId) {
       throw conflict('DRAFT_STALE', `초안은 카탈로그 '${draft.baseCatalogVersionId}' 에 근거했지만 현재는 '${catalog.id}' 이다`);
     }
     if (!confirmsPublish(draft, actor.id, confirmation)) {
       throw conflict('PREVIEW_REQUIRED', `병원 '${clinicId}' 의 현재 초안에 대해 이 행위자에게 발급된 미리보기 확인값이 아니다`);
     }
-    // 방어: 초안을 저장한 뒤 치료 기록이 바뀌어(숨김 대상이 이미 비활성이거나 순서가 현재 목록과 맞지 않는 등) 구조가 어긋났으면 낡은 초안처럼 거절한다. 아직 아무것도 쓰지 않았다.
-    if (structureDefects(deps.repo, clinicId, treatments, draft).length > 0 || baseFeeEditDefects(baseFees, draft.baseFeeEdits).length > 0) {
+    // 방어: 초안을 저장한 뒤 치료 기록이 바뀌어(숨김 대상이 이미 비활성이거나, 다시 표시 대상이 이미 활성이거나 카탈로그에 없거나, 순서가 현재 목록과 맞지 않는 등) 구조가 어긋났으면 낡은 초안처럼 거절한다.
+    // 다시 표시 대상을 지금의 저장소 상태로 다시 확인하는 자리가 여기다(게시 트랜잭션 안, 아무것도 쓰기 전). 아직 아무것도 쓰지 않았다.
+    if (structureDefects(deps.repo, clinicId, treatments, draft, hidden).length > 0 || baseFeeEditDefects(baseFees, draft.baseFeeEdits).length > 0) {
       throw conflict('DRAFT_STALE', `병원 '${clinicId}' 의 초안이 현재 게시 치료·기본비용과 맞지 않는다`);
     }
     // 1) 임시 id 로 먼저 검증한다(거절이 id 생성기를 쓰지 않게). 새 치료의 출처가 게시 구성에 허용되지 않으면 여기서 ORIGIN_NOT_ACCEPTED 로 거절된다.
@@ -193,7 +203,10 @@ export function publishCatalogDraft(
     );
     const published = publishCatalog(deps, actor, clinicId, request, config, structureSummary(treatments, draft));
     applyDeactivations(deps, draft.deactivations);
-    applyOrder(deps, draft.order, new Map(created.map((entry) => [entry.draftKey, entry.treatmentId])));
+    applyReactivations(deps, clinicId, draft.reactivations);
+    // 표시 순서: 초안이 정했으면 그대로, 아니면 기본 순서. 다시 표시가 든 초안은 기본 순서도 명시적으로 매긴다 — 되살린 치료의 예전 번호가 남는 치료 사이에 끼어 있어서
+    // 번호를 그대로 두면 "기존 표시 치료의 뒤" 라는 기본 위치가 지켜지지 않는다. 다시 표시가 없으면 기존 동작 그대로다(order 가 null 이면 아무것도 매기지 않는다).
+    applyOrder(deps, draft.order ?? (draft.reactivations.length > 0 ? defaultOrderOf(treatments, draft, hidden) : null), new Map(created.map((entry) => [entry.draftKey, entry.treatmentId])));
     deps.repo.closeCatalogDraft(clinicId);
     appendAudit(deps, actor, { action: 'CATALOG_DRAFT_PUBLISH', target: `CATALOG/${published.id}`, beforeVersion: catalog.id, afterVersion: published.id, reason: `DRAFT_OF:${draftContentDigest(draft)}` });
     return published;

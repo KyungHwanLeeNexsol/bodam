@@ -43,7 +43,9 @@ export interface DraftView {
   baseFeeEdits: Array<{ baseFeeId: string; amount: number }>;
   additions: TreatmentAdditionView[];
   deactivations: string[];
-  /** null 이면 기본 순서(남는 기존 치료는 지금 순서 그대로, 새 치료는 뒤에). */
+  /** 다시 표시할 숨긴 치료 id. 다시 표시를 쓰지 않은 초안은 빈 배열이다. */
+  reactivations: string[];
+  /** null 이면 기본 순서(남는 기존 치료는 지금 순서 그대로, 그 뒤에 다시 표시할 치료, 맨 뒤에 새 치료). */
   order: string[] | null;
   updatedAt: string;
   updatedBy: string;
@@ -55,6 +57,11 @@ export interface TreatmentsResponse {
   clinic: { id: string; slug: string; displayName: string };
   catalogVersion: string | null;
   treatments: TreatmentRow[];
+  /**
+   * 숨긴 치료: 현재 카탈로그가 버전을 아직 담고 있지만 숨긴(비활성) 이 병원의 치료, 예전 표시 순서. "다시 표시"의 후보 전부다(order 는 숨기기 전의 번호).
+   * 구조 편집을 지원하기 전의 서버는 이 키를 주지 않으므로 없으면 빈 목록으로 읽는다.
+   */
+  hiddenTreatments?: TreatmentRow[];
   baseFees: BaseFeeRow[];
   draft: DraftView | null;
 }
@@ -75,6 +82,7 @@ export interface CatalogVersionRow {
     priceChangedTreatmentIds: string[];
     baseFeesChanged: boolean;
     deactivatedTreatmentIds?: string[];
+    reactivatedTreatmentIds?: string[];
     reorderedTreatmentIds?: string[];
   };
   current: boolean;
@@ -134,6 +142,11 @@ export interface PreviewResponse {
     baseFeeChanges: PreviewBaseFeeChange[];
     added: Array<{ draftKey: string; displayName: string; patientAmount: number; benefitType: string; calculation: AddedCalculation }>;
     deactivated: Array<{ treatmentId: string; displayName: string }>;
+    /**
+     * 다시 표시되는 치료(게시 뒤 표시 순서대로). position 은 afterList 에서의 1부터 시작하는 위치이고 calculation 은 그 치료 하나를 같은 엔진으로 계산한 결과(상태·보류 사유뿐, 금액 없음)다.
+     * 다시 표시를 쓰지 않는 서버 응답에는 없을 수 있어 없으면 빈 목록으로 읽는다.
+     */
+    reactivated?: Array<{ treatmentId: string; displayName: string; patientAmount: number; benefitType: string; position: number; calculation: AddedCalculation }>;
     /** before·after 는 beforeList·afterList 에서의 1부터 시작하는 위치. */
     reordered: Array<{ treatmentId: string; displayName: string; before: number; after: number }>;
   };

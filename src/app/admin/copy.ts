@@ -2,7 +2,7 @@
 // 디자인 저장본 A02_Admin_TreatmentList·A03_Admin_TreatmentEdit·A04_Admin_PublishPreview 의 이름과 변경 규칙(design-requirements.md §3 행 14)을 따른다:
 // 금액만 바꾸면 승인된 보장 매핑은 그대로 유지되고 새 가격 버전으로 게시된다. 새 치료는 보장 분류를 이 화면에서 정하지 않으므로 보장 검토 전까지 보험금이 계산되지 않는다.
 
-const HIDE_NOTE = '숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다. 게시하기 전에는 "숨김 취소"로 되돌릴 수 있습니다.';
+const HIDE_NOTE = '숨긴 치료는 게시한 뒤에 아래 "숨긴 치료"에서 다시 표시할 수 있습니다. 게시하기 전에는 "숨김 취소"로 되돌릴 수 있습니다.';
 
 export const ADMIN_COPY = {
   title: '치료 관리',
@@ -24,7 +24,7 @@ export const ADMIN_COPY = {
   hiddenBadge: '숨김 예정',
   movedBadge: '순서 바뀜',
   newBadge: '새 치료',
-  // 숨기기는 게시한 뒤에는 이 화면에서 되돌릴 수 없다: 목록 안내와 미리보기의 숨김 줄이 같은 문장을 쓴다.
+  // 숨기기는 게시한 뒤에는 "숨긴 치료" 영역에서 다시 표시한다(초안 → 미리보기 → 게시를 다시 거친다): 목록 안내와 미리보기의 숨김 줄이 같은 문장을 쓴다.
   hideNote: HIDE_NOTE,
   readOnlyNote:
     '급여 구분·치료 코드·행위 코드는 이 화면에서 바꿀 수 없습니다. 금액만 바꾼 게시는 승인된 보장 분류를 그대로 유지하고 새 가격 버전으로 게시됩니다. 분류가 바뀌는 변경은 검토 요청이 필요합니다. 숨기기·순서·새 치료도 "초안 저장 → 미리보기 → 게시"를 거치기 전에는 키오스크에 나가지 않습니다. ' + HIDE_NOTE,
@@ -68,12 +68,26 @@ export const ADMIN_COPY = {
   baseFeeAmountLabel: (name: string): string => `${name} 새 금액`,
   baseFeeChangesTitle: '공통 기본비용 금액 변경',
   previewNeedsTreatment: '공통 기본비용 금액을 바꿨습니다. 계산 없이는 미리보기를 확인할 수 없으니 계산할 치료를 하나 이상 골라 주세요.',
-  workingSummary: (summary: { priceChanged: number; baseFeeChanged: number; added: number; hidden: number; reordered: boolean }): string => {
+  // 숨긴 치료 다시 표시: 현재 카탈로그가 버전을 아직 담고 있는 숨긴 치료만 후보다. 보장 승인이나 분류 전환이 아니다(매핑·승인 상태는 그대로이고 검토가 남은 치료는 계속 계산 보류다).
+  hiddenTitle: '숨긴 치료',
+  hiddenNote:
+    '이전에 숨겨서 키오스크에 보이지 않는 치료입니다. "다시 표시"를 고르고 초안 저장 → 미리보기 → 게시를 거치면 같은 치료·같은 가격으로 다시 나타납니다. 새 치료로 만들지 않으며, 보장 승인이나 분류 변경이 아니므로 검토가 남은 치료는 계속 \'계산 보류\'로 나옵니다. 기본 위치는 지금 보이는 치료들의 뒤입니다.',
+  hiddenNone: '숨긴 치료가 없습니다.',
+  hiddenColPrevious: '숨기기 전 가격',
+  hiddenColControls: '다시 표시',
+  reshow: '다시 표시',
+  unreshow: '다시 표시 취소',
+  reshowLabel: (name: string): string => `${name} 다시 표시`,
+  unreshowLabel: (name: string): string => `${name} 다시 표시 취소`,
+  reshownBadge: '다시 표시 예정',
+  reshownPriceNote: '다시 표시 · 숨기기 전 가격',
+  workingSummary: (summary: { priceChanged: number; baseFeeChanged: number; added: number; hidden: number; reshown?: number; reordered: boolean }): string => {
     const parts = [
       summary.priceChanged > 0 ? `가격 변경 ${summary.priceChanged}건` : '',
       summary.baseFeeChanged > 0 ? `기본비용 변경 ${summary.baseFeeChanged}건` : '',
       summary.added > 0 ? `추가 ${summary.added}건` : '',
       summary.hidden > 0 ? `숨김 ${summary.hidden}건` : '',
+      (summary.reshown ?? 0) > 0 ? `다시 표시 ${summary.reshown}건` : '',
       summary.reordered ? '순서 변경' : '',
     ].filter((part) => part !== '');
     return parts.length === 0 ? '화면에서 고친 내용이 없습니다.' : `화면에서 고친 내용: ${parts.join(' · ')}`;
@@ -138,25 +152,32 @@ export const ADMIN_COPY = {
   priceChangesTitle: '가격 변경',
   addedTitle: '추가',
   deactivatedTitle: '숨김',
+  reactivatedTitle: '다시 표시',
   reorderedTitle: '순서 변경',
   noneListed: '없음',
   addedLine: (benefit: string, price: number): string => `${benefit} · 가격 ${price.toLocaleString('ko-KR')}원`,
   holdPrefix: '사유',
-  deactivatedLine: '게시하면 키오스크 목록에서 빠집니다. 숨긴 치료는 이 화면에서 다시 보이게 할 수 없습니다',
+  deactivatedLine: '게시하면 키오스크 목록에서 빠집니다. 숨긴 치료는 게시한 뒤 "숨긴 치료"에서 다시 표시할 수 있습니다',
+  // 다시 표시 미리보기 줄: 위치는 초안 적용 후 목록에서의 번호. 계산 결과는 엔진이 말한 상태·사유를 그대로 옮긴 것이다(금액은 싣지 않는다).
+  reactivatedLine: (benefit: string, price: number, position: number): string => `${benefit} · 가격 ${price.toLocaleString('ko-KR')}원 · 게시 뒤 ${position}번째`,
+  reactivatedNote: '다시 표시는 보장 승인이 아닙니다. 승인된 매핑이 있는 치료는 숨기기 전처럼 계산되고, 검토가 남은 치료는 계속 계산 보류로 나옵니다.',
   reorderedLine: (before: number, after: number): string => `${before}번째 → ${after}번째`,
   listsTitle: '키오스크 목록 비교',
   listBefore: '현재 게시본',
   listAfter: '초안 적용 후',
   listNewMark: '새 치료',
-  holdReason: (code: string): string => (code === 'CLASSIFICATION_NEEDS_REVIEW' ? '보장 분류가 아직 검토되지 않았습니다' : '보장 검토가 필요합니다'),
+  listReshownMark: '다시 표시',
+  holdReason: (code: string): string =>
+    code === 'CLASSIFICATION_NEEDS_REVIEW' ? '보장 분류가 아직 검토되지 않았습니다' : code === 'MAPPING_ABSENT' ? '승인된 보장 매핑이 없습니다' : '보장 검토가 필요합니다',
   historyTitle: '게시 이력',
   historyNone: '게시 이력이 없습니다.',
   historyCurrent: '현재',
   historyPublishedBy: '게시자',
-  historySummary: (summary: { added: number; hidden: number; reordered: number; priceChanged: number; baseFeesChanged?: boolean }): string => {
+  historySummary: (summary: { added: number; hidden: number; reshown?: number; reordered: number; priceChanged: number; baseFeesChanged?: boolean }): string => {
     const parts = [
       summary.added > 0 ? `추가 ${summary.added}건` : '',
       summary.hidden > 0 ? `숨김 ${summary.hidden}건` : '',
+      (summary.reshown ?? 0) > 0 ? `다시 표시 ${summary.reshown}건` : '',
       summary.reordered > 0 ? `순서 변경 ${summary.reordered}건` : '',
       summary.priceChanged > 0 ? `가격 변경 ${summary.priceChanged}건` : '',
       summary.baseFeesChanged === true ? '기본비용 변경' : '',
@@ -189,6 +210,9 @@ export const ADMIN_COPY = {
       NO_DRAFT_CHANGE: '현재 게시본과 달라진 내용이 없습니다.',
       TREATMENT_NOT_IN_CATALOG: '현재 게시된 치료가 아닌 항목이 있습니다.',
       PRICE_EDIT_ON_DEACTIVATED: '숨기려는 치료의 가격은 바꿀 수 없습니다.',
+      TREATMENT_ALREADY_VISIBLE: '다시 표시하려는 치료가 이미 키오스크에 보이고 있습니다. 화면을 새로 불러온 뒤 다시 시도해 주세요.',
+      REACTIVATION_CONFLICTS_WITH_DEACTIVATION: '같은 치료를 숨기면서 다시 표시할 수는 없습니다.',
+      PRICE_EDIT_ON_REACTIVATED: '다시 표시하려는 치료의 가격은 지금 바꿀 수 없습니다. 먼저 다시 표시를 게시한 뒤 가격을 고쳐 주세요.',
       TREATMENT_DEACTIVATED_IN_DRAFT: '숨기려는 치료는 미리보기 계산 대상으로 고를 수 없습니다.',
       DRAFT_KEY_COLLIDES: '새 치료의 임시 이름이 이미 있는 치료와 겹칩니다. 새 치료를 지우고 다시 추가해 주세요.',
       DUPLICATE_DRAFT_KEY: '같은 새 치료가 두 번 들어 있습니다.',
