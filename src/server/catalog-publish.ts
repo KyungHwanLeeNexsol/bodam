@@ -72,6 +72,7 @@ interface AuditChoice {
 /** 변경 요약에 더 싣는 구조 변경(초안 게시가 넘긴다). 비어 있는 목록은 키 자체를 싣지 않아 기존 요약과 모양이 같다. */
 export interface ExtraChangeSummary {
   deactivatedTreatmentIds?: readonly string[];
+  reactivatedTreatmentIds?: readonly string[];
   reorderedTreatmentIds?: readonly string[];
 }
 
@@ -79,6 +80,9 @@ function withExtra(summary: CatalogChangeSummary, extra: ExtraChangeSummary): Ca
   const out = { ...summary };
   if (extra.deactivatedTreatmentIds !== undefined && extra.deactivatedTreatmentIds.length > 0) {
     out.deactivatedTreatmentIds = [...extra.deactivatedTreatmentIds];
+  }
+  if (extra.reactivatedTreatmentIds !== undefined && extra.reactivatedTreatmentIds.length > 0) {
+    out.reactivatedTreatmentIds = [...extra.reactivatedTreatmentIds];
   }
   if (extra.reorderedTreatmentIds !== undefined && extra.reorderedTreatmentIds.length > 0) {
     out.reorderedTreatmentIds = [...extra.reorderedTreatmentIds];

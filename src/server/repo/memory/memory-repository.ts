@@ -253,8 +253,8 @@ export class MemoryRepository implements Repository {
     if (base.clinicId !== draft.clinicId) {
       throw new DomainError('REF_CONTENT_MISMATCH', `카탈로그 버전 '${base.id}' 은(는) 병원 '${draft.clinicId}' 의 것이 아니다`);
     }
-    // 가격 수정과 숨김 대상은 모두 이 병원에 저장된 치료여야 한다(새 치료의 draftKey 는 아직 저장된 치료가 아니므로 보지 않는다).
-    for (const treatmentId of [...draft.priceEdits.map((edit) => edit.treatmentId), ...draft.deactivations]) {
+    // 가격 수정과 숨김·다시 표시 대상은 모두 이 병원에 저장된 치료여야 한다(새 치료의 draftKey 는 아직 저장된 치료가 아니므로 보지 않는다).
+    for (const treatmentId of [...draft.priceEdits.map((edit) => edit.treatmentId), ...draft.deactivations, ...draft.reactivations]) {
       const treatment = this.store.treatments.get(treatmentId);
       if (treatment === undefined) {
         throw notFound('치료', treatmentId);

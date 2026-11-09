@@ -25,6 +25,9 @@ describe('failureMessage', () => {
         'ORIGIN_NOT_ACCEPTED',
         'TOO_MANY_ADDITIONS',
         'NO_TREATMENT_REMAINS',
+        'TREATMENT_ALREADY_VISIBLE',
+        'REACTIVATION_CONFLICTS_WITH_DEACTIVATION',
+        'PRICE_EDIT_ON_REACTIVATED',
       ]),
     );
     for (const code of codes) {

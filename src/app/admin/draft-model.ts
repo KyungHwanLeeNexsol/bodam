@@ -16,9 +16,11 @@ export interface WorkingState {
   baseFeeTexts: Record<string, string>;
   /** 숨길 기존 치료 id. */
   hidden: string[];
+  /** 다시 표시할 숨긴 치료 id(서버가 준 hiddenTreatments 가운데 고른 것, 서버의 기본 순서대로). 보장 승인이 아니라 active 만 되돌리는 선택이다. */
+  reshown: string[];
   /** 새 치료(만든 순서). */
   additions: NewTreatment[];
-  /** 화면에 보이는 모든 줄의 순서(숨긴 줄 포함). 서버로 나가는 순서는 이 가운데 숨기지 않은 줄이다. */
+  /** 화면에 보이는 모든 줄의 순서(숨긴 줄 포함, 다시 표시할 줄 포함). 서버로 나가는 순서는 이 가운데 숨기지 않은 줄이다. */
   rowOrder: string[];
 }
 
@@ -28,6 +30,7 @@ export interface DraftBody {
   baseFeeEdits: Array<{ baseFeeId: string; amount: number }>;
   additions: NewTreatment[];
   deactivations: string[];
+  reactivations: string[];
   order: string[] | null;
 }
 
@@ -74,16 +77,18 @@ export const listVisibility = (catalogVersion: string | null, rowCount: number):
 /**
  * 서버가 준 치료 목록과 초안(없을 수 있다)으로 작업 상태를 다시 세운다. 초안이 있으면 초안의 값, 없으면 게시된 값이다.
  * 숨긴 줄은 초안의 순서에 없으므로, 게시 목록에서 바로 앞이던 줄 뒤에 놓아 화면에서 제자리 가까이에 남게 한다.
+ * hiddenRows 는 서버가 준 숨긴 치료(예전 표시 순서)다. 초안이 다시 표시하기로 한 치료는 그 가운데서 찾아 남는 기존 치료 뒤에(서버의 기본 순서대로) 놓는다.
  */
-export function restoreWorking(rows: readonly TreatmentRow[], draft: DraftView | null, baseFees: readonly BaseFeeRow[] = []): WorkingState {
+export function restoreWorking(rows: readonly TreatmentRow[], draft: DraftView | null, baseFees: readonly BaseFeeRow[] = [], hiddenRows: readonly TreatmentRow[] = []): WorkingState {
   const edits = new Map((draft?.priceEdits ?? []).map((edit) => [edit.treatmentId, edit.patientAmount]));
   const feeEdits = new Map((draft?.baseFeeEdits ?? []).map((edit) => [edit.baseFeeId, edit.amount]));
   const publishedIds = rows.map((row) => row.treatmentId);
   const hidden = draft === null ? [] : draft.deactivations.filter((id) => publishedIds.includes(id));
+  const reshown = draft === null ? [] : hiddenRows.map((row) => row.treatmentId).filter((id) => draft.reactivations.includes(id));
   const additions = draft === null ? [] : draft.additions.map((entry) => structuredClone(entry));
   const survivors = publishedIds.filter((id) => !hidden.includes(id));
   const additionKeys = additions.map((entry) => entry.draftKey);
-  const defaultVisible = [...survivors, ...additionKeys];
+  const defaultVisible = [...survivors, ...reshown, ...additionKeys];
   let visible = defaultVisible;
   if (draft !== null && draft.order !== null) {
     const known = new Set(defaultVisible);
@@ -103,6 +108,7 @@ export function restoreWorking(rows: readonly TreatmentRow[], draft: DraftView |
     priceTexts: Object.fromEntries(rows.map((row) => [row.treatmentId, String(edits.get(row.treatmentId) ?? row.patientAmount)])),
     baseFeeTexts: Object.fromEntries(baseFees.map((fee) => [fee.baseFeeId, String(feeEdits.get(fee.baseFeeId) ?? fee.amount)])),
     hidden,
+    reshown,
     additions,
     rowOrder,
   };
@@ -115,13 +121,22 @@ const isHidden = (working: WorkingState, key: string): boolean => working.hidden
 /** 지금 화면에 보이는(숨기지 않은) 줄의 순서 = 서버로 보낼 순서 후보. */
 export const visibleKeys = (working: WorkingState): string[] => working.rowOrder.filter((key) => !isHidden(working, key));
 
-/** 기본 순서: 남는 기존 치료(게시된 순서) 뒤에 새 치료를 만든 순서대로. */
-const defaultOrderOf = (rows: readonly TreatmentRow[], working: WorkingState): string[] => [
+/**
+ * 기본 순서(서버와 같은 정의): 남는 기존 치료(게시된 순서) → 다시 표시할 치료(서버가 준 숨긴 치료의 예전 표시 순서) → 새 치료를 만든 순서대로.
+ * 다시 표시를 요청에 적은 순서나 클릭한 순서는 위치에 영향을 주지 않는다(결정적이다).
+ */
+const defaultOrderOf = (rows: readonly TreatmentRow[], working: WorkingState, hiddenRows: readonly TreatmentRow[] = []): string[] => [
   ...rows.map((row) => row.treatmentId).filter((id) => !isHidden(working, id)),
+  ...hiddenRows.map((row) => row.treatmentId).filter((id) => working.reshown.includes(id)),
   ...working.additions.map((entry) => entry.draftKey),
 ];
 
-export function draftBodyOf(working: WorkingState, rows: readonly TreatmentRow[], baseFees: readonly BaseFeeRow[] = []): { body: DraftBody; invalid: boolean } {
+export function draftBodyOf(
+  working: WorkingState,
+  rows: readonly TreatmentRow[],
+  baseFees: readonly BaseFeeRow[] = [],
+  hiddenRows: readonly TreatmentRow[] = [],
+): { body: DraftBody; invalid: boolean } {
   let invalid = false;
   const priceEdits: DraftBody['priceEdits'] = [];
   const baseFeeEdits: DraftBody['baseFeeEdits'] = [];
@@ -152,13 +167,14 @@ export function draftBodyOf(working: WorkingState, rows: readonly TreatmentRow[]
       baseFeeEdits,
       additions: working.additions.map((entry) => structuredClone(entry)),
       deactivations: working.hidden.filter((id) => rows.some((row) => row.treatmentId === id)).sort(compareCodePoints),
-      order: sameList(finalOrder, defaultOrderOf(rows, working)) ? null : finalOrder,
+      reactivations: working.reshown.filter((id) => hiddenRows.some((row) => row.treatmentId === id)).sort(compareCodePoints),
+      order: sameList(finalOrder, defaultOrderOf(rows, working, hiddenRows)) ? null : finalOrder,
     },
   };
 }
 
 export const isEmptyBody = (body: DraftBody): boolean =>
-  body.priceEdits.length === 0 && body.baseFeeEdits.length === 0 && body.additions.length === 0 && body.deactivations.length === 0 && body.order === null;
+  body.priceEdits.length === 0 && body.baseFeeEdits.length === 0 && body.additions.length === 0 && body.deactivations.length === 0 && body.reactivations.length === 0 && body.order === null;
 
 // ───────────────────────── 서버가 돌려준 초안과 구조 비교 ─────────────────────────
 
@@ -184,6 +200,7 @@ const normalizedBody = (body: DraftBody) =>
     baseFeeEdits: [...body.baseFeeEdits].sort((a, b) => compareCodePoints(a.baseFeeId, b.baseFeeId)).map((edit) => ({ baseFeeId: edit.baseFeeId, amount: edit.amount })),
     additions: body.additions.map(normalizedAddition),
     deactivations: [...body.deactivations].sort(compareCodePoints),
+    reactivations: [...body.reactivations].sort(compareCodePoints),
     order: body.order,
   });
 
@@ -193,6 +210,7 @@ export const bodyOfDraft = (draft: DraftView): DraftBody => ({
   baseFeeEdits: draft.baseFeeEdits.map((edit) => ({ baseFeeId: edit.baseFeeId, amount: edit.amount })),
   additions: draft.additions.map((entry) => structuredClone(entry)),
   deactivations: [...draft.deactivations],
+  reactivations: [...draft.reactivations],
   order: draft.order === null ? null : [...draft.order],
 });
 
@@ -227,6 +245,26 @@ export const toggleHidden = (working: WorkingState, treatmentId: string): Workin
   hidden: isHidden(working, treatmentId) ? working.hidden.filter((id) => id !== treatmentId) : [...working.hidden, treatmentId],
 });
 
+/**
+ * 숨긴 치료를 다시 표시하기로 고르거나(없으면 더함) 되돌린다(있으면 뺀다). 고르면 그 줄이 목록에 들어와 서버의 기본 위치에 놓인다:
+ * 남는 기존 치료의 뒤, 이미 고른 다시 표시 치료 가운데서는 서버가 준 숨긴 치료의 예전 표시 순서대로(앞선 것이 없으면 마지막 기존 치료 바로 뒤). 새 치료보다는 앞이다.
+ * 대상은 서버가 준 숨긴 치료 목록에 있는 것만이다(없는 id 는 무시한다: 같은 객체를 돌려준다). 보장 승인이 아니므로 가격·분류는 건드리지 않는다.
+ */
+export function toggleReshow(working: WorkingState, rows: readonly TreatmentRow[], hiddenRows: readonly TreatmentRow[], treatmentId: string): WorkingState {
+  if (!hiddenRows.some((row) => row.treatmentId === treatmentId)) return working;
+  if (working.reshown.includes(treatmentId)) {
+    return { ...working, reshown: working.reshown.filter((id) => id !== treatmentId), rowOrder: working.rowOrder.filter((key) => key !== treatmentId) };
+  }
+  const reshown = hiddenRows.map((row) => row.treatmentId).filter((id) => id === treatmentId || working.reshown.includes(id));
+  const at = reshown.indexOf(treatmentId);
+  const publishedIds = new Set(rows.map((row) => row.treatmentId));
+  const lastPublished = working.rowOrder.reduce((last, key, index) => (publishedIds.has(key) ? index : last), -1);
+  const anchor = at > 0 ? working.rowOrder.indexOf(reshown[at - 1] as string) : lastPublished;
+  const rowOrder = [...working.rowOrder];
+  rowOrder.splice(anchor + 1, 0, treatmentId);
+  return { ...working, reshown: [...working.reshown, treatmentId], rowOrder };
+}
+
 export const appendAddition = (working: WorkingState, entry: NewTreatment): WorkingState => ({
   ...working,
   additions: [...working.additions, entry],
@@ -239,10 +277,10 @@ export const removeAddition = (working: WorkingState, draftKey: string): Working
   rowOrder: working.rowOrder.filter((key) => key !== draftKey),
 });
 
-/** 새 치료의 이름표: new-1, new-2 … 이미 있는 가장 큰 번호 다음부터, 게시된 치료 id 와 겹치면 건너뛴다. 무작위·시계를 쓰지 않는다. */
-export function nextDraftKey(working: WorkingState, rows: readonly TreatmentRow[]): string {
+/** 새 치료의 이름표: new-1, new-2 … 이미 있는 가장 큰 번호 다음부터, 게시된·숨긴 치료 id 와 겹치면 건너뛴다. 무작위·시계를 쓰지 않는다. */
+export function nextDraftKey(working: WorkingState, rows: readonly TreatmentRow[], hiddenRows: readonly TreatmentRow[] = []): string {
   let next = 1 + working.additions.reduce((max, entry) => Math.max(max, Number(/^new-(\d+)$/.exec(entry.draftKey)?.[1] ?? 0)), 0);
-  const taken = new Set([...rows.map((row) => row.treatmentId), ...working.additions.map((entry) => entry.draftKey)]);
+  const taken = new Set([...rows.map((row) => row.treatmentId), ...hiddenRows.map((row) => row.treatmentId), ...working.additions.map((entry) => entry.draftKey)]);
   while (taken.has(`new-${next}`)) next += 1;
   return `new-${next}`;
 }
@@ -268,12 +306,15 @@ export interface RowView {
   moved: boolean;
   /** 게시 뒤의 위치(1부터). 숨긴 줄은 null. */
   position: number | null;
+  /** 숨겼던 치료를 다시 표시하기로 한 줄(가격 입력칸이 없고 숨기기 대신 "다시 표시 취소"가 있다). 이때 newPrice 는 숨기기 전의 가격이다. */
+  reshown: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
 }
 
-export function rowViews(working: WorkingState, rows: readonly TreatmentRow[]): RowView[] {
+export function rowViews(working: WorkingState, rows: readonly TreatmentRow[], hiddenRows: readonly TreatmentRow[] = []): RowView[] {
   const byId = new Map(rows.map((row) => [row.treatmentId, row]));
+  const byHiddenId = new Map(hiddenRows.filter((row) => working.reshown.includes(row.treatmentId)).map((row) => [row.treatmentId, row]));
   const byKey = new Map(working.additions.map((entry) => [entry.draftKey, entry]));
   const finalOrder = visibleKeys(working);
   const survivors = rows.map((row) => row.treatmentId).filter((id) => !isHidden(working, id));
@@ -297,6 +338,30 @@ export function rowViews(working: WorkingState, rows: readonly TreatmentRow[]): 
           hidden: false,
           moved: false,
           position: finalOrder.indexOf(key) + 1,
+          reshown: false,
+          canMoveUp: canMove(working, key, -1),
+          canMoveDown: canMove(working, key, 1),
+        },
+      ];
+    }
+    const back = byHiddenId.get(key);
+    if (back !== undefined) {
+      return [
+        {
+          key,
+          isNew: false,
+          treatmentId: key,
+          displayName: back.displayName,
+          benefitType: back.benefitType,
+          currentPrice: null,
+          priceText: null,
+          newPrice: back.patientAmount,
+          priceInvalid: false,
+          priceChanged: false,
+          hidden: false,
+          moved: false,
+          position: finalOrder.indexOf(key) + 1,
+          reshown: true,
           canMoveUp: canMove(working, key, -1),
           canMoveDown: canMove(working, key, 1),
         },
@@ -322,6 +387,7 @@ export function rowViews(working: WorkingState, rows: readonly TreatmentRow[]): 
         hidden,
         moved: !hidden && survivors.indexOf(key) !== afterSurvivors.indexOf(key),
         position: hidden ? null : finalOrder.indexOf(key) + 1,
+        reshown: false,
         canMoveUp: canMove(working, key, -1),
         canMoveDown: canMove(working, key, 1),
       },
@@ -361,6 +427,7 @@ export interface BodySummary {
   baseFeeChanged: number;
   added: number;
   hidden: number;
+  reshown: number;
   reordered: boolean;
 }
 
@@ -369,6 +436,7 @@ export const summaryOf = (body: DraftBody): BodySummary => ({
   baseFeeChanged: body.baseFeeEdits.length,
   added: body.additions.length,
   hidden: body.deactivations.length,
+  reshown: body.reactivations.length,
   reordered: body.order !== null,
 });
 

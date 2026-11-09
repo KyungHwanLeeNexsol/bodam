@@ -96,6 +96,11 @@ export interface CatalogChangeSummary {
    * 있을 때만 싣는다(비어 있으면 키 자체가 없다): 이 필드가 생기기 전의 요약과 모양이 같다.
    */
   deactivatedTreatmentIds?: string[];
+  /**
+   * 초안 게시로 다시 표시된(active=true 로 되돌린) 치료 id (코드 포인트 순). 새 치료 기록·새 치료 버전을 만들지 않으므로 addedTreatmentIds 와 다르다
+   * (카탈로그는 그 치료의 같은 버전을 계속 담고 있었다). 있을 때만 싣는다(비어 있으면 키 자체가 없다).
+   */
+  reactivatedTreatmentIds?: string[];
   /** 표시 순서가 바뀐 기존 치료 id (코드 포인트 순). 살아남은 기존 치료들 사이의 순위가 달라진 것만 센다. 있을 때만 싣는다. */
   reorderedTreatmentIds?: string[];
 }
@@ -161,7 +166,13 @@ export interface CatalogDraft {
   /** 숨길 게시 치료 id (코드 포인트 순). 게시 전에는 치료의 active 를 바꾸지 않는다. */
   deactivations: string[];
   /**
-   * 게시 뒤의 표시 순서(남는 기존 치료 id + 새 치료의 draftKey 의 순열). 기본 순서(남는 기존 치료는 지금 표시 순서 그대로, 새 치료는 적은 순서대로 뒤에)와 같으면 null 로 저장한다.
+   * 다시 표시할 숨긴 치료 id (코드 포인트 순). 대상은 이 병원의 현재 카탈로그가 버전을 아직 담고 있는 비활성 치료뿐이다(새 치료로 복제하지 않는다: 치료 id·버전·가격·보장 판단 필드가 그대로다).
+   * 게시 전에는 치료의 active 를 바꾸지 않는다. 비어 있으면 지문에 싣지 않아 이 필드가 생기기 전의 초안과 지문이 같다.
+   */
+  reactivations: string[];
+  /**
+   * 게시 뒤의 표시 순서(남는 기존 치료 id + 다시 표시할 치료 id + 새 치료의 draftKey 의 순열). 기본 순서(남는 기존 치료는 지금 표시 순서 그대로,
+   * 그 뒤에 다시 표시할 치료(예전 표시 순서, 같으면 치료 id 순), 그 뒤에 새 치료는 적은 순서대로)와 같으면 null 로 저장한다.
    */
   order: string[] | null;
   updatedBy: Actor;

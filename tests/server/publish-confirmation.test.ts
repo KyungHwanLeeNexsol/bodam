@@ -14,6 +14,7 @@ const DRAFT: CatalogDraft = {
   baseFeeEdits: [],
   additions: [],
   deactivations: [],
+  reactivations: [],
   order: null,
   updatedBy: { id: 'ADMIN_1', role: 'HA' },
   updatedAt: '2026-11-04T00:00:00.000Z',

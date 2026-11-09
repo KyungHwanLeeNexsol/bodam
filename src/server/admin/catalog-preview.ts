@@ -7,7 +7,7 @@ import type { EstimateRequest } from '../api/estimate-request';
 import type { PublishedCatalog } from '../api/published-catalog';
 import type { ApiServices } from '../api/services';
 import { baseFeeWithAmount, treatmentVersionOfAddition, versionWithPrice } from '../catalog-draft-request';
-import { finalOrderOf, structureSummary } from '../catalog-structure';
+import { finalOrderOf, reactivatedIdsInOrder, structureSummary } from '../catalog-structure';
 import type { CatalogDraft, Clinic, TreatmentVersion } from '../domain/entities';
 import type { Defect } from '../domain/errors';
 import type { PublishedTreatment } from '../published-treatments';
@@ -22,6 +22,8 @@ import { isPlainObject } from '../validate/shape';
 // 읽기만 한다: 저장소를 쓰지 않고 식별자도 만들지 않는다(가상 치료 버전의 id 는 `PREVIEW:<원본 id>`, 새 치료는 `PREVIEW:NEW:<draftKey>` 이고 저장되지 않는다).
 // 규칙 묶음·매핑·프로필은 병원의 현재 규칙 사용 범위 그대로 읽는다.
 // 숨길 치료는 계산에 억지로 넣지 않는다(계산 대상으로 고르면 거절): 숨긴 뒤에는 환자가 고를 수 없는 치료다. 변경 목록에서 "숨김"으로 보인다.
+// 다시 표시할 치료는 가상의 "게시 뒤" 카탈로그에 활성으로 들어가 제자리(기본: 기존 표시 치료의 뒤)에 놓이고, 새 치료처럼 그 치료 하나(+ 공통 기본비용)를 같은 엔진으로 계산해 엔진이 말한 상태·보류 사유를 그대로 싣는다
+// (changes.reactivated). 미리보기는 보장 판단을 만들지 않는다: 승인된 매핑이 없거나 검토가 남은 치료는 엔진이 계속 보류(ON_HOLD)시키고, 여기서는 매핑·승인 지문·분류를 읽기만 한다.
 
 export const PREVIEW_FIELDS = ['generation', 'insurerType', 'cause', 'treatmentIds'] as const;
 
@@ -30,17 +32,23 @@ const NEW_PREFIX = 'PREVIEW:NEW:';
 const newTreatmentId = (draftKey: string): string => `${NEW_PREFIX}${draftKey}`;
 
 /**
- * 초안을 적용한 가상의 게시 카탈로그. 가격 수정을 적용하고, 숨길 치료를 빼고, 새 치료를 끝에 붙인 뒤 초안의 표시 순서(없으면 기본 순서)로 늘어놓는다. 입력을 바꾸지 않는다.
+ * 초안을 적용한 가상의 게시 카탈로그. 가격 수정을 적용하고, 숨길 치료를 빼고, 다시 표시할 치료를 활성으로 넣고, 새 치료를 끝에 붙인 뒤 초안의 표시 순서(없으면 기본 순서)로 늘어놓는다. 입력을 바꾸지 않는다.
  * 새 치료는 `PREVIEW:NEW:<draftKey>` 치료와 분류 NEEDS_REVIEW 치료 버전이다(출처는 서버가 정한 newTreatmentOrigin). 어떤 기록도 만들지 않고 식별자 생성기도 쓰지 않는다.
+ * 다시 표시할 치료는 자기 치료 id·치료 버전 그대로 활성으로만 들어간다(가격·보장 판단 필드를 건드리지 않는다). hidden 은 현재 카탈로그가 버전을 담은 비활성 치료다.
  * published.treatments 는 현재 표시 순서여야 한다(readPublishedCatalog 가 그렇게 준다).
  */
-export function draftCatalogView(published: PublishedCatalog, draft: CatalogDraft, newTreatmentOrigin: Origin): PublishedCatalog {
+export function draftCatalogView(published: PublishedCatalog, draft: CatalogDraft, newTreatmentOrigin: Origin, hidden: readonly PublishedTreatment[] = []): PublishedCatalog {
   const edits = new Map(draft.priceEdits.map((edit) => [edit.treatmentId, edit]));
   const entries = new Map<string, PublishedTreatment>();
   for (const { treatment, version } of published.treatments) {
     if (!draft.deactivations.includes(treatment.id)) {
       const edit = edits.get(treatment.id);
       entries.set(treatment.id, { treatment, version: edit === undefined ? version : versionWithPrice(version, edit, `PREVIEW:${version.id}`) });
+    }
+  }
+  for (const { treatment, version } of hidden) {
+    if (draft.reactivations.includes(treatment.id)) {
+      entries.set(treatment.id, { treatment: { ...treatment, active: true }, version });
     }
   }
   for (const addition of draft.additions) {
@@ -50,7 +58,7 @@ export function draftCatalogView(published: PublishedCatalog, draft: CatalogDraf
       version: treatmentVersionOfAddition(addition, { treatmentId: id, versionId: id }, newTreatmentOrigin),
     });
   }
-  const treatments = finalOrderOf(published.treatments, draft).map((key, index) => {
+  const treatments = finalOrderOf(published.treatments, draft, hidden).map((key, index) => {
     const entry = entries.get(key) as PublishedTreatment;
     return { treatment: { ...entry.treatment, sortOrder: index + 1 }, version: entry.version };
   });
@@ -162,6 +170,11 @@ export interface PreviewResponse {
     baseFeeChanges: BaseFeeChangeRow[];
     added: Array<{ draftKey: string; displayName: string; patientAmount: number; benefitType: string; calculation: AddedTreatmentCalculation }>;
     deactivated: Array<{ treatmentId: string; displayName: string }>;
+    /**
+     * 다시 표시되는 치료(게시 뒤 표시 순서대로). position 은 afterList 에서의 1부터 시작하는 위치다. calculation 은 그 치료 하나를 같은 엔진으로 계산해 본 결과로
+     * 엔진이 말한 상태와 보류 사유를 그대로 옮긴다(금액은 싣지 않는다). 다시 표시는 승인이 아니므로 검토가 남은 치료는 ON_HOLD 가 기대값이다. 다시 표시가 없는 초안은 빈 목록이다.
+     */
+    reactivated: Array<{ treatmentId: string; displayName: string; patientAmount: number; benefitType: string; position: number; calculation: AddedTreatmentCalculation }>;
     /** before·after 는 beforeList·afterList 에서의 1부터 시작하는 위치. */
     reordered: Array<{ treatmentId: string; displayName: string; before: number; after: number }>;
   };
@@ -185,7 +198,15 @@ function listRowsOf(treatments: ReadonlyArray<{ treatment: { id: string }; versi
  * 계산하고 목록·변경 목록을 만든다. 선택한 치료 id 가 병원의 현재 게시 카탈로그에 없으면 null(호출한 쪽이 400 TREATMENT_NOT_IN_CATALOG 로 낸다). 서버 데이터 결함은 던져진다(500).
  * 선택한 치료가 있으면 같은 엔진으로 두 번(현재 카탈로그, 초안 적용 카탈로그) 계산한다. 새 치료마다 초안 적용 카탈로그에서 그 치료만 골라 한 번씩 더 계산한다.
  */
-export function buildPreview(api: ApiServices, clinic: Clinic, published: PublishedCatalog, draft: CatalogDraft, request: EstimateRequest, newTreatmentOrigin: Origin): PreviewResponse | null {
+export function buildPreview(
+  api: ApiServices,
+  clinic: Clinic,
+  published: PublishedCatalog,
+  draft: CatalogDraft,
+  request: EstimateRequest,
+  newTreatmentOrigin: Origin,
+  hidden: readonly PublishedTreatment[] = [],
+): PreviewResponse | null {
   const catalog = published.catalog;
   if (catalog === null) {
     return null;
@@ -195,12 +216,12 @@ export function buildPreview(api: ApiServices, clinic: Clinic, published: Publis
     return null;
   }
   const bundleRef = readBundleRef(api.repo, clinic.id);
-  const draftView = draftCatalogView(published, draft, newTreatmentOrigin);
+  const draftView = draftCatalogView(published, draft, newTreatmentOrigin, hidden);
   const calculates = request.treatmentIds.length > 0;
   const before = calculates ? calculate(api, clinic, { ...request, catalogVersion: catalog.id }, published, bundleRef) : null;
   const after = calculates ? calculate(api, clinic, { ...request, catalogVersion: 'DRAFT' }, draftView, bundleRef) : null;
 
-  const versionOf = new Map(published.treatments.map(({ treatment, version }) => [treatment.id, version]));
+  const versionOf = new Map([...published.treatments, ...hidden].map(({ treatment, version }) => [treatment.id, version]));
   const priceChanges: PriceChangeRow[] = draft.priceEdits.map((edit) => ({
     treatmentId: edit.treatmentId,
     displayName: versionOf.get(edit.treatmentId)?.displayName ?? edit.treatmentId,
@@ -236,6 +257,25 @@ export function buildPreview(api: ApiServices, clinic: Clinic, published: Publis
     };
   });
 
+  // 다시 표시할 치료도 새 치료처럼 그 치료 하나만 골라 같은 엔진으로 계산해 본다. 엔진이 말한 상태·보류 사유를 그대로 옮긴다(여기서 판정을 만들거나 바꾸지 않는다).
+  const reactivated = reactivatedIdsInOrder(hidden, draft.reactivations).map((id) => {
+    const outcome = calculate(api, clinic, { ...request, catalogVersion: 'DRAFT', treatmentIds: [id] }, draftView, bundleRef);
+    const line = outcome.result.lines.find((candidate) => candidate.treatmentId === id);
+    const version = versionOf.get(id) as TreatmentVersion;
+    return {
+      treatmentId: id,
+      displayName: version.displayName,
+      patientAmount: version.patientAmount,
+      benefitType: version.benefitType,
+      position: positionIn(afterList, id),
+      calculation: {
+        state: outcome.result.state,
+        lineState: line === undefined ? 'MISSING' : line.state,
+        holdReasons: outcome.result.holdReasons.filter((reason) => reason.treatmentId === id).map((reason) => reason.code),
+      },
+    };
+  });
+
   return {
     basedOnCatalogVersion: catalog.id,
     request: { generation: request.generation, insurerType: request.insurerType, cause: request.cause, treatmentIds: request.treatmentIds },
@@ -249,6 +289,7 @@ export function buildPreview(api: ApiServices, clinic: Clinic, published: Publis
       baseFeeChanges,
       added,
       deactivated: summary.deactivatedTreatmentIds.map((id) => ({ treatmentId: id, displayName: versionOf.get(id)?.displayName ?? id })),
+      reactivated,
       reordered: summary.reorderedTreatmentIds.map((id) => ({
         treatmentId: id,
         displayName: versionOf.get(id)?.displayName ?? id,

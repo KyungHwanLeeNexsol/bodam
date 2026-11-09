@@ -167,7 +167,7 @@ describe('4b. 치료 기록(활성·표시 순서)을 쓰는 코드는 구조 �
     expect(idents(parse).filter((name) => name === 'repo' || name === 'deps')).toEqual([]);
   });
 
-  it('치료 기록을 쓰는 함수(createAdditions·applyDeactivations·applyOrder)는 게시 서비스 한 곳(publishCatalogDraft)에서만 부른다', () => {
+  it('치료 기록을 쓰는 함수(createAdditions·applyDeactivations·applyReactivations·applyOrder)는 게시 서비스 한 곳(publishCatalogDraft)에서만 부른다', () => {
     const callers = (name: string): string[] =>
       nonRepo
         .filter((file) => {
@@ -175,14 +175,14 @@ describe('4b. 치료 기록(활성·표시 순서)을 쓰는 코드는 구조 �
           return list.some((token, index) => token.kind === 'ident' && token.text === name && list[index + 1]?.text === '(' && list[index - 1]?.text !== 'function');
         })
         .map((file) => file.path);
-    for (const name of ['createAdditions', 'applyDeactivations', 'applyOrder']) {
+    for (const name of ['createAdditions', 'applyDeactivations', 'applyReactivations', 'applyOrder']) {
       expect(callers(name), name).toEqual(['src/server/catalog-draft.ts']);
     }
     // 초안 저장·버리기 함수의 본문에는 위 쓰기 함수 호출이 없다.
     const draft = find(serverFiles, 'src/server/catalog-draft.ts').text;
     const publishAt = draft.indexOf('export function publishCatalogDraft');
     expect(publishAt).toBeGreaterThan(0);
-    for (const name of ['createAdditions(', 'applyDeactivations(', 'applyOrder(']) {
+    for (const name of ['createAdditions(', 'applyDeactivations(', 'applyReactivations(', 'applyOrder(']) {
       expect(draft.slice(0, publishAt), name).not.toContain(name);
     }
   });

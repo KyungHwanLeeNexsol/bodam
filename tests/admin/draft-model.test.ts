@@ -62,6 +62,7 @@ const draftOf = (overrides: Partial<DraftView> = {}): DraftView => ({
   baseFeeEdits: [],
   additions: [],
   deactivations: [],
+  reactivations: [],
   order: null,
   updatedAt: '2026-11-01T00:00:00.000Z',
   updatedBy: 'TEST_FIXTURE_HA',
@@ -350,7 +351,7 @@ describe('previewSelection: 미리보기에서 계산할 치료', () => {
 describe('summaryOf', () => {
   it('가격 변경·추가·숨김 건수와 순서 변경 여부를 센다', () => {
     const working = moveRow(appendAddition(toggleHidden({ ...fresh(), priceTexts: { T1: '1', T2: '10000', T3: '11000' } }, 'T2'), addition('new-1')), 'new-1', -1);
-    expect(summaryOf(draftBodyOf(working, ROWS).body)).toEqual({ priceChanged: 1, baseFeeChanged: 0, added: 1, hidden: 1, reordered: true });
+    expect(summaryOf(draftBodyOf(working, ROWS).body)).toEqual({ priceChanged: 1, baseFeeChanged: 0, added: 1, hidden: 1, reshown: 0, reordered: true });
   });
 });
 
