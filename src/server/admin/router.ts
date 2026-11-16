@@ -1,4 +1,4 @@
-import { priceConditionOf } from '../api/catalog';
+import { SERVICE_DISPLAY_NAME, priceConditionOf } from '../api/catalog';
 import { guarded } from '../api/integrity';
 import { readHiddenTreatments, readPublishedCatalog } from '../api/published-catalog';
 import { discardCatalogDraft, publishCatalogDraft, saveCatalogDraft } from '../catalog-draft';
@@ -19,6 +19,7 @@ import { parseMappingDraftBody, parseReviewRejectBody, parseReviewRequestRefBody
 import { parseReviewRequestBody } from '../review-request-parse';
 import { readClinicReviewRequestViews, readReviewEntry, readReviewHistory, readReviewQueue, reviewRequestView } from '../review-request-read';
 import { submitCoverageReviewRequest } from '../review-request';
+import { readClinicSettingsView, saveClinicSettingsChecked } from '../clinic-settings';
 import { readIdlePolicyAdminView, saveClinicIdlePolicyChecked } from '../idle-policy';
 import { findAffectedClinics } from '../rule-scope';
 import { assignRuleScopeChecked, readClinicScopeRow, readRuleScopeOverview } from '../rule-scope-admin';
@@ -58,6 +59,15 @@ import type { AdminServices } from './services';
 //                                                                 저장은 정책 전체를 바꾼다(PUT 전체 교체): 본문에 없는 화면 종류는 기본값으로 돌아간다. 서버가 화면 종류 이름·초 값(0 이상의 정수)·경고 < 초기화이고 간격 ≥ 20초(completionHoldSeconds 에는 이 하한이 없다)를 검사한다.
 //                                                                 응답은 GET 과 같은 모양(방금 저장한 값을 저장소에서 다시 읽은 것). 400: 어긋난 필드마다 { code, path }. 거절하면 정책 저장소도 감사 기록도 바뀌지 않는다. 성공하면 감사 기록은 IDLE_POLICY_SAVE 한 건이다.
 //                                                                 병원은 경로가 정한다(본문의 병원 id 는 읽지 않는다). 저장은 이미 열려 있는 키오스크 세션에는 닿지 않는다: 새로 연 키오스크가 catalog 응답의 idlePolicy 로 읽는다. 가격·보장 규칙·계산·카탈로그 버전은 바꾸지 않는다
+//   GET    /api/admin/clinics/{clinicId}/settings               — (HA 자기 병원) 병원 기본 정보 읽기. 응답 { clinic: { id, slug, institutionType }, serviceDisplayName, settings: { name, contact }, catalogVersion, settingsDigest }.
+//                                                                 settings 의 병원명(name)과 상담번호(contact)만 바꿀 수 있다. serviceDisplayName("보담")은 병원명과 별도인 공개 catalog 의 같은 상수이고 읽기 전용이다. clinic·catalogVersion 도 읽기 전용이다.
+//                                                                 settingsDigest 는 읽은 순간의 병원명·상담번호 지문(소문자 16진수 64글자)이다: 카탈로그 버전·slug 는 넣지 않아 그 사이 새 카탈로그가 게시돼도 바뀌지 않는다. 변경 감지에만 쓴다. 읽기만 한다
+//   PUT    /api/admin/clinics/{clinicId}/settings               — (HA 자기 병원) 병원 기본 정보 저장. 본문 { name, contact, expectedDigest: GET 이 알린 settingsDigest }(세 키뿐이고 모두 필수).
+//                                                                 조건부 저장: 서버가 한 트랜잭션 안에서 현재 지문 비교(409 CLINIC_SETTINGS_CHANGED) → 값 검사(400) → 병원 기록을 방금 읽은 값에 두 필드만 덮어써 저장 → 감사 기록 순으로 처리한다. 지문이 없거나 형식이 틀리면(경로 expectedDigest) 400 이고,
+//                                                                 지문이 현재와 다르면(그 사이 다른 창에서 저장됨) 409 이며 병원 기록·감사 기록은 그대로다(자동 재시도·덮어쓰기 없음). 낡은 지문과 틀린 값이 함께 오면 409 가 먼저다.
+//                                                                 값: 병원명은 앞뒤 공백을 뗀 1~40자·눈에 보이지 않는 문자(제어·서식·한글 채움 등) 없음, 상담번호는 숫자·`-`·`(`·`)`·`+`·공백만 숫자 4개 이상 20자 이내(잠정 한도, clinic-settings.ts). 병원 id·slug·종별·카탈로그 버전·서비스 표시명을 본문에 적으면 400 FIELD_NOT_EDITABLE(경로 = 그 키),
+//                                                                 그 밖의 알 수 없는 키는 400 KEY_UNKNOWN 이다. 응답은 GET 과 같은 모양(방금 저장한 값을 저장소에서 다시 읽은 것). 성공하면 감사 기록은 CLINIC_SETTINGS_SAVE 한 건이다(변경 이력 화면의 목록에는 아직 없다: 별도 작업).
+//                                                                 병원은 경로가 정한다(본문의 병원 id 는 읽지 않는다). 저장은 치료·가격·기본비용·계산·규칙 묶음·무조작 정책·카탈로그 버전을 바꾸지 않는다. 이미 열려 있는 키오스크 화면에는 닿지 않고 새로 연 키오스크가 catalog 응답의 병원명을 읽는다(상담번호는 공개 응답에 없다)
 //   GET    /api/admin/audit-log                                 — (HA) 병원 관리자의 변경 이력 읽기(M7 변경 이력). DD-19 표의 `GET /api/admin/audit-log` 를 HA 몫으로만 구현한 것이다. 병원 id 가 경로에도 요청에도 없다: 병원은 서버가 검증한 신원의 HA 소속 병원 하나다.
 //                                                                 HA 소속이 없으면(RV·PO 만 가진 신원 포함) 403, 둘 이상이면 병원을 하나로 정할 수 없어 409 CLINIC_AMBIGUOUS, 소속 병원이 없으면 404. 이 자원은 요청의 쿼리·헤더·본문을 읽지 않는다: 조회 조건이 없고(건수 상한 100 은 서버 고정) 어떤 조작된 값도 결과를 바꾸지 못한다.
 //                                                                 응답 { clinic: { id, displayName }, coveredActions, entries, page: { limit, returned, total, truncated } }. entries 는 최신순(저장 순서의 역순)이고 각 항목은 { sequence, at, actor: { id, role }, action, target, beforeVersion, afterVersion, reason } 뿐이다.
@@ -128,6 +138,8 @@ const CONFLICT_REASONS: readonly string[] = [
   'SCOPE_CHANGED',
   // 무조작 정책(HA): 화면이 읽은 저장 상태 지문(expectedDigest)이 저장 시점의 현재 지문과 다름(다른 창·다른 사람이 그 사이 저장함).
   'IDLE_POLICY_CHANGED',
+  // 병원 설정(HA): 화면이 읽은 병원명·상담번호 지문(expectedDigest)이 저장 시점의 현재 지문과 다름(다른 창·다른 사람이 그 사이 저장함).
+  'CLINIC_SETTINGS_CHANGED',
 ];
 
 /**
@@ -316,7 +328,26 @@ const putIdlePolicy: Handler = async (services, request, actor, clinic) => {
   return ok(idlePolicyBody(services, clinic));
 };
 
-const getReviewRequests: Handler = (services, _request, _actor, clinic) => ok({ reviewRequests: readClinicReviewRequestViews(services.api.repo, clinic.id) });
+/** 병원 설정의 관리자 보기. GET 과 PUT 의 응답이 같은 모양이다(PUT 은 방금 저장한 값을 저장소에서 다시 읽어 낸다). 서비스 표시명은 공개 catalog 와 같은 상수다. */
+function clinicSettingsBody(services: AdminServices, clinic: Clinic) {
+  const view = readClinicSettingsView(services.api.repo, clinic.id);
+  return { clinic: view.clinic, serviceDisplayName: SERVICE_DISPLAY_NAME, settings: view.settings, catalogVersion: view.catalogVersion, settingsDigest: view.settingsDigest };
+}
+
+const getClinicSettings: Handler = (services, _request, _actor, clinic) => ok(clinicSettingsBody(services, clinic));
+
+const putClinicSettings: Handler = async (services, request, actor, clinic) => {
+  const body = await readJson(request);
+  if (!body.ok) {
+    return invalidRequest([{ code: 'NOT_JSON', path: 'request' }]);
+  }
+  // 지문 비교(expectedDigest)·값 검사·병원 기록 저장·감사 기록은 서비스가 한 트랜잭션에서 이 순서로 한다: 거절(400·409)은 아무것도 쓰지 않는다. 병원은 경로가 정한다.
+  // 응답은 위에서 읽어 둔 clinic 이 아니라 저장소에서 다시 읽은 값이다(clinic 은 저장 전 기록이다).
+  saveClinicSettingsChecked(services.deps, actor, clinic.id, body.body);
+  return ok(clinicSettingsBody(services, clinic));
+};
+
+const getReviewRequests: Handler = (services, _request, _actor, clinic) =>ok({ reviewRequests: readClinicReviewRequestViews(services.api.repo, clinic.id) });
 
 const postReviewRequest: Handler = async (services, request, actor, clinic, params) => {
   const body = await readJson(request);
@@ -551,6 +582,8 @@ const CLINIC_ROUTES: readonly Route[] = [
   { method: 'POST', tail: ['treatments', ':treatmentId', 'review-requests'], handler: postReviewRequest },
   { method: 'GET', tail: ['idle-policy'], handler: getIdlePolicy },
   { method: 'PUT', tail: ['idle-policy'], handler: putIdlePolicy },
+  { method: 'GET', tail: ['settings'], handler: getClinicSettings },
+  { method: 'PUT', tail: ['settings'], handler: putClinicSettings },
 ];
 
 /**

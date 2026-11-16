@@ -598,3 +598,34 @@
 .admin-table--changes .admin-sub2 {
   display: block;
 }
+
+/* 병원 기본 정보 화면 (M7 병원 설정): 바꿀 수 없는 정보는 이름-값 목록으로, 입력 칸은 세로로 쌓는다. */
+.admin-readonly {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 20px;
+  margin: 0 0 16px;
+}
+
+.admin-readonly dt {
+  font-weight: 600;
+}
+
+.admin-readonly dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-settings-field {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 28em;
+}
+
+/* 병원명·상담번호는 글자 입력이라 숫자 칸의 오른쪽 정렬을 쓰지 않는다. */
+.admin-input--wide {
+  width: 100%;
+  text-align: left;
+}
