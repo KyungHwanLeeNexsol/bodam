@@ -11,8 +11,8 @@ import type { ApiServices } from './services';
 // 표시 필드만 낸다. 검토 상태·지문·검토자·출처·보장 판단 필드(치료 코드·행위 코드·분류)·서류 표시·병원 연락처·내부 id 는 응답에 없다.
 // 규칙 묶음과 항목은 읽지 않는다: 이 응답은 규칙 사용 범위나 묶음 중지와 무관하다(중지는 options 의 ruleBundleStatus 로 알린다).
 
-/** 서비스 이름. 기획서 §4 가 확정한 이름이다. */
-const SERVICE_DISPLAY_NAME = '보담';
+/** 서비스 이름. 기획서 §4 가 확정한 이름이다. 병원명과 별도이며, 관리자 병원 설정 화면도 이 상수를 읽기 전용으로 보여 준다(바꾸는 길은 없다). */
+export const SERVICE_DISPLAY_NAME = '보담';
 
 /** 병원 종별 → 응답의 setting. 의원(CLINIC)은 통원 전용이다(기획서 §4 화면 3, DD-19 예시). 서류 산출의 clinicSetting(M4.B)도 이 표를 쓴다. */
 export const SETTING_OF: Record<InstitutionType, 'OUTPATIENT_ONLY'> = { CLINIC: 'OUTPATIENT_ONLY' };

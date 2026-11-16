@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test';
-import { ADMIN_BASE_FEE_PORT, ADMIN_BUNDLE_PORT, ADMIN_CHANGE_HISTORY_PORT, ADMIN_BUNDLE_REJECT_PORT, ADMIN_BUNDLE_SUSPEND_PORT, ADMIN_CATALOG_PORT, ADMIN_IDLE_POLICY_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_RESHOW_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
+import { ADMIN_BASE_FEE_PORT, ADMIN_BUNDLE_PORT, ADMIN_CHANGE_HISTORY_PORT, ADMIN_CLINIC_SETTINGS_PORT,ADMIN_BUNDLE_REJECT_PORT, ADMIN_BUNDLE_SUSPEND_PORT, ADMIN_CATALOG_PORT, ADMIN_IDLE_POLICY_PORT, ADMIN_MAPPING_PORT, ADMIN_PORT, ADMIN_RESHOW_PORT, ADMIN_REVIEW_PORT, APP_PORT, HARNESS_PORT, NOTICE_PORT } from './tests/e2e/global-setup';
 
 // 브라우저 시험 설정 (SPEC-REIMBURSEMENT-001 M6, BRIEF D12). 설치된 실제 Chrome(channel: 'chrome')으로 돌린다: 브라우저 바이너리를 내려받지 않는다.
 // 시험은 세 층으로 나뉘고 파일 이름이 층을 정한다. 서로 다른 것을 증명하므로 보고에서도 따로 센다.
@@ -69,5 +69,9 @@ export default defineConfig({
     //                             미리보기(같은 엔진 계산)를 거쳐야만 게시되며, 게시한 뒤 같은 치료·같은 가격으로 키오스크에 다시 나타난다. 보장 판단·매핑 상태·다른 병원은 그대로이고, 검토가 남은 치료는 계속 계산 보류다.
     //                             기본 세계와 시험 전용 끝점(--test-hooks)을 켠 따로 쓰는 인스턴스(ADMIN_RESHOW_PORT)다. 한 파일 안에서 순서대로 돈다.
     { name: 'admin-reshow', testMatch: /.*\.admin-reshow\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_RESHOW_PORT}`, viewport: { width: 1280, height: 900 } } },
+    //  - *.admin-clinic-settings.spec.ts : 병원 기본 정보 설정(M7 병원 설정, AC-023e · AC-022a). 병원 관리자(HA)가 화면에서 자기 병원의 병원명·상담번호를 고쳐 저장하면 서버 값을 다시 읽어 보이고,
+    //                                      새로 연 키오스크 시작 화면만 새 병원명과 기존 서비스 이름 "보담"을 보인다(이미 열려 있던 화면은 그대로). 병원 B 와 치료·가격·규칙·계산·무조작 정책·카탈로그 버전은 그대로이고,
+    //                                      두 창의 낡은 저장은 서버가 409 로 거절하며 화면은 자동으로 덮어쓰지 않는다. 기본 세계와 시험 전용 끝점(--test-hooks)을 켠 따로 쓰는 인스턴스(ADMIN_CLINIC_SETTINGS_PORT)다. 한 파일 안에서 순서대로 돈다.
+    { name: 'admin-clinic-settings', testMatch: /.*\.admin-clinic-settings\.spec\.ts/, use: { ...chrome, baseURL: `http://127.0.0.1:${ADMIN_CLINIC_SETTINGS_PORT}`, viewport: { width: 1280, height: 900 } } },
   ],
 });

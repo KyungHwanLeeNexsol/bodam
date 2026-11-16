@@ -1179,7 +1179,7 @@ SPEC 결정(plan.md §E #33): 기획서 §8의 예상 API는 `GET /api/insurance
 
 | 경로 (제안) | 동작 | 역할 |
 |-------------|------|------|
-| `GET/PUT /api/admin/clinics/{clinicId}/settings` | 병원 설정 | HA |
+| `GET/PUT /api/admin/clinics/{clinicId}/settings` | 병원 설정. 지금 구현은 병원명(`name`)과 상담번호(`contact`)뿐이다(M7 병원 설정, SPEC 결정): 읽기 응답 `{ clinic: { id, slug, institutionType }, serviceDisplayName, settings: { name, contact }, catalogVersion, settingsDigest }`, PUT 본문 `{ name, contact, expectedDigest }` 세 키뿐이다. 조건부 저장이라 서버가 한 트랜잭션 안에서 지문 비교(다르면 409 `CLINIC_SETTINGS_CHANGED`) → 값 검사(400) → 병원 기록을 방금 읽은 값에 두 필드만 덮어써 저장 → 감사 기록(`CLINIC_SETTINGS_SAVE`) 순으로 처리한다. 지문은 병원 id·병원명·상담번호만 해시하므로 화면을 연 뒤 새 카탈로그가 게시돼도 충돌이 아니고 현재 카탈로그 버전 참조는 과거 값으로 돌아가지 않는다. 병원 id·slug·종별·현재 카탈로그 버전·서비스 표시명("보담", 병원명과 별도)은 요청으로 바꿀 수 없고 적으면 400 `FIELD_NOT_EDITABLE`이다. 상담번호는 공개 응답에 없다. 로고·안내문·종별·기기 설정은 아직 없다. 병원명·상담번호의 한도(40자, 숫자 4개 이상 20자 이내)는 잠정 값이다 | HA |
 | `GET/PUT /api/admin/clinics/{clinicId}/idle-policy` | 무조작 정책·이용 완료 대기. PUT은 정책 전체를 바꾼다(본문 `{ screens(일부 가능), completionHoldSeconds: 양의 정수 \| null, expectedDigest: GET 이 알린 policyDigest }`, 본문에 없는 화면 종류는 기본값으로 돌아감. 지문이 현재 저장 상태와 다르면 409 `IDLE_POLICY_CHANGED`, 지문 누락·형식 오류는 400). 규칙·검사·응답은 DD-10 "병원 관리자 화면과 관리자 API" | HA (자기 병원만, 다른 병원 HA·RV·PO는 403, 인증 없음 401) |
 | `GET/POST /api/admin/clinics/{clinicId}/treatments`, `PATCH …/treatments/{treatmentId}` | 치료 목록·추가·수정(새 초안 버전 생성) | HA |
 | `GET/POST /api/admin/clinics/{clinicId}/base-fees` | 공통 기본비용 | HA |

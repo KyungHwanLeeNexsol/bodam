@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLE_COPY, SCOPE_COPY } from '../../src/app/admin/bundle-copy';
 import { CHANGE_COPY } from '../../src/app/admin/change-history-copy';
+import { SETTINGS_COPY } from '../../src/app/admin/clinic-settings-copy';
 import { IDLE_COPY } from '../../src/app/admin/idle-policy-copy';
 import { navLinksOf, navTitleOf } from '../../src/app/admin/nav-model';
 import { REVIEW_COPY } from '../../src/app/admin/review-copy';
@@ -31,15 +32,16 @@ describe('이동 줄 링크', () => {
     expect(navLinksOf({ current: 'rule-scope' }).map((link) => link.href)).not.toContain('/admin/bundles');
   });
 
-  it('병원 화면의 줄은 병원 id 가 붙은 네 링크(가격 관리 · 검토 요청 · 무조작 시간 · 변경 이력)이고 플랫폼 링크가 없다', () => {
+  it('병원 화면의 줄은 병원 id 가 붙은 다섯 링크(가격 관리 · 검토 요청 · 무조작 시간 · 변경 이력 · 병원 정보)이고 플랫폼 링크가 없다', () => {
     const links = navLinksOf({ clinicId: 'TEST_FIXTURE_CLINIC_1', current: 'review-requests' });
     expect(links.map((link) => link.href)).toEqual([
       '/admin/TEST_FIXTURE_CLINIC_1/treatments',
       '/admin/TEST_FIXTURE_CLINIC_1/review-requests',
       '/admin/TEST_FIXTURE_CLINIC_1/idle-policy',
       '/admin/TEST_FIXTURE_CLINIC_1/change-history',
+      '/admin/TEST_FIXTURE_CLINIC_1/settings',
     ]);
-    expect(links.map((link) => link.label)).toEqual([REVIEW_COPY.navTreatments, REVIEW_COPY.navReviewRequests, IDLE_COPY.navIdlePolicy, CHANGE_COPY.navChangeHistory]);
+    expect(links.map((link) => link.label)).toEqual([REVIEW_COPY.navTreatments, REVIEW_COPY.navReviewRequests, IDLE_COPY.navIdlePolicy, CHANGE_COPY.navChangeHistory, SETTINGS_COPY.navSettings]);
     expect(links.filter((link) => link.current).map((link) => link.key)).toEqual(['review-requests']);
     expect(links.map((link) => link.href).join()).not.toMatch(/bundles|rule-scope|review-queue/);
   });
@@ -57,6 +59,14 @@ describe('이동 줄 링크', () => {
     }
   });
 
+  it('병원 정보 화면에서는 그 링크에 현재 표시가 붙고, 플랫폼 화면(검토 대기열·묶음 게시·규칙 사용 범위)의 줄에는 병원 정보 링크가 없다', () => {
+    const links = navLinksOf({ clinicId: 'TEST_FIXTURE_CLINIC_1', current: 'settings' });
+    expect(links.filter((link) => link.current).map((link) => link.key)).toEqual(['settings']);
+    for (const current of ['review-queue', 'bundles', 'rule-scope'] as const) {
+      expect(navLinksOf({ current }).map((link) => link.href).join(), current).not.toContain('settings');
+    }
+  });
+
   it('병원 id 는 주소 조각으로 안전하게 바뀐다', () => {
     expect(navLinksOf({ clinicId: 'a b/c', current: 'treatments' })[0]!.href).toBe('/admin/a%20b%2Fc/treatments');
   });
@@ -71,5 +81,6 @@ describe('이동 줄 제목', () => {
     expect(navTitleOf('review-requests')).toBe(REVIEW_COPY.title);
     expect(navTitleOf('idle-policy')).toBe(IDLE_COPY.title);
     expect(navTitleOf('change-history')).toBe(CHANGE_COPY.title);
+    expect(navTitleOf('settings')).toBe(SETTINGS_COPY.title);
   });
 });
