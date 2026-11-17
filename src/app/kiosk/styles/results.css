@@ -1,0 +1,546 @@
+/* 결과 쪽 화면 규칙 (SPEC-REIMBURSEMENT-001 M6 S3a): 계산 중 · 통신 오류 · 결과 셋(정상·보장 제외·보류).
+   값은 디자인 저장본(.pen)의 px 를 따르고 세로 1080x1920 / 가로 1920x1080 에서 맞춘다. 큰 글자 보기는 글자 배율(--kiosk-scale)만 키운다: 동작·금액·문구는 그대로이고
+   한 화면에 다 들어가지 않으면 본문이 세로로 스크롤된다(DD-12, 기능을 빼지 않는다). 터치 영역은 어느 경우에도 72px 이상이다(kiosk.css 의 .kiosk-button). */
+
+/* ───────────── 상태 안내(계산 중·통신 오류) ───────────── */
+
+.kiosk-calculating,
+.kiosk-error {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-calculating__status {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-status__note {
+  width: 100%;
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.45;
+  color: var(--kiosk-text-muted);
+}
+
+/* ───────────── 결과 화면 뼈대 ───────────── */
+
+.kiosk-result {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-result-bar__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--kiosk-sp-3);
+}
+
+/* 운영이 아닌 자료로 계산한 결과의 상단 표시(AC-010e). warn 색에 더해 아이콘과 굵은 글씨로 알린다. */
+.kiosk-test-data {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--kiosk-sp-3);
+  padding: 14px var(--kiosk-sp-12);
+  border-bottom: 2px solid var(--kiosk-warn);
+  background: var(--kiosk-warn-soft);
+  color: var(--kiosk-warn);
+}
+
+.kiosk-test-data__text {
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.kiosk-result__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+  min-height: 0;
+  padding: var(--kiosk-sp-6) var(--kiosk-sp-12);
+  scroll-padding: 12px;
+  overflow-y: auto;
+}
+
+.kiosk-result__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-result__title {
+  font-size: calc(44px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-result__condition-line {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-text-body);
+}
+
+/* 보험 조건·선택한 치료 표(세로). 가로형은 한 줄 요약을 쓴다. */
+.kiosk-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  margin: 0;
+  padding: 18px 22px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-conditions__row {
+  display: flex;
+  gap: var(--kiosk-sp-6);
+}
+
+.kiosk-conditions dt {
+  flex: none;
+  width: calc(200px * var(--kiosk-scale));
+  font-size: calc(28px * var(--kiosk-scale));
+  line-height: 1.4;
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-conditions dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kiosk-navy);
+  overflow-wrap: anywhere;
+}
+
+/* ───────────── 금액 카드 ───────────── */
+
+.kiosk-amounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-amounts__row {
+  display: flex;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-amounts__row > .kiosk-amount {
+  flex: 1 1 0;
+}
+
+/* 카드의 내부 폭이 컨테이너 단위(cqw)의 기준이다: 금액 글자는 글자 수(--kiosk-chars)에 맞춰 카드 안에 들어가는 크기까지만 커진다. 0.62em 은 굵은 숫자·쉼표·"원"의 평균 폭의 넉넉한 값이다. */
+.kiosk-amount {
+  container-type: inline-size;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  padding: var(--kiosk-sp-10);
+  border: 4px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-amount__label {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-amount__value {
+  font-size: min(calc(56px * var(--kiosk-scale)), calc(100cqw / (var(--kiosk-chars, 8) * 0.62)));
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-amount__note {
+  font-size: calc(22px * var(--kiosk-scale));
+  line-height: 1.4;
+  color: var(--kiosk-text-body);
+}
+
+/* 예상 병원 결제액: 오늘 병원 창구에서 내는 돈이라 가장 크고 어두운 테두리다. */
+.kiosk-amount--hospital {
+  gap: var(--kiosk-sp-4);
+  border-color: var(--kiosk-navy);
+}
+
+.kiosk-amount--hospital .kiosk-amount__label {
+  font-size: calc(32px * var(--kiosk-scale));
+}
+
+.kiosk-amount--hospital .kiosk-amount__value {
+  font-size: min(calc(104px * var(--kiosk-scale)), calc(100cqw / (var(--kiosk-chars, 8) * 0.62)));
+}
+
+.kiosk-amount--hospital .kiosk-amount__note {
+  font-size: calc(24px * var(--kiosk-scale));
+}
+
+.kiosk-amount--payout {
+  border-color: var(--kiosk-success);
+  background: var(--kiosk-success-soft);
+}
+
+.kiosk-amount--payout .kiosk-amount__value {
+  color: var(--kiosk-success);
+}
+
+.kiosk-amount--after {
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent-soft);
+}
+
+.kiosk-amount--after .kiosk-amount__value {
+  color: var(--kiosk-accent-dark);
+}
+
+/* 값이 없는 금액("확인 필요"): 계산된 금액처럼 보이지 않게 색을 입히지 않는다. */
+.kiosk-amount--unknown {
+  border-color: var(--kiosk-border);
+  background: var(--kiosk-surface-alt);
+}
+
+.kiosk-amount--unknown .kiosk-amount__value {
+  color: var(--kiosk-text-body);
+}
+
+/* ───────────── 안내 패널 ───────────── */
+
+.kiosk-result__panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-notice--result {
+  padding: 16px 28px;
+}
+
+.kiosk-notice--result .kiosk-notice__text {
+  font-size: calc(26px * var(--kiosk-scale));
+  line-height: 1.5;
+}
+
+.kiosk-notice__text--paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  padding: 18px 28px;
+  border: 2px solid var(--kiosk-warn);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-warn-soft);
+}
+
+.kiosk-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-3);
+  color: var(--kiosk-warn);
+}
+
+.kiosk-panel__heading {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-panel__note {
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.5;
+  color: var(--kiosk-text-body);
+}
+
+/* 제목 줄이 없는 패널: 아이콘이 왼쪽에 서고 내용이 오른쪽에 쌓인다. */
+.kiosk-panel--compact {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-4);
+  padding-block: var(--kiosk-sp-4);
+}
+
+.kiosk-panel--compact > .kiosk-icon {
+  margin-top: 2px;
+  color: var(--kiosk-warn);
+}
+
+.kiosk-panel__content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-2);
+  min-width: 0;
+}
+
+/* 제외 항목 한 줄: 이름 · 금액 · "보장 제외" · 사유. 넓이가 모자라면 사유가 다음 줄로 내려간다. */
+.kiosk-exclusion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kiosk-sp-2) var(--kiosk-sp-4);
+}
+
+.kiosk-exclusion__name,
+.kiosk-exclusion__amount {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+  overflow-wrap: anywhere;
+}
+
+.kiosk-exclusion__reason {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.45;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-hold {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-hold__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-2);
+}
+
+.kiosk-hold__phrase {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kiosk-navy);
+}
+
+/* 보류 줄의 치료 이름: 분류 문구 아래 한 문단이다(이름이 많아도 한 덩어리로 줄바꿈된다). */
+.kiosk-hold__items {
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.45;
+  color: var(--kiosk-text-body);
+  overflow-wrap: anywhere;
+}
+
+/* ───────────── 결과 동작 ───────────── */
+
+/* 세로: 서류 확인 한 줄(열 12칸을 모두) + 보조 셋(4칸씩) + 처음으로(4칸) + 이용 완료(8칸). 보류는 보조 둘(6칸씩). */
+.kiosk-result-actions {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--kiosk-sp-4) var(--kiosk-sp-6);
+  padding: 20px var(--kiosk-sp-12);
+  background: var(--kiosk-surface);
+  border-top: 2px solid var(--kiosk-border);
+}
+
+.kiosk-result-actions__button {
+  width: 100%;
+  min-height: max(calc(88px * var(--kiosk-scale)), var(--kiosk-touch-min));
+  padding-inline: var(--kiosk-sp-4);
+  font-size: calc(25px * var(--kiosk-scale));
+  grid-column: span 4;
+}
+
+.kiosk-result-actions__button--documents {
+  grid-column: 1 / -1;
+  min-height: calc(100px * var(--kiosk-scale));
+  font-size: calc(30px * var(--kiosk-scale));
+}
+
+.kiosk-result-actions__button--complete {
+  grid-column: span 8;
+  min-height: calc(100px * var(--kiosk-scale));
+  font-size: calc(34px * var(--kiosk-scale));
+}
+
+.kiosk-result-actions[data-actions='4'] .kiosk-result-actions__button--reselect,
+.kiosk-result-actions[data-actions='4'] .kiosk-result-actions__button--edit-insurance {
+  grid-column: span 6;
+}
+
+/* 서류 확인은 주 동작이다: 이용 완료(primary)와 겹치지 않는 옅은 파랑 바탕에 굵은 테두리와 문서 아이콘이다. */
+.kiosk-button--accent-soft {
+  border: 3px solid var(--kiosk-accent);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-button--accent-soft:active {
+  background: var(--kiosk-surface);
+}
+
+/* ───────────── 가로형 ───────────── */
+
+[data-orientation='landscape'] .kiosk-result__body {
+  gap: var(--kiosk-sp-3);
+  padding: var(--kiosk-sp-3) var(--kiosk-sp-12);
+}
+
+[data-orientation='landscape'] .kiosk-amount {
+  padding: 28px var(--kiosk-sp-8);
+}
+
+[data-orientation='landscape'] .kiosk-result__head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-6);
+}
+
+[data-orientation='landscape'] .kiosk-result__condition-line {
+  text-align: right;
+}
+
+/* 세 카드가 한 줄이다: 병원 결제액이 가장 넓다(디자인 912 : 432 : 432). 예상 보험금·수령 후 부담의 둘 묶음은 가로에서 풀어 한 줄에 놓는다. */
+[data-orientation='landscape'] .kiosk-amounts {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+[data-orientation='landscape'] .kiosk-amounts__row {
+  display: contents;
+}
+
+[data-orientation='landscape'] .kiosk-amount--hospital {
+  flex: 2.1 1 0;
+}
+
+[data-orientation='landscape'] .kiosk-amounts__row > .kiosk-amount {
+  flex: 1 1 0;
+}
+
+[data-orientation='landscape'] .kiosk-result__panels {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+[data-orientation='landscape'] .kiosk-result__panels > .kiosk-panel {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+[data-orientation='landscape'] .kiosk-result__panels > .kiosk-notice {
+  flex: 1.4 1 0;
+  min-width: 0;
+}
+
+[data-orientation='landscape'] .kiosk-result__panels > .kiosk-notice:only-child {
+  flex: 1 1 100%;
+}
+
+[data-orientation='landscape'] .kiosk-notice--result .kiosk-notice__text {
+  font-size: calc(24px * var(--kiosk-scale));
+}
+
+/* 가로의 안내 둘(결과 문구 원칙 + 공통 안내)은 나란히 놓는다: 세로 공간이 모자란 가로형에서 높이를 반으로 줄인다. 나란히 놓인 안내 칸이 둘 이상이면(보장 제외·보류 패널 곁) 다시 쌓는다. */
+[data-orientation='landscape'] .kiosk-result__panels > .kiosk-notice:only-child .kiosk-notice__text--paragraphs {
+  flex-direction: row;
+  gap: var(--kiosk-sp-8);
+}
+
+[data-orientation='landscape'] .kiosk-result__panels > .kiosk-notice:only-child .kiosk-notice__text--paragraphs > p {
+  flex: 1 1 0;
+}
+
+/* 가로: 서류 확인 한 줄 + 다섯(보류는 넷)이 한 줄. */
+[data-orientation='landscape'] .kiosk-result-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 300px) minmax(0, 520px);
+  gap: var(--kiosk-sp-4);
+  padding: 20px var(--kiosk-sp-12);
+}
+
+[data-orientation='landscape'] .kiosk-result-actions[data-actions='4'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 300px) minmax(0, 520px);
+}
+
+[data-orientation='landscape'] .kiosk-result-actions__button,
+[data-orientation='landscape'] .kiosk-result-actions[data-actions='4'] .kiosk-result-actions__button--reselect,
+[data-orientation='landscape'] .kiosk-result-actions[data-actions='4'] .kiosk-result-actions__button--edit-insurance,
+[data-orientation='landscape'] .kiosk-result-actions__button--complete {
+  grid-column: auto;
+  min-height: max(calc(96px * var(--kiosk-scale)), var(--kiosk-touch-min));
+  font-size: calc(26px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-result-actions__button--documents {
+  grid-column: 1 / -1;
+  min-height: calc(88px * var(--kiosk-scale));
+  font-size: calc(28px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-result-actions__button--complete {
+  font-size: calc(34px * var(--kiosk-scale));
+}
+
+/* ───────────── 큰 글자 보기 ───────────── */
+
+/* 큰 글자 보기 세로: 여백을 줄여 한 화면에 최대한 들인다. 넘치면 본문이 스크롤된다(동작은 아래에 고정이라 항상 보인다). */
+[data-large-text='true'][data-orientation='portrait'] .kiosk-result__body {
+  gap: var(--kiosk-sp-3);
+  padding-top: var(--kiosk-sp-4);
+  padding-bottom: var(--kiosk-sp-4);
+}
+
+[data-large-text='true'][data-orientation='portrait'] .kiosk-amount {
+  padding: var(--kiosk-sp-6);
+}
+
+[data-large-text='true'][data-orientation='portrait'] .kiosk-result-actions {
+  gap: var(--kiosk-sp-3) var(--kiosk-sp-4);
+  padding-top: var(--kiosk-sp-4);
+  padding-bottom: var(--kiosk-sp-4);
+}
+
+/* 큰 글자 보기 가로: 세로 공간이 모자라 여백을 줄인다. 동작·금액은 그대로다. */
+[data-large-text='true'][data-orientation='landscape'] .kiosk-result__body {
+  gap: var(--kiosk-sp-3);
+  padding-top: var(--kiosk-sp-3);
+  padding-bottom: var(--kiosk-sp-3);
+}
+
+[data-large-text='true'][data-orientation='landscape'] .kiosk-amount {
+  padding: var(--kiosk-sp-6);
+}
+
+[data-large-text='true'][data-orientation='landscape'] .kiosk-result-actions {
+  gap: var(--kiosk-sp-3);
+  padding-top: var(--kiosk-sp-3);
+  padding-bottom: var(--kiosk-sp-3);
+}

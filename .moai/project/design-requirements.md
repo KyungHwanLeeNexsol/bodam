@@ -672,7 +672,7 @@ History: when the attribute was added, the Windows clone (`core.autocrlf=true`) 
 
 Staging rule: stage by explicit path. MoAI never writes `design/design.pen`; a Pencil save is committed on its own as a `design:` commit, after its blob is re-checked, separate from the `docs:` commit that records the review. `design/previews/`, `design/pdf-assets/`, and `design/deliverables/` are not committed.
 
-## 7. Inputs needed for the next SPEC (working name SPEC-REIMBURSEMENT-ESTIMATOR-001)
+## 7. Inputs needed for the next SPEC (working name SPEC-REIMBURSEMENT-ESTIMATOR-001 — old ID, renamed SPEC-REIMBURSEMENT-001 on 2026-10-15)
 
 Not started in this step; implementation is out of scope.
 
