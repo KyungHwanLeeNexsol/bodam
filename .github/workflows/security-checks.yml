@@ -99,7 +99,7 @@ jobs:
             if [[ "$MANAGER" == "none" ]]; then
               echo "- NOT SCANNED: this ref has no root JavaScript dependency manifest."
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$result"
 
   codeql:
