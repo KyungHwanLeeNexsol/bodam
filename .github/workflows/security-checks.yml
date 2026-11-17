@@ -41,7 +41,7 @@ jobs:
 
       - name: Setup patched Node.js LTS for the scanner
         if: steps.packages.outputs.manager == 'pnpm' || steps.packages.outputs.manager == 'npm'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
