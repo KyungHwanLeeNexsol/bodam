@@ -1,0 +1,231 @@
+// 규칙 묶음 게시(RV)와 규칙 사용 범위 지정(PO) 화면 문구 (SPEC-REIMBURSEMENT-001 M7 묶음 구성). **시험용 문구이며 최종 문구가 아니다** — 최종 문구 승인이 아니다(관리자 문구는 소유자 확인 전).
+// 보험 설명을 새로 쓰지 않는다. 두 화면이 말하는 것은 "묶음을 게시하는 일"과 "병원에 묶음을 지정하는 일"이 다르다는 사실이다:
+//  - 게시는 어느 병원에도 적용되지 않는다(게시한 묶음은 지정 전까지 아무 병원의 계산에도 쓰이지 않는다).
+//  - 지정은 한 번에 한 병원이고, 화면이 본 현재 적용본이 그 사이 바뀌었으면 서버가 거절한다.
+
+import { ADMIN_COPY } from './copy';
+
+/** 버전 글자 앞에 "v" 를 붙인다. 이미 "v1" 처럼 시작하는 버전은 "vv1" 이 되지 않게 그대로 둔다(브라우저로 본 뒤의 수정: 시험 자료 항목의 버전은 "v1" 이고 관리자가 만든 매핑의 버전은 "1" 이다). */
+export const versionLabel = (version: string): string => (/^v\d/i.test(version) ? version : `v${version}`);
+
+const PUBLISH_NOTHING_CHANGED ='아무것도 게시되지 않았고 어느 병원의 규칙도 바뀌지 않았습니다. 고른 내용은 화면에 그대로 남아 있습니다.';
+
+export const BUNDLE_COPY = {
+  // 이동 · 제목
+  navLabel: '관리자 메뉴',
+  navBundles: '묶음 게시',
+  title: '규칙 묶음 게시',
+  note: '기준이 되는 규칙 묶음에 승인된 매핑을 더해 새 규칙 묶음을 만듭니다. 게시한 묶음은 어느 병원에도 바로 적용되지 않습니다. 병원에 적용하려면 플랫폼 운영자가 병원별로 지정해야 합니다.',
+  loading: ADMIN_COPY.loading,
+  unauthenticated: ADMIN_COPY.unauthenticated,
+  forbidden: '규칙 묶음을 게시할 권한이 없습니다. 플랫폼 단위 검토 담당자(RV) 권한이 있는 계정으로 로그인해 주세요.',
+  loadFailed: ADMIN_COPY.loadFailed,
+  retry: ADMIN_COPY.retry,
+  sessionAs: '로그인한 사용자',
+  busy: '처리하는 중입니다…',
+
+  // 기준 묶음
+  basesTitle: '기준 묶음',
+  basesNote: '기준 묶음에 들어 있는 프로필·매핑·서류 규칙 묶음이 새 묶음에 모두 담깁니다. 사용 가능한 묶음만 기준으로 고를 수 있습니다.',
+  basesEmpty: '게시된 규칙 묶음이 없습니다. 기준으로 삼을 묶음이 있어야 새 묶음을 만들 수 있습니다.',
+  colSelect: '기준',
+  colBundle: '묶음',
+  colStatus: '상태',
+  colPublished: '게시',
+  colItems: '담긴 항목',
+  colClinics: '지금 쓰는 병원',
+  statusActive: '사용 가능',
+  statusSuspended: '중지됨',
+  statusUnknown: '상태를 알 수 없음',
+  suspendedReason: '중지된 묶음이라 기준으로 고를 수 없습니다',
+  unknownStatusReason: '상태를 알 수 없어 기준으로 고를 수 없습니다',
+  baseRadioLabel: (bundle: string): string => `기준 묶음 ${bundle}`,
+  noClinics: '쓰는 병원 없음',
+  itemCounts: (counts: { profiles: number; mappings: number; documentRuleSets: number }): string => `프로필 ${counts.profiles} · 매핑 ${counts.mappings} · 서류 규칙 묶음 ${counts.documentRuleSets}`,
+  publishedLine: (time: string, by: string): string => `${time} · ${by}`,
+
+  // 묶음 중지 (RV). 중지는 묶음의 가용성만 바꾼다: 묶음 내용·항목 상태·병원별 지정은 그대로이고, 되살리거나 다른 묶음으로 자동 교체하는 기능은 없다.
+  colAction: '관리',
+  suspendButton: '중지',
+  suspendButtonLabel: (bundle: string): string => `묶음 ${bundle} 중지`,
+  suspendTitle: (bundle: string): string => `묶음 ${bundle} 중지`,
+  suspendNote:
+    '중지하면 이 묶음을 쓰는 병원의 계산이 보류됩니다. 묶음 내용과 병원별 지정은 바뀌지 않고, 중지한 묶음을 다시 사용 가능으로 되돌리거나 다른 묶음으로 자동으로 바꾸는 기능은 없습니다. 복구하려면 새 묶음을 게시한 뒤 플랫폼 운영자가 병원마다 따로 다시 지정해야 합니다.',
+  suspendClinicsNow: (clinics: string, count: number): string => `지금 이 묶음을 쓰는 병원 ${count}곳: ${clinics}`,
+  suspendClinicsNone: '지금 이 묶음을 쓰는 병원은 없습니다.',
+  suspendReasonLabel: '중지 사유',
+  suspendReasonHint: '사유를 적어야 중지할 수 있습니다. 사유는 감사 기록에 남습니다.',
+  suspendConfirm: '중지 확정',
+  suspendCancel: '취소',
+  suspendedResultTitle: '중지한 묶음',
+  suspendedMessage: (bundle: string, count: number): string =>
+    `규칙 묶음 ${bundle} 을(를) 중지했습니다. 지금 이 묶음을 쓰던 병원 ${count}곳의 계산은 보류됩니다. 묶음 내용과 병원별 지정은 바뀌지 않았습니다.`,
+  suspendedClinicsTitle: '중지의 영향을 받는 병원',
+  suspendedClinicsNone: '영향을 받는 병원이 없습니다.',
+  suspendedRecovery: '복구하려면 새 묶음을 게시하고, 플랫폼 운영자가 규칙 사용 범위 화면에서 병원마다 정상 묶음으로 다시 지정해야 합니다.',
+  suspendedLine: (time: string, by: string): string => `${time} · ${by} 중지`,
+  suspendNothingChanged: '이 묶음의 상태는 바뀌지 않았습니다.',
+  suspendFailure: {
+    reasonRequired: '중지 사유를 적어 주세요.',
+    notFound: '규칙 묶음을 찾을 수 없습니다.',
+    notActive: '이 묶음은 이미 중지되었거나 상태를 확인할 수 없어 중지하지 않았습니다. 최신 상태를 다시 불러왔습니다.',
+    // 서버 오류·연결 끊김: 요청이 저장된 뒤에 응답만 끊겼을 수 있으므로 "바뀌지 않았다"고 말하지 않는다.
+    unknownResult: '중지 결과를 확인하지 못했습니다. 최신 상태를 다시 불러왔으니 묶음의 상태를 확인한 뒤 필요하면 다시 시도해 주세요.',
+  },
+
+  // 후보 매핑
+  candidatesTitle: '승인된 매핑',
+  candidatesNote: '검토 담당자가 승인한 매핑입니다. 하나 이상 골라 새 묶음에 더합니다. 승인은 검토 기록이므로, 묶음에 담아 게시하기 전에는 환자 화면에 반영되지 않습니다.',
+  candidatesEmpty: '묶음에 더할 수 있는 승인된 매핑이 없습니다.',
+  colPick: '선택',
+  colTreatment: '치료',
+  colClinic: '병원',
+  colDecision: '판정',
+  colScope: '적용 범위',
+  colValidity: '유효 기간',
+  colApprover: '승인자',
+  colFingerprint: '승인 뒤 치료 정보',
+  decisionCovered: '보장함',
+  decisionExcluded: '보장 제외',
+  pickLabel: (name: string): string => `${name} 매핑 선택`,
+  targetBaseFee: '공통 기본비용',
+  targetUnknown: (id: string): string => `${id} (이름을 읽지 못함)`,
+  clinicUnknown: '병원을 알 수 없음',
+  approverUnknown: '기록 없음',
+  fingerprintCurrent: '승인 뒤 바뀐 점 없음',
+  fingerprintStale: '승인 뒤 치료 정보가 바뀜',
+  fingerprintUnknown: '확인하지 못함',
+  staleWarning: '승인한 뒤 치료 정보가 바뀌었습니다. 이 매핑을 골라 게시하면 서버가 거절합니다. 다시 검토·승인이 필요합니다.',
+  unknownIssue: {
+    TARGET_VERSION_ABSENT: '치료(기본비용) 버전을 찾을 수 없어',
+    APPROVED_FINGERPRINT_MISSING: '승인 때 기준이 기록되지 않아',
+    TARGET_UNREADABLE: '치료 정보를 읽지 못해',
+  } as Readonly<Record<string, string>>,
+  unknownIssueGeneric: '정보를 읽지 못해',
+  unknownNote: (reason: string): string => `${reason} 승인 뒤 바뀌었는지 확인하지 못했습니다. 게시할 때 서버가 다시 확인합니다.`,
+  alreadyIn: (bundles: string): string => `이미 담긴 묶음: ${bundles}`,
+  unreadableNote: (count: number): string => `승인 상태를 읽지 못한 매핑이 ${count}건 있습니다. 위 목록에 보이지 않는다고 해서 없다는 뜻이 아닙니다.`,
+  selectedCount: (count: number): string => (count === 0 ? '고른 매핑이 없습니다.' : `고른 매핑 ${count}건`),
+
+  // 미리보기
+  previewButton: '미리보기',
+  previewHintNeedBase: '사용 가능한 기준 묶음을 하나 골라 주세요.',
+  previewHintNeedMapping: '더할 매핑을 하나 이상 골라 주세요.',
+  previewTitle: '새 묶음에 이렇게 담깁니다',
+  previewNote: '구성을 읽기만 합니다. 이 미리보기로는 아무것도 게시되지 않습니다.',
+  previewBase: (bundle: string): string => `기준 묶음 ${bundle}`,
+  previewSummary: (counts: { base: number; added: number; total: number }): string => `기준 묶음에서 ${counts.base}건, 새로 더한 매핑 ${counts.added}건 — 모두 ${counts.total}건이 담깁니다.`,
+  groupTitle: { PROFILE: '프로필', MAPPING: '매핑', DOCUMENT_RULE_SET: '서류 규칙 묶음' } as const,
+  groupEmpty: '없음',
+  sourceBase: '기준 묶음',
+  sourceAdded: '추가',
+  stateLabel: {
+    APPROVED: '승인됨',
+    PUBLISHED: '게시됨',
+    DRAFT: '초안',
+    REVIEW_REQUESTED: '검토 요청됨',
+    REJECTED: '반려됨',
+    UNDER_REREVIEW: '재검토 중',
+    SUPERSEDED: '대체됨',
+    EXPIRED: '기간 만료',
+    SUSPENDED: '중지됨',
+  } as Readonly<Record<string, string>>,
+  stateUnknown: '상태를 읽지 못함',
+  itemVersion: (version: string): string => versionLabel(version),
+  profileLabel: (generation: string, insurer: string): string => `${generation} · ${insurer}`,
+  defectsTitle: '게시를 막는 문제',
+  conflictsTitle: '겹치는 매핑',
+  previewClean: '게시를 막는 문제와 겹치는 매핑이 없습니다.',
+  previewBlocked: '위 문제가 해결되기 전에는 게시할 수 없습니다.',
+  itemWhoMapping: (name: string): string => `매핑 "${name}"`,
+  itemWhoProfile: (id: string): string => `프로필 ${id}`,
+  itemWhoRuleSet: (id: string): string => `서류 규칙 묶음 ${id}`,
+  itemWhoBundle: '묶음',
+  defects: {
+    ITEM_STATE_NOT_PUBLISHABLE: (who: string): string => `${who}: 승인된 상태가 아니라서 게시할 수 없습니다.`,
+    FINGERPRINT_STALE: (who: string): string => `${who}: 승인한 뒤 치료 정보가 바뀌어 게시할 수 없습니다. 다시 검토·승인이 필요합니다.`,
+    OUTSIDE_VALIDITY: (who: string): string => `${who}: 유효 기간이 오늘 날짜를 벗어나 게시할 수 없습니다.`,
+    ITEM_REF_MISMATCH: (who: string): string => `${who}: 묶음이 가리키는 버전과 저장된 내용이 맞지 않습니다.`,
+    TREATMENT_VERSION_ABSENT: (who: string): string => `${who}: 매핑이 가리키는 치료(또는 공통 기본비용)의 버전을 찾을 수 없습니다.`,
+    REF_UNRESOLVABLE: (who: string): string => `${who}: 항목을 읽을 수 없습니다.`,
+    FINGERPRINT_MISSING: (who: string): string => `${who}: 승인 때 기준이 기록되지 않았습니다.`,
+    APPROVER_MISSING: (who: string): string => `${who}: 승인자가 기록되지 않았습니다.`,
+    APPROVER_INCOMPLETE: (who: string): string => `${who}: 승인자 기록이 덜 채워져 있습니다.`,
+    POLICY_SOURCES_MISSING: (who: string): string => `${who}: 약관 출처가 기록되지 않았습니다.`,
+    POLICY_SOURCE_INCOMPLETE: (who: string): string => `${who}: 약관 출처 기록이 덜 채워져 있습니다.`,
+    SCOPE_INVALID: (who: string): string => `${who}: 적용 범위가 올바르지 않습니다.`,
+    MAPPING_ID_DUPLICATE: (who: string): string => `${who}: 같은 매핑이 묶음에 두 번 들어 있습니다.`,
+    CELL_PROFILE_DUPLICATE: (who: string): string => `${who}: 같은 세대·보험사 형태의 프로필이 두 번 들어 있습니다.`,
+  } as Readonly<Record<string, (who: string) => string>>,
+  defectUnknown: (who: string, code: string): string => `${who}: 알 수 없는 문제로 게시할 수 없습니다 (코드 ${code}).`,
+  conflictLine: (name: string, other: string, cells: string): string => `${name}: ${other} 과(와) 같은 치료에서 적용 범위(${cells})가 겹칩니다. 둘 중 하나를 빼야 게시할 수 있습니다.`,
+  conflictOtherBase: (id: string, version: string): string => `기준 묶음의 매핑 ${id} ${versionLabel(version)}`,
+  conflictOtherAdded: (id: string, version: string): string => `함께 고른 매핑 ${id} ${versionLabel(version)}`,
+
+  // 게시
+  publishButton: '게시',
+  publishHintNoPreview: '미리보기를 확인한 뒤에 게시할 수 있습니다.',
+  publishHintChanged: '고른 내용이 미리보기를 본 뒤 바뀌었습니다. 미리보기를 다시 실행해 주세요.',
+  publishHintBlocked: '미리보기에 게시를 막는 문제가 있어 게시할 수 없습니다.',
+  publishHintReady: '미리보기와 같은 구성입니다. 게시하면 새 묶음이 만들어지지만, 어느 병원에도 바로 적용되지는 않습니다.',
+  publishedNotApplied: (bundle: string): string =>
+    `새 규칙 묶음 ${bundle} 을(를) 게시했습니다. 아직 어느 병원에도 적용되지 않았습니다. 병원에 적용하려면 플랫폼 운영자가 규칙 사용 범위에서 병원별로 지정해야 합니다.`,
+
+  // 거절: 모두 무엇이 바뀌지 않았는지로 끝난다.
+  nothingPublished: PUBLISH_NOTHING_CHANGED,
+  nothingPreviewed: '고른 내용은 화면에 그대로 남아 있습니다.',
+  notFound: '기준 묶음 또는 매핑을 찾을 수 없습니다.',
+  conflict: {
+    MAPPING_CONFLICT: '고른 매핑이 같은 치료의 다른 매핑과 같은 적용 범위(세대·보험사 형태)에서 겹쳐 게시하지 않았습니다. 겹치는 매핑을 빼고 미리보기를 다시 실행해 주세요.',
+    MAPPING_ALREADY_IN_BASE: '고른 매핑이 이미 기준 묶음에 들어 있어 게시하지 않았습니다. 그 매핑을 빼고 미리보기를 다시 실행해 주세요.',
+    BASE_BUNDLE_NOT_ACTIVE: '기준으로 고른 묶음이 지금은 사용할 수 없는 상태(중지됨)라서 게시하지 않았습니다. 사용 가능한 묶음을 기준으로 다시 골라 주세요.',
+    PREVIEW_REQUIRED: '이 구성의 미리보기를 서버가 확인하지 못해 게시하지 않았습니다. 미리보기를 다시 실행한 뒤 게시해 주세요.',
+  } as Readonly<Record<string, string>>,
+} as const;
+
+const SCOPE_NOTHING_CHANGED = '이 병원의 지정은 바뀌지 않았습니다.';
+
+export const SCOPE_COPY = {
+  navLabel: '관리자 메뉴',
+  navScope: '규칙 사용 범위',
+  title: '규칙 사용 범위',
+  note: '병원마다 어떤 규칙 묶음으로 계산할지 지정합니다. 병원 한 곳씩만 바꿀 수 있고, 모든 병원에 한꺼번에 적용하는 기능은 없습니다. 지정한 병원만 그 묶음으로 계산합니다.',
+  loading: ADMIN_COPY.loading,
+  unauthenticated: ADMIN_COPY.unauthenticated,
+  forbidden: '병원의 규칙 사용 범위를 지정할 권한이 없습니다. 플랫폼 단위 운영자(PO) 권한이 있는 계정으로 로그인해 주세요.',
+  loadFailed: ADMIN_COPY.loadFailed,
+  retry: ADMIN_COPY.retry,
+  sessionAs: '로그인한 사용자',
+  busy: '처리하는 중입니다…',
+  empty: '등록된 병원이 없습니다.',
+
+  colClinic: '병원',
+  colCurrent: '현재 적용본',
+  colChange: '바꿀 묶음',
+  colApply: '적용',
+  currentNone: '지정된 묶음 없음',
+  assignedLine: (time: string, by: string): string => `${time} · ${by} 지정`,
+  currentSuspendedNote: '현재 적용본이 중지된 묶음입니다. 이 병원의 계산은 보류 중이니 사용 가능한 묶음으로 다시 지정해 주세요.',
+  selectLabel: (clinic: string): string => `${clinic} 에 적용할 묶음`,
+  optionNone: '바꾸지 않음',
+  optionLine: (short: string, status: string, time: string): string => `${short} · ${status} · ${time} 게시`,
+  optionSuspended: (line: string): string => `${line} — 중지됨, 선택할 수 없음`,
+  changeLine: (from: string, to: string): string => `현재 ${from} → 바꿀 ${to}`,
+  sameAsCurrent: '이미 이 묶음을 쓰고 있습니다.',
+  suspendedHint: '중지된 묶음은 선택할 수 없습니다.',
+  confirmButton: '이 병원에 적용',
+  confirmLabel: (clinic: string): string => `이 병원에 적용 (${clinic})`,
+  bundlesEmpty: '게시된 규칙 묶음이 없어 지정할 수 없습니다.',
+
+  assigned: (clinic: string, bundle: string): string => `${clinic} 의 규칙 사용 범위를 ${bundle} 으로 지정했습니다. 다른 병원은 바뀌지 않았습니다.`,
+
+  nothingChanged: SCOPE_NOTHING_CHANGED,
+  failure: {
+    scopeChanged: '이 병원의 현재 적용본이 화면을 불러온 뒤 다른 곳에서 바뀌었습니다. 최신 상태를 다시 불러왔으니 확인하고 다시 골라 주세요.',
+    bundleNotActive: '고른 규칙 묶음이 화면을 불러온 뒤 중지되었거나 사용할 수 없는 상태가 되어 지정하지 않았습니다. 최신 상태를 다시 불러왔으니 사용 가능한 묶음을 골라 주세요.',
+    notFound: '병원 또는 규칙 묶음을 찾을 수 없습니다.',
+    generic: '요청을 처리하지 못했습니다. 입력을 확인해 주세요.',
+    server: '서버 오류로 처리하지 못했습니다.',
+    conflictGeneric: '현재 상태와 맞지 않아 처리하지 못했습니다.',
+  },
+} as const;

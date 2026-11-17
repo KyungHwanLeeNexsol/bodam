@@ -1,0 +1,96 @@
+# PR Verification Workflow
+#
+# Pull request 마다 Linux 에서 설치 -> 타입 검사 -> 전체 Vitest -> 빌드를 실행한다.
+# 범위: 이 네 단계뿐이다. 브라우저 전체 시험(Playwright)과 Windows 실행은 넣지 않았다.
+# 권한: contents: read 하나. 운영 비밀값, 배포 권한, 외부 서비스 연결이 없다.
+#
+# 단계 구분:
+#   - 단계마다 이름이 다르고 로그가 따로 접힌다. 한 단계가 실패하면 그 단계가 빨간색으로 표시된다.
+#   - 설치가 성공하면 타입 검사·시험·빌드는 앞 단계가 실패해도 모두 실행한다. 한 번의 실행에서 실패한 단계를 전부 볼 수 있게 하려는 것이다.
+#   - 어떤 단계도 continue-on-error 를 쓰지 않는다. 실패한 단계가 하나라도 있으면 작업 전체가 실패한다.
+#   - 마지막 요약 단계는 각 단계의 결과를 표로 적을 뿐이고, 실패를 통과로 바꾸지 못한다.
+#
+# Node 버전: 24.22.1. 이 저장소의 타입 검사와 전체 시험을 가장 최근에 실행한 것으로 기록된 버전이다
+# (.moai/specs/SPEC-REIMBURSEMENT-001/readiness-report-cli.md §6, Windows 11). 앞선 마일스톤 기록은 24.19.0 이다.
+# 그 기록의 전체 시험에는 줄바꿈 때문에 실패한 2건이 있었다(.moai/specs/SPEC-REIMBURSEMENT-001/ci-pr-verification.md 가 원인을 다룬다).
+# 버전을 바꿀 때는 이 파일 한 곳만 고친다.
+
+name: PR Verification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Next.js 가 빌드 중 사용 통계를 보내지 않게 한다. CI 는 GitHub 이 자동으로 true 로 둔다.
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  verify:
+    name: Verify (Linux, Node 24.22.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+
+      - name: Show runner and tool versions
+        run: |
+          uname -srm
+          node --version
+          npm --version
+
+      - name: "Step 1/4 - Install dependencies (npm ci)"
+        id: install
+        run: npm ci
+
+      - name: "Step 2/4 - Type check (npm run typecheck)"
+        id: typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run typecheck
+
+      - name: "Step 3/4 - Full test suite (npm test = vitest run)"
+        id: test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm test
+
+      - name: "Step 4/4 - Build (npm run build)"
+        id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
+
+      - name: Summarize step results
+        if: ${{ always() }}
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          {
+            echo "### PR verification (Linux, Node 24.22.1)"
+            echo ""
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| 1/4 npm ci | ${INSTALL} |"
+            echo "| 2/4 typecheck | ${TYPECHECK} |"
+            echo "| 3/4 vitest (full) | ${TEST} |"
+            echo "| 4/4 build | ${BUILD} |"
+            echo ""
+            echo "Result values: success / failure / skipped / cancelled. Any value other than success fails this job."
+            echo "Not covered: browser tests (Playwright), Windows, lint (no lint script)."
+          } >> "$GITHUB_STEP_SUMMARY"

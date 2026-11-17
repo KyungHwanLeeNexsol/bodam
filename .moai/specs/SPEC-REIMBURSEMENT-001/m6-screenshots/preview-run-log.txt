@@ -1,0 +1,13 @@
+OK  portrait: 시작 화면 + 안내 띠
+OK  portrait: 세대 선택
+OK  portrait: 도움말에 "가입 시기 경계 안내: 문구 검토 중"
+OK  portrait: 치료 선택(둘)
+OK  portrait: 정상 결과 금액 25,000원 / 24,000원 / 1,000원
+OK  portrait: 이용 완료 화면 (계산 요청 1회)
+OK  landscape: 시작 화면 + 안내 띠
+OK  landscape: 세대 선택
+OK  landscape: 도움말에 "가입 시기 경계 안내: 문구 검토 중"
+OK  landscape: 치료 선택(둘)
+OK  landscape: 정상 결과 금액 25,000원 / 24,000원 / 1,000원
+OK  landscape: 이용 완료 화면 (계산 요청 1회)
+OK  운영 구성: 문서 HTTP 200, 병원 조회 API HTTP 404, 이용 불가 안내 표시, 시험 안내 띠/iframe 0개

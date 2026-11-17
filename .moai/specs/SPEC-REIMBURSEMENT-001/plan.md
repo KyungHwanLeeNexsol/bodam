@@ -1,0 +1,574 @@
+# SPEC-REIMBURSEMENT-001 — 구현 계획 (plan.md)
+
+> 일정 추정은 쓰지 않는다. 순서와 우선순위만 적는다.
+>
+> **확인 표시 규칙 (plan 워크플로 규칙):** 모든 확인 표시(NEEDS CLARIFICATION)는 구현 착수 승인(Implementation Kickoff Approval, plan→run 사람 게이트) 전에 풀려야 한다. 확인 항목 36개 가운데 31개는 열려 있고(확인 표시 유지), 5개는 닫았다. 3개(#9, #25, #28)는 기록되었거나 파일로 확인된 근거로 닫았고(소유자 승인이 아니다), 2개(#31, #34)는 2026-10-16 소유자 결정으로 닫았다(§E.10). 열린 31개는 구현 착수 승인 게이트에서 소유자에게 제시된다. 확인 표시는 §E.2~§E.5에만 두고, 다른 절에서는 "(§E #n)"으로 가리킨다. §E의 "처음 필요" 마일스톤은 답이 처음 쓰이는 곳을 뜻하며, 그 마일스톤까지 답을 미뤄도 된다는 뜻이 아니다.
+>
+> **SPEC ID 정규화 (2026-10-15):** 이전 ID `SPEC-REIMBURSEMENT-ESTIMATOR-001` → 현재 ID `SPEC-REIMBURSEMENT-001`. 이유: 스키마 SSOT(`.claude/rules/moai/development/spec-frontmatter-schema.md` 38행)의 정규식 `^SPEC-[A-Z][A-Z0-9]+-[0-9]{3}$`가 이전 ID를 거절하고 현재 ID는 두 정규식을 모두 통과한다(§C R-14, research.md §5 #10). 사용자가 2026-10-15 구현 착수 답변에서 공통 스키마를 넓히는 대신 ID를 바꾸는 쪽을 승인했다. 이미 존재하는 계획 브랜치 `plan/SPEC-REIMBURSEMENT-ESTIMATOR-001`은 이름을 바꾸지 않고 과거 기록으로 남긴다. 감사 기록·개정 이력에 적힌 이전 ID는 당시 사실이라 그대로 둔다.
+
+## §A 배경
+
+### A.1 근거 문서
+- 기획서 `보담_기획설계_v0.2.md`(2026-10-14 수정본), `.moai/project/product.md`, `structure.md`, `tech.md`, `interview.md`, `design-requirements.md`(§5.13이 현재 디자인 상태). 읽은 범위와 사실은 research.md에 있다.
+- 기준: HEAD `c1f5d76e6e36d7fc18b3a7fdc6c6d9dbe9d4e5b2`, 디자인 blob `4b4a1587e4361996ec834b5122515051c84cf7e8`.
+- 이 SPEC은 단독 SPEC이며 에픽에 속하지 않는다. 앞선 SPEC이 없으므로 `depends_on`이 없다.
+
+### A.2 Tier와 진행 경로
+- Tier L(엔진·서버·키오스크·관리자 네 영역, 예상 파일 수가 15개를 넘음). 산출물 5종(spec, plan, acceptance, design, research)과 spec-compact.md, progress.md.
+- Tier L이므로 spec-workflow.md의 PR 경로(Route B)를 따른다. 마일스톤이 3개 이상이고 파일이 10개를 넘으므로 run 단계에서 orchestrator가 `manager-lead` 사용 여부를 판단한다(Phase 4).
+- 최상위 요구사항 25개(모듈 5개: ENG 5, DATA 5, FLOW 6, API 4, ADM 5), 최상위 수용기준 25개(AC-001~AC-025)로 Tier L 상한(각 25)에 맞추었다. 수용기준 아래에는 문자 접미사 세부 항목이 모두 200개 있으며(M7 병원별 무조작 정책 설정에서 `AC-023f`, `AC-023g`, `AC-025g` 3개가 더해졌다. 개정 4에서 `AC-021f`, `AC-021g` 둘이 더해졌고 개정 5에서 `AC-011m`~`AC-011p`, `AC-015l`~`AC-015p`, `AC-016k`~`AC-016n`, `AC-021h`~`AC-021m` 19개가, 개정 6에서 `AC-016o`와 `AC-020c`~`AC-020i` 8개가 더해졌다), 세부 항목 하나는 아래 §B의 마일스톤 하나에서만 닫히고 그 마일스톤은 시험 대상 코드가 이미 있는 곳이다(§B.1).
+
+### A.3 이번 SPEC이 하지 않는 것
+- 표준 공제·한도 값, 약관 출처, 병원 가격, 서류 요건을 만들거나 추정하지 않는다. 운영 데이터가 승인되기 전까지 모든 계산은 "확인 필요"다(design.md DD-23).
+- `design/design.pen`을 바꾸지 않는다. 디자인 후속 항목은 §F에 소유자 전달용으로만 적는다.
+
+### A.4 먼저 검토할 결정 (바뀔 가능성이 큰 순서)
+1. 결과 형식과 상태 코드(DD-03): 세 금액의 null 규칙, 보류 사유 코드 목록과 판정 순서, 보류 줄은 어느 그룹에도 넣지 않는다는 규칙, 가정 코드.
+2. 공개 API 경로에 병원 slug를 넣는 결정(DD-19, §E #33)과 409 본문 형식(DD-14).
+3. 표준 가정 프로필을 별도 엔티티로 두는 결정과 그룹·공유 한도 모델(DD-02, DD-18), 매핑 작성 주체(DD-17, §E #34).
+4. 보류 결과 화면 `K04_Result_Hold`의 구성·문구·동작 네 개(DD-07), 환자용 보류 분류 문구(DD-21).
+5. 출처 판정을 치료·기본비용 줄까지 넓힌 규칙과 테스트 데이터 표시 조건(DD-04).
+6. 무조작 시간 잠정값과 20초 저장 하한, 큰 글자 보기 초기화(DD-10, DD-12).
+7. 그 밖의 기계적 단계(디렉터리 구성, 어댑터, 화면 조립)는 뒤에 둔다.
+
+### A.5 작성 세션의 사용자 지시 (원문 응답 미보존)
+
+이 문서는 아래 세 가지를 `작성 세션의 사용자 지시`라는 이름으로 부른다. 뜻은 다음과 같다. 이 SPEC을 쓰고 고친 세션에서 사용자가 답한 것으로 작성 기록에 남은 것이다. 그 원문 응답은 저장소에 보존되어 있지 않다. 2026-10-14 개정 4 요청에서 사용자가 이 세 가지의 유지를 직접 지시했다. 이 이름은 소유자 승인 기록이 아니며, 세 항목 말고는 어느 항목에도 쓰지 않는다. 개정 4 이전 문서에서 이 세 가지의 출처를 소유자 몫으로 적었던 자리는 모두 이 이름으로 바꾸었다.
+
+1. **SPEC 하나로 유지한다.** 관리자 영역을 따로 떼지 않는다. 판정 기준에 숨어 있던 동작은 모두 요구사항 문장으로 올리거나 지웠다.
+2. **시험 러너는 Vitest다.** 확인 항목에서 지웠고 §G와 DD-20에 확정값으로 적었다.
+3. **운영 데이터 11항목은 자료가 생길 때까지 보류한다.** 값을 추정하지 않는다. §E.1에 보류 확정 자료로 옮겼다(확인 표시 없음).
+
+세 가지와 별개로, 플랫폼 운영자의 병원별 규칙 긴급 중지는 이 SPEC의 요구사항이 아니다. 기획서 §7 6번은 플랫폼 운영자에게 관리자 소속·역할 관리와 규칙 사용 범위 지정 둘만 주었고 긴급 중지는 원문에 없다. 계획 감사 1회차 뒤 요구사항에서 뺐으며, 그 제거를 승인한 기록은 없다. 개정 4 요청에서 사용자가 이 범위에 넣지 않도록 지시했다. §F 6번에 선택 후속 항목으로만 남긴다.
+
+위 세 가지는 확인 항목이 아니다. 확인 항목 36개 가운데 31개는 승인되지 않았으므로 §E.2~§E.5에 열린 확인 항목으로 남긴다. 이 항목들은 구현 착수 승인 게이트에서 소유자에게 제시된다. 나머지 5개 가운데 3개(#9, #25, #28)는 기존 문서에 이미 기록된 결정이거나 파일을 읽어 확인한 사실이어서 근거를 남기고 닫았으며, 이것은 소유자 승인이 아니다. 2개(#31, #34)는 2026-10-16에 소유자가 정해 닫았다(§E.10). 이 문서의 어떤 잠정값도 소유자 승인으로 적지 않는다.
+
+개정 5(2026-10-15)의 새 동작은 출처가 둘뿐이고 문서에 각각 이름을 붙였다. 둘 다 위 세 가지(`작성 세션의 사용자 지시`)와 별개이며, 다른 항목에는 쓰지 않는다.
+
+- `사용자 지시 (2026-10-15 개정 5 요청)`: 이 개정 요청에서 사용자가 직접 정한 규칙이다(design.md DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"의 규칙 1~4 본문, spec.md REQ-FLOW-004 C13). 소유자 승인 기록이 아니다.
+- `SPEC 제안 (승인 전)`: 요청에 없던 빈틈을 메우려고 이 SPEC이 덧붙인 제안이며 소유자 승인이 아니다. 열린 확인 항목 31개에 행을 더하지 않으므로 §E 번호가 없다(항목 생명주기 상태를 요청마다 새로 읽는 경로 REQ-DATA-002 C11·C12, 열린 `TimeoutDialog`의 초기화 시점 유지, 요청 시간 제한과 경고 시간의 관계, 409 본문 `treatmentsUnpublished[]`의 내용).
+
+## §B 마일스톤
+
+순서: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M8. M2와 M3는 모두 M1 형식에 기대므로 M1 뒤에 시작할 수 있지만, M3가 닫는 `AC-011k`가 M2의 서류 산출과 맞춰 보는 항목이라 M3를 닫으려면 M2가 끝나 있어야 한다. 기본 순서는 위와 같다. M8은 실제 데이터를 기다리는 관문이며 이 SPEC의 코드 산출물이 아니다.
+
+표기: "닫는 AC"는 그 마일스톤에서 판정을 끝내는 세부 항목이다. "증거만 내는 AC"는 그 마일스톤이 일부 증거(예: 상태 기계의 unit 부분)를 만들고 판정은 뒤 마일스톤에서 끝나는 항목이다. 각 마일스톤 완료 보고는 실행한 명령과 출력 원문을 progress.md §E.2에 남긴다.
+
+검증 명령은 Vitest 기준 예시이며 같은 뜻의 명령으로 바꿀 수 있다.
+
+### M1 엔진 형식·사용 가능 판정·공제·한도·결과 상태 — **첫 구현 단계**
+
+- 우선순위: High
+- 필요한 것: 없음(시험 러너 Vitest는 확정). 실제 데이터는 필요 없다. 모든 시험 자료는 `TEST_FIXTURE`다.
+- 범위: `src/engine` 순수 TS 모듈, 시험 자료, 가져오기 경계 검사. 최소 `package.json`·`tsconfig.json`·Vitest 설정(Next.js 골격은 M4에서 같은 패키지에 더한다).
+- 진입 조건: 구현 착수 승인 통과.
+- 종료 조건: 아래 하위 단계가 닫는 AC가 모두 통과하고 엔진 커버리지 85% 이상.
+
+| 하위 단계 | 할 일 | 파일(제안) | 닫는 AC |
+|-----------|-------|------------|---------|
+| M1.1 형식과 상태 코드 | DD-03의 입력·출력 형식(`LineResult`에 지급액 필드 없음, `GroupResult`의 `P`·`P_pooled`, 제외 항목의 `payout: 0`), 열거값, 보류·가정 코드, 엔진 입력 검증(세대 열거, 치료 0개, 줄 금액 범위와 병원 결제액 T의 검사 합산, 중복 제거), 수치 보조 함수(`isWon`, `isBasisPoints`, 검사 덧셈 `checkedAdd`, `비율 × 금액` 검사 곱셈 `checkedMulBp`, 줄 금액 합산 `sumLineAmounts`)와 기술 안전 한도 `MAX_AMOUNT_WON`(DD-24, 구현자가 이 단계에서 불변 조건 아래 확정), 원인 인자 없음 | `src/engine/types.ts`, `src/engine/validate.ts`, `src/engine/numeric.ts`, `src/engine/limits.ts`, `tests/engine/validate.test.ts`, `tests/engine/numeric.test.ts` | AC-006b, AC-006c, AC-006h |
+| M1.2 사용 가능 판정과 보류 행렬 | 묶음 단위 선행 판정 `isBundleUsable()`(규칙 사용 범위 없음, 규칙 묶음 중지 `RuleBundleSnapshot.status = SUSPENDED` → `RULE_BUNDLE_SUSPENDED`, 버전·해시가 같아도 쓰지 않음, 묶음 안의 항목을 읽지 않음)와 항목 단위 `isUsable()`·`ItemUsabilityReason`(묶음 상태를 보지 않음, 무결성이 마지막 검사), 구성별 허용 출처, 프로필 칸 조회·사용 가능 판정·구조 검사를 묶은 `resolveProfile()`(대체 금지, 칸에 프로필 0개·2개 이상), `checkProfileStructure()`(구조 결함 → `PROFILE_INVALID`), 매핑 조회 `resolveMapping()`(후보 범위, 후보별 `isUsable`과 지문, 사용 가능한 후보 개수, 고정 우선순위, 필드 규칙 방어), 줄 판정 `decideLine()`(줄 출처 → 분류 → `resolveMapping` → `groupKey`. 준비 상태 계산도 같은 함수를 부른다, DD-23), 판정 순서, `estimate()`의 앞단(입력 검증 → 묶음 선행 판정 → 프로필 → 줄 판정, DD-04 호출 순서 1~6. 산술은 M1.3이 같은 파일에 잇는다) | `src/engine/usability.ts`, `src/engine/resolve.ts`, `src/engine/profile-structure.ts`, `src/engine/estimate.ts`(앞단), `tests/engine/hold-matrix.test.ts`, `tests/engine/origins.test.ts`, `tests/engine/mapping-resolve.test.ts`, `tests/engine/bundle-gate.test.ts`, `tests/fixtures/engine/profiles.fixture.ts`, `tests/fixtures/engine/mappings.fixture.ts`, `tests/fixtures/engine/lines.fixture.ts` | AC-006a, AC-008a~d, AC-008f, AC-008h, AC-008i, AC-008l, AC-009b, AC-010a |
+| M1.3 그룹·공제·한도·원 단위 계산 | 닫힌 공제 방식 4종, 한도 5종, 그룹 지급액 `P`와 공유 한도 배분(`groupOrder` 순서, `P_pooled`), 치료 단위 공제·지급액 파생 금지, 명목·실제 공제, 보류 줄 그룹 제외, 예상 병원 결제액·기본비용, 프로필 값 무효(`PROFILE_VALUE_INVALID`)·계산 범위 초과(`CALC_RANGE_EXCEEDED`) 그룹 보류(계산 범위 초과를 뺀 저장 자료만의 값 검사는 `checkGroupValues()`로 따로 둔다. 준비 상태 계산이 같은 함수를 부른다, DD-23)(DD-24의 검사 연산 순서 표: 비율 곱 → `ROUND_HALF_UP`일 때만 반올림 덧셈 `+ H`. `SPLIT`은 급여분 곱 `p1` → 비급여분 곱 `p2` → 두 곱의 합 `s` → 필요하면 그 합에 한 번 `s + H`이며 두 곱을 각각 반올림하지 않는다. 실패 단계 이름, 잘라 맞추지 않음), 공유 한도 풀 값 결함의 멤버 그룹 보류, 확정된 `EXCLUDED` 매핑의 `EXCLUDED_CONFIRMED` 줄 상태와 제외 지름길 없음, 상태 합성, referenceGroups, assumptions, 출력 순서 고정(DD-03), basis(E·D·`D_applied`·L·P·`P_pooled`), 척도 상수 선언 | `src/engine/deduction.ts`, `src/engine/group-values.ts`, `src/engine/limit.ts`, `src/engine/rounding.ts`, `src/engine/constants.ts`, `src/engine/estimate.ts`(산술), `src/engine/sum.ts`, `tests/engine/examples.test.ts`, `tests/engine/rules.test.ts`, `tests/engine/pooled-limit.test.ts`, `tests/engine/numeric-groups.test.ts`, `tests/engine/states.test.ts`, `tests/engine/invariants.test.ts`, `tests/engine/mapping-coverage.test.ts`, `tests/engine/order-independence.test.ts`, `tests/engine/pool-structure.test.ts` | AC-002a~j, AC-003a~h, AC-004a~h, AC-005a, AC-006d, AC-006e, AC-008e, AC-008g, AC-008j, AC-008k, AC-008m |
+| M1.4 결정성과 가져오기 경계 | 반복·새 프로세스 직렬화 비교, 금지 모듈·주입 없는 시계·난수 검사, 하드코딩 검사(프로필 숫자 필드를 하나씩 바꾸는 동작 시험이 주 증거, 업무 값 이름에 묶인 숫자 리터럴만 잡는 좁은 정적 검사가 보조 증거; 선언이 허용되는 곳은 `src/engine/constants.ts`·`limits.ts`·`numeric.ts`), 운영 구성의 fixture 미포함 검사기와 합성(가짜) 진입점에 대한 음성 시험(운영 구성 진입점은 M4에서 처음 생기므로 실제 진입점 검사는 M4의 `AC-010b`가 닫는다) | `tests/engine/determinism.test.ts`, `tests/engine/profile-sensitivity.test.ts`, `tests/boundary/engine-imports.test.ts`, `tests/boundary/engine-literals.test.ts`, `tests/boundary/fixture-import-checker.test.ts` | AC-001a~c |
+
+- 증거만 내는 AC(뒤 마일스톤에서 닫음): AC-010b(M1.4의 검사기와 합성 진입점 음성 시험. 운영 구성 진입점이 생기는 M4가 닫는다)
+- 하위 단계 사이의 증거(모두 M1 안에서 닫힌다): M1.1은 AC-006a의 거절 부분(`validate.test.ts`, 닫는 곳 M1.2), AC-003h의 함수 수준 T 경계 쌍(`numeric.test.ts`)과 AC-006d의 형식 수준 부분(`estimate()` 입력 형식에 원인 인자가 없음)을 증거로만 낸다. M1.2는 AC-008m의 구조 결함 부분(`profile-structure`), AC-008j의 필드 규칙 방어(`resolveMapping`), AC-008e·AC-008g의 앞단 부분(묶음 → 프로필 → 줄 단계의 판정 순서)을 증거로만 낸다. 이 가운데 AC-003h, AC-006d, AC-008e, AC-008g, AC-008j, AC-008m은 M1.3이 닫는다. 그 판정이 이 단계의 산술과 상태 합성(그룹 값 검사, 정상 계산과의 비교, 결과 객체의 바이트 비교)을 필요로 하기 때문이다.
+
+검증 명령(예시):
+```bash
+npx vitest run tests/engine tests/boundary
+npx vitest run --coverage tests/engine
+npx tsc --noEmit
+```
+남길 근거: RED 단계의 실패 출력(TDD), GREEN 이후 통과 출력, 커버리지 표, 경계 검사 음성 시험의 실패 출력.
+
+### M2 서류 산출 엔진과 시험 자료 서류 규칙
+
+- 우선순위: High
+- 범위: `deriveDocuments()`, 고정 9줄(`DocumentLineKey`), 원인 모름 이중 평가(9줄이 세 범위 가운데 한 곳에 한 번씩, 두 평가의 사유가 다른 `COMMON` 줄은 서로 다른 사유를 모두 유지, 전용 줄 수에 상한 없음), `RULES_UNAVAILABLE`, 보류 시 null, `when` 평가 계약(규칙 안 AND·빠진 키 와일드카드·규칙 사이 OR, 선택 치료의 서류 표시 OR 집계, 보험사 형태·`setting` 평가, 우선순위 동률은 사유의 코드 포인트 순, 규칙·치료 배열 순서 독립, DD-06 "규칙 평가"), 비정상 입력 처리(`treatments`·`documentFlags`·플래그 값·`cause`·`insurerType`·`clinicSetting`의 형식 결함은 던지지 않고 값을 맞추지 않고 부분 사용 없이 `RULES_UNAVAILABLE`이며 `ON_HOLD`와 알 수 없는 상태의 null이 먼저), 공백뿐인 `reason`의 구조 결함 처리(`REASON_INVALID`, 유효한 사유의 원문은 그대로). 규칙이 하나도 없는 `rules: []`는 현재 구조 계약에서 유효하다.
+- 파일(제안): `src/engine/documents.ts`, `tests/engine/documents.test.ts`, `tests/fixtures/engine/document-rules.fixture.ts`(기획서 §4 예시, "검증 필요" 표시).
+- 진입: M1 종료. 종료: 닫는 AC 통과.
+- 닫는 AC: AC-007a, AC-007b, AC-007c, AC-007d, AC-007e, AC-007h, AC-007j, AC-007k, AC-007l
+- 검증 명령: `npx vitest run tests/engine/documents.test.ts --coverage`
+
+### M3 데이터 모델·생명주기·저장소·버전·게시 검증
+
+- 우선순위: High
+- 범위: DD-18 엔티티의 형식(`CoverageReviewRequest` 포함), 생명주기 상태 기계(DD-17, `APPROVED`·`PUBLISHED` → `UNDER_REREVIEW`), 저장소 인터페이스와 메모리 구현, 지문 계산(DD-15), 재검토 기준(DD-16), `CatalogVersion`·`RuleBundleVersion` 불변 게시와 복구, 운영 카탈로그의 `DEMO`·`TEST_FIXTURE` 게시 거절, 카탈로그·규칙 묶음 게시의 수치 범위 검증(DD-24; 어긋난 필드 경로와 함께 거절하고 저장하지 않음), 규칙 묶음 게시의 매핑 필드 규칙(DD-03: `COVERED`/`EXCLUDED`와 `groupKey`·`exclusionReason`·약관 출처)·프로필 구조(M1.2의 `checkProfileStructure()` 재사용)·묶음 교차 검사(같은 묶음의 프로필에 `groupKey`가 있는지, 칸마다 프로필 하나, 매핑 id마다 버전 하나, 프로필 없는 칸의 매핑은 허용), 서류 규칙 묶음 게시 검증(구조와 `when` 계약 — 알 수 없는 키·열거 밖 값·`true`가 아닌 플래그·0 이상의 안전 정수가 아닌 `priority` — 만 확인하고 상해·질병 전용 줄 수는 거절 사유로 보지 않음), 규칙 묶음 가용성 기록(`RuleBundleStatusEvent`: 게시 때 `ACTIVE`를 같은 트랜잭션에 기록, 중지는 묶음 기록만 바꾸고 개별 항목 상태는 그대로, 같은 묶음 id의 재활성화 거절, 중지 사유 필수), 운영 준비 상태 계산(DD-23: 프로필 칸·치료 매핑·서류 규칙·규칙 사용 범위와 묶음 상태의 네 표와 병원·칸별 `calculationReady`·`documentReady`. M1의 `isBundleUsable`·`isUsable`·`resolveProfile`·`resolveMapping`·`decideLine`·`checkGroupValues`를 그대로 불러 쓰며 두 번째 구현을 두지 않음), 보험사 기관 분리, 병원별 무조작 정책 저장·읽기(`IdlePolicy`. 저장된 정책이 없으면 DD-10 표의 값을 내는 읽기 함수이며 `completionHoldSeconds`는 저장된 값이 없으면 null), 항목 버전의 바뀌지 않는 내용과 현재 생명주기 상태·승인자·매핑의 승인 지문(`approvedFingerprint`)을 따로 함께 읽는 저장소 질의(항목 상태 읽기 하나가 항목 버전 id 목록을 받는다. DD-14 "항목 생명주기 상태와 캐시 계약", SPEC 제안). 게시 검증과 중지 사유 검사는 유형 있는 도메인 오류로 거절하고 HTTP 오류로의 변환은 하지 않는다(M3에는 HTTP 계층이 없다. 공개 경로의 변환은 M4, 관리자 경로의 변환은 M7).
+- **M3 필수 시험: 프로필 내용 해시 계약 (M3 · 구현·검증됨: 메모리 저장소 단위 수준, progress.md M3.D1 참조):** 게시·봉인 쪽의 프로필 내용 해시는 엔진의 `profileContent`(`src/engine/usability.ts`) 하나로 만든다(두 번째 정규화 구현 금지). `groups`는 `groupKey` 순, `sharedLimitPools`는 `poolKey` 순(유니코드 코드 포인트 순)으로 정렬한 사본이 입력이고 `groupOrder`는 저장된 순서 그대로, 머리 정보와 `contentHash`는 제외, 구조가 잘못된 프로필은 고치지 않고 구조 검사가 거절한다. 주입하는 해시 함수는 객체 키 삽입 순서에 영향을 받지 않아야 하며 운영 해시 구현은 M3의 일이다. M3는 (i) 원래 순서의 해시가 `groups`·`sharedLimitPools`를 다른 순서로 저장한 프로필에서도 검증을 통과하고 (ii) 실제 규칙 값이나 `groupOrder`가 바뀌면 옛 해시로 검증이 실패함을 시험한다(`AC-011a`, `AC-008a`). 이 계약 이전 방식으로 만든 해시는 저장 순서가 키 순서가 아니면 검증되지 않는다.
+- **M3 필수 시험: 서류 규칙 묶음 내용 해시 계약 (M3 · 구현·검증됨: 메모리 저장소 단위 수준, progress.md M3.C·M3.D1 참조):** 게시·봉인 쪽의 서류 규칙 묶음 내용 해시는 엔진의 `documentRuleSetContent`(`src/engine/usability.ts`) 하나로 만든다(두 번째 정규화 구현 금지). `rules`는 정렬한 사본이 입력이고 머리 정보와 `contentHash`는 제외, 구조가 잘못된 규칙은 고치지 않고 그대로 두며 구조 검사가 거절한다. 주입하는 해시 함수는 객체 키 삽입 순서에 영향을 받지 않아야 하며(운영 해시는 객체 키 순서에 대해 정규형이어야 한다) 운영 해시 구현은 M3의 일이다. M3는 (i) 원래 순서의 해시가 `rules`를 다른 순서로 저장한 묶음에서도 검증을 통과하고 (ii) 실제 규칙 내용이 바뀌면 옛 해시로 검증이 실패함을 시험한다. M3 게시 검증은 엔진의 `checkDocumentRuleSetStructure`를 그대로 불러 쓴다(공백뿐인 `reason` 거절, 규칙이 하나도 없는 `rules: []`는 유효, `AC-007f`). 이 계약의 M3 쪽과 게시 검증은 구현·검증되었다(`AC-007f`. `AC-007g`·`AC-007i`·`AC-008g`는 M3의 닫는 AC가 아니며 M2.D로도 닫히지 않는다).
+- **M3 필수 검증·시험: 규칙 묶음 항목의 데이터 무결성 (M3 게시 거절 · 구현·검증됨: 메모리 저장소 단위 수준, progress.md M3.C·M3.D1 참조. 읽기 경로 M4 · 구현·시험됨: M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B):** M1 엔진은 묶음 컨테이너의 잘못된 항목을 막지 않는다. `bundle.profiles`에 `null`이 든 묶음은 `resolveProfile`(프로필 필터가 `.generation`을 읽음)에서, `bundle.mappings`에 `null`이 든 묶음은 `estimate()`(매핑 후보 필터가 `.treatmentId`를 읽음)에서 `TypeError`를 던진다. 사용자 결정에 따라 M1에서 고치지 않으며(엔진에 전체를 잡는 try/catch나 가드를 두지 않는다) 이 보장은 M3와 M4 계층이 맡는다. M3 책임: 규칙 묶음 게시 검증은 `profiles`·`mappings`가 배열이 아니거나 그 항목이 `null`이 아닌 비배열 객체가 아닌(`null`·`undefined`·원시값·배열) 묶음을 거절한다. 거절은 어긋난 필드 경로와 함께 유형 있는 도메인 오류로 나가고 아무것도 저장하지 않으며 기존 게시 거절 경로(`AC-011h`·`AC-011i`, 관리자 API의 400은 `AC-021f`)를 따른다. 프로필 안쪽 구조는 이미 공용 `checkProfileStructure`가 본다. 시험 입력 — `null` 프로필 항목, `null` 매핑 항목, `profiles = null`, `mappings = null`(각각 따로), 그 밖의 배열이 아닌 `profiles`·`mappings`(`undefined`·객체·문자열 등) — 각각 거절되고 저장소 전후 비교가 같음을 시험한다. 정상적인 빈 배열 `[]`은 형식 결함이 아니다. 범위 밖: `documentRuleSet` 항목과 그 밖의 묶음 필드. 이 검증의 M3 쪽(게시 거절)은 구현·시험되었다. 읽기 경로(M4)의 대응(`AC-006i`)은 M4.B에서 구현·시험되었다(progress.md M4.B).
+- **M3 도메인 서비스의 승인 규칙 (소유자 결정 2026-10-16, §E #31·#34):** 매핑의 작성·승인·반려는 도메인 서비스에서 RV 역할을 요구하고, 작성자와 승인자가 같은 주체이면 유형 있는 도메인 오류로 거절한다(거절하면 상태·승인자 기록이 바뀌지 않는다). 전체 권한 판정, 병원 소유 확인, HTTP 변환은 M7이 맡는다(`AC-022a`). 시험의 작성자·승인자 식별자는 `TEST_FIXTURE`이며 실제 운영 계정이나 승인 기록은 등록하지 않는다. 매핑 대상은 치료 id 또는 공통 기본비용의 `baseFeeId`이고(둘은 한 id 공간을 쓴다), 승인과 규칙 묶음 게시의 낡음 검사는 같은 현재 대상 조회와 같은 지문 함수를 쓴다. 재승인은 새 승인자와 새 승인 지문을 쓰고 이전 값은 상태 이력에 남기며 규칙 묶음 id와 내용 해시를 바꾸지 않는다.
+- 파일(제안): `src/server/domain/*.ts`, `src/server/repo/interfaces.ts`, `src/server/repo/memory/*.ts`, `src/server/lifecycle.ts`, `src/server/fingerprint.ts`, `src/server/versioning.ts`, `src/server/publish-validate.ts`, `src/server/readiness.ts`, `tests/server/*.test.ts`.
+- 진입: M1, M2 종료(`AC-011k`가 표 D를 `deriveDocuments()`의 `RULES_UNAVAILABLE`과 맞춰 본다). 종료: 닫는 AC 통과. DB 제품(§E #1)은 아직 정해지지 않았고 DB 어댑터를 구현하기 전까지 보류한다(2026-10-16 소유자 확인). M3는 저장소 인터페이스와 메모리 구현으로 진행하며, 이 마일스톤의 종료 조건에는 메모리 구현만 넣는다.
+- 닫는 AC: AC-007f, AC-009a, AC-009c, AC-010c, AC-011a, AC-011b, AC-011c, AC-011d, AC-011e, AC-011h, AC-011i, AC-011j, AC-011k, AC-011l
+- 상태 (2026-10-19): 닫는 AC 14건은 단위 수준과 메모리 저장소 위에서 구현·검증되었다(근거는 progress.md의 M3.A~M3.E). M3에 속하지 않아 아직 하지 않은 일은 M4의 HTTP 500 변환과 실제 API 연동(`AC-006i` 등. 이후 M4.B에서 구현됨), DB 어댑터(DB 제품은 §E #1에서 계속 보류), M7 권한, M5~M8이다. 외부 검토 두 건(공통 기본비용 매핑의 승인·게시 경로, 재승인 정보와 캐시 계약)도 단위 수준과 메모리 저장소 위에서 구현·검증되었다. 새 AC를 닫거나 더하지 않으며 AC-009a, AC-009c, AC-011b, AC-011j, AC-011l과 AC-011m~p의 데이터 계층 부분에 추가 근거를 준다(근거는 progress.md의 M3 외부 검토 보완 ①·②). 실제 HTTP 캐시와 그 시험은 M4의 일이었고 M4.C에서 구현·시험되었다(아래 M4 상태). SPEC 정식 lint와 CI는 아직 검증되지 않았다.
+- 증거만 내는 AC(M7에서 닫음): AC-024a, AC-025b(도메인 서비스 쪽: 같은 사람의 승인 거절과 다른 사람의 승인 성공, 관리자 API는 M7)
+- 검증 명령: `npx vitest run tests/server --coverage`
+
+### M4 서버 API (catalog / options / estimate)
+
+- 우선순위: High
+- 범위: Next.js App Router 골격, 운영 구성 진입점(production composition root, `src/server/composition.*`. 허용 출처 `OPERATING`만 주입하고 fixture 모듈로 가는 가져오기가 없어야 한다), 세 공개 경로(`/api/clinics/{slug}/catalog`(`idlePolicy` 포함, DD-19), `/api/clinics/{slug}/insurance/options`, `/api/clinics/{slug}/estimate`, §E #33), 요청 검증의 층과 거절 순서(병원 확인 → 400 구조 오류 → 422 `UNSUPPORTED_GENERATION`·`NO_TREATMENT_SELECTED` → 409 현재 버전 비교 → 422 `TREATMENT_NOT_PUBLISHED` → 계산, DD-19 "요청 검증의 층"이 정본이고 DD-14가 같은 순서를 옮겨 적는다. 겹침 여섯 사례 `AC-021h`~`AC-021m`), 병원별 규칙 사용 범위 해석, 서버 재계산(엔진 공유), 서류 산출 입력(선택한 모든 치료의 서류 표시를 확인된 제외까지 넘기고 공통 기본비용 줄은 넘기지 않음. 엔진은 형식이 틀린 `treatments`·열거 입력을 `RULES_UNAVAILABLE`로 거절하므로 서버는 검증을 마친 줄에서 이 입력을 만들어야 한다, `AC-019d`), 병원 소유 확인, 클라이언트 필드 무시, 409 본문, 오류 표, 응답 버전·`origin` 요약, `Cache-Control: no-store`, 로그에 환자 조건 없음, 서버 저장소·메모리·로그에 키오스크 시도 `requestId` 없음(`AC-016n`), 바깥 호출 없음, 엔진의 `INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION` 거절을 500 `INTERNAL_ERROR`로 변환(금액·치료 ID·내부 상세 없음. 구현·시험됨 — M4.B), 계산·options 요청마다 규칙 묶음 상태와 묶음에 든 항목의 현재 생명주기 상태·승인자·매핑의 승인 지문을 함께 새로 읽기(캐시하지 않음. 묶음 내용만 캐시할 수 있다. 항목 상태 경로는 SPEC 제안, DD-14, `AC-011m`~`AC-011p`), options 응답의 `ruleBundleStatus`와 `Cache-Control: no-store`, 응답 `versions.ruleBundleStatus`, 409 본문 `latest.ruleBundleStatus`, 버전이 같고 묶음이 중지이면 200 `ON_HOLD`(409 아님).
+- **M4 필수 검증·시험 (구현·시험됨: M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B — M1 엔진이 검사하지 않는 서버 책임):** 서버가 엔진을 부르기 전에 줄을 올바르게 조립해야 하는 네 가지 — (a) 선택한 `treatmentId`에 게시된 줄이 없는 경우, (b) 선택하지 않은 `treatmentId`의 줄이 엔진 입력에 들어가는 경우, (c) 같은 `treatmentId`가 `lines`와 `baseFeeLines` 양쪽에 있는 경우, (d) `isBaseFee` 표시가 줄이 든 배열과 어긋나는 경우. 네 가지 각각에 통합 시험을 둔다(`AC-006i`의 M4 하위 기준, design.md DD-03 "입력 검증의 책임 분담"). 위반이 생기면 결과 없이 처리하며 요청 거절인지 500인지는 M4 설계에서 정한다. 구현은 넷 모두 엔진 호출 전에 막고 HTTP 500 `INTERNAL_ERROR`로 처리하며 엔진은 호출되지 않는다(구현 결정, design.md DD-19 "구현 결정" 1). 이 넷은 M4.B에서 구현·시험되었다(`estimate-integrity.test.ts`).
+- **M4 필수 검증·시험: 읽어 온 규칙 묶음의 구조 (구현·시험됨: M4.B, 메모리 저장소 위 통합 시험, progress.md M4.B):** 서버는 저장소에서 규칙 묶음을 읽은 뒤 엔진을 부르기 전에 묶음의 구조를 검사한다: `profiles`·`mappings`가 배열이고 모든 항목이 `null`이 아닌 비배열 객체여야 한다. 어긋나면 서버 데이터 무결성 결함으로 보고 HTTP 500 `INTERNAL_ERROR`로 처리하며, 응답에 금액·`treatmentId`·내부 상세가 없고 결과 객체도 없다(`INVALID_NUMERIC_INPUT`·`INPUT_INTEGRITY_VIOLATION`과 같은 계열). **판정 순서는 그대로다:** 기존 묶음 단위 선행 판정이 먼저이고 바뀌지 않는다 — 규칙 사용 범위가 없으면(`bundle = null`) `CLINIC_RULE_SCOPE_ABSENT`, 그다음 `SUSPENDED`이면 200 `ON_HOLD` `RULE_BUNDLE_SUSPENDED`(병원 결제액은 숫자, 서류는 null)이며, 이 둘은 묶음 안의 어떤 항목도 읽지 않는다(`AC-008g`·`AC-008l`, design.md DD-04 `isBundleUsable`). 따라서 구조 검사는 이 선행 판정을 통과한 묶음(`ACTIVE`)에만 적용한다. 통합 시험: (i) `ACTIVE` 묶음에 `null` 프로필 항목 → 500, 본문에 금액·`treatmentId`·내부 상세 없음, 결과 없음, (ii) `ACTIVE` 묶음에 `null` 매핑 항목 → 같음, (iii) `ACTIVE` 묶음의 `profiles`·`mappings`가 배열이 아닌 값이면 같음 — `profiles = null`과 `mappings = null`을 각각 따로, 그리고 `undefined`·객체·문자열 등도 시험, (iv) `SUSPENDED` 묶음이 위 결함(`profiles = null`·`mappings = null` 포함)을 그대로 담아도 200 `ON_HOLD` `RULE_BUNDLE_SUSPENDED`(항목을 읽지 않으므로 판정 순서 불변), (v) 규칙 사용 범위가 없으면(`bundle = null`) 위 결함과 관계없이 `CLINIC_RULE_SCOPE_ABSENT`, (vi) 정상적인 빈 배열 `[]`은 구조 결함이 아니며 프로필·매핑이 없다는 기존 엔진 판정(`PROFILE_ABSENT`·`MAPPING_ABSENT` 등 보류)을 그대로 따른다. 연결 AC: `AC-006i`, `AC-008g`, `AC-008l`. 현재 M1 엔진은 `profiles = null`·`mappings = null`을 빈 목록으로 간주하며(`progress.md` M1.2 가정 9) 이 동작은 바꾸지 않는다. `ACTIVE` 묶음에서 이 입력을 엔진 앞에서 500으로 막는 것이 M4 서버 구조 검증의 책임이다. 범위 밖: `documentRuleSet` 항목과 그 밖의 묶음 필드. 이 검사는 M4.B에서 구현·시험되었다(`estimate-integrity.test.ts`의 (i)~(vi). 읽은 묶음 내용에 적용하며 선행 판정 뒤에만 부른다). M1 엔진의 보장은 아니다.
+- **M4 필수 검증·시험: 캐시 적중 계약 (구현·시험됨: M4.C, 메모리 저장소 위 통합 시험, progress.md M4.C. 아래 (1) 문장의 `itemRefs`·묶음 기록 읽기와 (4)~(6)의 "버전 불변"은 design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)" 2·3):** 실제 HTTP 캐시는 M4의 일이었고 M4.C에서 구현·시험되었다(`estimate-cache-contract.test.ts`, `estimate-cache-ac011.test.ts`). M3는 캐시 없이 같은 계약을 저장소와 합성 수준에서 시험했다(`tests/server/reapproval-cache-contract.test.ts`, progress.md M3 외부 검토 보완 ②). M4는 다음 여덟 조건을 통합 시험으로 둔다. (1) 항목 버전의 내용(`content`·`contentHash`·머리 정보)과 규칙 묶음 버전(`id`·`itemRefs`·`contentHash`)은 (묶음 id, 내용 해시)를 키로 캐시할 수 있고, 캐시 적중이 상태가 바뀌지 않은 요청의 응답을 바꾸지 않는다. (2) `state`·승인자·`approvedFingerprint`와 묶음 가용성 `status`는 요청마다 읽어 함께 엔진 스냅샷에 합치며, 넷 중 어느 것도 내용 캐시에서 가져오지 않는다. (3) 내용이 캐시 적중이어도 요청마다 (사용한 묶음당) 항목 상태 읽기가 정확히 한 번 일어나고 가용성도 읽는다. 상태 읽기를 건너뛰면 실패다. (4) 재승인(`UNDER_REREVIEW` → `APPROVED`)과 그 매핑을 담은 규칙 묶음 게시 뒤, 병원의 범위가 원래 묶음을 가리키는 동안 다음 요청은 HTTP 200이고 같은 `ruleBundleVersion` id·내용 해시를 돌려주며 409도 캐시 무효화 호출도 없고, 엔진은 새 승인자와 새 승인 지문을 쓴다. (5) 재승인과 그 게시 사이의 요청은 200이고 그 줄이 `ON_HOLD`·`MAPPING_UNREVIEWED`(상태 `APPROVED`)이며 묶음 id·내용 해시는 그대로이고 409가 아니다. (6) 요청보다 오래된 상태·승인자·지문 사본을 쓰는 것은 실패다: 재승인 전 사본(`PUBLISHED`, 옛 승인자, 옛 지문)은 `MAPPING_UNDER_REREVIEW`를 내므로, 새로 읽은 상태가 다른 결과(재승인과 게시 뒤에는 `ESTIMATED`)를 내는 요청에 그 사본의 결과를 돌려주면 안 된다. (7) 같은 항목 버전을 담은 두 묶음은 같은 항목 상태를 돌려주고, 도메인 서비스로 바꾼 상태는 두 병원의 다음 요청에 모두 반영된다. (8) 묶음 중지는 그 묶음의 가용성만 바꾼다: 항목 상태·승인자·지문은 그대로이고, 같은 항목을 담은 다른 묶음을 쓰는 병원은 영향을 받지 않는다. 연결 AC: `AC-011m`~`AC-011p`(acceptance.md의 같은 하위 기준).
+- 파일(제안): `src/app/api/clinics/[slug]/catalog/route.ts`, `src/app/api/clinics/[slug]/insurance/options/route.ts`, `src/app/api/clinics/[slug]/estimate/route.ts`, `src/server/estimate-service.ts`, `src/server/errors.ts`, `src/server/composition.ts`, `tests/api/*.test.ts`, `tests/boundary/production-no-fixtures.test.ts`.
+- 진입: M1, M2, M3 종료(서류 산출 입력 `AC-019d`가 M2의 `deriveDocuments()`를 쓴다). 종료: 닫는 AC 통과.
+- 닫는 AC: AC-006f, AC-006g, AC-006i, AC-010b, AC-010d, AC-011f, AC-011g, AC-011m, AC-011n, AC-011o, AC-011p, AC-016e, AC-016n, AC-018a, AC-018b, AC-019a, AC-019b, AC-019d, AC-020a, AC-021a, AC-021b, AC-021c, AC-021e, AC-021h, AC-021i, AC-021j, AC-021k, AC-021l, AC-021m
+- 상태 (2026-10-19): 닫는 AC 29건은 메모리 저장소 위의 통합 수준에서 구현·검증되었다. 실제 Route Handler 내보내기를 시험 구성(`TEST_FIXTURE` 자료)으로 불러 시험했고 운영 자료로는 시험하지 않았다. 단계별로 A(`144e733`): AC-010b, AC-011g, AC-018a, AC-018b, B(`0558a18`): AC-006f, AC-006g, AC-006i, AC-010d, AC-011f, AC-019a, AC-019b, AC-019d, AC-020a, AC-021a, AC-021b, AC-021c, AC-021h~m, C(`87b504d`): AC-011m~p, AC-016e, AC-016n이며 AC-021e는 options 쪽을 A에서 estimate 쪽을 B에서 나눠 닫았다(근거와 AC별 표는 progress.md의 M4.A~M4.C와 "M4 AC 추적표"). AC-019c와 AC-021d는 증거만 냈고 닫지 않았다(`engine-module-identity.test.ts`, `estimate-surface.test.ts`). 오케스트레이터가 최종 트리에서 실행해 보고한 수치: `tsc --noEmit` 종료 0, 전체 `vitest run --coverage --maxWorkers=4` 99개 파일 4786개 시험, `tests/engine`+`tests/boundary` 40개 파일 1627개 시험, engine·server·src/app 100%(이 문서 작성 단계에서 다시 실행하지 않았다). 하지 않았거나 검증되지 않은 것: 운영 자료가 없어 운영 구성에서 모든 slug가 404이므로 실제 병원·가격·규칙·승인자로는 검증하지 않았다, DB 어댑터와 DB 제품(§E #1 보류), M5 이후, M7(관리자 인증·권한), 배포, CI, lint와 SPEC 정식 lint(이 환경에는 `moai` CLI가 없다), Windows 11·Node 24.19.0 밖의 플랫폼, 실제 동시성, 인프라·접근 로그의 질의 문자열 기록(요청 본문·헤더·질의 문자열은 애플리케이션 코드가 읽지 않음만 보였다), 운영 로그 출구(`silentLog`), SPEC 전체의 감사 상태(`plan_status: fail`과 이전 감사 FAIL 기록은 이력으로 그대로 두며 이 상태 줄은 그것을 바꾸지 않는다). 소유자 확인이 필요한 구현 선택 7건(항목 상태를 읽는 위치, 묶음 기록 읽기, "버전은 바뀌지 않는다"의 읽기, AC-011n의 다른 후보, 프로필·서류 규칙 묶음의 `UNDER_REREVIEW` 전환 서비스 부재, 운영 로그 출구, 캐시 크기)은 design.md DD-14 "구현 선택, 소유자 확인 필요 (M4)"에 있고 §E의 `[NEEDS CLARIFICATION` 행은 더하지 않았다. 검토 후속 (2026-10-19, PR #4): 7건 가운데 첫째(항목 상태를 읽는 위치)는 소유자 지시로 해결되어 design.md DD-14 처리 순서 ④~⑥을 구현에 맞췄고, 나머지 여섯 건은 계속 열려 있다. 같은 후속에서 공개 API와 운영 준비 상태(DD-23)의 게시된 치료 집합(활성 치료와 공통 기본비용 전부)을 하나로 맞췄다. 두 번째 검토 후속 (2026-10-19, PR #4)에서는 공통 기본비용의 존재와 소유 병원 확인도 공개 API와 준비 상태가 같은 기준으로 하게 맞췄고(다른 병원 소유 기본비용이면 공개 API는 500 `INTERNAL_ERROR`, 준비 상태는 보고 대신 오류), 이 문서의 두 낡은 문장(AC-007f와 design.md DD-06의 "게시 경로는 아직 구현·검증되지 않았다")을 구현에 맞게 고쳤다. 이 상태 줄이 인용한 수치는 이 후속들 이전의 값이며 두 번째 후속 뒤 최종 트리에서 오케스트레이터가 보고한 값은 105개 파일 4833개 시험이다(근거는 progress.md "M4 review follow-up 2: base-fee existence/ownership consistency and stale status wording". 이 문서 단계에서 다시 실행하지 않았다. 첫 후속 뒤의 102개 파일 4813개는 이력이다).
+- 증거만 내는 AC(뒤 마일스톤에서 닫음): AC-019c(서버 쪽 모듈 동일성, M6가 키오스크 쪽과 함께 닫음), AC-021d(서버 쪽 의존성·가져오기 그래프·바깥 호출 검사, M7이 `src/` 전체로 닫음)
+- 검증 명령: `npx vitest run tests/api --coverage`, `npx tsc --noEmit`
+
+### M5 키오스크 세션 저장소와 상태 기계 (화면 없이)
+
+- 우선순위: High
+- 범위: DD-07 상태와 전이표("처음으로" 입력 유무 규칙, `TimeoutDialog` 안의 "처음으로" 즉시 초기화와 겹침창 하나 규칙 포함. 제안, §E #36)과 "겹침창이 열려 있는 동안 도착하는 요청 결말" 표(규칙 1~4는 사용자 지시 (2026-10-15 개정 5 요청), 나머지는 SPEC 제안), DD-08 무효화 표, DD-09 세션 식별자·계산 시도별 `requestId`와 활성 요청(`activeRequest`)·취소와 별개인 늦은 결과 버림, 요청 생명주기(`settleRequest`가 활성 요청·시간 제한 타이머·로딩 표시·컨트롤러를 한 곳에서 풀고 나서 화면 전이. 한 시도에 여러 번 불려도 첫 유효 호출만 처리하고 이후 호출은 상태를 바꾸지 않음. 키오스크 시도 `requestId`를 요청 본문·헤더·URL·로그·분석 이벤트에 싣지 않음, `AC-016k`·`AC-016l`. 409·422 뒤 자료 갱신의 계약: `refreshState`·`activeRefresh`와 `settleRefresh`(한 번만 처리하는 결말), 갱신 중 확인 버튼 비활성과 강제 계산 거절, catalog·options 두 응답을 한 단계로 반영, 실패 때 아무것도 쓰지 않고 재시도는 갱신이 먼저, 이전 갱신의 늦은 결과 무시, 초기화·입력 변경 뒤 결과 버림, 갱신 중 치료 카드와 "이전" 잠금(제안), 갱신의 `refreshId`는 메모리에만 두고 보내지 않음. DD-09 "자료 갱신 생명주기", `AC-020c`~`AC-020g`, `AC-016o`. 사용자 지시 (2026-10-15 개정 6 요청)와 SPEC 제안 (승인 전)을 DD가 구분해 적었다), DD-10 무조작 타이머(가짜 시계), DD-11 복귀 정보(결과 종류만)와 표시 설정(큰 글자·관찰한 화면 방향), DD-13 완료 동선, DD-19 클라이언트 응답 처리 표, 저장소 금지 API 정적 검사, 병원별 무조작 정책 읽기(catalog 응답의 `idlePolicy`로 임계값을 구성하며 정책이 없는 병원은 DD-10 표의 값, DD-19).
+- 파일(제안): `src/app/kiosk/state/machine.ts`, `src/app/kiosk/state/session-store.ts`, `src/app/kiosk/state/idle.ts`, `src/app/kiosk/state/request.ts`, `src/app/kiosk/state/display.ts`(표시 설정), `tests/kiosk/state/*.test.ts`.
+- 진입: M1 종료(형식), M3·M4 종료(`AC-015i`가 저장소의 무조작 정책과 catalog API의 `idlePolicy`를 쓴다). 종료: 닫는 AC 통과.
+- 닫는 AC: AC-012g, AC-014a, AC-014b, AC-014d, AC-015a, AC-015b, AC-015c, AC-015d, AC-015h, AC-015i, AC-016h, AC-016i, AC-016j, AC-016k, AC-016l, AC-016o, AC-020c, AC-020d, AC-020e, AC-020f, AC-020g
+- 상태 (2026-10-20): M5는 화면 없는 상태 기계로 구현되었고, 단위·통합 수준에서 가짜 시계와 가짜 전송 위에서 검증했다. 실제 Route Handler를 거친 왕복은 200, 409, 422 TREATMENT_NOT_PUBLISHED만 시험했다. 닫는 AC 21건은 progress.md의 "M5 AC 추적표"에 적은 근거로 통과했고, 화면과 실제 브라우저가 있어야 하는 부분은 M6로 넘겼다(증거만 내는 AC 24건은 닫지 않았다). 오케스트레이터가 최종 트리에서 실행해 보고한 수치는 전체 131 파일 / 5624 시험, 키오스크 커버리지 100%, `tsc --noEmit` 종료 0, `next build` 종료 0이며, 이 문서 단계에서는 다시 돌리지 않았다. 독립 검토에서 나온 F1·F2·F3·F6·F8은 고쳤고, F4·F5·F7은 남은 위험으로 progress.md에 적었다. 계산 요청과 갱신의 시간 제한 15초는 주입 가능한 기본값이며 §E #21은 열려 있다. 상태 기계는 갱신 중 TOGGLE_TREATMENT와 PREV를 거절하지 않으므로(AC-020g 3) 잠금은 `selectRefresh().locked`로 M6 화면이 건다. M4 후속(과거 카탈로그 `priceChanged` 소유 확인, `silentLog` 운영 출력, 캐시 제거 정책)은 건드리지 않았다. 감사 FAIL 이력(`plan_status: fail`)과 미검증 사항은 그대로다.
+- 증거만 내는 AC(unit 부분, M6에서 닫음): AC-012a, AC-012b, AC-012e, AC-012f, AC-012i, AC-014c, AC-014e, AC-014g, AC-014h, AC-014i, AC-015e, AC-015f, AC-015g, AC-015j, AC-015k, AC-015l, AC-015m, AC-015n, AC-015o, AC-015p, AC-016a(정적 검사 부분), AC-016c, AC-020b, AC-020h
+- 이 마일스톤이 처음 쓰는 확인 항목(§E.6의 M5 줄과 같다): `completionHoldSeconds` 기본값(§E #12), 안내·계산 중·오류 화면과 보류 결과 화면, 계산 근거·서류 화면의 무조작 시간(§E #13, #14, #15), 초기화 때 큰 글자 보기(§E #17), 통신 오류 화면 "이용 종료"의 도착지(§E #20), 계산 요청 시간 제한 값(§E #21), "처음으로" 확인 규칙(§E #36). 현재 워크플로에서는 답이 구현 착수 승인 전에 정해진다. 시험은 시간 값들을 주입값으로 다룬다.
+- 검증 명령: `npx vitest run tests/kiosk/state --coverage`
+
+### M6 키오스크 화면
+
+- 우선순위: High
+- 범위: 시작·네 입력 단계·계산 중·결과 세 종류(보류 결과는 공통 컴포넌트로 구성)·통신 오류·계산 근거·필요 서류(세로·가로·원인 모름)·이용 완료, TimeoutDialog·ResetConfirm(열려 있는 동안 도착한 요청 결말과 자료 갱신 결과의 반영과 닫은 뒤 화면, DD-07 표 1·표 2), `K03_Treatments` 안의 갱신 표시(확인 버튼 비활성, 인라인 진행·실패 안내와 "다시 시도", 치료 카드·"이전" 잠금, 새 프레임 없음, `AC-020i`), 두 방향(임시 검토 크기) 배치, 큰 글자 보기 반응형, 접근성(포커스·모달), Pretendard와 대체 순서, 글자 대비, 테스트 데이터 표시, 뒤로 가기·페이지 캐시 초기화, 키오스크 문서(`/kiosk/{clinicSlug}`)의 응답 헤더(`Cache-Control: no-store`), 키오스크 미리보기 합계가 서버와 같은 엔진 모듈을 쓰는 것.
+- 파일(제안): `src/app/kiosk/[clinicSlug]/page.tsx`, `src/app/kiosk/components/*.tsx`, `src/app/kiosk/screens/*.tsx`, `src/app/kiosk/styles/*`, `tests/e2e/kiosk/*.spec.ts`(e2e-tester).
+- 진입: M4, M5 종료. 종료: 닫는 AC 통과(1080×1920, 1920×1080에서 실행한 E2E와 렌더링 근거).
+- 닫는 AC: AC-007g, AC-007i, AC-010e, AC-012a, AC-012b, AC-012c, AC-012d, AC-012e, AC-012f, AC-012h, AC-012i, AC-013a, AC-013b, AC-013c, AC-013d, AC-013e, AC-013f, AC-014c, AC-014e, AC-014f, AC-014g, AC-014h, AC-014i, AC-015e, AC-015f, AC-015g, AC-015j, AC-015k, AC-015l, AC-015m, AC-015n, AC-015o, AC-015p, AC-016a, AC-016b, AC-016c, AC-016d, AC-016m, AC-017a, AC-017b, AC-017c, AC-017d, AC-017e, AC-017f, AC-017g, AC-019c, AC-020b, AC-020h, AC-020i, AC-021g
+- 증거만 내는 AC(M7에서 닫음): AC-016f(키오스크 화면에 관리자 링크·숨은 터치 진입이 없다는 증거. 관리자 인증이 생긴 뒤에야 "없다"가 의미를 가진다), AC-021d(키오스크 쪽 의존성·가져오기 그래프 검사)
+- 상태 (2026-10-21): M6 화면을 구현했고 닫는 AC 50건 중 47건은 해당 층(U 단위, I 가로채기 브라우저, R 실제 핸들러+시험 자료, P 운영 구성)의 시험을 돌려 통과를 확인했으며 3건(AC-007g, AC-013b, AC-016b)은 층 빈틈을 적은 채 통과했다. I·R·P는 시험 자료 점검이며 운영 자료 검증이 아니다. AC-016f·AC-021d는 M7 이전 증거로만 기록했고 닫지 않았다. AC-016g·AC-017h·AC-017i는 M8이며 검증하지 않았다. 2026-11-04 이어받기 세션이 전체를 다시 실행했다(단위 161 파일 / 8388 통과, 브라우저 시험 층별 통과, Strict Mode 시험 추가). AC별 대응과 수치는 `m6-ac-trace.md` 에 있다. 소유자 확인이 필요한 문구와 §E #18, #27, #32는 열려 있다. 근거와 열린 항목은 progress.md의 "M6 키오스크 화면"을 본다. 전체 SPEC 감사 상태(`plan_status: fail`)는 바꾸지 않았다.
+- 검증 명령(예시): e2e-tester가 정한 E2E 도구로 두 해상도 실행, 결과 스크린숏 보관.
+
+### M7 관리자
+
+- 우선순위: Medium
+- 범위: 관리자 인증, 역할·권한 표, 병원 설정·무조작 정책·브랜드, 치료·가격·기본비용 관리와 카탈로그 게시·미리보기, 검토 요청 기록, 검토 담당자 화면(매핑 작성·승인·반려, 프로필·서류 규칙·약관 출처·보험사), 규칙 묶음 게시·중지(중지는 검토 담당자만, 사유 필수, 응답에 영향을 받는 병원 목록을 담음, 병원별 긴급 중지 없음), 플랫폼 운영자의 규칙 사용 범위 지정, 감사 기록, 병원 격리 시험, 키오스크 기기 설정(별도 인증)과 기기-병원 연결, 도메인 서비스의 거절(`AC-011e`·`AC-011h`·`AC-011i`)을 관리자 API의 400 `INVALID_REQUEST`로 바꾸는 변환과 관리자 오류 표(`AC-021f`), `src/` 전체의 의존성·가져오기·바깥 호출 검사(`AC-021d`).
+- 파일(제안): `src/app/admin/**`, `src/app/api/admin/**`, `src/server/auth/*.ts`, `src/server/permissions.ts`, `tests/admin/*.test.ts`, `tests/boundary/src-dependencies.test.ts`, `tests/e2e/admin/*.spec.ts`.
+- 진입: M3, M4, M6 종료(`AC-016f`·`AC-021d`가 키오스크 화면과 `src/` 전체를 대상으로 하고, 이 마일스톤이 코드를 마지막으로 더한다). 관리자 인증 공급자(§E #2)와 기기-병원 연결 방식(§E #4)의 답(구현 착수 승인 전에 정함)을 처음 쓰는 마일스톤이다.
+- 닫는 AC: AC-016f, AC-021d, AC-021f, AC-022a, AC-022b, AC-022c, AC-023a, AC-023b, AC-023c, AC-023d, AC-023e, AC-023f, AC-023g, AC-024a, AC-024b, AC-024c, AC-025a, AC-025b, AC-025c, AC-025d, AC-025e, AC-025f, AC-025g
+- 검증 명령: `npx vitest run tests/admin tests/boundary --coverage`, E2E 관리자 경로.
+- 상태 (2026-11-04): **M7 전체는 시작 전이고 첫 기능 하나만 구현했다**(병원 관리자 치료 가격 수정 → 초안 저장 → 미리보기 → 게시 → 키오스크 반영, 시험 환경 포함). 이 마일스톤의 닫는 AC 23건은 하나도 닫지 않았다: AC-021f·AC-022a·AC-022b 는 이 기능에 해당하는 부분만 시험으로 보였고(부분 증거), 나머지는 구현하지 않았다. 인증 공급자(§E #2)는 정해지지 않아 서버에 인증기 경계만 두었고 운영 구성은 공급자가 연결되기 전까지 모든 관리자 요청을 401 로 거절한다. M6 의 운영 문구가 승인되었다는 뜻이 아니다. 근거와 열린 결정은 progress.md 의 "M7 첫 기능"을 본다.
+
+### M8 운영 준비 자료 입력과 파일럿 (관문, 실제 데이터 필요)
+
+- 우선순위: High(운영 개시 조건), 이 SPEC의 코드 산출물 아님.
+- 범위: §E.1 보류 확정 자료의 입력과 승인(표준값 표 기입, 약관 출처 등록, 병원 실제 가격·행위 코드, 매핑 검토, 서류 규칙 검토), 병원별 규칙 사용 범위 지정, 준비 상태 보고(DD-23) 확인, 실제 설치 기기에서의 파일럿 점검(기획서 §10 5·6단계).
+- 진입: §E.1 보류 자료 도착. 기기 규격(§E #5)과 호스팅(§E #3)의 답(구현 착수 승인 전에 정함)을 처음 쓰는 마일스톤이다.
+- 닫는 AC: AC-016g, AC-017h, AC-017i(기록 전용)
+- 종료 조건(완료 정의 4): 운영 준비 상태 보고(DD-23의 네 표와 병원·칸별 `calculationReady`·`documentReady` 짝)를 출력해, 운영할 병원·칸만 두 조건이 각각 `READY`로 보고되고 나머지는 막힌 단계(S·P·M·D)와 코드와 함께 `NOT_READY`로 보고되며, 표 P가 `READY`인 칸마다 검토 담당자의 계산 예제-약관 대조 기록이 있다. 한 표의 `READY`만으로 병원이 준비되었다고 보고하지 않는다. 어느 병원·칸부터 시작할지와, 서류 안내 없이 계산 안내부터 시작해도 되는지(`calculationReady`만 `READY`이고 `documentReady`는 `NOT_READY`인 운영)는 사업 판단이며 이 SPEC이 정하지 않는다.
+
+### B.1 마일스톤 재배정 기록 (개정 4, 개정 5의 추가 항목 포함)
+
+규칙: 세부 항목은 그 항목이 시험하는 코드가 모두 이미 있는 마일스톤에서만 닫는다. 코드가 여러 마일스톤에 걸치면 마지막 마일스톤에서 닫고 앞 마일스톤은 "증거만 내는 AC"에만 적는다. 증거를 먼저 내고 판정을 나중에 하는 것은 되지만, 비어 있는 검사나 아직 없는 대상에 대한 검사로 닫지는 않는다.
+
+마일스톤별 코드: M1 엔진, M2 서류 산출, M3 도메인·저장소·버전·게시 검증·준비 상태(HTTP 계층 없음), M4 Next.js 골격·공개 API·운영 구성 진입점, M5 키오스크 상태 기계(화면 없음), M6 키오스크 화면, M7 관리자 API·인증·화면, M8 실기기. 검토 방법: 세부 항목 전부(개정 4 시점 170개, 개정 5 뒤 189개, 개정 6 뒤 197개)를 쓰는 코드 면(엔진, 서류 산출, 도메인·저장소, 공개 API, 키오스크 상태, 키오스크 화면, 관리자, 실기기)으로 나누어 가장 늦은 면의 마일스톤과 이 절의 배정을 스크립트로 대조했다. 마일스톤별 닫는 세부 항목 수(스크립트로 센 값)는 M1 51(M1.1 3, M1.2 11, M1.3 34, M1.4 3), M2 9, M3 14, M4 29, M5 21, M6 50, M7 20, M8 3으로 합계 197이며(개정 5 뒤는 M5 15, M6 48로 합계 189, 개정 4 시점은 M4 18, M5 13, M6 42로 합계 170), 세부 항목마다 닫는 마일스톤이 정확히 하나이고 "증거만 내는 AC" 목록의 29개 항목(`AC-021d`가 M4와 M6에 두 번 나오므로 서로 다른 세부 항목은 28개)은 모두 더 늦은 닫는 마일스톤을 가리킨다.
+
+닫는 마일스톤이 바뀌었거나 쪼갠 항목:
+
+| 세부 항목 | 이전 | 이후 | 증거만 내는 마일스톤 | 이유 |
+|-----------|------|------|----------------------|------|
+| AC-010b | M1.4 | M4 | M1.4(검사기와 합성 진입점 음성 시험) | 운영 구성 진입점이 Next.js 골격과 함께 M4에서 처음 생긴다 |
+| AC-016f | M6 | M7 | M6 | 관리자 인증과 `/admin`이 생기기 전의 "없다"는 빈 검사다 |
+| AC-019c | M4 | M6 | M4(서버 쪽 모듈 동일성) | 키오스크 합계 코드는 M5·M6에서 생긴다 |
+| AC-021d | M4 | M7 | M4, M6 | 범위를 `src/` 전체로 넓혔고 코드를 마지막으로 더하는 M7에서 닫는다 |
+| AC-021a | M4 | M4(공개 행만) | — | 쪼갬: 관리자 행을 AC-021f로 보냈다 |
+| AC-021f(신규) | — | M7 | — | 관리자 행(401·403, 관리자 수치 범위 400, 사유 없는 중지 400)과 도메인 거절(AC-011e·h·i)의 HTTP 변환 |
+| AC-021e | M4 | M4(계산·options 헤더) | — | 쪼갬: 키오스크 문서 헤더를 AC-021g로 보냈다 |
+| AC-021g(신규) | — | M6 | — | 키오스크 문서의 `no-store`는 키오스크 화면이 있어야 확인된다 |
+| AC-006a | M1.1 | M1.2 | M1.1(거절 부분) | 프로필 조회가 일어나지 않는다는 호출 감시는 `estimate()` 앞단(M1.2)이 필요하다 |
+| AC-006d | M1.1 | M1.3 | M1.1(형식 수준) | 원인별 결과의 바이트 비교는 전체 계산이 필요하다 |
+| AC-006e | M1.1 | M1.3 | — | 정상 계산 결과의 상태 확인이라 산술과 상태 합성이 필요하다 |
+| AC-008e | M1.2 | M1.3 | M1.2(앞단 순서) | 그룹 단위 `PROFILE_SOURCE_INCOMPLETE`와의 조합이 M1.3의 `checkGroupValues`에 있다 |
+| AC-008g | M1.2 | M1.3 | M1.2(앞단 순서) | "내용이 같은 ACTIVE 묶음은 정상 계산된다"에 산술이 필요하다 |
+
+닫는 마일스톤은 그대로이고 본문의 경계를 고친 항목:
+
+| 세부 항목 | 마일스톤 | 고친 것 |
+|-----------|----------|---------|
+| AC-006f | M4 | 400과 422의 층 구분을 더했다(DD-19 "요청 검증의 층") |
+| AC-011e | M3 | 도메인 서비스만 쓴다(유형 있는 도메인 오류). 관리자 API의 400 변환은 AC-025f·AC-021f(M7) |
+| AC-011f | M4 | 준비는 도메인 서비스와 메모리 저장소, 계산은 공개 API. 관리자 HTTP 경로를 쓰지 않는다. 관리자 쪽은 AC-025d·AC-025f(M7) |
+| AC-011h, AC-011i | M3 | 도메인 게시 거절만 본다. 관리자 API의 400은 AC-021f(M7) |
+| AC-015i | M5 | 읽는 길을 정했다: 저장소(M3) → catalog 응답의 `idlePolicy`(M4) → 키오스크 임계값(M5). 관리자 쓰기는 AC-023d(M7) |
+| AC-018a | M4 | catalog 응답에 `idlePolicy`가 있다 |
+
+진입 조건도 맞추었다: M3는 M1·M2 종료, M4는 M1·M2·M3 종료, M5는 M1·M3·M4 종료, M7은 M3·M4·M6 종료를 요구한다. 각 마일스톤의 진입 조건은 그 마일스톤이 닫는 항목이 쓰는 앞 마일스톤의 코드를 모두 포함한다(스크립트 대조).
+
+개정 5(2026-10-15)에서 더한 세부 항목 19개와 닫는 마일스톤이다. 기존 항목의 마일스톤은 바뀌지 않았다.
+
+| 세부 항목 | 닫는 마일스톤 | 증거만 내는 마일스톤 | 이유 |
+|-----------|---------------|----------------------|------|
+| AC-011m, AC-011n, AC-011o, AC-011p | M4 | — | 항목 상태를 요청마다 읽는 경로는 공개 계산 API의 다음 요청 응답으로만 관찰되고, 준비는 M3의 도메인 서비스와 메모리 저장소로 한다 |
+| AC-015l, AC-015m, AC-015n, AC-015o, AC-015p | M6 | M5 | 상태 기계의 단위 부분은 M5에서 증거를 내고, 겹침창이 그려지는 화면은 M6에서 닫는다(`AC-015e`·`AC-015k`와 같은 방식) |
+| AC-016k, AC-016l | M5 | — | 키오스크 요청 모듈이 M5에 있고 요청 가로채기·로그·분석 수집은 화면 없이 시험한다 |
+| AC-016m | M6 | — | 브라우저 영속 저장소 덤프는 빌드한 앱이 필요하다 |
+| AC-016n | M4 | — | 서버 저장소·서버 메모리·로그는 공개 API가 있는 M4에서 시험한다 |
+| AC-021h, AC-021i, AC-021j, AC-021k, AC-021l, AC-021m | M4 | — | 거절 순서와 겹침 사례는 공개 계산 API의 응답이다 |
+
+개정 6(2026-10-15)에서 더한 세부 항목 8개와 닫는 마일스톤이다(409·422 뒤 catalog·options 갱신의 계약, DD-09 "자료 갱신 생명주기"). 기존 항목의 마일스톤은 바뀌지 않았다.
+
+| 세부 항목 | 닫는 마일스톤 | 증거만 내는 마일스톤 | 이유 |
+|-----------|---------------|----------------------|------|
+| AC-020c, AC-020d, AC-020e, AC-020f, AC-020g | M5 | — | 갱신 상태(`refreshState`, `settleRefresh`)와 가짜 시계·모킹한 `fetch`로 닫는 상태 기계 시험이다(화면 없음) |
+| AC-020h | M6 | M5 | 겹침창이 그려지는 화면은 M6에서 닫고, 상태 기계의 단위 부분은 M5에서 증거를 낸다(`AC-015l`~`AC-015p`와 같은 방식) |
+| AC-020i | M6 | — | `K03_Treatments` 안의 표시(비활성 버튼, 인라인 진행·안내, 잠금)는 빌드한 화면이 필요하다 |
+| AC-016o | M5 | — | `refreshId` 비노출은 키오스크 상태 기계와 요청 가로채기로 화면 없이 시험한다 |
+
+## §C 위험과 대응
+
+| ID | 위험 | 대응 |
+|----|------|------|
+| R-01 | 값이 없는 칸을 채우려는 유혹(인접 값, 평균, 예시값 승격), 보험 업무 값이 엔진 코드에 들어옴 | 프로필 숫자 필드를 하나씩 바꾸는 동작 시험(주 증거)과 업무 값 이름에 묶인 숫자 리터럴만 잡는 좁은 정적 검사(AC-001c), 구성별 출처 제한(AC-010), 칸 대체 금지 시험(AC-008d) |
+| R-02 | 시험 자료가 운영으로 새어 나감 | 가져오기 경계 검사(AC-010b), 게시 거절(AC-010c), 출처 요약과 표시(AC-010d·e) |
+| R-03 | 기술 스택 미확정으로 M3·M7이 막힘 | 저장소 인터페이스와 메모리 구현으로 진행, DB·인증은 어댑터로 나중에 연결 |
+| R-04 | 공유 한도 배분·원 단위 처리가 실제 약관과 다를 수 있음 | 잠정 규칙임을 계산 근거에 남기고, 규칙마다 명시하게 해 기본값을 두지 않음 |
+| R-05 | 실제 글꼴과 기기에서 잘림 | 구현된 화면의 렌더링(AC-017a·e)과 실기기(AC-017h)로만 판정, Pencil 결과를 근거로 쓰지 않음 |
+| R-06 | 늦은 응답·페이지 캐시로 이전 환자 정보 노출 | 세션 표시, 계산 시도별 `requestId` 보호(취소와 별개, AC-016h·i)와 끝난 시도가 남기는 활성 요청·타이머의 정리와 같은 시도의 늦은 추가 호출 무시(AC-016j), 겹침창이 열려 있는 동안 도착한 결말의 처리(AC-015l~p), 시도 `requestId` 비노출(AC-016k~n), 409·422 뒤 자료 갱신의 늦은 결과·초기화 경합(AC-020c~h), 취소, `no-store`, `pageshow` 처리, E2E와 실기기 시험(AC-016) |
+| R-07 | 화면 동작 표가 커서 구현과 어긋남 | 상태 기계를 화면과 분리해(M5) 단위 시험으로 고정한 뒤 화면을 붙임(M6) |
+| R-08 | 요구사항·수용기준이 Tier L 상한(각 25)에 닿아 있음 | 작성 세션의 사용자 지시로 SPEC 하나를 유지한다(§A.5). 범위를 넓히는 변경은 새 SPEC으로 낸다 |
+| R-09 | 서류 규칙 결과(원인 모름의 전용 줄 등)가 한 화면에 다 들어가지 않을 수 있음. 줄 수는 평가된 규칙에서 나오며 상한을 두지 않는다 | 분기별 묶음 세로 쌓기·열 추가 같은 반응형 배치, 그래도 넘치면 "이전 목록 / 다음 목록"(AC-007i, 최종 선택은 M6). 소유자의 실제 서류 요건(보류-06)이 이 방식으로 부족할 때만 디자인 변경을 §F 4번으로 요청 |
+| R-10 | 웹 UI 완료를 기기 잠금 완료로 오해 | AC-017i에서 기기 잠금을 웹 UI 기준 밖으로 따로 기록 |
+| R-11 | 지원 범위 밖 계약(노후·유병력자·단체 실손, 전환 계약 등)의 환자가 다섯 카드 가운데 하나를 고르면 일반 규칙으로 계산됨 | 엔진은 판별하지 않으며 결과 문구 원칙·공통 안내로 개인 계약에 따라 달라질 수 있음을 알린다. 가려내는 방법은 §E #11 |
+| R-12 | 2009.08~09 경계 계약 가입자가 가입일만 보고 2세대(C1)를 골라 일반 규칙으로 계산될 수 있음. 기획서 §3은 이 계약에 별도 도움말을 요구하지만 디자인에 프레임이 없다 | 키오스크는 가입일로 세대를 정하거나 제안하지 않는다(날짜 입력이 없음). 도움말 문구·위치는 §E #35, 디자인 후속은 §F 7번 |
+| R-13 | 규칙 묶음을 중지하면 그 묶음을 쓰는 모든 병원이 새 묶음을 지정받을 때까지 계산 보류가 됨 | 중지 응답의 `affectedClinics`로 영향 병원을 바로 알리고, 새 묶음 게시 → 운영자 재지정 → 새 버전 정상 계산의 복구 경로를 AC-011f로 시험. 병원별 긴급 중지는 §F 6번의 선택 후속 항목 |
+| R-14 | SPEC ID 형식을 실제 lint로 확인하지 못함. 공통 워크플로 문서가 서로 다른 정규식을 적었고(스키마 문서는 도메인 한 마디 `^SPEC-[A-Z][A-Z0-9]+-[0-9]{3}$`, manager-spec 문서는 여러 마디 `^SPEC(-[A-Z][A-Z0-9]*)+-[0-9]{3}$`) 당시 ID `SPEC-REIMBURSEMENT-ESTIMATOR-001`은 뒤의 것만 통과했다. 정규화한 현재 ID `SPEC-REIMBURSEMENT-001`은 두 정규식을 모두 통과한다(재실행 출력은 research.md §5 #10과 progress.md "ID normalization (2026-10-15)" 항목). 실제 lint(`internal/spec/lint.go`)와 `moai` CLI는 이 저장소에 없어 어느 쪽을 쓰는지는 지금도 확인하지 못했다. 결과: lint가 거절하면 plan 단계 게이트가 막힐 수 있었다 | **상태: 2026-10-15 ID 정규화로 해소(사용자 승인).** SPEC ID를 `SPEC-REIMBURSEMENT-001`로 바꿨고 폴더는 `.moai/specs/SPEC-REIMBURSEMENT-001/`이다. 바꾼 것은 현재 참조(frontmatter `id`, 제목, 문서 사이 참조, 경로)이고, 감사 기록·개정 이력·당시 정규식 확인 증거·이미 존재하는 브랜치 이름 `plan/SPEC-REIMBURSEMENT-ESTIMATOR-001`은 당시 ID 그대로 둔다. 공통 워크플로 문서는 바꾸지 않는다(문서 사이 정규식 불일치 자체는 그대로 남아 있다). 남은 일: ① `moai`가 있는 환경에서 SPEC audit/lint를 한 번 돌려 결과를 progress.md에 남긴다(그 전까지 formal lint는 UNVERIFIED). ② 문서 불일치를 MoAI-ADK 관리자에게 알린다(`/moai feedback`). 확인 표시가 아니라 위험 행이다 |
+
+## §D MX 태그 계획
+
+| 종류 | 대상 | 이유 |
+|------|------|------|
+| `@MX:ANCHOR` | `estimate()` 진입점 | 키오스크 미리보기·서버·관리자 미리보기가 모두 부름(호출처 3곳 이상) |
+| `@MX:ANCHOR` | `isBundleUsable()` | 묶음 단위 선행 판정의 유일한 함수(규칙 사용 범위 없음·묶음 중지). 호출처 3곳 이상(추정): `estimate()`, 준비 상태 계산(`computeReadiness`), 관리자 미리보기. 묶음 안의 항목을 읽지 않으며 `isUsable()`보다 먼저 불림 |
+| `@MX:ANCHOR` | `isUsable()` | 프로필·매핑·서류 규칙의 항목 판정이 모두 이 함수 하나를 거침. 묶음의 상태는 보지 않음(묶음 단위는 `isBundleUsable()`) |
+| `@MX:ANCHOR` | `resolveMapping()` | 모든 줄의 보장 여부와 그룹이 이 조회 하나로 정해짐(후보 범위·사용 가능한 후보 개수·고정 우선순위). 호출처 3곳 이상(추정): `estimate()`의 줄 판정(`decideLine`), 준비 상태 계산, 관리자 미리보기 |
+| `@MX:ANCHOR` | `deriveDocuments()` | 서버 응답과 서류 화면의 단일 산출원 |
+| `@MX:ANCHOR` | 서버 계산 처리기(`estimate-service`) | 공개 계산 API의 유일한 계산 경로 |
+| `@MX:ANCHOR` | 키오스크 상태 기계 전이 함수 | 모든 화면 이동이 거침 |
+| `@MX:WARN` | 무조작 타이머(시각 주입 경계) | 시계 의존, 서버 응답이 시간을 늘리지 않아야 함 |
+| `@MX:WARN` | 계산 요청 모듈(취소, 활성 요청 `requestId` 비교, 세션 표시 확인) | 늦은 응답 노출 위험 |
+| `@MX:WARN` | `settleRequest()` | 모든 요청 결말의 유일한 정리 지점. 활성 요청·시간 제한 타이머·로딩 표시·컨트롤러를 화면 전이보다 먼저 풀어야 하며, 이 함수를 우회하면 남은 타이머가 성공한 결과 화면을 통신 오류 화면으로 바꾸거나 늦은 결과가 새 환자 화면에 나옴 |
+| `@MX:WARN` | 세션 저장소 | 브라우저 저장소 금지 경계 |
+| `@MX:WARN` | 운영 구성 진입점(`acceptedOrigins`) | 시험 자료 유입 경계 |
+| `@MX:NOTE` | 공제 방식 4종, 엔진 상수 규칙과 수치 검증 한도(DD-02·DD-24), 보류 판정 순서, 보류 줄 그룹 제외, 0원 의미, 공유 한도 배분, ReturnContext, 기본비용 포함 규칙, 서류 규칙 `when` 평가(DD-06), 준비 상태가 계산과 같은 판정 함수를 부르는 규칙(DD-23) | 업무 규칙 근거(DD 번호) 기록 |
+| `@MX:TODO` | RED 단계에서 아직 통과하지 못한 공개 함수 | GREEN에서 제거 |
+
+## §E 확인 항목과 보류 자료
+
+**2026-10-15 추가:** 사용자의 구현 착수 답변은 §E.9에 따로 기록했으며, §E.9는 아래 §E.2~§E.8의 행, 열린 행 개수(33개), 감사 결과를 바꾸지 않는다.
+
+**2026-10-16 추가:** 소유자가 #31, #34, #1에 대한 결정을 알려 주었다. §E.10에 따로 기록했다. #1은 DB 제품 미정으로 열려 있고, #31과 #34는 닫혔으므로 열린 행은 31개이고, 위 §E.9의 33개와 해당 행의 "보류" 표기는 2026-10-15 시점의 기록으로 남긴다.
+
+### E.1 보류 확정 자료 (작성 세션의 사용자 지시, §A.5)
+
+작성 세션의 사용자 지시(§A.5, 2026-10-14 개정 4 요청에서 유지 지시): 아래 운영 자료는 자료가 생길 때까지 보류한다. **값을 추정하지 않으며 승인 자료가 들어올 때까지 보류한다.** 막는 마일스톤은 모두 M8이다. 그때까지 계산은 "확인 필요"이고 개발·시험은 `TEST_FIXTURE`로 한다.
+
+| 번호 | 자료 | 막는 마일스톤 |
+|------|------|---------------|
+| 보류-01 | 세대·보험사 형태별 표준 공제·한도 값 표 (소유자 첨부 예정) | M8 |
+| 보류-02 | 약관 출처와 첫 보험사·상품·담보 (원문, 조항·페이지, 개정일, 효력일) | M8 |
+| 보류-03 | 보험사 형태가 규칙 선택에 쓰이는 방식과 농협 계열의 소속 형태 | M8 |
+| 보류-04 | 병원 공식 명칭·로고·종별·실제 치료 목록·가격(전체 수가인지 본인부담인지)·공통 기본비용·행위코드 | M8 |
+| 보류-05 | 신장분사치료의 보험분류 | M8 |
+| 보류-06 | 보험사·상품·청구 금액 구간별 서류 요건, 소액 청구 시 진단서 생략 여부 | M8 |
+| 보류-07 | 1세대 상해/질병 통원 공제 공식 (그때까지 엔진은 `PROFILE_FORMULA_UNSUPPORTED`로 보류) | M8 |
+| 보류-08 | 2세대 정률 공제형의 판매 시기·유형별 비율 | M8 |
+| 보류-09 | 3세대 기본 담보와 3대 비급여 공제·한도 공식 | M8 |
+| 보류-10 | 규칙별 원 단위 처리(버림·반올림)와 선택형Ⅱ 합산 후 1회 처리 여부 (그때까지 기본값 없음) | M8 |
+| 보류-11 | 배포 시점의 의료광고 규정 | M8 |
+
+### 확인 항목 읽는 법
+
+- **게이트 근거와 범위.** `.claude/skills/moai/workflows/plan.md` 53행은 확인 표시가 구현 착수 승인(plan→run 사람 게이트) 전에 풀려야 한다고 적고, 73행은 승인이 모든 확인이 풀린 뒤에만 진행된다고 적는다. plan-auditor의 MP-7(`.claude/agents/moai/plan-auditor.md` 376행)은 plan.md와 research.md에 남은 열린 확인 표시를 grep으로 찾아 판정한다. CLAUDE.md §2의 ④ 승인 게이트와 §8도 같은 방향이다. 그래서 plan.md와 research.md에 남은 열린 확인 표시는 모두 구현 착수 승인을 막는다. 아래 분류(A~E)와 "처음 필요" 마일스톤은 이 차단 여부를 바꾸지 않으며, 이 SPEC은 어떤 행에도 예외를 두지 않았다.
+- **열린 행과 닫은 행.** 확인 표시(NEEDS CLARIFICATION)가 붙은 행이 열린 행이다. 닫은 행은 세 경우에만 쓴다. 소유자가 직접 정한 결정이면 `OWNER-DECIDED` 표시를 달고 결정일을 적는다(#31, #34. §E.10). 파일을 읽어 확인한 사실이면 `RESOLVED-FACT` 표시를, 기존 문서에 이미 기록된 현재 MVP 결정이면 `RECORDED-DECISION` 표시를 달고, 질문·근거(파일과 줄)·번호를 그대로 둔다. 이 두 표시는 확인 표시가 아니며 소유자 승인도 아니다. `OWNER-DECIDED`도 확인 표시가 아니며 소유자가 정한 사업 정책을 옮긴 것이다. 이 SPEC의 다른 제안에 대해서는 소유자가 승인하지 않았다. 닫은 행은 #9, #25, #28, #31, #34 다섯 개다.
+- **열 설명.** "결정 주체"는 답을 정하는 쪽이다. "근거"는 파일과 줄이며, 원문에 없으면 "근거 없음 – SPEC 제안"이라고 적는다. "처음 필요"는 그 답이 처음 쓰이는 마일스톤이며, 그 마일스톤까지 답을 미뤄도 된다는 뜻이 아니다. "게이트"는 현재 워크플로에서 이 행이 구현 착수 승인을 막는지를 적는다. "SPEC 기본값·권장안"은 소유자가 받아들이면 그대로 쓸 수 있도록 이 SPEC이 적어 둔 제안이며 소유자 승인이 아니다. 기본값이 "없음"인 항목은 소유자가 답을 주거나 명시적으로 보류를 승인해야 한다. 분류 C 행은 구현자가 근거와 권장안을 제시하는 항목이며, 이 SPEC은 구체적인 권장안이 있는 행에만 권장안을 적었다.
+
+분류는 다섯 가지다.
+
+| 분류 | 이름 | 이 SPEC에서 하는 일 |
+|------|------|---------------------|
+| A | 기존 문서에 기록된 현재 MVP 결정 | 근거를 인용하고 닫는다. 근거 문서가 소유자 변경 가능 표기를 달았으면 열어 둔다(#15) |
+| B | 파일을 읽으면 해결되는 사실 확인 | 읽은 파일과 줄을 적고 닫는다(#25, #28) |
+| C | 구현자가 근거와 권장안을 제시할 기술 선택 | 구현자가 해당 마일스톤 전에 근거와 권장안을 제시한다. 현재 워크플로에서는 소유자가 게이트에서 확인한다 |
+| D | 해당 후속 단계에서 필요한 결정 | 실제 자료나 후속 단계가 있어야 정할 수 있다. 현재 워크플로에서는 열린 채 게이트에 오른다 |
+| E | 실제 소유자 승인이 필요한 사업·운영 정책 | 소유자만 정할 수 있다 |
+
+### 처리 개선 제안 (제안, 적용하지 않음)
+
+현재 워크플로에서는 열린 확인 표시가 모두 구현 착수 승인 게이트를 막는다. 이 SPEC은 그 규칙을 바꾸지 않았고, 아래는 처리 방식을 가볍게 하자는 **제안**이다.
+
+- 분류가 C 또는 D이고 "처음 필요" 마일스톤이 M2 이후인 행(#1, #2, #3, #4, #5, #12, #13, #14, #16, #18, #19, #20, #21, #22, #24, #26, #27, #29, #33, #36의 20개)은, 그 마일스톤 직전의 게이트에서 구현자가 근거와 권장안을 제시하고 정하는 방식으로 옮길 수 있다. 첫 구현 단계(M1) 안에서 처음 쓰이는 C·D 행(#6, #7, #8, #10)은 첫 구현 단계 안에서 이미 쓰이므로 이 제안에 넣지 않았다.
+- 이 제안은 소유자가 동의할 때만 효력이 생긴다. 소유자가 동의하기 전까지는 열린 확인 표시 전부를 구현 착수 승인 게이트에 올린다.
+- 이 SPEC은 어떤 행도 이 제안에 따라 닫거나 미루지 않았다.
+
+### E.2 기술·기기
+
+| 번호 | 확인 항목 | 분류 | 결정 주체 | 근거 | 처음 필요 | 게이트 | SPEC 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|-----------|------|-----------|------|-----------|--------|---------------------------------------------|
+| 1 | [NEEDS CLARIFICATION: 데이터베이스 제품] | C | 구현자 제시 → 소유자 확인 | 기획서 380행(배포 환경과 실제 비용 조건을 확인한 뒤 확정), design-requirements 703행 | M3 DB 어댑터 | 차단(DB 어댑터 구현 전까지 보류. 2026-10-16 소유자 확인) | 기본값: 없음. DB 제품이 정해지지 않았고 DB 어댑터를 구현하기 전까지 보류한다. M3는 저장소 인터페이스와 메모리 구현으로 진행한다. 권장안: 비용·환경 사실을 근거로 관계형 DB를 고르는 안을 게이트에서 제시 |
+| 2 | [NEEDS CLARIFICATION: 관리자 인증 공급자] | C | 구현자 제시 → 소유자 확인 | 기획서 380행, design-requirements 703행 | M7 | 차단 | 기본값: 없음. 권장안: 후보와 근거를 게이트에서 제시 |
+| 3 | [NEEDS CLARIFICATION: 호스팅] | D | 소유자(비용·환경 자료 제공) | 기획서 380행(비용 조건을 확인한 뒤 확정), design-requirements 703행 | M8 (파일럿 배포) | 차단 | 기본값: 없음 |
+| 4 | [NEEDS CLARIFICATION: 키오스크 기기와 병원의 연결 방식 (기기 식별자 / clinicSlug 경로 / 둘 다)] | C | 구현자 제시 → 소유자 확인 | 기획서 401행(키오스크 표시 경로 `/kiosk/{clinicSlug}`), structure.md 154행(기기와 병원의 연결 방식은 미정) | M7 | 차단 | 기본값: 없음(경로 `/kiosk/{clinicSlug}`만 정했고 기기 식별자 사용 여부는 정하지 않음) |
+| 5 | [NEEDS CLARIFICATION: 키오스크 기기 규격·OS·브라우저·통신 환경] | D | 소유자·병원(사실 제공) | 기획서 488행, design-requirements 680행 | M8 (실기기 판정) | 차단 | 기본값: 없음 |
+
+### E.3 계산 규칙과 범위
+
+| 번호 | 확인 항목 | 분류 | 결정 주체 | 근거 | 처음 필요 | 게이트 | SPEC 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|-----------|------|-----------|------|-----------|--------|---------------------------------------------|
+| 6 | [NEEDS CLARIFICATION: 보장 대상 비용 한도(COVERED_COST)의 계산식] | D | 소유자·검토 담당자(실제 약관 자료) | 기획서 294행(L이 지급액 한도인지 보장대상 비용 한도인지 명시), design-requirements 684행, 보류-07·보류-09 | M1.3 (보류 동작). 식 자체는 M8 자료 | 차단 | 기본값: 보류(엔진이 `PROFILE_FORMULA_UNSUPPORTED`로 보류). 이 보류 동작은 SPEC 제안이며 소유자 결정이 아니다 |
+| 7 | [NEEDS CLARIFICATION: 공유 한도 감액분의 그룹별 배분 방식] | C | 구현자 제시 → 소유자 확인 | design.md DD-02(배분 규칙), research.md U-07, 보류-09. 개정 3 뒤에는 표시용 몫만 달라지고 합계는 달라지지 않음 | M1.3 | 차단 | 기본값: `groupOrder` 순서. 권장안: 실제 공유 한도 관계가 자료로 들어오면 M8에서 다시 확인 |
+| 8 | [NEEDS CLARIFICATION: 공통 기본비용도 보장 매핑이 필요하다는 SPEC 결정] | C | 구현자 제시 → 소유자 확인 | 기획서 247행(기본비용을 별도 항목으로 등록하고 포함 여부를 표시), 109~110행(치료 보장 매핑이 있어야 계산)의 일반 원칙에서 SPEC이 끌어낸 결정 | M1.3 | 차단 | 기본값: 필요(보험금 계산 쪽에만 적용한다. 병원 결제액에는 매핑과 관계없이 기본비용을 항상 포함한다. 2026-10-15 정정 수용, §E.9) |
+| 9 | [RECORDED-DECISION: 현재 MVP는 치료 원인(상해·질병·잘 모르겠어요)을 필요 서류 안내에만 쓰고 금액 계산에는 쓰지 않는다. 원인 "잘 모르겠어요"는 계산 보류 사유가 아니다] 원래 질문: 상해·질병 구분을 앞으로 금액 계산에도 쓸지 | A | 이미 기록된 결정 (소유자 승인이 아니라 기록·확인된 근거) | 기획서 111행, 118~125행(123행 "금액 계산에는 넣지 않는다"), design-requirements 706행(2026-10-14 기록: "an unknown treatment cause never holds it"), product.md 152행, tech.md 96행·120행 | M1.1 | 해당 없음(닫힘) | 기본값: 쓰지 않음. "앞으로 금액에도 쓸지"는 이 결정을 다시 열지 않고 §F 8번의 후속 후보로 옮겼다. 같은 질문이 기획서 125행·496행과 design-requirements 694행에 소유자 질문으로 남아 있다 |
+| 10 | [NEEDS CLARIFICATION: 한도 없음으로 선언된 담보(UNLIMITED_DECLARED)를 운영 프로필에 쓸지] | D | 소유자·검토 담당자(실제 약관 자료) | 근거 없음 – SPEC 제안(열거값과 조항 참조 보호는 design.md DD-02) | M1.3 (열거값). 운영 프로필에 쓸지는 M8 | 차단 | 기본값: 조항 참조가 있을 때만 허용 |
+| 11 | [NEEDS CLARIFICATION: 지원 범위 밖 계약을 가려내는 방법 (현재 디자인에 없음)] | E | 소유자 | 기획서 17행·59행·494행(현재 디자인에 가려내는 화면이 없다) | M8 (M1~M7은 막지 않음, §C R-11) | 차단 | 기본값: 엔진은 판별하지 않고 결과 문구·공통 안내로만 알림(§C R-11) |
+
+35번과 36번은 2회차 감사 뒤에 더한 항목이라 번호가 뒤에 온다.
+
+| 번호 | 확인 항목 | 분류 | 결정 주체 | 근거 | 처음 필요 | 게이트 | SPEC 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|-----------|------|-----------|------|-----------|--------|---------------------------------------------|
+| 35 | [NEEDS CLARIFICATION: 2009.08~09 경계 계약 별도 도움말(문구·표시 위치, 디자인에 프레임 없음)] | D+E | 소유자(문구). 디자인 후속은 소유자의 Pencil 작업 | 기획서 35행·43행·61행(별도 도움말을 요구), product.md 67행, 개정 3 파일 확인(어느 화면도 이 도움말을 보이지 않는다. `MzQqc`의 컴포넌트 기본 문구는 모든 화면 인스턴스에서 덮어써져 있다) | M6 | 차단 | 기본값: 없음(문구와 위치가 정해질 때까지 기존 프레임은 이 도움말을 담지 않으며, 키오스크는 가입일로 세대를 정하거나 제안하지 않는다, §C R-12) |
+
+### E.4 화면·동작
+
+| 번호 | 확인 항목 | 분류 | 결정 주체 | 근거 | 처음 필요 | 게이트 | SPEC 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|-----------|------|-----------|------|-----------|--------|---------------------------------------------|
+| 12 | [NEEDS CLARIFICATION: completionHoldSeconds 기본값] | C | 구현자 제시 → 소유자 확인 | 기획서 622행("잠시 후"만 있고 길이가 없다), design-requirements 698행(구현 설계에 맡김) | M5 | 차단 | 기본값: 없음(값이 없는 동안 시험은 주입값을 쓴다) |
+| 13 | [NEEDS CLARIFICATION: 세대 확인 안내·계산 중·통신 오류 화면의 무조작 시간] | C | 구현자 제시 → 소유자 확인 | 기획서 613행(그 밖의 안내·오류·계산 중 화면의 무조작 처리는 구현 설계에서 정한다), design-requirements 698행 | M5 | 차단 | 기본값: 100/120초(잠정) |
+| 14 | [NEEDS CLARIFICATION: 보류 결과 화면의 무조작 시간] | C | 구현자 제시 → 소유자 확인 | 기획서 169행·498행(보류 결과 화면은 구현 설계 때 정한다). 시간 값 자체는 근거 없음 – SPEC 제안 | M5 | 차단 | 기본값: 160/180초(잠정) |
+| 15 | [NEEDS CLARIFICATION: 계산 근거·서류 화면의 160/180초 (기획서 2026-10-14 임시 결정, 실제 머무는 시간 미관찰)] | A | 소유자(파일럿 관찰 뒤 확인) | 기획서 613행(2026-10-14 임시 결정), design-requirements 93행(§3 행 21), 706행(이 값은 문서화 측의 해석이며 소유자가 바꿀 수 있다) | M5 | 차단 | 기본값: 160/180초(잠정). 기록된 임시 결정이지만 소유자가 바꿀 수 있다고 적혀 있어 승인으로 보지 않고 열어 둔다. 권장안: 파일럿 관찰 뒤 M8에서 다시 확인 |
+| 16 | [NEEDS CLARIFICATION: 무조작 정책 저장 때 경고·초기화 최소 간격 20초를 하한으로 둘지] | C | 구현자 제시 → 소유자 확인 | 기획서 605행(기본값 "초기화 20초 전에 경고")에서 SPEC이 끌어냄. 하한으로 삼은 것은 SPEC 제안 | M7 | 차단 | 기본값: 20초 하한, 무조작 정책에만 적용 |
+| 17 | [NEEDS CLARIFICATION: 초기화 때 큰 글자 보기를 끌지 유지할지] | E | 소유자 | design-requirements 699행(소유자 결정 목록) | M5 | 차단 | 기본값: 끔. 권장안(제안): 끔 — 한 환자의 설정이 다음 환자에게 넘어가지 않게 한다 |
+| 18 | [NEEDS CLARIFICATION: 서류 규칙을 쓸 수 없을 때 서류 화면 동작] | C | 구현자 제시 → 소유자 확인 | 근거 없음 – SPEC 제안(서류 화면 구성은 기획서 209행) | M6 | 차단 | 기본값: 서류 목록 대신 안내 문구를 보이고 "결과로 돌아가기"·"이용 완료"와 공통 "처음으로"는 그대로 둠(기획서 §4 서류 화면 구성과 같음), 결과 화면의 여섯 동작 유지 |
+| 19 | [NEEDS CLARIFICATION: 원인 모름 서류 화면의 배치 방식(반응형 배치 또는 이전/다음 목록) — 실제 서류 요건(보류-06) 확정 뒤 M6에서 확정. 개정 3에서 전용 줄 수 상한은 SPEC에서 삭제됨] | D | 소유자(서류 요건). 배치 선택은 M6 | 기획서 210행·217행(7+1+1과 가로 배치는 디자인 예시, §H), design-requirements 90행·588행·627행, 보류-06, design.md DD-06 | M6 | 차단 | 기본값: 반응형 배치(분기 묶음 세로 쌓기·열 추가), 넘치면 "이전 목록 / 다음 목록"(DD-06, 최종 선택은 M6). 줄 수 상한은 두지 않고 어떤 줄도 빼지 않는다 |
+| 20 | [NEEDS CLARIFICATION: 통신 오류 화면 "이용 종료"의 도착지] | C | 구현자 제시 → 소유자 확인 | 기획서 633행(버튼 이름 "다시 시도/이용 종료"만 있고 도착지는 없다) | M5 | 차단 | 기본값: 지운 뒤 `K06_Complete` |
+| 21 | [NEEDS CLARIFICATION: 계산 요청 시간 제한 값] | C | 구현자 제시 → 소유자 확인 | 근거 없음 – SPEC 제안(시간 초과를 `FAILED`로 처리한다는 규칙만 있다) | M5 | 차단 | 기본값: 없음 |
+| 22 | [NEEDS CLARIFICATION: 테스트 데이터 표시 문구] | C | 구현자 제시 → 소유자 확인 | 근거 없음 – SPEC 제안(운영이 아닌 구성에서만 보이는 문구) | M6 | 차단 | 기본값: 없음 |
+| 23 | [NEEDS CLARIFICATION: 환자용 보류 분류 문구와 보류 안내 문구의 최종 표현] | E | 소유자 | 기획서 169행·498행(보류 결과 화면은 구현 설계 때 정한다). DD-21 문구는 SPEC 초안 | M6 | 차단 | 기본값: DD-21 초안(제안) |
+| 24 | [NEEDS CLARIFICATION: 보류 결과 화면에 결과 문구 원칙 대신 개인 계약 조건 문장만 쓰는 결정] | C | 구현자 제시 → 소유자 확인 | 기획서 169행·498행(보류 결과 화면은 구현 설계 때 정한다), 202행(면책 문구는 잘못된 계산을 보완하는 장치가 아니다). 문장 선택은 SPEC 제안 | M6 | 차단 | 기본값: DD-07. 최종 문구는 #23과 함께 정한다 |
+| 25 | [RESOLVED-FACT: 저장된 디자인 파일에서 `K00_Start`의 시작 버튼 문구는 "시작하기"이다(`Button_Primary` 인스턴스 `OdYLw`, 내용 "시작하기")] 원래 질문: 시작 화면 버튼 문구 ("시작하기" 대 "실손 예상 부담액 확인") | B | 확인된 사실 (소유자 승인이 아니라 기록·확인된 근거) | 개정 3 파일 확인(blob `4b4a1587…`, 사본을 Pencil로 읽음, 렌더링 아님), 기획서 67행("시작하기"). product.md 41행의 "실손 예상 부담액 확인"은 저장된 파일에 없는 표현이다(§H) | M6 | 해당 없음(닫힘) | 기본값: 기획서의 "시작하기" |
+| 26 | [NEEDS CLARIFICATION: 기획서 §7의 "결과 화면 유지 시간" 뜻] | C | 구현자 제시 → 소유자 확인 | 기획서 348행(§H) | M7 | 차단 | 기본값: 결과 화면류의 경고·초기화 시간으로 해석 |
+| 27 | [NEEDS CLARIFICATION: 계산 근거 화면의 "디자인 예시입니다" 등 자리 표시 문구를 구현에서 뺄지] | C | 구현자 제시 → 소유자 확인 | design-requirements 688행(소유자 질문 목록). 문구가 있다는 사실은 개정 3 파일 확인: `K04_Basis_Calculation`의 `hmlxu`("아래 값은 디자인 예시입니다 …")와 `o16qMt`("… 구현 단계에서 검토된 규칙 데이터와 연결합니다.") | M6 | 차단 | 기본값: 없음. 권장안(제안): "디자인 예시입니다" 문장은 출시 화면에 싣지 않고, 별도의 "예시 계산" 표시와 DD-22 안내를 둔다 |
+| 28 | [RESOLVED-FACT: 저장된 파일의 프레임 ID는 서로 맞는다. `K01_Generation_Empty` = `Z3izyJ`, `K01_Generation_Selected` = `lYlRt`, `L_K01_Generation` = `xeW3n`. design-requirements 586행의 `LMKmS`·`gQtVy`·`JNcEQ`는 각 프레임 안의 HelpPanel 인스턴스 ID이며 프레임 ID가 아니다] 원래 질문: design-requirements 87행과 586행의 K01 프레임 ID 불일치 | B | 확인된 사실 (소유자 승인이 아니라 기록·확인된 근거) | 개정 3 파일 확인(blob `4b4a1587…`, 사본을 Pencil로 읽음, 노드 트리와 글자 확인이며 렌더링 아님), design-requirements 87행·586행(§H) | M6 | 해당 없음(닫힘) | 기본값: 프레임 이름 기준, 87행 ID 사용 |
+| 29 | [NEEDS CLARIFICATION: 구현 터치 영역 72 CSS px를 통과·실패 기준으로 쓰는 것] | C | 구현자 제시 → 소유자 확인 | 기획서 569행("구현 시 72 CSS px 이상", §13.1). 통과·실패 기준으로 쓰는 것은 검증 설계의 선택 | M6 | 차단 | 기본값: 통과 기준 |
+
+36번은 2회차 감사 뒤에 더한 항목이라 번호가 뒤에 온다.
+
+| 번호 | 확인 항목 | 분류 | 결정 주체 | 근거 | 처음 필요 | 게이트 | SPEC 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|-----------|------|-----------|------|-----------|--------|---------------------------------------------|
+| 36 | [NEEDS CLARIFICATION: "처음으로" 확인 창을 세션에 환자 입력이 하나라도 있을 때만 띄우는 해석 (기획서 §13.2 "진행 중에는 종료 확인")] 같은 확인 대상에 더한 제안(승인 전): ① 일반 환자 화면의 "처음으로"는 입력이 있으면 `ResetConfirm`을 먼저 띄우지만 `TimeoutDialog` 안의 "처음으로"는 `ResetConfirm` 없이 바로 초기화한다(경고창이 이미 확인 단계이고, 두 번째 겹침창 밑에서 초기화 시점이 지나가지 않게 하려는 것이다). ② 겹침창은 동시에 하나만 열리며 `ResetConfirm`이 열린 채 경고 시점이 되면 `ResetConfirm`을 닫고 `TimeoutDialog`를 연다(design.md DD-07·DD-10·DD-13, AC-015e·g·k) | C | 구현자 제시 → 소유자 확인 | 기획서 621행("진행 중에는 종료 확인"), 627행. "진행 중"을 입력이 하나 이상인 상태로 읽은 것은 SPEC 해석이며, design-requirements 706행은 "처음으로"의 도착지도 문서화 측의 해석이라고 적었다 | M5 | 차단 | 기본값: 입력이 하나라도 있으면 확인, 없으면 바로 시작 화면. 더한 제안: `TimeoutDialog` 안의 "처음으로"는 입력과 관계없이 확인 없이 즉시 초기화, 겹침창은 동시에 하나(둘 다 SPEC 제안이며 소유자 승인이 아니다). 디자인 인계표의 `tNbyp` 셀("처음으로 · 무응답 시 180초에 초기화")은 이 제안과 어긋나지 않는다 |
+
+### E.5 운영·조직
+
+| 번호 | 확인 항목 | 분류 | 결정 주체 | 근거 | 처음 필요 | 게이트 | SPEC 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|-----------|------|-----------|------|-----------|--------|---------------------------------------------|
+| 30 | [NEEDS CLARIFICATION: 규칙 관리 업무 1·2·3·5의 검토 담당자/플랫폼 운영자 분담] | E | 소유자 | design-requirements 687행, structure.md 113행(분담안은 제안이라고 적혀 있다), 기획서 363행(두 역할에 묶어 적고 업무를 나누지 않았다) | M7 | 차단 | 기본값: DD-17 권한 표(플랫폼 운영자는 기획서 §7 6번의 두 권한만 가짐) |
+| 31 | [OWNER-DECIDED 2026-10-16: 작성자 본인의 승인은 허용하지 않는다. 작성자와 승인자는 서로 다른 주체여야 하고 본인 승인 시도는 거절한다] 원래 질문: 작성자 본인 승인을 금지할지 | E | 소유자 (결정됨) | 소유자 결정 2026-10-16. 기획서 350행·360행은 승인·반려를 검토 담당자에게 두는 권한 분리만 정한다 | M3 | 해당 없음(결정됨) | 이전 기본값(허용하되 `selfApproval: true` 기록)은 폐기. 사업 정책 결정이며 실제 운영 계정·담당자·승인 기록이 등록되었다는 뜻이 아니다. 시험의 작성자·승인자 식별자는 `TEST_FIXTURE`로 그대로 둔다 |
+| 32 | [NEEDS CLARIFICATION: 1544-8069 운영 주체·상담 시간, 1588 전체 번호] | E | 소유자 | 기획서 492행, design-requirements 683행 | M6 | 차단 | 기본값: 문구로만 표시, 1588 미표시 |
+| 33 | [NEEDS CLARIFICATION: 공개 API 경로에 병원 slug를 넣는 SPEC 결정 (기획서는 /api/insurance/options, /api/estimate)] | C | 구현자 제시 → 소유자 확인 | 기획서 402~404행(예상 API 목록에서 catalog는 `/api/clinics/{slug}/catalog`이고 나머지 두 경로는 병원 식별이 없다). 규칙 묶음이 병원마다 달라 SPEC이 slug를 넣었다(§H) | M4 | 차단 | 기본값: `/api/clinics/{slug}/insurance/options`, `/api/clinics/{slug}/estimate` |
+| 34 | [OWNER-DECIDED 2026-10-16: 매핑은 플랫폼의 보험규칙 담당자(RV, 보험 기준 검토 담당자)가 작성한다. 병원의 치료·가격 관리(HA)와는 따로 두며, 병원 관리자의 검토 요청은 요청 기록만 만든다] 원래 질문: 매핑 작성 주체 | E | 소유자 (결정됨) | 소유자 결정 2026-10-16. 기획서 350행·359행·360행(승인·반려는 검토 담당자만 한다고 적었고 작성 주체는 적지 않았다) | M3 | 해당 없음(결정됨) | DD-17 "매핑 작성 주체"와 같다. 사업 정책 결정이며 실제 운영 계정·담당자·승인 기록이 등록되었다는 뜻이 아니다(시험 식별자는 `TEST_FIXTURE`). #30(규칙 관리 업무 분담)은 이 결정에 포함되지 않으며 그대로 열려 있다 |
+
+### E.6 마일스톤별로 처음 필요한 확인 항목
+
+위 표의 "처음 필요" 열을 모아 스크립트로 센 요약이다. 하위 단계(M1.1 등)는 M1에 묶었다. 이 표는 어느 마일스톤까지 답을 미뤄도 된다는 뜻이 아니다. 현재 워크플로에서는 열린 행이 모두 구현 착수 승인 전에 풀려야 한다.
+
+| 마일스톤 | 열린 행 | 개수 | 닫힌 행 |
+|----------|---------|-----:|---------|
+| M1 | #6, #7, #8, #10 | 4 | #9 |
+| M2 | — | 0 | — |
+| M3 | #1 | 1 | #31, #34 (소유자 결정 2026-10-16) |
+| M4 | #33 | 1 | — |
+| M5 | #12, #13, #14, #15, #17, #20, #21, #36 | 8 | — |
+| M6 | #18, #19, #22, #23, #24, #27, #29, #32, #35 | 9 | #25, #28 |
+| M7 | #2, #4, #16, #26, #30 | 5 | — |
+| M8 | #3, #5, #11 | 3 | — |
+
+### E.7 소유자가 직접 정해야 하는 항목 (분류 E)
+
+분류가 E인 행(#35는 D+E)과 각 행에 이 SPEC이 적어 둔 기본값 또는 권장안이다. 모두 제안이며 소유자 승인이 아니다. 다만 #31과 #34는 2026-10-16에 소유자가 정했다(§E.10). 권장안이 따로 없는 행은 SPEC이 적은 기본값만 있고, 사업·운영 판단이 필요한 #11과 #35는 SPEC이 권장안을 만들지 않았다.
+
+| 번호 | 항목 | 근거 | 처음 필요 | 기본값·권장안 (제안, 소유자 승인 아님) |
+|------|------|------|-----------|-----------------------------------------|
+| 11 | 지원 범위 밖 계약을 가려내는 방법 | 기획서 17행·59행·494행 | M8 (M1~M7은 막지 않음) | 기본값: 엔진은 판별하지 않고 결과 문구·공통 안내로만 알림(§C R-11). 권장안 없음 |
+| 17 | 초기화 때 큰 글자 보기를 끌지 유지할지 | design-requirements 699행 | M5 | 기본값: 끔. 권장안(제안): 끔 — 한 환자의 설정이 다음 환자에게 넘어가지 않게 한다 |
+| 23 | 환자용 보류 분류 문구와 보류 안내 문구의 최종 표현 | 기획서 169행·498행. DD-21 문구는 SPEC 초안 | M6 | 기본값: DD-21 초안(제안) |
+| 30 | 규칙 관리 업무 1·2·3·5의 검토 담당자/플랫폼 운영자 분담 | design-requirements 687행, structure.md 113행, 기획서 363행 | M7 | 기본값: DD-17 권한 표(제안) |
+| 31 | 작성자 본인 승인을 금지할지 | 소유자 결정 2026-10-16 (결정됨: 금지) | M3 | 결정됨: 작성자와 승인자는 서로 다른 주체여야 한다. 이전 기본값은 폐기 |
+| 32 | 1544-8069 운영 주체·상담 시간, 1588 전체 번호 | 기획서 492행, design-requirements 683행 | M6 | 기본값: 문구로만 표시, 1588 미표시(제안) |
+| 34 | 매핑 작성 주체 | 기획서 350행·359행·360행, 소유자 결정 2026-10-16 | M3 | 결정됨: 플랫폼의 보험규칙 담당자(RV)가 작성한다(DD-17). #30은 그대로 열려 있다 |
+| 35 | 2009.08~09 경계 계약 별도 도움말의 문구와 표시 위치 | 기획서 35행·43행·61행, product.md 67행, 개정 3 파일 확인 | M6 | 기본값: 없음. 권장안 없음(MoAI는 문구를 만들지 않는다, §F 7번) |
+
+합계: 확인 항목 36개 가운데 31개는 열려 있고(확인 표시 유지) 5개는 닫았다. 닫은 5개 가운데 3개(#9, #25, #28)는 기록·확인된 근거로 닫았고 2개(#31, #34)는 2026-10-16 소유자 결정으로 닫았다(§E.10). 절별로는 §E.2 5개(열림 5), §E.3 7개(열림 6, 닫힘 1), §E.4 19개(열림 17, 닫힘 2), §E.5 5개(열림 3, 닫힘 2)이다. 열린 31개 가운데 SPEC 기본값이 없는 항목은 10개(#1, #2, #3, #4, #5, #12, #21, #22, #27, #35)이고 21개는 SPEC 기본값이 있다. 열린 31개는 모두 구현 착수 승인 게이트에서 소유자에게 제시된다. 닫은 5개 가운데 #9, #25, #28은 소유자 승인이 아니라 기록·확인된 근거이며 그 근거는 각 행에 남겼고, #31·#34는 소유자가 정한 것이다. 분류별로는 A 2, B 2, C 19, D 5, E 7, D+E 1개다. 보류 확정 자료 11건(§E.1)은 작성 세션의 사용자 지시에 따른 보류(§A.5)이며 확인 항목이 아니다.
+
+### E.8 사용자에게 전달할 결정안 (관련 항목 묶음)
+
+이 표는 2026-10-15까지 열려 있던 확인 항목 33개를 관련된 것끼리 묶고 묶음마다 구현자의 구체적인 권장안을 적은 결정 보조 자료다. 아무것도 닫거나 승인하지 않는다. 그 가운데 #31과 #34는 2026-10-16에 소유자가 정해 닫았고(§E.10) B6 행의 해당 부분은 그 결정으로 대체되었다. 나머지 31개 행은 §E.2~§E.5에 번호와 확인 표시 그대로 열려 있고, 현재 워크플로에서는 모두 구현 착수 승인(Implementation Kickoff Approval)을 막는다. §E.1의 운영 자료 11항목은 결정이 아니라 자료 보류이므로 이 표에 넣지 않았고, 닫힌 #9, #25, #28도 넣지 않았다. 아래 권장안은 `SPEC 결정`(구현자 권장안)이며 소유자 승인이 아니다.
+
+`성격`은 세 가지다. 기술·화면 동작은 구현자가 구체안을 권장하고 사용자가 확인하는 항목, 사업·조직 정책은 소유자만 정할 수 있는 항목, 실제 운영 자료·사실은 소유자나 병원이 사실을 주어야 하고 권장안으로 정할 수 없는 항목이다. 마지막 열에는 묶음마다 그 항목이 처음 필요한 마일스톤(게이트)과, 지금 정하지 않았을 때 SPEC이 일관되게 유지되는 기본 동작을 적었다.
+
+| 묶음 | 포함 번호 | 성격 | 구현자 권장안 (구체) | 근거 | 대안과 차이 | 정할 시점(마일스톤 직전 게이트)과 정하지 않았을 때의 기본 동작 |
+|------|-----------|------|----------------------|------|-------------|--------------------------------------------------------------|
+| B1 기술 선택 | #1, #2, #4, #33 | 기술·화면 동작 | ① #1 DB: 저장소 인터페이스 뒤의 관계형 DB(PostgreSQL 계열). 메모리 구현은 M1~M7 시험에 그대로 쓴다. ② #2 인증: 세션 쿠키 기반 로그인에 2단계 인증을 선택할 수 있게 하고, 유지보수되는 인증 라이브러리(권장 후보: Auth.js의 credentials 또는 OIDC 어댑터)를 `src/server/auth` 뒤에 둔다. 역할과 병원 소속은 공급자가 아니라 우리 `ClinicMembership`과 DD-17 권한 표로 판정한다. ③ #4 기기-병원 연결: 연결 키는 경로 `/kiosk/{clinicSlug}`뿐이다. MVP에는 기기 식별자를 두지 않고 기기 설정(방향 등)은 별도 인증 뒤에 둔다(기획서 §13.3). ④ #33 API 경로: slug 경로 둘(`/api/clinics/{slug}/insurance/options`, `/api/clinics/{slug}/estimate`)을 유지하고 원문 표기는 §H H-7로 소유자에게 넘긴다 | ① 규칙 묶음 게시와 첫 `ACTIVE` 가용성 기록이 한 트랜잭션이어야 하고(REQ-DATA-004, DD-14) 버전은 덮어쓰지 않는 추가 전용이다(DD-14, DD-18). ② 권한 모델이 DD-17 표라서 공급자는 로그인만 맡으면 된다. ③ 기획서 401행이 정한 것은 경로뿐이고 structure.md 154행은 연결 방식을 미정으로 둔다. ④ 규칙 묶음이 병원마다 달라 병원을 알아야 계산할 수 있다(DD-14). 기획서 380행, design-requirements 703행 | ① 문서형·키-값 저장소를 쓰면 게시 트랜잭션을 앱 코드로 보장해야 한다. ② 외부 로그인만 쓰면 병원 소속·역할을 우리 표에 따로 이어야 한다. 공급자를 바꿔도 `src/server/auth` 밖의 코드는 바뀌지 않는다. ③ 기기 식별자를 더하면 기기 등록·교체 화면이 더 필요하다. ④ 원문 경로를 유지하면 병원 식별이 없어 병원별 규칙 묶음을 고를 수 없다 | 게이트: #1은 M3의 DB 어댑터 전, #2·#4는 M7 전, #33은 M4 전. 현재 워크플로에서는 넷 모두 구현 착수 승인 전. 정하지 않으면: M1~M7은 메모리 구현으로 진행하고 경로는 slug 경로 그대로 둔다 |
+| B2 환경 사실 | #3, #5 | 실제 운영 자료·사실 (소유자·병원이 제공) | 권장안으로 정할 수 없다. 필요한 사실만 적는다. #3 호스팅: 예상 월 요청 수, 월 비용 상한, 서버 위치(리전) 요건이 있는지. #5 기기: 키오스크 OS, 브라우저 이름과 버전, 네트워크 환경, 실제 화면 해상도와 방향(임시 검토 크기 1080×1920·1920×1080과 맞는지), Pretendard 적용 방식(기기에 설치할지 웹폰트로 받을지) | 기획서 380행(비용 조건을 확인한 뒤 확정), 488행, design-requirements 680행·703행 | 해당 없음. 사실이 있어야 정해진다 | 게이트: M8 전(파일럿 배포와 실기기 판정). 현재 워크플로에서는 구현 착수 승인 전. 정하지 않으면: M1~M7은 이 사실에 기대지 않는다. 호스팅은 없는 것으로 두고 시험은 모의 네트워크와 임시 검토 크기 두 가지로 한다 |
+| B3 계산 규칙 구현 선택 | #6, #7, #8, #10 | 기술·화면 동작 (식과 조항 값 자체는 운영 자료, 보류-07·보류-09) | ① #6 보장 대상 비용 한도(`limitBasis = COVERED_COST`): 계산하지 않고 `PROFILE_FORMULA_UNSUPPORTED`로 보류를 유지한다. 식은 약관 자료가 들어온 뒤에 더한다. ② #7 공유 한도 배분: `groupOrder` 순서로 채운다. 합계는 달라지지 않고 그룹별 표시 몫만 달라진다. ③ #8 공통 기본비용: 예상 병원 결제액에는 보장 여부와 관계없이 항상 포함하고, 보험금 계산에서는 치료와 같은 매핑 판정을 거친다(2026-10-15 정정 수용, §E.9). ④ #10 `UNLIMITED_DECLARED`: 약관 조항 참조가 있을 때만 허용하고 없으면 `PROFILE_SOURCE_INCOMPLETE`로 보류한다 | DD-02, DD-03, 기획서 247행·294행, design-requirements 684행, 보류-07·보류-09, research.md U-07 | ① 임의의 식으로 계산하면 값을 추정하게 되어 SPEC 원칙에 어긋난다. ② 다른 배분 순서는 합계가 같아 금액이 바뀌지 않는다. 실제 공유 한도 관계가 자료로 들어오면 M8에서 다시 본다. ③ 기본비용 줄을 매핑 판정 없이 보험금 계산에 넣으면 보장 여부가 정해지지 않은 금액이 보험금에 들어간다(병원 결제액에는 매핑과 관계없이 항상 포함한다). ④ 조항 없이 허용하면 한도가 없다고 단정할 근거가 사라진다 | 게이트: 넷 모두 M1.3에서 처음 쓰이므로 M1 시작 전. 현재 워크플로에서는 구현 착수 승인 전. 정하지 않으면: 위 권장 동작이 SPEC의 기본 동작으로 남는다. 모두 보류 쪽으로 기운 동작이라 값을 추정하지 않는다 |
+| B4 무조작·요청 시간 값 | #12, #13, #14, #15, #16, #20, #21, #26, #36 | 기술·화면 동작 (값은 파일럿 관찰 뒤 바꿀 수 있는 설정값) | ① #12 `completionHoldSeconds`: 10초(파일럿 관찰 뒤 병원별 설정으로 조정). ② #13 세대 확인 안내·계산 중·통신 오류: 경고 100초·초기화 120초. ③ #14 보류 결과: 160/180초. ④ #15 계산 근거·서류 화면: 160/180초를 유지하고 파일럿 관찰 뒤 M8에서 다시 확인한다(원문이 소유자가 바꿀 수 있다고 적음). ⑤ #16 경고와 초기화의 최소 간격 20초를 저장 하한으로 둔다(무조작 정책에만 적용, `completionHoldSeconds` 제외). ⑥ #20 통신 오류의 "이용 종료": 세션을 지운 뒤 `K06_Complete`. ⑦ #21 계산 요청 시간 제한: 시도마다 15초, 넘으면 통신 오류 화면의 "다시 시도"(제한과 경고 시간의 관계, 겹침창이 열린 동안의 만료는 design.md DD-07 "겹침창이 열려 있는 동안 도착하는 요청 결말"과 AC-015p. 같은 값을 catalog·options 갱신의 시간 제한에도 쓰는 것이 기본이다(DD-09 "자료 갱신 생명주기" 규칙 7, SPEC 제안). 이 참조들은 #21을 닫지 않는다). ⑧ #26 "결과 화면 유지 시간": 결과 화면류(정상·보장 제외·보류)의 경고·초기화 시간으로 읽고, 원문에서 용어를 정의하거나 지우도록 소유자에게 요청한다(§H H-8). ⑨ #36 "처음으로": 일반 화면에서 입력이 있으면 `ResetConfirm`을 먼저 띄우고, `TimeoutDialog` 안의 "처음으로"는 확인 없이 바로 초기화하며, 겹침창은 동시에 하나만 연다(제안이며 승인 전. 겹침창이 열려 있는 동안 도착한 요청 결말의 처리는 design.md DD-07 같은 절과 AC-015l~p이며 이 참조는 #36을 닫지 않는다) | 기획서 §13.2(605~625행, 633행), design-requirements 698·699·706행, DD-07, DD-09, DD-10, DD-13 | 값은 설정값이라 다른 값을 고르면 숫자만 바뀌고 구조는 바뀌지 않는다. #21은 무조작 경고 시간(100초)보다 작아야 한다. #36의 대안인 모든 "처음으로"에 확인창을 거는 안은 경고창 밑에서 초기화 시점이 지나갈 수 있다(DD-07) | 게이트: #12·#13·#14·#15·#20·#21·#36은 M5 전, #16·#26은 M7 전. 현재 워크플로에서는 모두 구현 착수 승인 전. 정하지 않으면: M5의 시험은 시간 값을 주입값으로 다루므로 값에 기대지 않는다. `completionHoldSeconds`가 없으면 자동 복귀 없이 "처음 화면으로" 버튼으로만 `K00_Start`에 간다 |
+| B5 화면 문구·배치 | #17, #18, #19, #22, #23, #24, #27, #29, #35 | 기술·화면 동작 (단 #17과 #23은 소유자 몫이고 #35는 소유자가 공급할 자료) | ① #17 큰 글자 보기: 초기화 때 끈다. ② #18 서류 규칙을 쓸 수 없을 때: 서류 목록 대신 안내 문구를 보이고 "결과로 돌아가기"·"이용 완료"·공통 "처음으로"를 유지한다. ③ #19 원인 모름 서류 화면: 분기 묶음 세로 쌓기와 열 추가를 먼저 쓰고 그래도 넘치면 "이전 목록 / 다음 목록"으로 나눈다(줄 수 상한 없음, 줄을 빼지 않음). ④ #22 테스트 데이터 표시: "테스트 데이터로 계산한 결과입니다"(운영이 아닌 구성에서만 보임). ⑤ #23·#24 보류 문구: DD-21의 분류 문구 초안과 보류 결과의 개인 계약 조건 문장 하나(DD-07)를 그대로 쓴다. ⑥ #27 계산 근거 화면: "디자인 예시입니다" 문장은 출시 화면에서 빼고 "예시 계산" 표시와 DD-22 안내만 둔다. ⑦ #29 72 CSS px를 통과·실패 기준으로 쓴다. ⑧ #35 2009.08~09 경계 계약 도움말: 문구와 자리는 소유자가 정해 주어야 한다. MoAI는 문구를 만들지 않는다. 그때까지 구현은 날짜 입력도 가입일로 세대를 정하는 일도 하지 않는다 | DD-06, DD-07, DD-12, DD-21, DD-22, 기획서 §4(169·209·210·217행)·498행·569행, design-requirements 90·588·627·688·699행, 보류-06, §C R-09·R-12, §F 4·7번 | ① 초기화 때 큰 글자를 유지하면 이전 환자의 설정이 다음 환자에게 넘어간다. ③ 줄 수 상한을 두는 배치는 실제 서류 요건(보류-06)을 담지 못할 수 있다. ⑥ 자리 표시 문구를 남기면 환자가 예시 값을 실제 값으로 읽을 수 있다. ⑦ 72 CSS px를 참고 값으로만 쓰면 합격 기준이 사라진다. ⑧ 가입일로 세대를 정하는 것은 기획서 §3이 하지 않기로 한 일이다(research.md U-18) | 게이트: #17은 M5 전, 나머지는 M6 전. 현재 워크플로에서는 모두 구현 착수 승인 전. 정하지 않으면: 위 권장 동작이 SPEC의 기본 동작이다. #35는 문구가 정해질 때까지 기존 프레임이 이 도움말을 담지 않는다(§C R-12) |
+| B6 사업·조직 정책 | #11, #30, #31, #32, #34 | 사업·조직 정책 (소유자만 정할 수 있음. 아래는 SPEC의 기본 동작) | ① #30 역할 분담: DD-17의 분담을 쓴다. 플랫폼 운영자는 관리자 소속·역할 관리와 규칙 사용 범위 지정만 맡는다. (#34 매핑 작성 주체는 2026-10-16에 소유자가 정했다. 검토 담당자(RV)가 매핑을 쓰고 병원 관리자는 검토 요청 기록만 만든다, §E.10.) ② (#31 작성자 본인 승인은 2026-10-16에 소유자가 금지로 정했다. 작성자와 승인자는 서로 다른 주체여야 한다, §E.10.) ③ #32 상담 번호: 1544-8069는 문자로만 보이고 1588은 어디에도 보이지 않는다. 운영 주체와 상담 시간은 소유자가 알려 주어야 한다. ④ #11 지원 범위 밖 계약: MVP에는 가려내는 화면을 두지 않고 결과 문구와 공통 안내로 개인 계약에 따라 달라질 수 있음을 알린다. 가려내는 방법은 후속 SPEC으로 낸다 | DD-17, 기획서 §7(350·359·360·363행)·17·59·492·494행, design-requirements 683·687행, structure.md 113행, §C R-11 | ① 분담을 달리하면(예: 플랫폼 운영자도 매핑을 쓴다) DD-17 권한 표와 AC-022가 바뀐다. ② (결정됨) 금지하므로 검토 담당자가 한 명뿐이면 승인을 낼 수 없다. 서로 다른 작성자와 승인자 주체가 필요하다. ③ 번호 표기를 바꾸려면 운영 주체와 시간이 필요하다. ④ 가려내는 화면을 MVP에 넣으면 새 화면과 기준이 필요해 새 SPEC이 된다 | 게이트: #31·#34는 2026-10-16에 결정되어 닫혔다. #32는 M6 전, #30은 M7 전, #11은 M8 전(M1~M7을 막지 않음). 현재 워크플로에서는 열린 항목이 모두 구현 착수 승인 전. 정하지 않으면: #30은 DD-17 제안 그대로, #32는 문구로만 표시, #11은 알림만 한다 |
+
+여섯 묶음의 번호를 스크립트로 모아 2026-10-15 시점의 열린 행 33개와 대조했다. 모든 열린 번호가 정확히 한 묶음에 있고 닫힌 번호(#9, #25, #28)는 없다. 그 뒤 #31·#34는 소유자 결정으로 닫혔다(§E.10).
+
+### E.9 구현 착수 결정 기록 (2026-10-15 사용자 답변, M1 한정)
+
+이 절은 2026-10-15에 사용자가 한 구현 착수 답변을 옮겨 적은 기록이다. 답변 원문은 이 저장소에 보존되어 있지 않으므로 뜻을 그대로 옮겼고, 답변에 없는 결정은 더하지 않았다. §E.2~§E.8의 행, 열린 행 개수(33개), 감사 결과(5회차 FAIL 0.89, MP-7), `plan_status`와 `status` 값은 이 절이 바꾸지 않는다. 이 절은 그 위에 얹은 기록이며, 아래에서 "수용"으로 적은 항목도 §E의 행에서는 확인 표시가 그대로 열려 있다.
+
+**(a) 범위와 예외**
+
+- 승인한 범위는 둘뿐이다. (1) 결정 기록 정리, (2) M1 계산 엔진 구현. 승인하지 않은 것은 (d)에 모았다.
+- 사용자는 "이후 단계에 쓰일 미결 항목이 M1 전체를 막는다"는 기존 규칙(모든 확인 표시는 구현 착수 승인 전에 풀려야 한다. §E 안내가 인용한 `.claude/skills/moai/workflows/plan.md` 53행·73행)에 대해, 이 프로젝트 한정의 **M1 한정 개발 예외**를 명시적으로 승인했다. 이 예외는 SPEC이 전체 감사를 통과했다는 뜻이 아니고 운영 준비가 되었다는 뜻도 아니다.
+- 이 답변은 M1에 한해 구현 착수 승인(Implementation Kickoff Approval)으로 기능한다. progress.md에 같은 취지로 적었다. 이후 단계는 자기 단계의 보류 항목이 정해지기 전에 시작하지 않는다.
+
+**(b) 항목별 결정**
+
+| 항목 | 결정 상태 | 내용 | 정할 시점 |
+|------|-----------|------|-----------|
+| #1 방향 | 수용 | 저장소 인터페이스를 두고 메모리 구현으로 진행하는 방향 | — |
+| #1 실제 DB 제품·공급자 | 보류 | 정하지 않음 | M3의 DB 어댑터 시작 전 |
+| #2 | 보류 | 인증 공급자와 구체적인 로그인·2단계 인증 방식을 정하지 않음. 유료 서비스 가입과 비용은 승인하지 않음 | M7 시작 전 |
+| #4 | 수용 | 기기와 병원의 연결은 경로 `/kiosk/{clinicSlug}`만 쓴다 | — |
+| #33, S1, S2 | 수용 | 공개 API 경로(§E.8 B1 ④의 slug 경로), S1(`treatmentsUnpublished` 목록 구성), S2(항목 상태 최신 읽기)를 권장안대로 수용 | — |
+| S13 | 수용 | 관리자 API 표는 설계의 출발점으로 수용한다. 실제 역할·권한은 B6의 보류 항목을 따른다(아래 (c)) | — |
+| #3, #5 | 보류 | 호스팅과 실제 기기 사양을 정하지 않음. 개발·시험은 로컬 환경, 모의 네트워크, 임시 검토 크기 1080×1920·1920×1080으로 한다. 확인되지 않은 OS·브라우저·요청량·지역 요건은 사실로 적지 않는다 | M8 파일럿 배포·실기기 검증 전 |
+| #6 | 수용 | 지원하지 않는 식(`limitBasis = COVERED_COST`)은 계산하지 않고 `PROFILE_FORMULA_UNSUPPORTED`로 보류 | — |
+| #7 | 수용 | 공유 한도는 `groupOrder` 순서로 배분 | — |
+| #8 | 정정 수용 | 정정한 문구: 공통 기본비용은 보장 여부와 관계없이 예상 병원 결제액에 포함한다. 보험금 계산에서는 치료와 같은 보장 매핑 판정을 적용한다. 매핑이 없거나 쓸 수 없으면 기존 보류 계약을 따른다. 아래 "확인 필요" 참조 | — |
+| #10 | 수용 | "한도 없음"(`UNLIMITED_DECLARED`)은 약관 조항 참조가 있을 때만 허용하고, 없으면 `PROFILE_SOURCE_INCOMPLETE`로 보류 | — |
+| `MAX_AMOUNT_WON`, S11, S12 | 수용 | `MAX_AMOUNT_WON` = 1,000,000,000원(design.md 1261행의 제안값), 기존 안전 산술 검사는 유지. 사용자는 이 값을 S11·S12와 함께 권장안대로 수용했고, 이 값과 두 코드의 대응은 정의 위치 미확인 | — |
+| #12 | 수용 | 완료 화면 유지 시간(`completionHoldSeconds`) 10초 | — |
+| #13 | 수용 | 입력·계산 중·통신 오류 화면은 경고 100초, 초기화 120초 | — |
+| #14, #15 | 수용 | 결과·보류 결과·계산 근거·서류 화면은 경고 160초, 초기화 180초 | — |
+| #16 | 수용 | 경고와 초기화의 최소 간격 20초 | — |
+| #20 | 수용 | §E.8 B4 권장안 ⑥ 그대로(통신 오류의 "이용 종료"는 세션을 지운 뒤 `K06_Complete`) | — |
+| #21 | 수용 | 계산 요청 시간 제한 15초. catalog와 options 다시 받기는 두 요청을 한꺼번에 덮는 타이머 하나(15초)를 쓴다 | — |
+| #26 | 수용 | §E.8 B4 권장안 ⑧ 그대로("결과 화면 유지 시간"은 결과 화면류의 경고·초기화 시간으로 읽는다) | — |
+| #36 | 수용 | §E.8 B4 권장안 ⑨ 그대로(일반 화면에서 입력이 있으면 `ResetConfirm`을 먼저 띄우고, `TimeoutDialog` 안의 "처음으로"는 바로 초기화하며, 겹침창은 하나만 연다) | — |
+| S3, S4, S5, S9 | 수용 | 위 시간·종료 값과 함께 권장안대로 수용. 코드별 내용은 정의 위치 미확인 | — |
+| 시간 값 공통 | 수용 | 위 값은 모두 파일럿 관찰 뒤 바꿀 수 있는 설정값이다. "요청 제한은 항상 무조작 경고보다 짧아야 한다"는 추가 제약은 두지 않으며, 설정이 바뀌어 겹치면 기존 경합 처리 규칙을 따른다. 서버 응답은 무조작 시간을 다시 시작하게 하지 않는다 | — |
+| #17 | 수용 | 초기화하면 큰 글자 보기를 끈다 | — |
+| #18 | 수용 | 서류 규칙이 없으면 안내 문구를 보이고 돌아가기·종료 동작은 유지한다 | — |
+| #19, #23, #24, #27, #29 | 수용 | §E.8 B5 권장안 ③, ⑤, ⑥, ⑦ 그대로 | — |
+| #22 | 수용 | §E.8 B5 권장안 ④ 그대로. 사용자 답변은 초기화 때에도 시험 데이터 표시를 유지한다고 적었다(이 문장이 어느 번호의 내용인지는 답변에 명시되지 않음) | — |
+| S6, S7, S8, S10 | 수용 | 사용자 답변이 적은 화면 동작: 자료 갱신 실패는 치료 선택 화면 안에 보이고 다시 시도는 갱신부터 시작한다. 갱신 중에는 치료 카드와 이전 버튼을 잠그고, "처음으로"·목록 이동·큰 글자 토글은 계속 쓸 수 있다. 이 동작과 네 코드의 대응은 정의 위치 미확인 | — |
+| #35 | 보류 | 2009.08~09 경계 계약 도움말의 최종 문구와 위치를 정하지 않음. 가입일만으로 세대를 자동 판정하거나 미리 선택하지 않는다 | M6 시작 전 |
+| #11 | 수용 | MVP는 지원 범위 밖 계약을 자동으로 가려내지 않는다. 개인 계약이 확인된 것처럼 보여 주지 않는 원칙은 유지한다 | — |
+| #30, #34 | 보류 | 규칙 관리 업무 분담(#30)과 매핑 작성 주체(#34)를 정하지 않음 | 해당 도메인·권한 구현 시작 전(§E.8 B6 게이트: #34는 M3 전, #30은 M7 전). → 2026-10-16: #34는 소유자가 정했다(§E.10). #30은 그대로 보류 |
+| #31 | 보류 | 운영에서 작성자 본인 승인을 허용할지 정하지 않음. M1 시험 자료의 승인자 필드는 실제 운영 승인 기록이 아니다 | M3 생명주기 구현 시작 전. → 2026-10-16: 소유자가 금지로 정했다(§E.10) |
+| #32 표시 | 수용 | 1544-8069는 안내 문구로만 보이고 1588은 보이지 않는다 | — |
+| #32 운영 주체·상담 시간 | 보류 | 따로 확인한다 | M6 전 |
+| S14 | 수용 | 함수 이름과 파일 이름은 구현자 재량 | — |
+| S15 | 보류 | 답변이 중간에서 끊겨 있다. 전체 항목을 일괄 승인한 것으로 읽지 않는다 | 내용이 확인될 때까지 결정 대상으로 남김 |
+| #9, #25, #28 | 이미 닫힘 | §E.3·§E.4에서 기록·확인된 근거로 이미 닫혀 있다. 이 절은 다시 열거나 바꾸지 않는다 | — |
+
+"—"는 이 기록으로 정해졌고 따로 정할 시점이 없다는 뜻이다. 열린 번호 33개는 모두 위 표에 나오고, 닫힌 번호 3개는 마지막 행에 있다. 시간 값은 설정값이라 파일럿 관찰 뒤 바뀔 수 있다.
+
+**S1~S15 코드:** 정의 위치 미확인. `.moai/` 아래 문서(이 SPEC의 progress.md, plan.md, research.md, design.md 포함)와 저장소의 `*.md`를 검색했으나 이 코드를 정의한 곳이 없다(`.claude/skills/moai/workflows/run/mode-orchestration.md`의 S1~S3 표는 다른 주제다). 위 표의 S 코드에는 사용자 답변이 붙인 설명만 적었고 정의를 만들어 채우지 않았다. plan.md §A.5(49행)의 "SPEC 제안 (승인 전)" 목록에 `treatmentsUnpublished[]` 내용과 항목 상태 읽기가 나오지만 S 코드는 붙어 있지 않으며, 같은 항목인지는 확인되지 않았다.
+
+**(c) 명시적 보류 목록**
+
+아래는 결정된 것으로 표시하지 않았고 질문을 숨기지도 않는다. 해당 단계가 시작되기 전에 결정 대상으로 다시 올린다.
+
+- #1 실제 DB 제품·공급자: M3의 DB 어댑터 시작 전 (2026-10-16: DB 어댑터 구현 전까지 보류 확인, M3는 저장소 인터페이스와 메모리 구현으로 진행. §E.10)
+- #2 인증 공급자와 구체적인 로그인·2단계 인증 방식: M7 시작 전(유료 서비스 가입과 비용은 승인하지 않음)
+- #3 호스팅, #5 실제 기기 사양: M8 파일럿 배포·실기기 검증 전
+- #30 규칙 관리 업무 분담, #34 매핑 작성 주체: 해당 도메인·권한 구현 시작 전 (2026-10-16: #34는 소유자가 정했다. #30은 그대로 보류. §E.10)
+- #31 운영에서 작성자 본인 승인 허용 여부: M3 생명주기 구현 시작 전 (2026-10-16: 소유자가 금지로 정했다. §E.10)
+- #32 운영 주체·상담 시간: M6 전
+- #35 2009.08~09 경계 계약 도움말의 최종 문구·위치: M6 시작 전
+- S15: 끊긴 답변의 내용이 확인될 때까지
+- §E.1 운영 자료 11항목(보류-01~보류-11): 그대로 보류. M1은 `TEST_FIXTURE` 자료로만 검증한다
+
+**(d) 승인하지 않은 것**
+
+- M2 이후 모든 단계의 구현
+- 운영 배포
+- 실제 보험 값의 등록. 어떤 실제 보험 공식, 공제, 한도, 약관 문구, 병원 가격도 승인하지 않았다
+- main으로의 병합
+- 유료 서비스 가입과 비용(#2)
+- 확인되지 않은 OS·브라우저·요청량·지역 요건을 사실로 적는 일
+- 가입일만으로 세대를 자동 판정하거나 미리 선택하는 일(#35)
+- S15를 근거로 한 일괄 승인
+- 이 기록을 SPEC 감사 통과나 운영 준비 완료로 읽는 일
+
+### E.10 M3 착수 전 소유자 결정 기록 (2026-10-16)
+
+이 절은 2026-10-16에 프로젝트 소유자가 M3 구현 착수 전에 알려 준 결정 세 건을 옮겨 적은 기록이다. 세 건은 사업 정책 결정이며, 실제 운영 계정·담당자·승인 기록이 등록되었다는 뜻이 아니다. 시험에 쓰는 작성자·승인자 식별자는 모두 `TEST_FIXTURE`로 그대로 둔다. 실제 보험 값이나 운영 자료를 승인한 것도 아니다.
+
+| 번호 | 결정 | 반영 위치 | 상태 |
+|------|------|-----------|------|
+| #34 | 매핑은 플랫폼의 보험규칙 담당자(RV, 보험 기준 검토 담당자)가 작성한다. 병원의 치료·가격 관리(HA)와는 따로 둔다. design.md DD-17의 "매핑 작성 주체"를 확인한 것이며 SPEC 기본값이던 것이 결정되었다 | design.md DD-17, spec.md REQ-ADM-003 | 닫힘 |
+| #31 | 작성자 본인의 승인은 허용하지 않는다. 작성자와 승인자는 서로 다른 주체여야 한다. 이전 기본값(허용하되 `selfApproval: true` 기록)은 폐기하고 감사 기록의 `selfApproval` 필드도 없앤다. 본인 승인 시도는 거절하며, 도메인에서는 유형 있는 도메인 오류로, 관리자 API의 HTTP 변환은 M7에서 한다 | design.md DD-17·DD-18, spec.md REQ-ADM-004 C2, acceptance.md AC-024a·AC-025b | 닫힘 |
+| #1 | 데이터베이스 제품은 정해지지 않았고 DB 어댑터를 구현하기 전까지 보류한다. M3는 저장소 인터페이스와 메모리 구현으로 진행한다 | §B M3, §E.2 #1, §G | 열림(DB 어댑터 구현 전까지 보류) |
+
+M3에서 이 결정이 닿는 범위는 도메인 서비스의 승인 규칙까지다: 매핑의 작성·승인·반려는 RV 역할을 요구하고, 작성자와 승인자가 같으면 유형 있는 도메인 오류로 거절한다. 전체 권한 판정, 병원 소유 확인, HTTP 변환은 M7(`AC-022a`)에 남는다. `AC-024a`와 `AC-025b`는 M7이 닫고 M3는 증거만 낸다. M3의 닫는 AC 목록은 바뀌지 않는다. 이 기록은 #30, #32, #11, §E.1의 운영 자료 보류를 바꾸지 않는다.
+
+**(e) 검증 방법**
+
+- 공식 SPEC lint는 쓸 수 없다(`moai` CLI가 설치되어 있지 않다). 공식 lint 결과는 UNVERIFIED로 기록한다. 대신 정규식, 필수 필드, 참조 치환 검사를 쓴다. 이것들은 lint가 아니다. lint 도구가 없다는 이유로 M1 작업을 멈추지 않는다.
+- SPEC을 전체로 다시 쓰지 않으며 자동 감사를 반복하지 않는다. 마지막 감사 결과(5회차 FAIL 0.89, MP-7)는 그대로이고 이 기록이 PASS로 바꾸지 않는다.
+- M1은 `TEST_FIXTURE` 자료로만 검증한다.
+
+**확인 필요 (#8 정정과 문구가 어긋날 수 있는 곳, 이 기록은 고치지 않음)**
+
+정정한 #8은 기본비용을 보장 여부와 관계없이 병원 결제액에 넣고, 매핑 판정은 보험금 계산에만 적용한다. 아래 문구는 매핑을 기본비용 계산의 전제처럼 읽히게 할 수 있어 구현 전에 한 번 읽어 볼 곳이다. 고치지 않았다.
+
+- design.md 155행: "기본비용에도 매핑이 필요하다는 결정은 plan.md §E #8" 문장
+- plan.md 308행(§E.3 #8 행): 질문 "공통 기본비용도 보장 매핑이 필요하다는 SPEC 결정"과 기본값 "필요"
+- plan.md 400행(§E.8 B3): ③의 권장안과 "대안과 차이"의 "기본비용을 매핑 없이 계산하면 보장 여부가 정해지지 않은 금액이 들어간다"
+- spec.md 146행, spec-compact.md 69행(C5): "기본비용 줄도 매핑 판정을 거치는 부분은 SPEC 제안 (승인 전, §E #8)". 뜻은 보험금 쪽이라 어긋나지 않으나 승인 상태 표시가 이 기록과 다르다
+- acceptance.md 85행(AC-004f의 (2)와 (3))은 정정한 문구와 같은 방향임을 읽어서 확인했다(매핑이 없어도 병원 결제액에 더하고 그 줄만 `MAPPING_ABSENT`로 보류). 충돌 후보가 아니라 확인한 곳이다
+- (M1.5 R3 정리, 2026-10-15) 위 목록의 design.md 155행, plan.md 308행·400행, spec.md 146행, spec-compact.md 69행은 정정한 문구에 맞게 고쳤다(본문의 뜻은 바꾸지 않고 매핑 판정이 보험금 계산에만 적용되며 병원 결제액에는 기본비용이 항상 포함됨을 분명히 했고, 승인 표시는 "소유자 수용 (2026-10-15, §E #8, 정정 수용)"으로 바꿨다). acceptance.md AC-004f는 이미 같은 방향이라 고치지 않았다. 위 목록 자체는 당시 기록이라 그대로 둔다.
+
+## §F 소유자에게 넘길 디자인 후속 항목과 선택 후속 항목
+
+Pencil 수정은 소유자 몫이며 MoAI는 `design/design.pen`을 쓰지 않는다. 아래는 작은 후속 항목이며 구현을 막지 않는다. 기획서와 디자인 요구사항의 원문 문장 가운데 소유자가 고치거나 분명히 해야 할 것은 §H에 따로 모았다(이 SPEC은 원문을 고치지 않는다).
+
+1. (13-1) `ZZ_HandoffSpec` 행 `ZBdWg`의 문구를 "진입했던 결과 종류의 화면으로 복귀(보장 제외 포함, 세로·가로 배치와 큰 글자는 복귀 시점의 값)"로 정정. 결과 종류별 계산 근거 프레임은 요청하지 않는다(구현은 DD-11 공통 규칙).
+2. (13-2) `K04_Result_Dialog_Timeout` (YcF5k) 배경 결과에 "보험 청구에 필요한 서류 확인" 버튼을 맞춤. 구현은 실제 화면 위에 TimeoutDialog를 띄우므로 영향 없음.
+3. (13-4) 무조작 행(`QUcQ1`~`tNbyp`)에 계산 근거·서류 화면 160/180초를 추가. 새 프레임은 필요 없다.
+4. 원인 모름 서류 화면은 서류 규칙의 실제 줄 수에 맞춰 반응형 배치(분기별 묶음 세로 쌓기, 열 추가)와 넘칠 때의 "이전 목록 / 다음 목록"으로 구현한다(DD-06, SPEC 제안, 최종 선택은 M6). 줄 수 상한을 두지 않으므로 이 구현 방식으로 소유자의 실제 서류 요건(보류-06)을 담을 수 없을 때만 배치 변경을 요청한다.
+5. 요청하지 않는 것: 큰 글자 전용 프레임, 모달 배경 프레임, 결과 종류별 계산 근거 프레임, 보류 결과 프레임.
+6. 선택 후속 항목(요구사항 아님): **플랫폼 운영자 긴급 중지** — 특정 병원의 규칙 묶음을 플랫폼 운영자가 즉시 멈추는 기능. 기획서 §7 6번이 플랫폼 운영자에게 준 권한은 관리자 소속·역할 관리와 규칙 사용 범위 지정 둘뿐이고 긴급 중지는 원문에 없다. 계획 감사 1회차 뒤 요구사항에서 뺐으며 그 제거를 승인한 기록은 없다. 개정 4 요청에서 사용자가 이 범위에 넣지 않도록 지시했다(§A.5). 필요하면 별도 SPEC으로 낸다. 지금은 검토 담당자의 규칙 묶음 중지(DD-17)와 플랫폼 운영자의 규칙 사용 범위 재지정으로 대신한다.
+7. (기획서 §3, product.md 67행) 2009.08~09 경계 계약 별도 도움말: 현재 디자인에는 이 도움말을 담은 프레임이 없다. 문구와 표시 위치(§E #35)가 정해지면 화면 1 또는 세대 확인 안내에 넣을 자리를 소유자가 Pencil에서 정한다. MoAI는 문구를 만들지 않는다.
+8. 후속 SPEC 후보(구현을 막지 않음, 확인 항목 아님): 치료 원인을 앞으로 금액 계산에도 쓸지. 현재 MVP 결정인 "원인은 서류 안내에만 쓴다"를 다시 열지 않는다(§E #9, 닫힘). 같은 질문이 기획서 125행·496행과 design-requirements 694행에 소유자 질문으로 남아 있으며, 쓰기로 하면 "잘 모르겠어요"가 계산 보류 사유가 되므로 규칙을 확정할 때 함께 정해야 한다(기획서 125행). 그때는 엔진이 원인 인자를 받지 않는다는 DD-01의 불변 조건도 새 SPEC에서 바꾼다.
+
+## §G 기술 결정
+
+| 항목 | 현재 | 결정 시점 |
+|------|------|-----------|
+| 시험 러너 | **Vitest (작성 세션의 사용자 지시, 2026-10-14 개정 4 요청에서 유지 지시, §A.5)** | — |
+| 가져오기 경계 검사 도구 | TypeScript 컴파일러 API로 가져오기를 읽는 시험, 또는 린트 규칙 | M1.4 |
+| 애플리케이션 프레임워크 | Next.js App Router + TypeScript (후보) | M4 전 |
+| 데이터베이스 | 미정 (관계형 DB 후보, §E #1. 2026-10-16: DB 어댑터 구현 전까지 보류, M3는 저장소 인터페이스와 메모리 구현으로 진행) | M3 DB 어댑터 전 |
+| 관리자 인증 공급자 | 미정 (§E #2) | M7 전 |
+| 호스팅 | 미정 (§E #3) | M8 |
+| E2E 도구 | e2e-tester가 선택 | M6 전 |
+| Pretendard 적용 방식 | 기기 설치 또는 웹폰트 (기기 정보 §E #5 필요) | M6 |
+
+## §H 원문 문장 중 변경·명확화가 필요한 것
+
+소유자에게 넘기는 표다. 이 SPEC은 아래 원문(기획서 `보담_기획설계_v0.2.md`와 `.moai/project/*`)을 고치지 않는다. 줄 번호는 이 SPEC을 쓴 시점의 파일 기준이고, 인용은 줄여 적었다. `spec.md` §4.2의 프레임 ID 표기와 큰 글자 토글 표기(`P3xKHF`)는 이 SPEC 안의 문제여서 SPEC이 직접 고쳤다.
+
+| 번호 | 출처 (파일·줄) | 현재 문장 (짧은 인용) | 왜 | 제안 방향 | 관련 REQ/AC | 상태 |
+|------|----------------|------------------------|-----|-----------|-------------|------|
+| H-1 | 기획서 210행 | "‘공통으로 필요한 서류’ 7줄과 ‘다쳐서 오셨다면 (상해)’ 1줄(초진기록지)·‘아파서 오셨다면 (질병)’ 1줄(진단서)로 나눠 보여 준다" | 7+1+1이 고정 규칙처럼 읽힌다. 실제 서류 요건은 아직 없고(215행, 보류-06) 이 SPEC은 상해·질병 전용 줄 수에 상한을 두지 않는다 | 디자인 예시 기준임을 밝히고, 줄 수는 평가된 서류 규칙에서 나온다고 적는다 | REQ-DATA-005, REQ-ENG-005 / AC-007c·f·h·i | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-2 | 기획서 217행 | "9줄을 세 열로 나누어 배치하고, 원인 모름 화면은 공통 서류를 두 열로 나눈 뒤 분기 두 묶음을 오른쪽 열에 세로로 쌓는다" | 7+1+1 분할을 전제한 가로 배치다. 줄 수가 달라지면 그대로 쓸 수 없다 | 이 배치를 디자인 예시로 표시하고, 줄 수에 따른 반응형 배치는 구현이 정한다고 적는다 | REQ-ENG-005 / AC-007i, §E #19 | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-3 | design-requirements 90행 | "seven common lines, one injury-only line (초진기록지), one illness-only line (진단서)" | 요구사항 표(§3 행 18)에 7+1+1이 규칙처럼 적혀 있다 | 디자인 예시 기준임을 적는다 | REQ-DATA-005, REQ-ENG-005 / AC-007c·h·i | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-4 | design-requirements 588행·627행 | 588행 "the unknown variant puts the seven common lines in two columns and stacks the two conditional groups in a third" · 627행 "The second shows seven common lines, the injury-only line (초진기록지) and the illness-only line (진단서) side by side" | 저장된 디자인에 무엇이 있는지 적은 기록이라 사실 서술이다. 다만 같은 7+1+1 구성을 규칙으로 읽게 할 수 있다 | 고칠 필요는 작다. H-3을 정정할 때 이 두 줄도 예시 구성의 기록임을 한 문장으로 덧붙이면 충분하다 | REQ-ENG-005 / AC-007i | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-5 | product.md 47행·152행, tech.md 96행·120행 | product.md 152행 "…common lines plus an injury-only and an illness-only line." · tech.md 120행 "…common lines plus an injury-only and an illness-only line." (product.md 47행은 "one injury-only line … one illness-only line") | 단수 표현이라 전용 줄이 각각 하나뿐인 것처럼 읽힌다. 문장이 말하려는 것은 줄의 개수가 아니라 범위(공통·상해 전용·질병 전용)다 | "상해 전용 줄과 질병 전용 줄"처럼 개수를 정하지 않는 표현으로 바꾼다 | REQ-DATA-005, REQ-ENG-005 / AC-007f·h | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-6 | 기획서 144행·216행·463행, design-requirements 89행·94행 | 기획서 144행 "…선택·결과·화면 방향·큰 글자 보기 상태를 유지하고…" · 216행 "복귀 시 … 화면 방향(세로·가로), 큰 글자 보기 켜짐 여부, 선택값과 계산 결과를 모두 그대로 유지한다" · 463행 "결과 상태·화면 방향·큰 글자 보기·선택·결과가 모두 유지됨" | "그대로 유지"가 "진입할 때의 값으로 되돌린다"로도, "지우거나 잃지 않는다"로도 읽힌다. 서류·계산 근거 화면에서 방향이나 큰 글자를 바꾸면 어느 쪽인지 정해지지 않는다. 이 SPEC은 결과 종류만 복원하고 화면 방향과 큰 글자는 복귀 시점의 값을 따른다 | "결과 종류(정상·보장 제외)는 진입했던 결과로 복원하고, 화면 방향과 큰 글자 보기는 복귀 시점의 값을 그대로 둔다(진입 때 값으로 되돌리지 않는다)"로 바꾼다. 디자인 인계표 `ZBdWg` 행은 §F 1번 | REQ-FLOW-003 / AC-014e·h·i | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-7 | 기획서 402행~404행 | 402행 "GET /api/clinics/{slug}/catalog" · 403행 "GET /api/insurance/options" · 404행 "POST /api/estimate" | catalog에만 병원 slug가 있고 나머지 두 경로에는 병원 식별이 없다. 규칙 묶음이 병원마다 다르므로(DD-14) 병원을 알아야 계산할 수 있다. 이 SPEC은 두 경로에 slug를 넣어 원문과 다르다 | 두 경로를 `/api/clinics/{slug}/insurance/options`, `/api/clinics/{slug}/estimate`로 맞춘다 | REQ-API-001~004 / AC-018~AC-021, §E #33, research.md §5 #9 | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-8 | 기획서 348행 | "무조작 초기화 시간·결과 화면 유지 시간·경고 시간을 설정하고 기기에서 확인." | "결과 화면 유지 시간"이 무조작 초기화 시간과 다른 값인지 정의가 없다. 이 SPEC은 결과 화면류의 경고·초기화 시간으로 읽는다 | 용어를 정의하거나 "결과 화면 유지 시간"을 지운다 | REQ-ADM-005 / AC-015, AC-023, §E #26, research.md §5 #7 | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-9 | design-requirements 586행, research.md §5 #8 | 586행 "The `HelpPanel` body override in `K01_Generation_Empty` (LMKmS), `K01_Generation_Selected` (gQtVy), and `L_K01_Generation` (JNcEQ)" | 프레임 이름 뒤 괄호에 프레임 ID처럼 적혔지만 `LMKmS`·`gQtVy`·`JNcEQ`는 각 프레임 안의 HelpPanel 인스턴스 ID다. 87행의 프레임 ID(`Z3izyJ`·`lYlRt`)와 어긋나 보였으나 개정 3 파일 확인에서는 모순이 아니었다 | 586행을 "HelpPanel 인스턴스 `LMKmS`·`gQtVy`·`JNcEQ`"로 적고 `L_K01_Generation`의 프레임 ID `xeW3n`을 함께 적는다 | §E #28(닫힘) | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-10 | design-requirements 77행·92행·644행 | 77행 "the node `MzQqc` is now the `HelpPanel` body" · 92행 "`K04_Basis_Calculation` (GhMYi) `MzQqc`" · 644행 "`K04_Basis_Calculation` `MzQqc` says …" | `MzQqc`는 HelpPanel 컴포넌트 안의 본문 글자 노드이고 화면마다 인스턴스가 문구를 덮어쓴다. 같은 ID를 "도움말 본문"과 "가정 문구"로 다르게 불러 모순처럼 보이지만 모순은 아니다 | 고칠 필요 없음. 원하면 "HelpPanel 본문 노드 `MzQqc`(인스턴스가 문구를 덮어씀)"로 통일한다 | research.md §5 #6, §E #35 | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |
+| H-11 | product.md 41행 | "a large ‘실손 예상 부담액 확인’ button" | 기획서 67행과 저장된 디자인 파일(`K00_Start`)은 "시작하기"다 | product.md 41행을 "시작하기"로 맞춘다 | REQ-FLOW-001 / AC-012, §E #25(닫힘), research.md §5 #1 | 소유자 전달용, 이번 작업에서 원문은 수정하지 않음 |

@@ -1,0 +1,898 @@
+/* 키오스크 기본 규칙 (SPEC-REIMBURSEMENT-001 M6, BRIEF D6). 일반 CSS 이고 클래스는 kiosk- 로 시작한다. 값은 tokens.css 변수를 쓴다.
+   화면 크기는 세로 1080×1920 과 가로 1920×1080 키오스크 화면(임시 검토 크기)을 기준으로 디자인 저장본의 px 값을 그대로 옮겼다.
+   루트에 data-orientation(portrait|landscape)과 data-large-text(true|false)가 붙는다. 둘 다 상태(selectLayout)에서 온 값이다. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--kiosk-bg);
+}
+
+body {
+  font-family: var(--kiosk-font);
+  color: var(--kiosk-navy);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* 공용 화면이라 글자 선택·길게 누르기 메뉴·두 번 눌러 확대를 막는다. 환자 상태를 복사할 길을 만들지 않는다. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.kiosk-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--kiosk-bg);
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.4;
+  /* 한국어는 단어(띄어쓰기) 단위로 줄을 바꾼다. 띄어쓰기 없는 긴 글자열만 칸 안에서 꺾는다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 겹침창이 열리면 밑 화면은 inert 이고, 겹침창은 이 덮개의 자식이 아니라 형제다(OverlayHost). */
+.kiosk-underlay {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 색에만 기대지 않는 초점 표시: 굵은 윤곽선과 간격 (D15). */
+:focus-visible {
+  outline: 4px solid var(--kiosk-accent-dark);
+  outline-offset: 3px;
+}
+
+[tabindex='-1']:focus {
+  outline: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+ol,
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+svg.kiosk-icon {
+  flex: none;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ───────────── 상단 ───────────── */
+
+.kiosk-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-6);
+  padding: 18px var(--kiosk-sp-12);
+  background: var(--kiosk-surface);
+  border-bottom: 2px solid var(--kiosk-border);
+}
+
+.kiosk-wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-brand-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: var(--kiosk-gradient-brand);
+  color: var(--kiosk-on-accent);
+}
+
+.kiosk-brand-mark--hero {
+  width: 148px;
+  height: 148px;
+  border-radius: 40px;
+}
+
+.kiosk-wordmark__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kiosk-wordmark__name {
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.2;
+  /* 로고 글자라 글자 대비 기준의 예외다(디자인 명세). 두 정지색 모두 흰 배경에서 5.17 / 6.29:1 이다. */
+  background: var(--kiosk-gradient-wordmark);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.kiosk-wordmark__desc {
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.3;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-header__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--kiosk-sp-3);
+  min-width: 0;
+}
+
+.kiosk-hospital {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-hospital .kiosk-icon {
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-hospital__name {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.kiosk-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--kiosk-touch-min);
+  padding: 0 24px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-surface-alt);
+  color: var(--kiosk-navy);
+  font: inherit;
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 켜진 상태는 색뿐 아니라 굵은 테두리와 체크 표시로도 구분한다(D15). */
+.kiosk-toggle[aria-pressed='true'] {
+  border-color: var(--kiosk-accent);
+  border-width: 4px;
+  padding: 0 22px;
+  background: var(--kiosk-accent-soft);
+}
+
+/* ───────────── 버튼 ───────────── */
+
+.kiosk-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kiosk-sp-3);
+  min-width: var(--kiosk-touch-min);
+  min-height: max(var(--kiosk-h-btn), var(--kiosk-touch-min));
+  padding: var(--kiosk-sp-3) var(--kiosk-sp-6);
+  border: 2px solid transparent;
+  border-radius: var(--kiosk-r-btn);
+  font: inherit;
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.kiosk-button__label {
+  flex: 1;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.kiosk-button--primary {
+  background: var(--kiosk-accent);
+  border-color: var(--kiosk-accent);
+  color: var(--kiosk-on-accent);
+}
+
+.kiosk-button--primary:active {
+  background: var(--kiosk-accent-dark);
+  border-color: var(--kiosk-accent-dark);
+}
+
+.kiosk-button--secondary {
+  background: var(--kiosk-surface);
+  border-color: var(--kiosk-border);
+  color: var(--kiosk-navy);
+}
+
+.kiosk-button--secondary:active {
+  background: var(--kiosk-surface-alt);
+}
+
+/* 비활성: 실제로 눌러도 일어나는 일이 없는 조작 요소에만 disabled-text 를 쓴다. 이유 문장은 화면이 따로 보여 준다. */
+.kiosk-button[aria-disabled='true'] {
+  background: var(--kiosk-disabled);
+  border-color: var(--kiosk-disabled);
+  color: var(--kiosk-disabled-text);
+  cursor: not-allowed;
+}
+
+.kiosk-button--block {
+  width: 100%;
+}
+
+/* ───────────── 카드·안내·배지 ───────────── */
+
+.kiosk-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  padding: var(--kiosk-sp-6);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-card--selected {
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent-soft);
+}
+
+.kiosk-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-4);
+  padding: 28px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface-alt);
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-notice .kiosk-icon {
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-notice__text {
+  flex: 1;
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.55;
+}
+
+.kiosk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 18px;
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-blue-soft);
+  color: var(--kiosk-blue);
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.kiosk-badge--warn {
+  background: var(--kiosk-warn-soft);
+  color: var(--kiosk-warn);
+}
+
+.kiosk-badge--danger {
+  background: var(--kiosk-danger-soft);
+  color: var(--kiosk-danger);
+}
+
+.kiosk-badge--success {
+  background: var(--kiosk-success-soft);
+  color: var(--kiosk-success);
+}
+
+/* ───────────── 하단 동작 ───────────── */
+
+.kiosk-bottom-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--kiosk-sp-6);
+  padding: var(--kiosk-sp-6) var(--kiosk-sp-12);
+  background: var(--kiosk-surface);
+  border-top: 2px solid var(--kiosk-border);
+}
+
+.kiosk-bottom-actions > .kiosk-button--secondary {
+  flex: none;
+  width: 300px;
+}
+
+.kiosk-bottom-actions > .kiosk-button--primary {
+  flex: 1;
+}
+
+.kiosk-bottom-actions--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-bottom-actions--stack > .kiosk-button--secondary {
+  width: auto;
+}
+
+/* ───────────── 단계 표시 ───────────── */
+
+.kiosk-steps {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-4) var(--kiosk-sp-12);
+  background: var(--kiosk-surface);
+  border-bottom: 2px solid var(--kiosk-border);
+}
+
+.kiosk-steps__list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kiosk-steps__entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kiosk-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--kiosk-r-pill);
+  color: var(--kiosk-text-muted);
+  font-size: var(--kiosk-fs-body);
+}
+
+.kiosk-steps__num {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-surface);
+  color: var(--kiosk-text-muted);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.kiosk-steps__connector {
+  flex: none;
+  width: 20px;
+  height: 4px;
+  background: var(--kiosk-border);
+}
+
+.kiosk-steps__item--done {
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-steps__item--done .kiosk-steps__num {
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-steps__item--current {
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-navy);
+  font-weight: 700;
+}
+
+.kiosk-steps__item--current .kiosk-steps__num {
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent);
+  color: var(--kiosk-on-accent);
+}
+
+.kiosk-steps__counter {
+  flex: none;
+  color: var(--kiosk-accent-dark);
+  font-size: 26px;
+  font-weight: 700;
+}
+
+/* ───────────── 상태 안내 화면(불러오기·오류·준비 중) ───────────── */
+
+.kiosk-result-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-4) var(--kiosk-sp-12);
+  background: var(--kiosk-accent-soft);
+  border-bottom: 2px solid var(--kiosk-border);
+}
+
+.kiosk-result-bar__label {
+  color: var(--kiosk-accent-dark);
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.kiosk-status {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* 넘쳐서 스크롤될 때 위쪽이 잘려 닿지 못하는 일이 없게 한다(safe). 지원하지 않는 브라우저는 앞의 center 를 쓴다. */
+  justify-content: safe center;
+  gap: var(--kiosk-sp-8);
+  min-height: 0;
+  padding: 64px var(--kiosk-sp-12);
+  overflow-y: auto;
+  text-align: center;
+}
+
+.kiosk-status__icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 160px;
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-status__icon--danger {
+  background: var(--kiosk-danger-soft);
+  color: var(--kiosk-danger);
+}
+
+.kiosk-status__icon--warn {
+  background: var(--kiosk-warn-soft);
+  color: var(--kiosk-warn);
+}
+
+.kiosk-status__title {
+  width: 100%;
+  font-size: calc(52px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-status__body {
+  width: 100%;
+  font-size: calc(30px * var(--kiosk-scale));
+  line-height: 1.55;
+  color: var(--kiosk-text-body);
+  white-space: pre-line;
+}
+
+.kiosk-status__actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-6) var(--kiosk-sp-12);
+  background: var(--kiosk-surface);
+  border-top: 2px solid var(--kiosk-border);
+}
+
+@keyframes kiosk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kiosk-spin {
+  animation: kiosk-spin 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiosk-spin {
+    animation: none;
+  }
+}
+
+/* ───────────── K00_Start ───────────── */
+
+.kiosk-k00 {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-k00__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kiosk-sp-10);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 세로형에서는 안내·흐름·시작 동작이 한 열이고, 시작 동작은 하단 막대다. 가로형에서는 패널 한 장이 된다(아래). */
+.kiosk-k00__panel {
+  display: contents;
+}
+
+.kiosk-k00__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kiosk-sp-6);
+  margin-top: auto;
+  padding: 72px 64px 0;
+  text-align: center;
+}
+
+.kiosk-k00__wordmark {
+  font-size: calc(92px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.15;
+  background: var(--kiosk-gradient-wordmark);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.kiosk-k00__service {
+  font-size: var(--kiosk-fs-title);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-k00__divider {
+  width: 140px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--kiosk-accent);
+}
+
+.kiosk-k00__hospital {
+  font-size: var(--kiosk-fs-card);
+  color: var(--kiosk-text-body);
+  overflow-wrap: anywhere;
+}
+
+.kiosk-k00__guide {
+  padding: 0 64px;
+  font-size: calc(34px * var(--kiosk-scale));
+  line-height: 1.55;
+  text-align: center;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-k00__flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kiosk-sp-4);
+  margin-bottom: auto;
+  padding: 0 64px 72px;
+}
+
+.kiosk-k00__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+}
+
+.kiosk-k00__arrow {
+  display: flex;
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-k00__actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kiosk-sp-6);
+  width: 100%;
+  padding: var(--kiosk-sp-10) 64px;
+  background: var(--kiosk-surface);
+  border-top: 2px solid var(--kiosk-border);
+}
+
+.kiosk-k00__start {
+  min-height: calc(132px * var(--kiosk-scale));
+  font-size: calc(44px * var(--kiosk-scale));
+}
+
+.kiosk-k00__hint {
+  width: 100%;
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.45;
+  text-align: center;
+  color: var(--kiosk-text-muted);
+}
+
+/* 흐름 칩을 세로 목록으로 보여 주는 변형: 가로형과 큰 글자 보기(DD-12, 기능을 줄이지 않고 배치를 바꾼다). */
+.kiosk-k00--stack .kiosk-k00__flow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--kiosk-sp-3);
+  width: 100%;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.kiosk-k00--stack .kiosk-k00__chip {
+  gap: var(--kiosk-sp-4);
+  padding: 14px 22px;
+  font-size: var(--kiosk-fs-body);
+}
+
+.kiosk-k00--stack .kiosk-k00__arrow {
+  display: none;
+}
+
+[data-orientation='landscape'] .kiosk-k00__body {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 80px;
+  padding: 48px 80px;
+}
+
+[data-orientation='landscape'] .kiosk-k00__hero {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+}
+
+[data-orientation='landscape'] .kiosk-brand-mark--hero {
+  width: 132px;
+  height: 132px;
+  border-radius: 36px;
+}
+
+[data-orientation='landscape'] .kiosk-k00__wordmark {
+  font-size: calc(84px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-k00__service {
+  font-size: calc(36px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-k00__divider {
+  width: 120px;
+}
+
+[data-orientation='landscape'] .kiosk-k00__hospital {
+  font-size: calc(30px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-k00__panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kiosk-sp-8);
+  width: 760px;
+  max-width: 50%;
+  padding: var(--kiosk-sp-10);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+[data-orientation='landscape'] .kiosk-k00__guide {
+  padding: 0;
+  font-size: calc(32px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-k00__flow {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+[data-orientation='landscape'] .kiosk-k00__actions {
+  gap: var(--kiosk-sp-6);
+  padding: 0;
+  border-top: 0;
+  background: none;
+}
+
+[data-orientation='landscape'] .kiosk-k00__start {
+  min-height: calc(124px * var(--kiosk-scale));
+  font-size: calc(42px * var(--kiosk-scale));
+}
+
+/* 큰 글자 보기의 가로형은 세로 공간이 모자라 간격을 줄인다. 기능은 그대로다. */
+[data-orientation='landscape'][data-large-text='true'] .kiosk-k00__body {
+  padding: var(--kiosk-sp-6) 48px;
+  gap: 48px;
+}
+
+[data-orientation='landscape'][data-large-text='true'] .kiosk-k00__panel {
+  gap: var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-6);
+  max-width: 56%;
+}
+
+[data-orientation='landscape'][data-large-text='true'] .kiosk-k00__chip {
+  padding: 8px 22px;
+}
+
+[data-orientation='landscape'][data-large-text='true'] .kiosk-k00__start {
+  min-height: calc(100px * var(--kiosk-scale));
+}
+
+/* ───────────── 스크롤 안내 (S4) ─────────────
+   본문이 한 화면에 안 들어가 스크롤될 때, 아래에 더 있는 동안만 영역 아래 가운데에 보이는 단서(ScrollRegion). 레이아웃에 자리를 차지하지 않고(fixed, 측정한 좌표)
+   눌러지지 않는다. 색은 채운 파랑 + 흰 글씨(대비 6.7:1), 그림자·그라데이션 없이 테두리로 구분한다(디자인 명세). 겹침창(z-index 10) 밑에 있다. */
+.kiosk-scroll-cue {
+  position: fixed;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-2);
+  padding: 10px var(--kiosk-sp-6) 10px var(--kiosk-sp-4);
+  border: 3px solid var(--kiosk-surface);
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-accent-dark);
+  color: var(--kiosk-on-accent);
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - var(--kiosk-sp-4)));
+}
+
+/* 키보드로 초점을 받는 스크롤 본문: 윤곽선은 안쪽에 그린다(본문이 화면 가장자리까지 닿아 바깥 윤곽선은 잘리거나 화면 밖으로 나간다). */
+[data-scroll-more]:focus-visible {
+  outline-offset: -4px;
+}
+
+/* ───────────── 겹침창 ───────────── */
+
+.kiosk-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--kiosk-sp-8) 80px;
+  background: var(--kiosk-scrim);
+}
+
+.kiosk-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-6);
+  width: 920px;
+  max-width: 100%;
+  max-height: 100%;
+  padding: var(--kiosk-sp-12);
+  overflow-y: auto;
+  border-radius: 28px;
+  background: var(--kiosk-surface);
+  /* 그림자는 모달 둘에만 쓴다(디자인 명세). */
+  box-shadow: 0 12px 40px var(--kiosk-shadow);
+}
+
+.kiosk-dialog__icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-dialog__title {
+  font-size: var(--kiosk-fs-title);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-dialog__body {
+  font-size: calc(26px * var(--kiosk-scale));
+  line-height: 1.5;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-dialog__note {
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.45;
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-dialog__actions {
+  display: flex;
+  gap: var(--kiosk-sp-6);
+}
+
+.kiosk-dialog__actions > .kiosk-button {
+  flex: 1;
+}
+
+.kiosk-countdown {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-countdown__label {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-countdown__value {
+  font-size: var(--kiosk-fs-amount-lg);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.kiosk-countdown__unit {
+  font-size: calc(34px * var(--kiosk-scale));
+  font-weight: 700;
+}

@@ -1,0 +1,876 @@
+/* 입력 단계 화면 규칙 (SPEC-REIMBURSEMENT-001 M6 S2): K01 세대 · K02 보험사 형태 · K02b 치료 원인 · K03 치료 선택 + 세대 확인 안내.
+   값은 디자인 저장본(.pen)의 px 를 따르고 세로 1080x1920 / 가로 1920x1080 에서 맞춘다. 큰 글자 보기는 글자 배율(--kiosk-scale)만 키우고 카드 높이는 내용이 밀어낸다(터치 영역은 그대로 72px 이상). */
+
+/* ───────────── 본문 뼈대 ───────────── */
+
+.kiosk-input {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 세로: 제목 -> 안내 -> 선택 목록 -> 부속 한 열. DOM 순서가 곧 화면 순서다(키보드 초점 순서가 눈에 보이는 순서와 같다). */
+.kiosk-input__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-8);
+  min-height: 0;
+  padding: 44px var(--kiosk-sp-12);
+  scroll-padding: 12px;
+  overflow-y: auto;
+}
+
+.kiosk-input__title {
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-input__notice {
+  order: 2;
+}
+
+.kiosk-input__choices {
+  order: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-input__aside {
+  order: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-input__heading {
+  font-size: calc(44px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-input__subtitle {
+  font-size: calc(26px * var(--kiosk-scale));
+  line-height: 1.45;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-input__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-input__hint {
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.45;
+  color: var(--kiosk-text-muted);
+}
+
+/* 확인 버튼이 비활성인 이유. 색(warn)뿐 아니라 굵은 글씨의 문장이다. */
+.kiosk-input__reason {
+  font-size: var(--kiosk-fs-body);
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--kiosk-warn);
+}
+
+.kiosk-input__empty {
+  padding: var(--kiosk-sp-8);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+  font-size: calc(30px * var(--kiosk-scale));
+  line-height: 1.55;
+  color: var(--kiosk-text-body);
+  text-align: center;
+  white-space: pre-line;
+}
+
+.kiosk-input__unknown .kiosk-icon {
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-input__unknown {
+  font-size: calc(26px * var(--kiosk-scale));
+}
+
+/* ───────────── 선택 카드 ───────────── */
+
+.kiosk-choice {
+  --kiosk-choice-pad-y: 24px;
+  --kiosk-choice-pad-x: var(--kiosk-sp-8);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-6);
+  padding: calc(var(--kiosk-choice-pad-y)) var(--kiosk-choice-pad-x);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+  color: var(--kiosk-navy);
+  cursor: pointer;
+}
+
+/* 선택되면 테두리가 4px 로 굵어진다(디자인). 안쪽 여백을 2px 줄여 카드 크기와 글자 자리가 그대로다. */
+.kiosk-choice--selected {
+  padding: calc(var(--kiosk-choice-pad-y) - 2px) calc(var(--kiosk-choice-pad-x) - 2px);
+  border-width: 4px;
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent-soft);
+}
+
+.kiosk-choice__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.kiosk-choice:has(.kiosk-choice__input:focus-visible) {
+  outline: 4px solid var(--kiosk-accent-dark);
+  outline-offset: 3px;
+}
+
+.kiosk-choice--locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.kiosk-choice__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-2);
+  min-width: 0;
+}
+
+.kiosk-choice__name {
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.kiosk-choice__desc {
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.4;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-choice__desc--small {
+  font-size: var(--kiosk-fs-caption);
+  color: var(--kiosk-text-muted);
+}
+
+/* 오른쪽 끝 선택 표시: 빈 원 / 체크 원 + 선택됨 */
+.kiosk-choice__mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-choice__ring {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border: 3px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-choice__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-accent);
+  color: var(--kiosk-on-accent);
+}
+
+.kiosk-choice__mark-label {
+  font-size: var(--kiosk-fs-body);
+  font-weight: 700;
+  color: var(--kiosk-accent-dark);
+}
+
+/* 세대 카드 */
+.kiosk-choice--generation {
+  min-height: 164px;
+}
+
+.kiosk-choice--generation .kiosk-choice__name {
+  font-size: calc(36px * var(--kiosk-scale));
+}
+
+.kiosk-choice__chip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 124px;
+  min-height: 104px;
+  border-radius: 18px;
+  background: var(--kiosk-surface-alt);
+  font-size: calc(36px * var(--kiosk-scale));
+  font-weight: 700;
+  color: var(--kiosk-navy);
+}
+
+/* 보험사 형태·치료 원인 카드 */
+.kiosk-choice--type {
+  --kiosk-choice-pad-y: 20px;
+  min-height: 260px;
+}
+
+.kiosk-choice--type .kiosk-choice__name {
+  font-size: calc(40px * var(--kiosk-scale));
+}
+
+.kiosk-choice--type .kiosk-choice__body {
+  gap: 4px;
+}
+
+.kiosk-choice--type .kiosk-choice__ring,
+.kiosk-choice--type .kiosk-choice__check {
+  width: 48px;
+  height: 48px;
+}
+
+.kiosk-choice--type .kiosk-choice__mark-label {
+  font-size: var(--kiosk-fs-caption);
+}
+
+/* 치료 카드 */
+.kiosk-choice--treatment {
+  min-height: 168px;
+}
+
+.kiosk-choice--treatment .kiosk-choice__name {
+  font-size: var(--kiosk-fs-card);
+}
+
+.kiosk-choice__box {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border: 3px solid var(--kiosk-border);
+  border-radius: 12px;
+  background: var(--kiosk-surface);
+  color: var(--kiosk-on-accent);
+}
+
+.kiosk-choice--selected .kiosk-choice__box {
+  border-color: var(--kiosk-accent);
+  background: var(--kiosk-accent);
+}
+
+.kiosk-choice__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-choice__amount {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.kiosk-choice__price {
+  font-size: calc(36px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.kiosk-choice__caption {
+  font-size: calc(18px * var(--kiosk-scale));
+  color: var(--kiosk-text-muted);
+}
+
+/* ───────────── 쪽 넘김 ───────────── */
+
+.kiosk-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-6);
+}
+
+.kiosk-pager__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 260px;
+  min-height: 84px;
+  padding: 0 var(--kiosk-sp-4);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-btn);
+  background: var(--kiosk-surface);
+  color: var(--kiosk-navy);
+  font: inherit;
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.kiosk-pager__button[aria-disabled='true'] {
+  border-color: var(--kiosk-disabled);
+  background: var(--kiosk-disabled);
+  color: var(--kiosk-disabled-text);
+  cursor: not-allowed;
+}
+
+.kiosk-pager__status {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  color: var(--kiosk-text-body);
+  text-align: center;
+}
+
+/* ───────────── 선택 요약 ───────────── */
+
+.kiosk-summary--bar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  padding: var(--kiosk-sp-6) var(--kiosk-sp-12);
+  background: var(--kiosk-surface);
+  border-top: 2px solid var(--kiosk-border);
+}
+
+.kiosk-summary__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-summary__count {
+  font-size: var(--kiosk-fs-body);
+  font-weight: 700;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-summary__breakdown {
+  font-size: var(--kiosk-fs-body);
+  color: var(--kiosk-text-body);
+  text-align: right;
+}
+
+.kiosk-summary__total-label {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-summary__total {
+  font-size: calc(44px * var(--kiosk-scale));
+  font-weight: 700;
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-summary__total--muted {
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-summary--panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  padding: var(--kiosk-sp-8);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-summary__key {
+  font-size: var(--kiosk-fs-body);
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-summary__value {
+  font-size: var(--kiosk-fs-body);
+  font-weight: 700;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-summary--line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kiosk-summary__line-1 {
+  font-size: var(--kiosk-fs-body);
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-summary__line-2 {
+  font-size: calc(40px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--kiosk-accent-dark);
+}
+
+/* ───────────── 안내 패널 ───────────── */
+
+.kiosk-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-8);
+  border: 2px solid var(--kiosk-accent);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-accent-soft);
+}
+
+.kiosk-help__title {
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-3);
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-help__heading {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-help__body {
+  font-size: calc(28px * var(--kiosk-scale));
+  line-height: 1.6;
+  color: var(--kiosk-text-body);
+}
+
+/* 문구 확정 전 자리 표시 한 줄(§E #35), 세대 확인 안내 화면 안. 누를 수 있는 것처럼 보이지 않게 테두리·배경이 없다. */
+.kiosk-help-screen__pending {
+  margin: 0;
+  font-size: calc(28px * var(--kiosk-scale));
+  line-height: 1.6;
+  color: var(--kiosk-text-body);
+  text-align: center;
+}
+
+/* ───────────── 세대 확인 안내 ───────────── */
+
+.kiosk-help-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+  width: 100%;
+  text-align: left;
+}
+
+.kiosk-help-steps__item {
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-6);
+  padding: 28px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-help-steps__number {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--kiosk-r-pill);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.kiosk-help-steps__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kiosk-help-steps__title {
+  font-size: calc(28px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-help-steps__desc {
+  font-size: var(--kiosk-fs-label);
+  line-height: 1.4;
+  color: var(--kiosk-text-muted);
+}
+
+/* ───────────── 자료 갱신 안내(K03 안) ───────────── */
+
+.kiosk-refresh {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-6);
+  border: 2px solid var(--kiosk-accent);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-accent-soft);
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-refresh--failed {
+  border-color: var(--kiosk-danger);
+  background: var(--kiosk-danger-soft);
+  color: var(--kiosk-danger);
+}
+
+.kiosk-refresh--removed {
+  border-color: var(--kiosk-warn);
+  background: var(--kiosk-warn-soft);
+  color: var(--kiosk-warn);
+}
+
+.kiosk-refresh__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-2);
+  min-width: 0;
+}
+
+.kiosk-refresh__title {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-refresh__names {
+  font-size: var(--kiosk-fs-body);
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-refresh__body {
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.45;
+  color: var(--kiosk-text-body);
+  white-space: pre-line;
+}
+
+.kiosk-refresh__retry {
+  align-self: flex-start;
+  margin-top: var(--kiosk-sp-2);
+  padding-inline: var(--kiosk-sp-8);
+}
+
+/* ───────────── 가로형 ───────────── */
+
+/* 가로: 왼쪽 열(제목 + 부속)과 오른쪽 목록의 두 칸 격자다. 진행·오류 안내가 있으면 두 열 위를 가로지르는 띠로 한 줄 더 얹는다.
+   DOM 은 세로와 같은 순서(제목 -> 안내 -> 목록 -> 부속)라서 한 DOM 으로 두 방향을 그린다. */
+[data-orientation='landscape'] .kiosk-input__body {
+  display: grid;
+  grid-template-areas:
+    'title choices'
+    'aside choices';
+  grid-template-columns: 620px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: var(--kiosk-sp-10);
+  row-gap: var(--kiosk-sp-6);
+  padding: 16px var(--kiosk-sp-12);
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='treatments'] .kiosk-input__body {
+  grid-template-columns: 560px minmax(0, 1fr);
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='type'] .kiosk-input__body {
+  grid-template-columns: 520px minmax(0, 1fr);
+}
+
+/* 가로형은 높이가 모자라 선택 패널의 여백을 줄인다(큰 글자에서도 확인 버튼이 꺼진 이유 문장이 한 화면에 보이도록). */
+[data-orientation='landscape'] .kiosk-summary--panel {
+  gap: var(--kiosk-sp-2);
+  padding: var(--kiosk-sp-4) var(--kiosk-sp-6);
+}
+
+[data-orientation='landscape'] .kiosk-input__body[data-has-notice] {
+  grid-template-areas:
+    'notice notice'
+    'title choices'
+    'aside choices';
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+[data-orientation='landscape'] .kiosk-input__notice {
+  grid-area: notice;
+}
+
+[data-orientation='landscape'] .kiosk-input__title {
+  grid-area: title;
+}
+
+[data-orientation='landscape'] .kiosk-input__title,
+[data-orientation='landscape'] .kiosk-input__notice,
+[data-orientation='landscape'] .kiosk-input__choices,
+[data-orientation='landscape'] .kiosk-input__aside {
+  order: 0;
+}
+
+/* 가로 갱신 안내 띠: 글은 왼쪽, "다시 시도" 는 오른쪽 가운데에 둬 띠가 낮게 유지된다. */
+[data-orientation='landscape'] .kiosk-refresh {
+  align-items: center;
+  padding-block: var(--kiosk-sp-4);
+}
+
+[data-orientation='landscape'] .kiosk-refresh__text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--kiosk-sp-6);
+  row-gap: 4px;
+  align-items: center;
+}
+
+[data-orientation='landscape'] .kiosk-refresh__text > * {
+  grid-column: 1;
+}
+
+[data-orientation='landscape'] .kiosk-refresh__retry {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+  margin-top: 0;
+}
+
+[data-orientation='landscape'] .kiosk-input__choices {
+  grid-area: choices;
+  min-width: 0;
+}
+
+[data-orientation='landscape'] .kiosk-input__aside {
+  grid-area: aside;
+}
+
+/* 가로 세대: 오른쪽에 카드 5장이 한 화면에 들어가도록 카드를 낮춘다(124). */
+[data-orientation='landscape'] .kiosk-input[data-input='generation'] .kiosk-input__list {
+  gap: var(--kiosk-sp-2);
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='generation'] .kiosk-choice--generation {
+  --kiosk-choice-pad-y: 14px;
+  min-height: 124px;
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='generation'] .kiosk-choice__chip {
+  width: 110px;
+  min-height: 88px;
+  font-size: calc(32px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='generation'] .kiosk-choice--generation .kiosk-choice__name {
+  font-size: calc(32px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='generation'] .kiosk-choice--generation .kiosk-choice__desc {
+  font-size: var(--kiosk-fs-label);
+}
+
+/* 가로 형태·원인: 카드 셋이 한 줄이다. */
+[data-orientation='landscape'] .kiosk-input[data-input='type'] .kiosk-input__list {
+  flex-direction: row;
+  gap: var(--kiosk-sp-8);
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='type'] .kiosk-choice--type {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='type'] .kiosk-choice--type .kiosk-choice__name {
+  font-size: calc(32px * var(--kiosk-scale));
+}
+
+/* 가로 치료: 카드를 낮추고(132) 쪽 넘김이 목록 아래에 붙는다. */
+[data-orientation='landscape'] .kiosk-input[data-input='treatments'] .kiosk-input__list {
+  gap: var(--kiosk-sp-2);
+}
+
+[data-orientation='landscape'] .kiosk-choice--treatment {
+  --kiosk-choice-pad-y: 12px;
+  min-height: 132px;
+}
+
+[data-orientation='landscape'] .kiosk-choice--treatment .kiosk-choice__name {
+  font-size: calc(30px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-choice__price {
+  font-size: calc(34px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-input__choices > .kiosk-pager {
+  margin-top: var(--kiosk-sp-2);
+}
+
+/* ───────────── 하단 동작 막대 ───────────── */
+
+.kiosk-bottom-actions__lead {
+  flex: 1;
+  min-width: 0;
+}
+
+.kiosk-bottom-actions--three > .kiosk-button--secondary {
+  width: 220px;
+  padding-inline: var(--kiosk-sp-3);
+}
+
+[data-orientation='landscape'] .kiosk-bottom-actions {
+  justify-content: flex-end;
+  padding: 20px var(--kiosk-sp-12);
+}
+
+[data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button {
+  min-height: calc(96px * var(--kiosk-scale));
+}
+
+[data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button--secondary,
+[data-orientation='landscape'] .kiosk-bottom-actions--three > .kiosk-button--secondary {
+  width: 300px;
+  padding-inline: var(--kiosk-sp-6);
+}
+
+[data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button--home {
+  width: 240px;
+}
+
+[data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button--primary {
+  flex: none;
+  width: 520px;
+  font-size: calc(32px * var(--kiosk-scale));
+}
+
+/* 큰 글자 보기 세로: 한 줄에 들어가지 않으면 주 버튼을 위로 올려 한 줄을 다 쓰고 보조 버튼 둘을 그 아래에 나란히 둔다(동작을 빼지 않는다). */
+[data-large-text='true'][data-orientation='portrait'] .kiosk-bottom-actions--three {
+  flex-wrap: wrap;
+}
+
+[data-large-text='true'][data-orientation='portrait'] .kiosk-bottom-actions--three > .kiosk-button--primary {
+  order: -1;
+  flex: 1 1 100%;
+}
+
+[data-large-text='true'][data-orientation='portrait'] .kiosk-bottom-actions--three > .kiosk-button--secondary {
+  flex: 1 1 0;
+  width: auto;
+}
+
+/* 큰 글자 보기 가로: 합계 줄과 버튼 셋이 한 줄에 들어가도록 보조 버튼 폭을 줄인다. */
+[data-large-text='true'][data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button--secondary {
+  width: 260px;
+}
+
+[data-large-text='true'][data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button--home {
+  width: 220px;
+}
+
+[data-large-text='true'][data-orientation='landscape'] .kiosk-bottom-actions > .kiosk-button--primary {
+  width: 440px;
+}
+
+/* ───────────── 큰 글자 보기에서 한 화면에 맞추기 ───────────── */
+
+/* 세로 큰 글자 세대: 카드 5장 + 안내 패널이 한 화면에 최대한 들어가도록 카드 높이·간격을 줄인다(글자는 그대로 커진다). 넘치면 본문이 스크롤된다. */
+[data-large-text='true'][data-orientation='portrait'] .kiosk-input__body {
+  gap: var(--kiosk-sp-6);
+  padding-top: var(--kiosk-sp-8);
+}
+
+[data-large-text='true'][data-orientation='portrait'] .kiosk-input[data-input='generation'] .kiosk-input__list {
+  gap: var(--kiosk-sp-3);
+}
+
+[data-large-text='true'][data-orientation='portrait'] .kiosk-input[data-input='generation'] .kiosk-choice--generation {
+  --kiosk-choice-pad-y: 14px;
+  min-height: 132px;
+}
+
+[data-large-text='true'] .kiosk-input[data-input='generation'] .kiosk-choice__chip {
+  min-height: 84px;
+}
+
+/* 가로 큰 글자 세대: 오른쪽 카드 5장이 한 화면 안에 들도록 최소 높이를 풀고 내용이 높이를 정한다. */
+[data-large-text='true'][data-orientation='landscape'] .kiosk-input[data-input='generation'] .kiosk-choice--generation {
+  --kiosk-choice-pad-y: 8px;
+  min-height: 0;
+}
+
+[data-large-text='true'][data-orientation='landscape'] .kiosk-input__body {
+  padding-top: var(--kiosk-sp-3);
+  padding-bottom: var(--kiosk-sp-3);
+}
+
+/* 가로형은 두 열이 각자 스크롤된다: 목록이 길어도(긴 설명, 큰 글자) 쪽 넘김과 왼쪽 열이 가려지지 않는다. 쪽 넘김은 목록 아래에 고정이다. */
+[data-orientation='landscape'] .kiosk-input__body {
+  overflow: hidden;
+}
+
+[data-orientation='landscape'] .kiosk-input__aside {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 스크롤 열이 초점 윤곽선(굵기 4 + 간격 3)을 자르지 않도록 안쪽 여백을 두고 같은 크기만큼 바깥 여백을 빼 배치는 그대로 둔다.
+   초점이 스크롤로 끌려 들어올 때도 가장자리에서 윤곽선만큼 떨어지도록 scroll-padding 을 준다(아래 목록·세로 본문 포함). */
+[data-orientation='landscape'] .kiosk-input__aside,
+[data-orientation='landscape'] .kiosk-input__choices {
+  padding: 8px;
+  margin: -8px;
+  scroll-padding: 12px;
+}
+
+[data-orientation='landscape'] .kiosk-input__choices {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='treatments'] .kiosk-input__choices {
+  overflow-y: hidden;
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='treatments'] .kiosk-input__list {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  margin: -8px;
+  scroll-padding: 12px;
+  overflow-y: auto;
+}
+
+[data-orientation='landscape'] .kiosk-input[data-input='treatments'] .kiosk-input__choices > .kiosk-pager {
+  flex: none;
+}

@@ -1,0 +1,555 @@
+/* 계산 근거 · 필요 서류 · 이용 완료 화면 규칙 (SPEC-REIMBURSEMENT-001 M6 S3b).
+   값은 디자인 저장본(.pen)의 px 를 따르고(K04_Basis_Calculation·K07_Documents·K07_Documents_Unknown·L_K07_*·K06_Complete) 세로 1080x1920 / 가로 1920x1080 에서 맞춘다.
+   큰 글자 보기는 글자 배율(--kiosk-scale)만 키운다: 기능·문구는 그대로이고, 서류 목록은 쪽으로 나누며(DD-12) 그래도 넘치면 본문이 스크롤된다(스크롤 막대를 늘 보이게 한다).
+   디자인에 가로형 근거·이용 완료 프레임이 없다: 가로형 근거는 같은 부품을 두 열로 나눈 파생이다. */
+
+/* 화면 낭독기에만 읽히는 글(보이지 않는다). 서류 줄이 "필요"인지를 색이 아닌 글로도 알린다. overflow 를 쓰지 않는다: 레이아웃 감사가 잘림으로 오해하지 않게 clip-path 로만 감춘다. */
+.kiosk-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ───────────── 공통 뼈대 ───────────── */
+
+.kiosk-sheet {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-sheet__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+  min-height: 0;
+  padding: var(--kiosk-sp-6) var(--kiosk-sp-12);
+  scroll-padding: 12px;
+  overflow-y: auto;
+}
+
+/* 본문이 한 화면에 안 들어가면 스크롤된다(DD-12). 터치 화면은 스크롤 막대를 숨기기 쉬워 아래에 더 있음을 놓치므로 막대를 늘 보이게 한다(넘칠 때만 생긴다). */
+.kiosk-sheet__body::-webkit-scrollbar {
+  width: 14px;
+}
+
+.kiosk-sheet__body::-webkit-scrollbar-track {
+  background: var(--kiosk-surface-alt);
+}
+
+.kiosk-sheet__body::-webkit-scrollbar-thumb {
+  border: 3px solid var(--kiosk-surface-alt);
+  border-radius: 7px;
+  background: var(--kiosk-text-muted);
+}
+
+.kiosk-sheet__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-sheet__title {
+  font-size: calc(44px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-sheet__subtitle {
+  font-size: calc(26px * var(--kiosk-scale));
+  line-height: 1.45;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-sheet__condition {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-text-body);
+}
+
+/* 쪽 넘김 막대: 본문 밖에 고정이라 스크롤과 상관없이 늘 보이고 닿는다. */
+.kiosk-sheet__pager {
+  flex: none;
+  padding: var(--kiosk-sp-3) var(--kiosk-sp-12);
+  background: var(--kiosk-bg);
+  border-top: 2px solid var(--kiosk-border);
+}
+
+/* ───────────── 하단 동작 (처음으로 · 결과로 돌아가기 · 이용 완료) ───────────── */
+
+/* 라벨 길이가 서로 달라 "결과로 돌아가기"가 가장 넓다. 입력 단계의 three 변형과 달리 순서를 바꾸지 않는다(눈에 보이는 순서 = 초점 순서). */
+.kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet {
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet > .kiosk-button--home {
+  flex: none;
+  width: 190px;
+  padding-inline: var(--kiosk-sp-3);
+}
+
+.kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet > .kiosk-button--back {
+  flex: 1.15 1 0;
+  width: auto;
+  padding-inline: var(--kiosk-sp-4);
+}
+
+.kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet > .kiosk-button--primary {
+  flex: 1 1 0;
+  width: auto;
+  padding-inline: var(--kiosk-sp-4);
+}
+
+[data-orientation='landscape'] .kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet {
+  gap: var(--kiosk-sp-6);
+}
+
+[data-orientation='landscape'] .kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet > .kiosk-button--home {
+  width: 260px;
+}
+
+[data-orientation='landscape'] .kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet > .kiosk-button--back {
+  flex: none;
+  width: 420px;
+}
+
+[data-orientation='landscape'] .kiosk-sheet .kiosk-bottom-actions.kiosk-bottom-actions--sheet > .kiosk-button--primary {
+  flex: 1 1 0;
+  width: auto;
+}
+
+/* ───────────── 계산 근거 ───────────── */
+
+/* 입력 확인(보험 조건·치료 원인)은 한 줄 카드다: 디자인 프레임에 없는 줄이라 높이를 아낀다(근거 화면이 한 화면에 들어가도록). */
+.kiosk-conditions--inline {
+  flex-flow: row wrap;
+  gap: var(--kiosk-sp-2) var(--kiosk-sp-10);
+  padding-block: 14px;
+}
+
+.kiosk-conditions--inline .kiosk-conditions__row {
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-conditions--inline dt {
+  width: auto;
+}
+
+.kiosk-basis__grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-table-card {
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+  overflow: hidden;
+}
+
+.kiosk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--kiosk-fs-body);
+}
+
+.kiosk-table caption {
+  text-align: left;
+}
+
+.kiosk-table th,
+.kiosk-table td {
+  padding: 14px var(--kiosk-sp-6);
+  border-bottom: 2px solid var(--kiosk-border);
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: middle;
+  color: var(--kiosk-navy);
+  overflow-wrap: anywhere;
+}
+
+.kiosk-table thead th {
+  background: var(--kiosk-surface-alt);
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-table tfoot th,
+.kiosk-table tfoot td {
+  background: var(--kiosk-surface-alt);
+  border-bottom: 0;
+  font-weight: 700;
+}
+
+.kiosk-table--steps tfoot th,
+.kiosk-table--steps tfoot td {
+  background: var(--kiosk-accent-soft);
+}
+
+.kiosk-table tbody:last-of-type tr:last-child th,
+.kiosk-table tbody:last-of-type tr:last-child td {
+  border-bottom: 2px solid var(--kiosk-border);
+}
+
+.kiosk-table .kiosk-table__group th {
+  background: var(--kiosk-surface-alt);
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-table__num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.kiosk-table__strong {
+  font-weight: 700;
+}
+
+/* 약관 출처: 글자뿐이다(링크 없음, DD-11). */
+.kiosk-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  padding: 24px 28px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-source__title {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-source__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-2);
+}
+
+.kiosk-source__item {
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.45;
+  color: var(--kiosk-text-body);
+  overflow-wrap: anywhere;
+}
+
+/* ───────────── 필요 서류 ───────────── */
+
+.kiosk-docs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-docs__head {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-docs__hint {
+  font-size: calc(22px * var(--kiosk-scale));
+  line-height: 1.5;
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+/* 서류 한 줄: 필요하지 않은 줄은 흰 바탕·가는 테두리·흐린 이름, 필요한 줄은 파란 바탕·굵은 테두리·굵은 이름·체크 모양이다. */
+.kiosk-doc {
+  display: flex;
+  align-items: center;
+  gap: var(--kiosk-sp-4);
+  min-height: calc(76px * var(--kiosk-scale));
+  padding: 12px var(--kiosk-sp-6);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+
+.kiosk-doc[data-required='true'] {
+  align-items: flex-start;
+  padding: 14px 23px;
+  border: 3px solid var(--kiosk-accent);
+  background: var(--kiosk-accent-soft);
+}
+
+.kiosk-doc__mark {
+  display: flex;
+  flex: none;
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-doc[data-required='true'] .kiosk-doc__mark {
+  margin-top: 2px;
+  color: var(--kiosk-accent-dark);
+}
+
+.kiosk-doc__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kiosk-doc__name {
+  font-size: calc(28px * var(--kiosk-scale));
+  line-height: 1.3;
+  color: var(--kiosk-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.kiosk-doc[data-required='true'] .kiosk-doc__name {
+  font-weight: 700;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-doc__reason {
+  font-size: calc(22px * var(--kiosk-scale));
+  line-height: 1.4;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-doc-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-doc-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+  min-width: 0;
+}
+
+.kiosk-doc-group__head {
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-text-body);
+}
+
+.kiosk-doc-group__subhead {
+  margin: 0;
+  font-size: calc(26px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-doc-branch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kiosk-sp-3);
+}
+
+.kiosk-doc-branch__columns {
+  display: flex;
+  gap: var(--kiosk-sp-4);
+}
+
+.kiosk-doc-branch__columns > .kiosk-doc-group {
+  flex: 1 1 0;
+}
+
+/* 서류 규칙을 쓸 수 없을 때의 안내(목록 대신). 경고색 안내 카드이고 서류 줄은 하나도 없다. */
+.kiosk-docs-unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-4);
+  padding: 28px;
+  border: 2px solid var(--kiosk-warn);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-warn-soft);
+  color: var(--kiosk-warn);
+}
+
+.kiosk-docs-unavailable__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--kiosk-sp-2);
+  min-width: 0;
+}
+
+.kiosk-docs-unavailable__title {
+  font-size: calc(30px * var(--kiosk-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--kiosk-navy);
+}
+
+.kiosk-docs-unavailable__body {
+  font-size: var(--kiosk-fs-body);
+  line-height: 1.5;
+  color: var(--kiosk-text-body);
+  white-space: pre-line;
+}
+
+/* ───────────── 이용 완료 ───────────── */
+
+.kiosk-complete {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kiosk-status__icon--solid {
+  background: var(--kiosk-accent);
+  color: var(--kiosk-on-accent);
+}
+
+.kiosk-complete .kiosk-status__note {
+  font-size: var(--kiosk-fs-body);
+  color: var(--kiosk-text-muted);
+}
+
+.kiosk-complete__start {
+  min-height: max(calc(100px * var(--kiosk-scale)), var(--kiosk-touch-min));
+  font-size: calc(34px * var(--kiosk-scale));
+}
+
+/* ───────────── 가로형 ───────────── */
+
+[data-orientation='landscape'] .kiosk-sheet__body {
+  gap: var(--kiosk-sp-3);
+  padding: var(--kiosk-sp-3) var(--kiosk-sp-12);
+}
+
+/* 제목 한 줄: 왼쪽 제목, 오른쪽 한 줄 요약(디자인 L_K07_Documents). 부제는 그 아래다. */
+[data-orientation='landscape'] .kiosk-sheet__head {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--kiosk-sp-2) var(--kiosk-sp-6);
+}
+
+[data-orientation='landscape'] .kiosk-sheet__subtitle {
+  order: 3;
+  flex: 1 0 100%;
+}
+
+[data-orientation='landscape'] .kiosk-sheet__condition {
+  text-align: right;
+}
+
+/* 가로형은 세로 공간이 모자라 서류 한 줄의 위아래 여백을 줄인다(글자·터치 영역은 그대로). */
+[data-orientation='landscape'] .kiosk-doc {
+  padding-block: 8px;
+}
+
+[data-orientation='landscape'] .kiosk-doc[data-required='true'] {
+  padding-block: 10px;
+}
+
+[data-orientation='landscape'] .kiosk-sheet__pager {
+  padding-block: var(--kiosk-sp-2);
+}
+
+/* 서류 목록: 단일 원인은 세 열(고정 아홉 줄을 3·3·3 으로), 원인 모름은 공통이 두 열 + 분기가 한 열이다(디자인 L_K07_Documents·L_K07_Documents_Unknown). */
+[data-orientation='landscape'] .kiosk-doc-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-columns: repeat(var(--kiosk-doc-cols, 3), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--kiosk-doc-rows, 3), auto);
+  gap: var(--kiosk-sp-3) var(--kiosk-sp-4);
+}
+
+[data-orientation='landscape'] .kiosk-doc-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--kiosk-sp-6);
+  align-items: start;
+}
+
+[data-orientation='landscape'] .kiosk-doc-groups > .kiosk-doc-group--common:only-child {
+  grid-column: 1 / -1;
+}
+
+[data-orientation='landscape'] .kiosk-doc-branch__columns {
+  flex-direction: column;
+}
+
+/* 쪽이 나뉘어 분기 묶음만 있는 쪽(공통 묶음이 앞 쪽에 있다): 넓은 칸을 다 쓰고 상해·질병 묶음을 나란히 놓는다. */
+[data-orientation='landscape'] .kiosk-doc-groups > .kiosk-doc-branch:only-child {
+  grid-column: 1 / -1;
+}
+
+[data-orientation='landscape'] .kiosk-doc-groups > .kiosk-doc-branch:only-child .kiosk-doc-branch__columns {
+  flex-direction: row;
+}
+
+[data-orientation='landscape'] .kiosk-doc-groups > .kiosk-doc-branch:only-child .kiosk-doc-branch__columns > .kiosk-doc-group {
+  flex: 1 1 0;
+}
+
+[data-orientation='landscape'] .kiosk-doc-branch__columns > .kiosk-doc-group {
+  flex: none;
+}
+
+/* 근거: 치료 표와 공제·한도 표, 가정과 출처를 두 열로 놓는다(파생: 가로 프레임 없음). 안내 막대는 두 열을 가로지른다. */
+[data-orientation='landscape'] .kiosk-basis__grid {
+  display: block;
+  column-count: 2;
+  column-gap: var(--kiosk-sp-4);
+}
+
+[data-orientation='landscape'] .kiosk-basis__grid > * {
+  margin-bottom: var(--kiosk-sp-3);
+  break-inside: avoid;
+}
+
+[data-orientation='landscape'] .kiosk-table th,
+[data-orientation='landscape'] .kiosk-table td {
+  padding-block: 10px;
+}
+
+/* ───────────── 큰 글자 보기 ───────────── */
+
+/* 여백만 줄인다. 글자·동작·문구는 그대로이고 서류 목록은 쪽으로 나뉜다(documents-view 의 쪽 크기). */
+[data-large-text='true'] .kiosk-sheet__body {
+  gap: var(--kiosk-sp-3);
+  padding-top: var(--kiosk-sp-4);
+  padding-bottom: var(--kiosk-sp-4);
+}
+
+[data-large-text='true'] .kiosk-doc {
+  padding-block: 10px;
+}
+
+[data-large-text='true'] .kiosk-doc[data-required='true'] {
+  padding-block: 12px;
+}
+
+[data-large-text='true'] .kiosk-table th,
+[data-large-text='true'] .kiosk-table td {
+  padding: 12px var(--kiosk-sp-3);
+}
