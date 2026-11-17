@@ -76,9 +76,24 @@ jobs:
               ;;
           esac
 
+          # Evidence of what was audited. Read-only and non-fatal: the audit result
+          # above stays the only thing that decides the exit code.
+          lockfile="none"
+          lock_entries="n/a"
+          audited_total="n/a"
+          if [[ "$MANAGER" == "npm" ]]; then
+            lockfile="package-lock.json (sha256 $(sha256sum package-lock.json | cut -c1-16))"
+            lock_entries="$(node -p 'Object.keys(require("./package-lock.json").packages).length - 1' 2>/dev/null || echo unavailable)"
+            # npm audit exits non-zero when it finds advisories, so mask that status here.
+            audited_total="$( { npm audit --json 2>/dev/null || true; } | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).metadata.dependencies.total)}catch{console.log("unavailable")}})' 2>/dev/null )"
+            audited_total="${audited_total:-unavailable}"
+          fi
+
           {
             echo "### Dependency audit"
             echo "- Package manager: \`$MANAGER\`"
+            echo "- Lockfile: $lockfile"
+            echo "- Lockfile package entries: $lock_entries; packages npm audit reported: $audited_total"
             echo "- Scope: all dependencies, high and critical advisories"
             echo "- Result: \`$result\` (0 = passed)"
             if [[ "$MANAGER" == "none" ]]; then

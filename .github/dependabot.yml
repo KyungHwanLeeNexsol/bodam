@@ -1,12 +1,22 @@
 version: 2
 updates:
-  # The default branch is documentation-only. Add npm updates once
-  # package.json and package-lock.json are merged into main.
+  # GitHub Actions versions (schedule unchanged from the original baseline).
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "10:45"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 3
+
+  # Root application dependencies (package.json + package-lock.json).
+  # Version-update PRs are opened for review only; nothing here merges them.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "11:00"
       timezone: "Asia/Seoul"
     open-pull-requests-limit: 3
