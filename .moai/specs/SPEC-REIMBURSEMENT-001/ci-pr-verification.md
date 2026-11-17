@@ -54,7 +54,7 @@ CR 바이트는 Git Bash의 `grep -c $'\r'`가 아니라 바이트를 직접 센
 
 **원인.** `request-static.test.ts`가 `machine.ts`를 `split('\n')`로 줄 단위로 나눈 뒤 `/\{ kind: 'SYSTEM', overlays: EVERY_OVERLAY, apply: settleOnEvent \},?$/`로 줄 끝을 맞춘다. CRLF 파일에서는 각 줄 끝에 `\r`이 남아 `$`가 `},` 바로 뒤에서 맞지 않는다. 실패 메시지의 `Received` 값은 눈으로는 기대 문장과 같게 보이는데, 끝의 `\r`이 보이지 않기 때문이다. 코드 결함이 아니라 **작업 폴더의 줄바꿈 환경** 때문에 생기는 실패다.
 
-따라서 줄바꿈이 LF인 Linux 체크아웃(GitHub의 `actions/checkout`은 `core.autocrlf`를 쓰지 않는다)에서는 이 2건이 나지 않을 것으로 예상하지만, 이 문장은 **로컬 LF 클론에서의 관찰에 근거한 예상**이다. 실제 Linux 결과는 PR 본문의 Actions 실행으로 확인한다. 시험 제외, 기대값 완화, `continue-on-error`는 쓰지 않았다. Windows 작업 폴더를 쓰는 개발자가 이 2건을 피하려면 줄바꿈 정책(`.gitattributes`의 `eol=lf` 등)이 필요하지만, 저장소 전체 줄바꿈을 바꾸는 결정이라 이번에는 하지 않았다.
+**깨끗한 Linux 체크아웃에서의 결과(원격 확인).** Draft PR #21의 Actions 실행 [43991427256](https://github.com/KyungHwanLeeNexsol/bodam/actions/runs/43991427256)(커밋 `ded58ff`, 러너 이미지 `ubuntu-26.04`, 커널 `Linux 7.0.0-1019-azure x86_64`, Node `v24.22.1`)에서 `tests/kiosk/state/request-static.test.ts`는 `23 tests` 모두 통과했고 전체는 `Test Files 210 passed (210)` · `Tests 10123 passed (10123)`이었다. 즉 이 2건은 깨끗한 Linux 체크아웃에서는 발생하지 않았다. 원인이 Linux가 아니라 Windows 작업 폴더의 CRLF라는 §3의 로컬 재현과 일치한다. 이 확인은 한 번의 실행이며 반복 실행의 안정성(불안정한 시험 여부)은 확인하지 않았다. 시험 제외, 기대값 완화, `continue-on-error`는 쓰지 않았다. Windows 작업 폴더를 쓰는 개발자가 이 2건을 피하려면 줄바꿈 정책(`.gitattributes`의 `eol=lf` 등)이 필요하지만, 저장소 전체 줄바꿈을 바꾸는 결정이라 이번에는 하지 않았다.
 
 ## 4. 빌드 단계: AI 에이전트 세션 안에서 로컬 빌드가 멈추는 현상
 
@@ -62,18 +62,19 @@ LF 클론에서 `npm run build`는 컴파일(`Compiled successfully`), TypeScrip
 
 - 이 오류는 설치된 `next@16.4.2` 패키지의 `dist/lib/upgrade/nudge.js`에서 나온다. `dist/server/config-shared.js`의 기본값이 `agentUpgrade: 'security'`이고, 같은 패키지의 에이전트 감지(`@vercel/detect-agent`)는 `AI_AGENT`·`CLAUDECODE` 같은 환경 변수를 읽는다.
 - 이 세션의 환경에는 감지 대상 환경 변수 중 `AI_AGENT`와 `CLAUDECODE`가 설정되어 있었다. 감지기가 읽는 환경 변수 18개(위 두 개 포함)를 모두 `unset`하고 `.next`를 지운 뒤 같은 클론에서 `npm run build`를 다시 실행하자 **종료 코드 0**이었다. 둘 중 어느 변수가 원인인지는 가려내지 않았다.
-- GitHub Actions 러너에는 이 환경 변수가 없으므로 CI에서는 이 중단이 나지 않을 것으로 예상한다(이 문장도 원격 실행 전까지는 예상이다).
+- GitHub Actions 러너에는 이 환경 변수가 없다. 실제로 위 실행 43991427256의 빌드 단계는 성공했고(`Compiled successfully`, `Finished TypeScript`, 정적 페이지 2/2 생성) 로그에 `Build error`·`SecurityFatalError`가 없다.
 - 코드·설정·시험은 바꾸지 않았다. 이 문서의 로컬 빌드 결과는 "에이전트 환경 변수를 뺀 조건"의 값이다.
 
 별개의 관찰: `npm audit`은 직접 의존성 `next`에 moderate 1건(영향 범위 `16.3.0 - 16.4.4`, 수정 버전 `16.4.6`)을 보고했다. 높음·치명 등급은 0건이다. 의존성 갱신은 이번 범위 밖이라 하지 않았다.
 
 ## 5. 원격 실행
 
-실제 Actions 실행 결과와 실행 링크는 Draft PR 본문에 남긴다. 실행마다 링크가 달라지므로 이 문서에는 고정하지 않는다. 원격 실행이 확인되기 전의 모든 Linux 관련 서술은 로컬 LF 클론에 근거한 예상이다.
+Draft PR #21을 연 뒤 첫 실행 [43991427256](https://github.com/KyungHwanLeeNexsol/bodam/actions/runs/43991427256)(커밋 `ded58ff`)의 결과: 작업 `Verify (Linux, Node 24.22.1)` 성공, 단계 `Step 1/4 npm ci`(`added 81 packages`) · `Step 2/4 typecheck` · `Step 3/4 npm test`(`210 files · 10123 tests` 통과) · `Step 4/4 build` 모두 success. 이후 커밋의 실행 결과와 링크는 PR 본문에 있다(실행마다 링크가 달라 이 문서에는 위 한 건만 적는다). 위 값은 로그를 직접 내려받아 확인했다.
 
 ## 6. 한계
 
-- Linux 로컬 확인 불가(WSL·Docker 없음). 위 로컬 결과는 모두 Windows 11 위의 값이다.
+- Linux 로컬 확인 불가(WSL·Docker 없음). §2의 로컬 결과는 모두 Windows 11 위의 값이고, Linux 결과는 §5의 원격 실행뿐이다. 원격 확인은 아직 소수의 실행(성공 경로)이고, 실패 경로(단계가 실패하면 작업이 실패로 끝나는지)는 원격에서 일부러 만들어 보지 않았다.
+- `npm audit`의 `next` moderate 1건과 `npm ci`가 출력한 `1 moderate severity vulnerability`는 같은 건이다. 이 CI는 취약점으로 실패하지 않는다(보안 점검은 별도 보안 PR #6의 범위).
 - `actionlint` 같은 워크플로 전용 검사기는 쓰지 않았다(문법만 파싱).
 - Node `24.22.1`만 확인했다. 다른 Node 버전·macOS·Windows CI는 범위 밖이다.
 - 브라우저 전체 시험(Playwright)과 린트(린트 스크립트가 없다)는 이 CI에 없다.
