@@ -1,0 +1,32 @@
+# Render Blueprint — 보담 손해사정사 1인용 비공개 키오스크 베타 (합성 시험 데이터 전용, 실제 환자·병원 자료 없음).
+# 이 파일은 베타 서비스 하나만 정의한다. 운영 구성(src/)과 무관하고, 무료 플랜 한 대로 고정돼 있어 유료로 바뀌지 않는다.
+#  - plan: free · region: singapore. 지역은 만든 뒤 바꿀 수 없다. 무료 인스턴스가 해당 지역에서 선택되지 않으면 만들지 말고 멈춘다(유료로 올리지 않는다).
+#  - 무료 서비스는 15분 동안 요청이 없으면 중지되고(다시 열 때 약 1분), 호스팅이 언제든 재시작할 수 있다. 세션은 메모리에만 있어 그때마다 사라지므로
+#    검토자는 초대 링크로 다시 입장한다. 한 달 무료 인스턴스 시간은 750시간이다.
+#  - 빌드: npm ci(개발 의존성 포함) → beta/build.mjs(관리자·API 라우트를 뺀 키오스크 전용 Next 빌드). 시작: beta/server.ts(Node 24 의 형식 제거 실행).
+#  - 호스팅용 설정은 모두 이 서비스의 환경 변수다(다른 곳에 적용되지 않는다):
+#      PORT 는 Render 가 넣는다(기본 10000) · BODAM_BETA_HOST=0.0.0.0 으로 열고 TLS 는 Render 가 맡는다
+#      공개 출처는 BODAM_BETA_PUBLIC_ORIGIN 이 없으면 Render 가 넣는 RENDER_EXTERNAL_URL(https://….onrender.com)을 쓴다
+#      BODAM_BETA_INVITE_TOKENS 는 비밀이다: 저장소에 값을 두지 않고(sync: false) 서비스를 만들 때 대시보드에 직접 넣는다. `npm run beta:invite` 로 만든다.
+#      BODAM_BETA_EXPIRES_ON 은 접속 종료일(한국 시간 그 날 23:59:59 까지, 이후 /healthz 말고 모두 410)이다.
+#  - autoDeployTrigger: "off" — 브랜치에 커밋이 올라와도 저절로 다시 배포하지 않는다(수동 배포만).
+services:
+  - type: web
+    name: bodam-kiosk-beta
+    runtime: node
+    plan: free
+    region: singapore
+    branch: deploy/private-kiosk-beta
+    buildCommand: npm ci && npm run beta:build
+    startCommand: npm run beta:start
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: BODAM_BETA_HOST
+        value: 0.0.0.0
+      - key: BODAM_BETA_EXPIRES_ON
+        value: "2026-11-30"
+      - key: BODAM_BETA_INVITE_TOKENS
+        sync: false

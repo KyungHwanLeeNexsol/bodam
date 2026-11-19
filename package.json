@@ -18,7 +18,10 @@
     "preview:kiosk:run": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts",
     "preview:bundle": "next build && node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts --bundle-demo",
     "preview:bundle:run": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/e2e/harness/preview.ts --bundle-demo",
-    "readiness:report": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/tools/readiness-report-main.ts"
+    "readiness:report": "node --import ./tests/fixtures/engine/ts-resolve-register.mjs tests/tools/readiness-report-main.ts",
+    "beta:build": "node beta/build.mjs",
+    "beta:start": "node --import ./beta/loader/register.mjs beta/server.ts",
+    "beta:invite": "node beta/tools/new-invite.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

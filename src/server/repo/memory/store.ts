@@ -78,3 +78,48 @@ export function dumpStore(store: Store): Record<string, unknown> {
   }
   return dump;
 }
+
+/** 저장소 상태를 복원할 수 없을 때 던진다. 호출한 쪽은 빈 저장소로 대신하지 않고 멈춰야 한다. */
+export class StateRestoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StateRestoreError';
+  }
+}
+
+/**
+ * dumpStore 의 거꾸로: [키, 값] 쌍의 배열로 떠 낸 상태를 Map 으로 되돌린다(쓴 순서가 그대로 이어진다). 돌려주는 Store 는 입력과 깊이 분리되어 있다.
+ * 모양만 본다: 최상위 이름이 Store 의 이름과 정확히 같고, 각 이름의 값이 [문자열 키, 값] 쌍의 배열이며 키가 겹치지 않는다. 한 건의 내용(엔티티 필드)은 검사하지 않는다 —
+ * 내용의 변조·손상은 저장하는 쪽이 붙인 해시로 막는다. 어긋나면 StateRestoreError 이고 부분 결과를 돌려주지 않는다.
+ */
+export function restoreStore(dump: unknown): Store {
+  if (dump === null || typeof dump !== 'object' || Array.isArray(dump)) {
+    throw new StateRestoreError('저장소 상태가 객체가 아니다');
+  }
+  const given = Object.keys(dump);
+  const expected = Object.keys(emptyStore());
+  const missing = expected.filter((name) => !given.includes(name));
+  const unknown = given.filter((name) => !expected.includes(name));
+  if (missing.length > 0 || unknown.length > 0) {
+    throw new StateRestoreError(`저장소 상태의 이름이 맞지 않는다 (없음: ${missing.join(',') || '-'}, 모름: ${unknown.join(',') || '-'})`);
+  }
+  const store = emptyStore();
+  for (const name of expected) {
+    const entries = (dump as Record<string, unknown>)[name];
+    if (!Array.isArray(entries)) {
+      throw new StateRestoreError(`'${name}' 이(가) 배열이 아니다`);
+    }
+    const map = new Map<string, unknown>();
+    for (const entry of entries) {
+      if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') {
+        throw new StateRestoreError(`'${name}' 의 항목이 [문자열 키, 값] 쌍이 아니다`);
+      }
+      if (map.has(entry[0])) {
+        throw new StateRestoreError(`'${name}' 에 같은 키 '${entry[0]}' 가 두 번 있다`);
+      }
+      map.set(entry[0], deepCopy(entry[1]));
+    }
+    (store as unknown as Record<string, Map<string, unknown>>)[name] = map;
+  }
+  return store;
+}

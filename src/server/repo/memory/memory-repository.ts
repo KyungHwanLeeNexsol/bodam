@@ -22,7 +22,7 @@ import { DomainError } from '../../domain/errors';
 import type { ItemKind, ItemStateRecord, ItemStateSnapshot, ItemTransitionInput, ItemVersionRecord, ItemVersionRef, StateTransition } from '../../domain/items';
 import type { Repository } from '../interfaces';
 import { ReadSpy } from './read-spy';
-import { deepCopy, dumpStore, emptyStore } from './store';
+import { deepCopy, dumpStore, emptyStore, restoreStore } from './store';
 import type { Store } from './store';
 
 // 저장소 인터페이스의 메모리 구현. 계약은 repo/interfaces.ts 머리말이 정한다.
@@ -48,6 +48,16 @@ export class MemoryRepository implements Repository {
   private store: Store = emptyStore();
   /** 읽기 호출 감시 (시험용 관측점). 저장소 상태가 아니다. */
   readonly spy = new ReadSpy();
+
+  /**
+   * 인자가 없으면 빈 저장소다. exportState 로 떠 낸 상태를 주면 그 상태에서 시작한다(영속 어댑터가 저장해 둔 상태를 읽어 올 때 쓴다):
+   * 만들 때만 받으므로 이미 쓰고 있는 저장소를 덮어쓰는 길이 없다. 모양이 맞지 않으면 StateRestoreError 이고, 빈 저장소를 대신 만들지 않는다.
+   */
+  constructor(exportedState?: unknown) {
+    if (exportedState !== undefined) {
+      this.store = restoreStore(exportedState);
+    }
+  }
 
   // ───────────────────────── 트랜잭션 ─────────────────────────
 

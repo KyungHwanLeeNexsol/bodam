@@ -240,3 +240,6 @@ dist-ssr/
 .vercel/
 .netlify/
 .firebase/
+
+# Private kiosk beta build output (beta/build.mjs)
+.beta-build/
