@@ -29,13 +29,13 @@ export interface BetaScenario {
 /** 검토자에게 보이는 두 시나리오. 이 밖의 병원 주소는 서버가 거절한다. */
 export const BETA_SCENARIOS: readonly BetaScenario[] = Object.freeze([
   {
-    slug: 'test-fixture-clinic-1',
+    slug: 'bodam-clinic-1',
     title: '시나리오 1 · 정상 계산',
     description: '4세대 · 손해보험사 · 합성 치료 1개를 고르면 예상 금액과 근거, 서류가 나옵니다.',
     expectedState: 'ESTIMATED',
   },
   {
-    slug: 'test-fixture-clinic-2',
+    slug: 'bodam-clinic-2',
     title: '시나리오 2 · 산출 보류',
     description: '규칙 사용 범위가 없는 병원입니다. 같은 순서로 고르면 금액 대신 "산출 보류" 안내가 나옵니다.',
     expectedState: 'ON_HOLD',

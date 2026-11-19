@@ -1,4 +1,5 @@
 // 베타 서버가 직접 만드는 화면 (입장·차단·찾을 수 없음·안내·틀). 키오스크 앱(Next) 화면은 여기서 만들지 않는다.
+//  - 두 가지 모드: 환자 모드(기본)는 서버가 만드는 화면에 띠·라벨이 없다(앱 결과 화면의 자체 안내는 앱이 계속 보인다). 검토 모드(review=true)는 아래의 띠를 모든 화면에 고정한다.
 //  - 서버가 만드는 모든 화면과 브라우저로 여는 키오스크 화면의 맨 위에는 시험 데이터 띠(TEST_NOTICE)가 고정돼 있다(헤더를 위조하는 클라이언트는 띠 없는 앱 문서를 받을 수 있다: 표시 장치이지 보안 통제가 아니다). 키오스크 화면은 앱을 같은 출처의 iframe 에 담은 틀이 이 띠를 맡는다:
 //    앱 안의 화면이 어떻게 바뀌어도(계산 중·오류·초기화) 새로고침으로 앱 상태가 지워져도 띠는 같은 자리에 남는다.
 //  - 문장은 앱의 결과 화면 배너(COPY.result.testData)와 같아야 한다(시험이 본다).
@@ -36,7 +37,7 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function shell(title: string, main: string, extraHead = ''): string {
+function shell(title: string, main: string, extraHead = '', review = true): string {
   return [
     '<!doctype html>',
     '<html lang="ko">',
@@ -44,13 +45,13 @@ function shell(title: string, main: string, extraHead = ''): string {
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     '<meta name="robots" content="noindex, nofollow">',
-    `<title>${escapeHtml(title)}</title>`,
+    `<title>${escapeHtml(title)}${review ? ' · 보담 베타' : ' · 보담'}</title>`,
     `<style>${STYLE}</style>`,
     extraHead,
     '</head>',
     '<body>',
-    `<p class="beta-notice" role="note" data-test-notice>${TEST_NOTICE}</p>`,
-    `<p class="beta-label">${BETA_LABEL}</p>`,
+    review ? `<p class="beta-notice" role="note" data-test-notice>${TEST_NOTICE}</p>` : '',
+    review ? `<p class="beta-label">${BETA_LABEL}</p>` : '',
     `<main>${main}</main>`,
     '</body>',
     '</html>',
@@ -65,7 +66,7 @@ function html(status: number, body: string, csp: string, extra: Record<string, s
 const CSP_STATIC = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 /** 초대 입장 화면. 초대 링크는 `/beta/enter#t=<토큰>` 이다: 토큰은 # 뒤라서 서버 로그·Referer 에 남지 않는다. 직접 붙여 넣을 수도 있다. */
-export function enterPage(): Page {
+export function enterPage(review = true): Page {
   const main = [
     '<h1>초대받은 검토자 입장</h1>',
     '<p>받으신 초대 링크로 들어오시면 자동으로 입장합니다. 링크가 열리지 않으면 초대 코드를 아래에 붙여 넣어 주세요.</p>',
@@ -76,7 +77,7 @@ export function enterPage(): Page {
     '</form>',
     '<p id="status" class="status" role="status" aria-live="polite"></p>',
   ].join('');
-  return html(200, shell('초대 입장 · 보담 베타', main, '<script src="/beta/enter.js" defer></script>'), "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  return html(200, shell('초대 입장', main, '<script src="/beta/enter.js" defer></script>', review), "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
 }
 
 export const ENTER_SCRIPT = `(function () {
@@ -103,21 +104,23 @@ export const ENTER_SCRIPT = `(function () {
 `;
 
 /** 초대 세션이 없을 때(화면 요청). 앱이나 병원 자료를 담지 않는다. */
-export function blockedPage(): Page {
+export function blockedPage(review = true): Page {
   const main = ['<h1>초대가 필요한 화면입니다</h1>', '<p>이 베타는 초대받은 검토자만 볼 수 있습니다. 받으신 초대 링크로 다시 들어와 주세요.</p>', '<p><a href="/beta/enter">초대 입장 화면으로</a></p>'].join('');
-  return html(401, shell('초대가 필요합니다 · 보담 베타', main), CSP_STATIC);
+  return html(401, shell('초대가 필요합니다', main, '', review), CSP_STATIC);
 }
 
 /** 접속 종료일이 지난 뒤(모든 화면 요청). 앱이나 병원 자료를 담지 않는다. */
-export function endedPage(expiresOn: string | null): Page {
+export function endedPage(expiresOn: string | null, review = true): Page {
   const when = expiresOn === null ? '' : ` (${escapeHtml(expiresOn)}까지)`;
   const main = ['<h1>검토 기간이 끝났습니다</h1>', `<p>이 베타의 접속 기간${when}이 끝나 더 이상 열 수 없습니다.</p>`].join('');
-  return html(410, shell('검토 기간 종료 · 보담 베타', main), CSP_STATIC);
+  return html(410, shell('검토 기간 종료', main, '', review), CSP_STATIC);
 }
 
-export function notFoundPage(): Page {
-  const main = ['<h1>찾을 수 없는 화면입니다</h1>', '<p>이 베타에는 키오스크 시험 화면만 있습니다.</p>', '<p><a href="/">시험 시나리오 목록으로</a></p>'].join('');
-  return html(404, shell('찾을 수 없음 · 보담 베타', main), CSP_STATIC);
+export function notFoundPage(review = true): Page {
+  const main = review
+    ? ['<h1>찾을 수 없는 화면입니다</h1>', '<p>이 베타에는 키오스크 시험 화면만 있습니다.</p>', '<p><a href="/">시험 시나리오 목록으로</a></p>'].join('')
+    : ['<h1>찾을 수 없는 화면입니다</h1>', '<p>주소를 다시 확인해 주세요.</p>', '<p><a href="/">처음 화면으로</a></p>'].join('');
+  return html(404, shell('찾을 수 없음', main, '', review), CSP_STATIC);
 }
 
 export interface ScenarioLink {
@@ -137,7 +140,7 @@ export function indexPage(scenarios: readonly ScenarioLink[]): Page {
     links,
     '<form method="post" action="/beta/leave"><button type="submit">검토 마치고 나가기</button></form>',
   ].join('');
-  return html(200, shell('시험 시나리오 · 보담 베타', main), CSP_STATIC);
+  return html(200, shell('시험 시나리오', main), CSP_STATIC);
 }
 
 /** 키오스크 화면을 담는 틀: 시험 데이터 띠 + 앱(같은 출처 iframe). innerUrl 은 요청 경로 그대로다(쿼리 없음). */

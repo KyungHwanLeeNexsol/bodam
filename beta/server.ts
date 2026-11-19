@@ -85,6 +85,7 @@ server.listen(config.port, config.host, () => {
       `  invites          : ${config.inviteTokens.length}명 (토큰은 출력하지 않는다) · 세션 ${config.sessionTtlMs / 3_600_000}시간 · 메모리 세션`,
       `  today            : ${today()}`,
       `  expires          : ${config.expiresOn === null ? '기한 없음' : `${config.expiresOn} 한국 시간 23:59:59 까지 (이후 /healthz 말고 모두 410)`}`,
+      `  mode             : ${config.reviewMode ? '검토 모드(시나리오 목록·시험 데이터 띠)' : '환자 모드(초대 뒤 곧바로 키오스크 시작 화면)'}`,
       `  scenarios        : ${BETA_SCENARIOS.map((scenario) => `${scenario.slug}=${scenario.expectedState}`).join(', ')}`,
       `  exposed          : 키오스크 화면 + 공개 계산 API 세 경로 (관리자·자료 쓰기 경로 없음. /beta/enter·/beta/leave 는 세션만 바꾼다)`,
       '',

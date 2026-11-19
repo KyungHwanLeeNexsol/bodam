@@ -13,7 +13,9 @@ import type { Page, ScenarioLink } from './pages';
 //        → 지원하지 않는 메서드 405 → 허용 목록(/ · /kiosk/{병원} · /_next/static/** · 공개 API 세 경로 · /beta/leave) → 그 밖의 모든 경로 404.
 //  - 관리자 화면·관리자 API·로그인(V0)·쓰기 API 는 이 처리기에 길이 없다. Next 로 넘기는 것은 /kiosk/{병원}(허용 병원만)과 /_next/static/** 뿐이다(빌드에도 관리자 라우트가 없다: beta/build.mjs).
 //  - 병원 주소는 BETA 시나리오의 두 값만 받는다. 알 수 없는 병원은 Next 나 핸들러까지 가지 않고 404 다.
-//  - 키오스크 문서는 "최상위 이동이면 시험 데이터 띠가 든 틀, iframe 안의 요청이면 앱"이다. iframe 여부는 Sec-Fetch-Dest 로 보고, 그 헤더가 없는 브라우저는 Referer 가 같은 출처의 같은 경로일 때만 앱으로 본다.
+//  - 두 모드: 환자 모드(기본, config.reviewMode=false)는 `/` 가 첫 병원의 키오스크 시작 화면으로 302 이고, 키오스크 문서는 틀 없이 앱을 그대로 내보내며(X-Frame-Options DENY), 서버가 만드는 화면에 띠가 없다.
+//    검토 모드(reviewMode=true)는 아래 설명대로 목록·띠·틀을 보여 준다. 두 모드 모두 초대 검사·허용 목록·메서드·종료일 규칙은 같다(초대 없으면 401).
+//  - (검토 모드) 키오스크 문서는 "최상위 이동이면 시험 데이터 띠가 든 틀, iframe 안의 요청이면 앱"이다. iframe 여부는 Sec-Fetch-Dest 로 보고, 그 헤더가 없는 브라우저는 Referer 가 같은 출처의 같은 경로일 때만 앱으로 본다.
 //    어느 쪽도 아니면 틀이다. 이것은 브라우저 수준의 보장이다: 초대받은 클라이언트가 Sec-Fetch-Dest: iframe 헤더를 직접 보내면 띠 없는 앱 문서를 받을 수 있다(띠는 보안 통제가 아니라 표시 장치다).
 //  - 쓰기(POST) 요청은 Origin 이 공개 출처와 정확히 같아야 한다(쿠키만 믿지 않는다). 본문은 64KiB(입장은 2KiB)까지만 읽는다.
 //  - 로그에는 메서드·경로(쿼리 제외)·상태·검토자 이름만 남긴다. 토큰·쿠키·본문·쿼리는 남기지 않는다.
@@ -29,7 +31,7 @@ const PUBLIC_API = /^\/api\/clinics\/([A-Za-z0-9._~-]{1,64})\/(catalog|insurance
 export type NextHandler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 
 export interface BetaHandlerOptions {
-  config: Pick<BetaConfig, 'publicOrigin' | 'allowedHost'> & Partial<Pick<BetaConfig, 'expiresOn' | 'expiresAtMs'>>;
+  config: Pick<BetaConfig, 'publicOrigin' | 'allowedHost'> & Partial<Pick<BetaConfig, 'expiresOn' | 'expiresAtMs' | 'reviewMode'>>;
   /** 현재 시각(epoch 밀리초). 기본은 시스템 시계이고 시험이 바꾼다. */
   now?: () => number;
   gate: Gate;
@@ -150,6 +152,8 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
   const now = options.now ?? ((): number => Date.now());
   const expiresAtMs = options.config.expiresAtMs ?? null;
   const expiresOn = options.config.expiresOn ?? null;
+  const review = options.config.reviewMode === true;
+  const startSlug = (options.scenarios[0] as ScenarioLink).slug;
 
   return async (request, response) => {
     const method = request.method ?? 'GET';
@@ -170,7 +174,7 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
       // 접속 종료일이 지나면 /healthz(호스팅의 상태 확인) 말고는 모든 요청이 410 이다. 입장·화면·API·정적 파일 모두 같다.
       if (expiresAtMs !== null && now() > expiresAtMs && rawPath !== '/healthz') {
         if (rawPath.startsWith('/api/')) json(response, 410, { error: 'BETA_ENDED' });
-        else writePage(response, endedPage(expiresOn));
+        else writePage(response, endedPage(expiresOn, review));
         return;
       }
       const originOk = request.headers.origin === publicOrigin;
@@ -186,7 +190,7 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
       }
       if (rawPath === '/beta/enter') {
         if (method === 'GET') {
-          writePage(response, enterPage());
+          writePage(response, enterPage(review));
           return;
         }
         if (method !== 'POST') {
@@ -224,7 +228,7 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
       const who = gate.check(request.headers.cookie);
       if (who === null) {
         if (rawPath.startsWith('/api/')) json(response, 401, { error: 'INVITE_REQUIRED' });
-        else writePage(response, blockedPage());
+        else writePage(response, blockedPage(review));
         return;
       }
       reviewer = who;
@@ -235,8 +239,9 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
       }
 
       if (rawPath === '/') {
-        if (method === 'GET') writePage(response, indexPage(options.scenarios));
-        else json(response, 405, { error: 'METHOD_NOT_ALLOWED' });
+        if (method !== 'GET') json(response, 405, { error: 'METHOD_NOT_ALLOWED' });
+        else if (review) writePage(response, indexPage(options.scenarios));
+        else finish(response, 302, { ...NO_STORE, location: `/kiosk/${encodeURIComponent(startSlug)}` }, '');
         return;
       }
       if (rawPath === '/beta/leave') {
@@ -255,18 +260,18 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
       const kiosk = KIOSK.exec(rawPath);
       if (kiosk !== null) {
         if (!slugs.has(kiosk[1] as string)) {
-          writePage(response, notFoundPage());
+          writePage(response, notFoundPage(review));
           return;
         }
         if (method !== 'GET') {
           json(response, 405, { error: 'METHOD_NOT_ALLOWED' });
           return;
         }
-        if (!isInnerDocument(request.headers, publicOrigin, rawPath)) {
+        if (review && !isInnerDocument(request.headers, publicOrigin, rawPath)) {
           writePage(response, kioskFramePage(rawPath));
           return;
         }
-        response.setHeader('x-frame-options', 'SAMEORIGIN');
+        response.setHeader('x-frame-options', review ? 'SAMEORIGIN' : 'DENY');
         response.setHeader('referrer-policy', 'same-origin');
         response.setHeader('x-content-type-options', 'nosniff');
         response.setHeader('x-robots-tag', 'noindex, nofollow');
@@ -320,7 +325,7 @@ export function createBetaHandler(options: BetaHandlerOptions): (request: Incomi
       }
 
       if (rawPath.startsWith('/api/')) json(response, 404, { error: 'NOT_FOUND' });
-      else writePage(response, notFoundPage());
+      else writePage(response, notFoundPage(review));
     } catch {
       json(response, 500, { error: 'INTERNAL_ERROR' });
     }

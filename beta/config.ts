@@ -32,6 +32,8 @@ export interface BetaConfig {
   expiresOn: string | null;
   /** 종료 시각(그 날 한국 시간 23:59:59.999 의 epoch 밀리초). 없으면 null. */
   expiresAtMs: number | null;
+  /** 검토 모드(BODAM_BETA_REVIEW_MODE=1): 시나리오 목록·시험 데이터 띠·틀을 보여 준다. 꺼져 있으면(기본) 환자 모드: 초대 입장 뒤 곧바로 키오스크 시작 화면이다. */
+  reviewMode: boolean;
 }
 
 export function parseConfig(env: Readonly<Record<string, string | undefined>>): BetaConfig {
@@ -106,6 +108,11 @@ export function parseConfig(env: Readonly<Record<string, string | undefined>>): 
     expiresAtMs = parsed;
   }
 
+  const review = (env['BODAM_BETA_REVIEW_MODE'] ?? '').trim().toLowerCase();
+  if (!['', '0', '1', 'true', 'false'].includes(review)) {
+    throw new BetaConfigError('BODAM_BETA_REVIEW_MODE 는 1 또는 0 이어야 한다');
+  }
+
   return {
     host,
     port,
@@ -117,5 +124,6 @@ export function parseConfig(env: Readonly<Record<string, string | undefined>>): 
     todayOverride: today === '' ? null : today,
     expiresOn: expires === '' ? null : expires,
     expiresAtMs,
+    reviewMode: review === '1' || review === 'true',
   };
 }
