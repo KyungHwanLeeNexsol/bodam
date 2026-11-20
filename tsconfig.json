@@ -20,6 +20,6 @@
     "jsx": "react-jsx",
     "plugins": [{ "name": "next" }]
   },
-  "include": ["src", "tests", "beta", "vitest.config.ts", "playwright.config.ts", "playwright.dev.config.ts",".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+  "include": ["src", "tests", "beta", "demo", "vitest.config.ts", "playwright.config.ts", "playwright.dev.config.ts",".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
   "exclude": ["node_modules"]
 }
