@@ -5,13 +5,14 @@
 //  - 문장은 앱의 결과 화면 배너(COPY.result.testData)와 같아야 한다. tests/kiosk/static/preview-notice.test.ts 가 둘이 같은지 본다.
 
 export const TEST_NOTICE = '테스트 데이터로 계산한 예시입니다. 실제 보험금 안내에 사용할 수 없습니다.';
+export const PRESENTATION_NOTICE = '시연용';
 
 function escapeAttribute(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /** 앱을 담은 틀. innerUrl 은 브라우저가 요청한 경로 그대로다(쿼리를 더하지 않는다). 틀 자신은 어떤 세션 값도 담지 않는다. */
-export function previewFrameHtml(innerUrl: string): string {
+export function previewFrameHtml(innerUrl: string, presentation = false): string {
   return [
     '<!doctype html>',
     '<html lang="ko">',
@@ -25,11 +26,14 @@ export function previewFrameHtml(innerUrl: string): string {
     // 어두운 갈색 글자 / 연한 노란 바탕: 대비 약 9:1. 줄이 길어지면 줄바꿈으로 늘어나고 잘리지 않는다.
     '.preview-notice{flex:none;box-sizing:border-box;width:100%;margin:0;padding:14px 24px;background:#fff4cc;color:#4a2f00;border-bottom:4px solid #b45309;',
     "font:700 28px/1.4 'Pretendard','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;text-align:center;word-break:keep-all}",
+    ...(presentation ? [
+      '.preview-notice{padding:2px 14px;border:0;border-bottom:1px solid #e2e8f0;background:#fff;color:#475569;text-align:right;font-size:14px;line-height:1.5}',
+    ] : []),
     '.preview-app{flex:1 1 auto;min-height:0;width:100%;border:0;display:block;background:#fff}',
     '</style>',
     '</head>',
     '<body>',
-    `<p class="preview-notice" role="note" data-test-notice>${TEST_NOTICE}</p>`,
+    `<p class="preview-notice" role="note" data-test-notice>${presentation ? PRESENTATION_NOTICE : TEST_NOTICE}</p>`,
     `<iframe class="preview-app" title="보담" src="${escapeAttribute(innerUrl)}"></iframe>`,
     '</body>',
     '</html>',

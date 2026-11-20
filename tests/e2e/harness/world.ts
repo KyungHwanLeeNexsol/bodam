@@ -37,6 +37,8 @@ export const HARNESS_BUNDLE_DEMO_TREATMENT = { id: T3, name: 'TEST_FIXTURE 시�
 export interface HarnessOptions {
   /** 묶음 시연 세계(치료 C 추가 + 병원 2 도 기준 묶음 사용). 생략하면 기본 세계다. */
   bundleDemo?: boolean;
+  /** Display aliases for the dedicated demo. Rules, source and ids stay synthetic. */
+  treatmentNames?: { readonly first: string; readonly second: string };
 }
 
 export interface Harness {
@@ -53,10 +55,11 @@ export interface Harness {
 /** 두 병원의 세계 하나와 그 위의 공개 서비스·관리자 서비스. 같은 저장소·시계·식별자 생성기를 쓴다. */
 export function buildHarness(options: HarnessOptions = {}): Harness {
   const [first, second] = validCatalogRequest().treatmentVersions;
+  const names = options.treatmentNames ?? HARNESS_TREATMENT_NAMES;
   const { world, bundle } = buildWorld({
     treatments: [
-      { ...first!, displayName: HARNESS_TREATMENT_NAMES.first },
-      { ...second!, displayName: HARNESS_TREATMENT_NAMES.second },
+      { ...first!, displayName: names.first },
+      { ...second!, displayName: names.second },
     ],
   });
   // 표시 순서를 1, 2 로 분명히 한다(공유 시험 자료는 둘 다 1 이라 id 순으로 갈린다).

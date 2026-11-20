@@ -5,6 +5,11 @@ import { Icon } from './icons';
 // 색(warn)뿐 아니라 아이콘과 굵은 문장으로 알린다. 응답의 origin 값(코드)을 화면에 싣지 않는다 — 문구는 고정이다.
 
 export function TestDataNotice() {
+  // The dedicated presentation service still labels synthetic amounts. Its
+  // build flag only shortens this notice; it never changes the data origin.
+  if (process.env.NEXT_PUBLIC_BODAM_DEMO_PRESENTATION === '1') {
+    return <p className="kiosk-test-data--presentation" role="note" data-kiosk-test-data>시연용 금액</p>;
+  }
   return (
     <div className="kiosk-test-data" role="note" data-kiosk-block data-kiosk-test-data>
       <Icon name="circle-alert" size={32} />

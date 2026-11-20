@@ -80,7 +80,11 @@ try {
   for (const [url, headers] of [['/kiosk/test-fixture-clinic-1', {}], ['/demo/login', {}]]) {
     const page = await get(url, headers);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /테스트 데이터로 계산한 예시입니다/);
+    const document = await page.text();
+    if (hosted) {
+      assert.match(document, />시연용<\/p>/);
+      assert.doesNotMatch(document, /테스트 데이터로 계산한 예시입니다/);
+    } else assert.match(document, /테스트 데이터로 계산한 예시입니다/);
   }
   const login = await request('/demo/login', { method: 'POST', headers: { host, origin, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code }) });
   assert.equal(login.status, 303);
@@ -92,6 +96,10 @@ try {
   assert.match(await adminDocument.text(), /\/_next\/static\//);
 
   const before = await catalog();
+  if (hosted) {
+    assert.equal(before.clinic.displayName, '보담의원');
+    assert.deepEqual(before.treatments.map(({ displayName }) => displayName), ['물리치료', '근골격계 초음파 검사']);
+  }
   const id = before.treatments[0].treatmentId;
   const initial = hosted ? [17000, 16000, 1000] : [15000, 14000, 1000];
   const published = hosted ? [19000, 18000, 1000] : [17000, 16000, 1000];

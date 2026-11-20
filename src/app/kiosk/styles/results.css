@@ -44,6 +44,17 @@
 }
 
 /* 운영이 아닌 자료로 계산한 결과의 상단 표시(AC-010e). warn 색에 더해 아이콘과 굵은 글씨로 알린다. */
+.kiosk-test-data--presentation {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 999px;
+  color: var(--kiosk-text-body);
+  background: var(--kiosk-surface);
+  font-size: var(--kiosk-fs-label);
+  font-weight: 700;
+}
+
 .kiosk-test-data {
   display: flex;
   flex: none;

@@ -11,7 +11,7 @@ import { handleCatalog } from '../../src/server/api/catalog';
 import { handleEstimate } from '../../src/server/api/estimate';
 import { silentLog } from '../../src/server/api/log';
 import { handleOptions } from '../../src/server/api/options';
-import { previewFrameHtml, TEST_NOTICE } from '../../tests/e2e/harness/notice';
+import { PRESENTATION_NOTICE, previewFrameHtml, TEST_NOTICE } from '../../tests/e2e/harness/notice';
 import { buildHarness, HARNESS_CLINIC_SLUG } from '../../tests/e2e/harness/world';
 import { TEST_TODAY } from '../../tests/fixtures/server/api-composition.fixture';
 
@@ -38,7 +38,12 @@ const historyPath = `/admin/${clinic}/change-history`;
 const loginPath = '/demo/login';
 const gate = createGate({ tokens: [token], ttlMs: 60 * 60_000, secure: hosted, now: Date.now });
 
-const { world } = buildHarness();
+const { world } = buildHarness(hosted ? { treatmentNames: { first: '물리치료', second: '근골격계 초음파 검사' } } : {});
+if (hosted) {
+  const demoClinic = world.repo.getClinic(clinic);
+  if (demoClinic === null) throw new Error('Demo clinic is missing');
+  world.repo.saveClinic({ ...demoClinic, name: '보담의원' });
+}
 const api = createBetaServices({ repo: world.repo, log: silentLog, today: () => TEST_TODAY });
 const admin = createAdminServices({
   api,
@@ -115,7 +120,7 @@ function html(res: ServerResponse, content: string): void {
 }
 
 function menu(body: string): string {
-  return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>보담 관리자·키오스크 검증</title><body><main><h1>보담 관리자·키오스크 검증</h1><p role="note">${TEST_NOTICE}</p>${body}</main></body></html>`;
+  return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>보담 관리자·키오스크 검증</title><body><main><h1>보담 관리자·키오스크 검증</h1><p role="note">${hosted ? PRESENTATION_NOTICE : TEST_NOTICE}</p>${body}</main></body></html>`;
 }
 
 function redirect(res: ServerResponse, to: string, cookie?: string): void {
@@ -201,7 +206,7 @@ async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<void
   if (path === adminPath || path === historyPath || path === kioskPath) {
     if (method !== 'GET') return json(res, 405, 'METHOD_NOT_ALLOWED');
     if (path !== kioskPath && gate.check(req.headers.cookie) === null) return redirect(res, loginPath);
-    if (req.headers['sec-fetch-dest'] !== 'iframe') return html(res, previewFrameHtml(path));
+    if (req.headers['sec-fetch-dest'] !== 'iframe') return html(res, previewFrameHtml(path, hosted));
     for (const [key, value] of Object.entries(accessHeaders)) res.setHeader(key, value);
     req.url = path;
     stripInternalHeaders(req);

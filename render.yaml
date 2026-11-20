@@ -17,5 +17,7 @@ services:
         value: "1"
       - key: BODAM_DEMO_RENDER
         value: "1"
+      - key: NEXT_PUBLIC_BODAM_DEMO_PRESENTATION
+        value: "1"
       - key: BODAM_DEMO_ADMIN_TOKEN
         generateValue: true
