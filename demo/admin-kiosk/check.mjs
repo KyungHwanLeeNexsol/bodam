@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { setTimeout } from 'node:timers/promises';
 
@@ -12,9 +13,12 @@ await once(allocator, 'listening');
 const { port } = allocator.address();
 await new Promise((resolve) => allocator.close(resolve));
 const base = `http://127.0.0.1:${port}`;
-const code = randomBytes(32).toString('base64url');
+const hosted = process.argv.includes('--hosted');
+const origin = hosted ? 'https://fixture-review.onrender.com' : base;
+const host = new URL(origin).host;
+const code = randomBytes(32).toString(hosted ? 'base64' : 'base64url');
 const child = spawn(process.execPath, ['--import', './tests/fixtures/engine/ts-resolve-register.mjs', 'demo/admin-kiosk/server.ts'], {
-  env: { ...process.env, BODAM_DEMO_ADMIN_TOKEN: code, BODAM_DEMO_PORT: String(port), NEXT_TELEMETRY_DISABLED: '1' },
+  env: { ...process.env, BODAM_DEMO_ADMIN_TOKEN: code, BODAM_DEMO_PORT: String(port), NEXT_TELEMETRY_DISABLED: '1', BODAM_DEMO_RENDER: hosted ? '1' : '0', ...(hosted ? { RENDER: 'true', RENDER_EXTERNAL_URL: origin, PORT: String(port) } : {}) },
   stdio: ['ignore', 'ignore', 'inherit'],
 });
 const exit = once(child, 'exit');
@@ -23,11 +27,25 @@ const pat = '/api/clinics/test-fixture-clinic-1';
 const adm = `/api/admin/clinics/${clinic}`;
 const scenario = { generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN' };
 let cookie = '';
-const get = (path, headers) => fetch(base + path, { headers, redirect: 'manual' });
-const write = (path, method, data, opts = {}) => fetch(base + path, {
+// Use the real Host seen behind Render's ingress while transporting over loopback.
+function request(path, options) {
+  if (!hosted) return fetch(base + path, { ...options, redirect: 'manual' });
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(base + path, { method: options.method ?? 'GET', headers: options.headers }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('error', reject);
+      res.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode, headers: Object.entries(res.headers).flatMap(([name, value]) => (Array.isArray(value) ? value : [value]).map((entry) => [name, entry])) })));
+    });
+    req.on('error', reject);
+    req.end(options.body?.toString());
+  });
+}
+const get = (path, headers) => request(path, { headers: { host, ...headers } });
+const write = (path, method, data, opts = {}) => request(path, {
   method,
   redirect: 'manual',
-  headers: { origin: base, 'content-type': 'application/json', ...(opts.admin ? { cookie } : {}), ...opts.headers },
+  headers: { host, origin, 'content-type': 'application/json', ...(opts.admin ? { cookie } : {}), ...opts.headers },
   body: JSON.stringify(data),
 });
 async function expectJson(res, status = 200) {
@@ -52,6 +70,10 @@ try {
     await setTimeout(150);
   }
   assert.ok(ready, 'Local demo did not start; run npm run build first');
+  if (hosted) {
+    assert.equal((await get('/')).headers.get('location'), '/kiosk/test-fixture-clinic-1');
+    assert.equal((await get('/demo', { host: 'invalid.example' })).status, 403);
+  }
   assert.equal((await get(adm + '/treatments')).status, 401);
   assert.equal((await get(`/admin/${clinic}/treatments`)).headers.get('location'), '/demo/login');
   assert.equal((await get('/__harness/state')).status, 404);
@@ -60,9 +82,10 @@ try {
     assert.equal(page.status, 200);
     assert.match(await page.text(), /테스트 데이터로 계산한 예시입니다/);
   }
-  const login = await fetch(base + '/demo/login', { method: 'POST', redirect: 'manual', headers: { origin: base, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code }) });
+  const login = await request('/demo/login', { method: 'POST', headers: { host, origin, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code }) });
   assert.equal(login.status, 303);
   assert.match(login.headers.get('set-cookie'), /HttpOnly/i);
+  if (hosted) assert.match(login.headers.get('set-cookie'), /^__Host-bodam_beta=.*; Secure$/i);
   cookie = login.headers.get('set-cookie').split(';', 1)[0];
   const adminDocument = await get(login.headers.get('location'), { cookie, 'sec-fetch-dest': 'iframe' });
   assert.equal(adminDocument.status, 200);
@@ -70,8 +93,10 @@ try {
 
   const before = await catalog();
   const id = before.treatments[0].treatmentId;
-  assert.deepEqual(prices(await estimate(id)), [15000, 14000, 1000]);
-  const draft = { priceEdits: [{ treatmentId: id, patientAmount: 12000 }], additions: [{
+  const initial = hosted ? [17000, 16000, 1000] : [15000, 14000, 1000];
+  const published = hosted ? [19000, 18000, 1000] : [17000, 16000, 1000];
+  assert.deepEqual(prices(await estimate(id)), initial);
+  const draft = { priceEdits: [{ treatmentId: id, patientAmount: hosted ? 14000 : 12000 }], additions: [{
     draftKey: 'DEMO_NEW', displayName: 'TEST_FIXTURE 시연용 신규 치료', description: '검증용 합성 치료', benefitType: 'BENEFIT', patientAmount: 7000,
     treatmentCode: 'TEST_FIXTURE_DEMO_NEW', procedureCodes: ['TEST_FIXTURE_DEMO_CODE'],
     documentFlags: { imaging: false, biopsy: false, opinionRequired: false },
@@ -83,7 +108,7 @@ try {
   const denied = await expectJson(await write(adm + '/catalog/publish', 'POST', { publishConfirmation: '0'.repeat(64) }, { admin: true }), 409);
   assert.equal(denied.reason, 'PREVIEW_REQUIRED');
   const preview = await expectJson(await write(adm + '/catalog/preview', 'POST', { treatmentIds: [id], ...scenario }, { admin: true }));
-  assert.deepEqual(prices(preview.after), [17000, 16000, 1000]);
+  assert.deepEqual(prices(preview.after), published);
   assert.deepEqual(await catalog(), before);
   await expectJson(await write(adm + '/catalog/publish', 'POST', { publishConfirmation: preview.publishConfirmation }, { admin: true }));
   const after = await catalog();
@@ -91,7 +116,7 @@ try {
   const result = await estimate(id);
   assert.equal(result.origin, 'TEST_FIXTURE');
   assert.equal(result.result.state, 'ESTIMATED');
-  assert.deepEqual(prices(result), [17000, 16000, 1000]);
+  assert.deepEqual(prices(result), published);
   const added = after.treatments.find((row) => row.displayName === draft.additions[0].displayName);
   assert.equal(added?.patientAmount, 7000);
   const held = await estimate(added.treatmentId);
@@ -100,9 +125,10 @@ try {
   assert.equal((await get('/api/admin/audit-log', { cookie })).status, 200);
   assert.equal((await write('/demo/logout', 'POST', {}, { admin: true })).status, 303);
   assert.equal((await get(adm + '/treatments', { cookie })).status, 401);
-  console.log('초안/미리보기 중 키오스크 금액 불변, 게시 후 병원 결제액 15,000 → 17,000원, 예상 보험금 16,000원, 보험금 반영 후 부담액 1,000원, 신규 7,000원 치료는 보험금 산출 보류.');
+  console.log(`${hosted ? 'Render 설정 모의' : '로컬'}: 초안/미리보기 중 키오스크 금액 불변, 게시 후 병원 결제액 ${initial[0]} → ${published[0]}원, 예상 보험금 ${published[1]}원, 보험금 반영 후 부담액 ${published[2]}원, 신규 7,000원 치료는 보험금 산출 보류.`);
 
   if (process.argv.includes('--browser')) {
+    if (hosted) throw new Error('Use --browser without --hosted for local Chromium verification.');
     const { chromium } = await import('playwright');
     const executablePath = process.env.BODAM_DEMO_CHROMIUM_PATH;
     const browser = await chromium.launch(executablePath ? { executablePath } : {});

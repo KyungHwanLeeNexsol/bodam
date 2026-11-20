@@ -15,22 +15,28 @@ import { previewFrameHtml, TEST_NOTICE } from '../../tests/e2e/harness/notice';
 import { buildHarness, HARNESS_CLINIC_SLUG } from '../../tests/e2e/harness/world';
 import { TEST_TODAY } from '../../tests/fixtures/server/api-composition.fixture';
 
-// Local sample-data demonstration. No upstream, test mutation routes, or operating services.
+// Sample-data demonstration. No upstream, test mutation routes, or operating services.
+// Public hosting requires both Render's runtime marker and the explicit demo flag.
+const hosted = process.env.BODAM_DEMO_RENDER === '1';
+if (hosted && process.env.RENDER !== 'true') throw new Error('Hosted demonstration is only allowed on Render.');
 const token = process.env.BODAM_DEMO_ADMIN_TOKEN;
-if (token === undefined || !/^[A-Za-z0-9_-]{43}$/.test(token) || new Set(token).size < 12) {
-  throw new Error('Set BODAM_DEMO_ADMIN_TOKEN to a fresh 32-byte base64url token. See demo/admin-kiosk/README.md.');
+const tokenPattern = hosted ? /^[A-Za-z0-9+/]{43}=$/ : /^[A-Za-z0-9_-]{43}$/;
+if (token === undefined || !tokenPattern.test(token) || new Set(token).size < 12) {
+  throw new Error('Set BODAM_DEMO_ADMIN_TOKEN to a fresh 32-byte token. See demo/admin-kiosk/README.md.');
 }
-const portText = process.env.BODAM_DEMO_PORT ?? '3419';
+const portText = hosted ? (process.env.PORT ?? '10000') : (process.env.BODAM_DEMO_PORT ?? '3419');
 const port = Number(portText);
 if (!/^[0-9]{1,5}$/.test(portText) || port < 1024 || port > 65535) throw new Error('Invalid BODAM_DEMO_PORT');
-const host = '127.0.0.1';
-const origin = `http://${host}:${port}`;
+const host = hosted ? '0.0.0.0' : '127.0.0.1';
+const origin = hosted ? (process.env.RENDER_EXTERNAL_URL ?? '') : `http://${host}:${port}`;
+if (hosted && !/^https:\/\/[a-z0-9][a-z0-9-]*\.onrender\.com$/.test(origin)) throw new Error('Hosted demo requires its Render HTTPS URL.');
+const approvedHost = new URL(origin).host;
 const clinic = 'TEST_FIXTURE_CLINIC_1';
 const kioskPath = `/kiosk/${HARNESS_CLINIC_SLUG}`;
 const adminPath = `/admin/${clinic}/treatments`;
 const historyPath = `/admin/${clinic}/change-history`;
 const loginPath = '/demo/login';
-const gate = createGate({ tokens: [token], ttlMs: 60 * 60_000, secure: false, now: Date.now });
+const gate = createGate({ tokens: [token], ttlMs: 60 * 60_000, secure: hosted, now: Date.now });
 
 const { world } = buildHarness();
 const api = createBetaServices({ repo: world.repo, log: silentLog, today: () => TEST_TODAY });
@@ -47,6 +53,36 @@ const admin = createAdminServices({
   newTreatmentOrigin: 'TEST_FIXTURE',
 });
 
+// Restartable hosted baseline: publish one price edit through the same draft,
+// preview, and publish services before accepting traffic. The seed identity is
+// private to this startup block, never a header, account, or HTTP endpoint.
+if (hosted) {
+  const seedAdmin: typeof admin = { ...admin, authenticator: { async authenticate() {
+    return { userId: 'demo-seed', memberships: [{ clinicId: clinic, role: 'HA' }] };
+  } } };
+  const read = await handleCatalog(api, HARNESS_CLINIC_SLUG);
+  const { treatments } = (await read.json()) as { treatments?: { treatmentId: string; patientAmount: number }[] };
+  const first = treatments?.[0];
+  if (!read.ok || first === undefined || first.patientAmount !== 10_000) throw new Error('Demo seed catalog is not the expected fixture');
+  async function seed(method: 'PUT' | 'POST', action: string, body: unknown): Promise<Response> {
+    const path = ['clinics', clinic, 'catalog', action];
+    const result = await handleAdmin(seedAdmin, new Request(`${origin}/api/admin/${path.join('/')}`, {
+      method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }), path);
+    if (!result.ok) throw new Error(`Demo seed ${action} failed with status ${result.status}`);
+    return result;
+  }
+  await seed('PUT', 'draft', { priceEdits: [{ treatmentId: first.treatmentId, patientAmount: 12_000 }] });
+  const preview = await seed('POST', 'preview', {
+    generation: 'GEN4_C4', insurerType: 'NON_LIFE', cause: 'UNKNOWN', treatmentIds: [first.treatmentId],
+  });
+  const result = (await preview.json()) as { publishConfirmation?: string; after?: { result?: { amounts?: { hospitalPayment?: number } } } };
+  if (typeof result.publishConfirmation !== 'string' || result.after?.result?.amounts?.hospitalPayment !== 17_000) {
+    throw new Error('Demo seed did not produce the expected preview');
+  }
+  await seed('POST', 'publish', { publishConfirmation: result.publishConfirmation });
+}
+
 Object.assign(process.env, { NODE_ENV: 'production' });
 const { default: next } = await import('next');
 const app = next({ dev: false, dir: fileURLToPath(new URL('../../', import.meta.url)), hostname: host, port });
@@ -56,7 +92,7 @@ const nextHandler = app.getRequestHandler();
 const publicApi = /^\/api\/clinics\/test-fixture-clinic-1\/(catalog|insurance\/options|estimate)$/;
 const catalogAdmin = /^\/api\/admin\/clinics\/TEST_FIXTURE_CLINIC_1\/(treatments|catalog\/(draft|preview|publish))$/;
 const staticAsset = /^\/_next\/static\/[A-Za-z0-9_./%~-]+$/;
-const accessHeaders = { 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'x-frame-options': 'SAMEORIGIN' };
+const accessHeaders = { 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'x-frame-options': 'SAMEORIGIN', 'referrer-policy': 'same-origin' };
 const allowedAdmin = new Map<string, readonly string[]>([
   ['treatments', ['GET']], ['catalog/draft', ['PUT', 'DELETE']], ['catalog/preview', ['POST']], ['catalog/publish', ['POST']], ['audit-log', ['GET']],
 ]);
@@ -75,7 +111,7 @@ async function send(res: ServerResponse, result: Response): Promise<void> {
 }
 
 function html(res: ServerResponse, content: string): void {
-  reply(res, 200, content, { 'content-type': 'text/html; charset=utf-8' });
+  reply(res, 200, content, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'none'" });
 }
 
 function menu(body: string): string {
@@ -104,32 +140,34 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer<
 }
 
 async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (req.headers.host !== `${host}:${port}`) return json(res, 403, 'HOST_NOT_ALLOWED');
   const raw = req.url ?? '';
+  const method = req.method ?? 'GET';
+  // Only the fixed probe path can answer a health request with a different Host.
+  if (raw === '/demo/health' && method === 'GET') return reply(res, 200, 'ok');
+  if (req.headers.host !== approvedHost) return json(res, 403, 'HOST_NOT_ALLOWED');
   if (!raw.startsWith('/') || raw.startsWith('//') || raw.split('?')[0]?.includes('\\')) return json(res, 400, 'INVALID_PATH');
   const url = new URL(raw, origin);
   const path = url.pathname;
-  const method = req.method ?? 'GET';
   if (method !== 'GET' && method !== 'HEAD' && req.headers.origin !== origin) return json(res, 403, 'ORIGIN_NOT_ALLOWED');
 
-  if (path === '/demo/health' && method === 'GET') return reply(res, 200, 'ok');
-  if (path === '/' && method === 'GET') {
+  if (hosted && path === '/' && method === 'GET') return redirect(res, kioskPath);
+  if ((path === '/' || path === '/demo') && method === 'GET') {
     const signedIn = gate.check(req.headers.cookie) !== null;
     const action = signedIn ? adminPath : loginPath;
     const logout = signedIn ? '<form method="post" action="/demo/logout"><button>시험 관리자 로그아웃</button></form>' : '';
     return html(res, menu(`<ul><li><a href="${kioskPath}">시험 환자 키오스크 열기</a></li><li><a href="${action}">시험 관리자 화면 열기</a></li></ul>${logout}`));
   }
   if (path === loginPath) {
-    if (method === 'GET') return html(res, menu(`<form method="post" action="${loginPath}"><label>시험 관리자 코드 <input type="password" name="code" required autocomplete="off"></label><button type="submit">관리자 로그인</button></form><p><a href="/">검증 메뉴로</a></p>`));
+    if (method === 'GET') return html(res, menu(`<form method="post" action="${loginPath}"><label>시험 관리자 코드 <input type="password" name="code" required autocomplete="off"></label><button type="submit">관리자 로그인</button></form><p><a href="/demo">검증 메뉴로</a></p>`));
     if (method !== 'POST') return json(res, 405, 'METHOD_NOT_ALLOWED');
     if (!req.headers['content-type']?.toLowerCase().startsWith('application/x-www-form-urlencoded')) return json(res, 415, 'UNSUPPORTED_MEDIA_TYPE');
     const code = new URLSearchParams((await readBody(req, 2048)).toString('utf8')).get('code');
-    if (code === null || code.length !== 43) return json(res, 400, 'INVALID_REQUEST');
+    if (code === null || !tokenPattern.test(code)) return json(res, 400, 'INVALID_REQUEST');
     const exchange = gate.exchange(code);
     if (!exchange.ok) return json(res, exchange.reason === 'THROTTLED' ? 429 : 401, 'LOGIN_REJECTED');
     return redirect(res, adminPath, exchange.setCookie);
   }
-  if (path === '/demo/logout' && method === 'POST') return redirect(res, '/', gate.leave(req.headers.cookie));
+  if (path === '/demo/logout' && method === 'POST') return redirect(res, '/demo', gate.leave(req.headers.cookie));
 
   const adminMatch = catalogAdmin.exec(path);
   if (adminMatch !== null || path === '/api/admin/audit-log') {
@@ -153,6 +191,7 @@ async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<void
     if (action === 'catalog' && method === 'GET') return send(res, await handleCatalog(api, HARNESS_CLINIC_SLUG));
     if (action === 'insurance/options' && method === 'GET') return send(res, await handleOptions(api, HARNESS_CLINIC_SLUG));
     if (action === 'estimate' && method === 'POST') {
+      if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') return json(res, 415, 'UNSUPPORTED_MEDIA_TYPE');
       const bytes = await readBody(req, 65_536);
       return send(res, await handleEstimate(api, HARNESS_CLINIC_SLUG, async () => JSON.parse(bytes.toString('utf8')) as unknown));
     }
