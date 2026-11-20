@@ -4,6 +4,7 @@ import { Button } from '../../../src/app/kiosk/components/Button';
 import { Modal, trapTarget } from '../../../src/app/kiosk/overlays/Modal';
 import { ResetConfirm } from '../../../src/app/kiosk/overlays/ResetConfirm';
 import { K00Start } from '../../../src/app/kiosk/screens/K00Start';
+import { renderK00StartLayout } from '../../../src/app/kiosk/screens/K00StartLayout';
 import type { KioskState } from '../../../src/app/kiosk/state/session-store';
 import { initialState, stateAt } from '../../fixtures/kiosk/state.fixture';
 
@@ -53,6 +54,20 @@ describe('K00Start', () => {
     expect(all.map((entry) => entry.label)).toEqual(['시작하기']);
     all[0]?.click();
     expect(mocks.send.mock.calls).toEqual([[{ type: 'START' }]]);
+  });
+
+  it('치료 목록이 없으면 시작 버튼이 비활성이고 안내 문구와 연결된다', () => {
+    const onStart = vi.fn();
+    const reason = '치료 목록이 아직 없습니다.';
+    const tree = renderK00StartLayout({ serviceName: '보담', hospitalName: '성정원통사의원', stack: false, onStart, unavailableReason: reason });
+    const [start] = findAll(tree, (element) => element.type === Button);
+    expect(start).toBeDefined();
+    const props = (start as unknown as ReactElement<Parameters<typeof Button>[0]>).props;
+    const rendered = Button(props);
+    expect(rendered.props['aria-disabled']).toBe(true);
+    expect(rendered.props.onClick).toBeUndefined();
+    const [message] = findAll(tree, (element) => (element.props as { id?: string }).id === rendered.props['aria-describedby']);
+    expect(textOf(message)).toBe(reason);
   });
 });
 

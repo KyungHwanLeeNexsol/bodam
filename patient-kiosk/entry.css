@@ -1,0 +1,30 @@
+.patient-entry-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--kiosk-sp-3);
+}
+
+.patient-entry-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 72px;
+  padding: 0 var(--kiosk-sp-4);
+  color: var(--kiosk-accent-dark);
+  font-size: var(--kiosk-fs-label);
+  text-underline-offset: 0.2em;
+}
+
+@media (max-width: 640px) {
+  [data-patient-entry] .kiosk-header {
+    flex-wrap: wrap;
+    padding-inline: 16px;
+  }
+
+  [data-patient-entry] .kiosk-header__right { align-items: flex-start; }
+
+  [data-patient-entry] .kiosk-k00__hero,
+  [data-patient-entry] .kiosk-k00__guide,
+  [data-patient-entry] .kiosk-k00__flow,
+  [data-patient-entry] .kiosk-k00__actions { padding-inline: 16px; }
+}

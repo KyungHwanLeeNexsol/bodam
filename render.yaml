@@ -3,9 +3,12 @@ services:
     name: bodam-seongjeongwon-patient-kiosk
     runtime: static
     branch: deploy/seongjeongwon-patient-kiosk
-    buildCommand: test -s patient-kiosk/public/index.html && test -s patient-kiosk/public/policy.html && test -s patient-kiosk/public/claim.html && test -s patient-kiosk/public/kiosk.css
-    staticPublishPath: ./patient-kiosk/public
+    buildCommand: npm ci --include=dev && npm run build:patient-kiosk
+    staticPublishPath: ./dist-ssr/patient-kiosk
     autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
     headers:
       - path: /*
         name: X-Robots-Tag
@@ -15,4 +18,4 @@ services:
         value: nosniff
       - path: /*
         name: Content-Security-Policy
-        value: "default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        value: "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
