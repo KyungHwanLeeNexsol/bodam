@@ -73,6 +73,9 @@ try {
   if (hosted) {
     assert.equal((await get('/')).headers.get('location'), '/kiosk/test-fixture-clinic-1');
     assert.equal((await get('/demo', { host: 'invalid.example' })).status, 403);
+    const anonymous = await get('/demo/present', { 'x-bodam-presenter-view': '1' });
+    assert.equal(anonymous.status, 303);
+    assert.equal(anonymous.headers.get('location'), '/demo/login?next=present');
   }
   assert.equal((await get(adm + '/treatments')).status, 401);
   assert.equal((await get(`/admin/${clinic}/treatments`)).headers.get('location'), '/demo/login');
@@ -94,6 +97,23 @@ try {
   const adminDocument = await get(login.headers.get('location'), { cookie, 'sec-fetch-dest': 'iframe' });
   assert.equal(adminDocument.status, 200);
   assert.match(await adminDocument.text(), /\/_next\/static\//);
+
+  if (hosted) {
+    const loginForPresentation = await request('/demo/login?next=present', { method: 'POST', headers: { host, origin, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code }) });
+    assert.equal(loginForPresentation.status, 303);
+    assert.equal(loginForPresentation.headers.get('location'), '/demo/present');
+    const presenterCookie = loginForPresentation.headers.get('set-cookie').split(';', 1)[0];
+    const privateView = await get('/demo/present', { cookie: presenterCookie });
+    assert.equal(privateView.status, 200);
+    assert.match(privateView.headers.get('cache-control'), /no-store/);
+    const decoded = (page) => page.replaceAll('\\"', '"');
+    assert.match(decoded(await privateView.text()), /"presenterView":true/);
+    const publicIframe = await get('/kiosk/test-fixture-clinic-1', { 'sec-fetch-dest': 'iframe', 'x-bodam-presenter-view': '1', cookie: presenterCookie });
+    assert.equal(publicIframe.status, 200);
+    assert.match(decoded(await publicIframe.text()), /"presenterView":false/);
+    await write('/demo/logout', 'POST', {}, { headers: { cookie: presenterCookie } });
+    assert.equal((await get('/demo/present', { cookie: presenterCookie })).status, 303);
+  }
 
   const before = await catalog();
   if (hosted) {

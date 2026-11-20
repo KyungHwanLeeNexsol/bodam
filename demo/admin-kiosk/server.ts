@@ -36,6 +36,9 @@ const kioskPath = `/kiosk/${HARNESS_CLINIC_SLUG}`;
 const adminPath = `/admin/${clinic}/treatments`;
 const historyPath = `/admin/${clinic}/change-history`;
 const loginPath = '/demo/login';
+const presenterPath = '/demo/present';
+const presenterLogin = `${loginPath}?next=present`;
+const presenterHeader = 'x-bodam-presenter-view';
 const gate = createGate({ tokens: [token], ttlMs: 60 * 60_000, secure: hosted, now: Date.now });
 
 const { world } = buildHarness(hosted ? {
@@ -158,6 +161,8 @@ async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<void
   if (!raw.startsWith('/') || raw.startsWith('//') || raw.split('?')[0]?.includes('\\')) return json(res, 400, 'INVALID_PATH');
   const url = new URL(raw, origin);
   const path = url.pathname;
+  // This marker is set only below, after checking the presenter session.
+  delete req.headers[presenterHeader];
   if (method !== 'GET' && method !== 'HEAD' && req.headers.origin !== origin) return json(res, 403, 'ORIGIN_NOT_ALLOWED');
 
   if (hosted && path === '/' && method === 'GET') return redirect(res, kioskPath);
@@ -165,19 +170,33 @@ async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<void
     const signedIn = gate.check(req.headers.cookie) !== null;
     const action = signedIn ? adminPath : loginPath;
     const logout = signedIn ? '<form method="post" action="/demo/logout"><button>시험 관리자 로그아웃</button></form>' : '';
-    return html(res, menu(`<ul><li><a href="${kioskPath}">시험 환자 키오스크 열기</a></li><li><a href="${action}">시험 관리자 화면 열기</a></li></ul>${logout}`));
+    const presenterLink = hosted ? `<li><a href="${presenterPath}">발표 화면 열기</a></li>` : '';
+    return html(res, menu(`<ul><li><a href="${kioskPath}">시험 환자 키오스크 열기</a></li><li><a href="${action}">시험 관리자 화면 열기</a></li>${presenterLink}</ul>${logout}`));
   }
   if (path === loginPath) {
-    if (method === 'GET') return html(res, menu(`<form method="post" action="${loginPath}"><label>시험 관리자 코드 <input type="password" name="code" required autocomplete="off"></label><button type="submit">관리자 로그인</button></form><p><a href="/demo">검증 메뉴로</a></p>`));
+    const presenting = hosted && url.searchParams.get('next') === 'present';
+    const loginAction = presenting ? presenterLogin : loginPath;
+    if (method === 'GET') return html(res, menu(`<form method="post" action="${loginAction}"><label>시험 관리자 코드 <input type="password" name="code" required autocomplete="off"></label><button type="submit">${presenting ? '발표 화면 열기' : '관리자 로그인'}</button></form><p><a href="/demo">검증 메뉴로</a></p>`));
     if (method !== 'POST') return json(res, 405, 'METHOD_NOT_ALLOWED');
     if (!req.headers['content-type']?.toLowerCase().startsWith('application/x-www-form-urlencoded')) return json(res, 415, 'UNSUPPORTED_MEDIA_TYPE');
     const code = new URLSearchParams((await readBody(req, 2048)).toString('utf8')).get('code');
     if (code === null || !tokenPattern.test(code)) return json(res, 400, 'INVALID_REQUEST');
     const exchange = gate.exchange(code);
     if (!exchange.ok) return json(res, exchange.reason === 'THROTTLED' ? 429 : 401, 'LOGIN_REJECTED');
-    return redirect(res, adminPath, exchange.setCookie);
+    return redirect(res, presenting ? presenterPath : adminPath, exchange.setCookie);
   }
   if (path === '/demo/logout' && method === 'POST') return redirect(res, '/demo', gate.leave(req.headers.cookie));
+
+  if (hosted && path === presenterPath) {
+    if (method !== 'GET') return json(res, 405, 'METHOD_NOT_ALLOWED');
+    if (gate.check(req.headers.cookie) === null) return redirect(res, presenterLogin);
+    for (const [key, value] of Object.entries(accessHeaders)) res.setHeader(key, value);
+    res.setHeader('vary', 'Cookie');
+    req.url = kioskPath;
+    stripInternalHeaders(req);
+    req.headers[presenterHeader] = '1';
+    return nextHandler(req, res);
+  }
 
   const adminMatch = catalogAdmin.exec(path);
   if (adminMatch !== null || path === '/api/admin/audit-log') {

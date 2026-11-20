@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import { KioskApp } from '../KioskApp';
 
 // 키오스크 화면의 유일한 경로: /kiosk/{clinicSlug} (SPEC-REIMBURSEMENT-001 M6, BRIEF D1, AC-016a·AC-016d·AC-021g).
@@ -9,5 +10,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function KioskPage({ params }: { params: Promise<{ clinicSlug: string }> }) {
   const { clinicSlug } = await params;
-  return <KioskApp key={clinicSlug} clinicSlug={clinicSlug} />;
+  // Set by the dedicated demo server after a session check, stripped from client requests.
+  const presenterView = process.env.NEXT_PUBLIC_BODAM_DEMO_PRESENTATION === '1' && (await headers()).get('x-bodam-presenter-view') === '1';
+  return <KioskApp key={clinicSlug} clinicSlug={clinicSlug} presenterView={presenterView} />;
 }
