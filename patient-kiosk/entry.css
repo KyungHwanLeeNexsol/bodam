@@ -1,18 +1,43 @@
-.patient-entry-links {
+.patient-guide-screen {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--kiosk-sp-3);
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-6);
+  padding: clamp(24px, 6vw, 80px);
+  overflow-y: auto;
+}
+
+.patient-guide-screen h1 { font-size: var(--kiosk-fs-title); }
+
+.patient-entry-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  width: min(100%, 1050px);
+  gap: var(--kiosk-sp-4);
 }
 
 .patient-entry-links a {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--kiosk-sp-2);
   min-height: 72px;
-  padding: 0 var(--kiosk-sp-4);
+  padding: var(--kiosk-sp-6);
+  border: 2px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
   color: var(--kiosk-accent-dark);
+  background: var(--kiosk-surface);
+  text-decoration: none;
+}
+
+.patient-entry-links a:hover { background: var(--kiosk-accent-soft); }
+.patient-entry-links strong { font-size: var(--kiosk-fs-card); }
+.patient-entry-links span,
+.patient-guide-status {
+  color: var(--kiosk-text-body);
   font-size: var(--kiosk-fs-label);
-  text-underline-offset: 0.2em;
 }
 
 @media (max-width: 640px) {
