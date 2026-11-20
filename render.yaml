@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: bodam-seongjeongwon-patient-kiosk
+    runtime: static
+    branch: deploy/seongjeongwon-patient-kiosk
+    buildCommand: test -s patient-kiosk/public/index.html && test -s patient-kiosk/public/policy.html && test -s patient-kiosk/public/claim.html && test -s patient-kiosk/public/kiosk.css
+    staticPublishPath: ./patient-kiosk/public
+    autoDeployTrigger: "off"
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"

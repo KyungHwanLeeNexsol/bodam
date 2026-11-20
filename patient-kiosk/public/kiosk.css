@@ -1,0 +1,117 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  color: #142337;
+  background: #f2f6fa;
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  display: grid;
+  align-items: center;
+  min-block-size: 100vh;
+  min-block-size: 100svh;
+  margin: 0;
+  padding: clamp(1rem, 5vw, 4rem);
+}
+
+main {
+  inline-size: min(100%, 56rem);
+  margin-inline: auto;
+  padding: clamp(1.5rem, 5vw, 4rem);
+  border: 1px solid #c8d6e5;
+  border-radius: 1.5rem;
+  background: #fff;
+}
+
+.brand {
+  margin: 0 0 clamp(1.5rem, 4vw, 2.5rem);
+  color: #234f8c;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 750;
+}
+
+.clinic {
+  margin: 0;
+  color: #3d5573;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+}
+
+h1 {
+  margin: 0.25rem 0 1rem;
+  font-size: clamp(2rem, 5.5vw, 4rem);
+  line-height: 1.18;
+}
+
+.choices,
+.actions {
+  display: grid;
+  gap: clamp(0.75rem, 2vw, 1.25rem);
+}
+
+.choice,
+.actions a {
+  display: block;
+  padding: clamp(0.875rem, 2.5vw, 1.5rem);
+  border: 2px solid #b9d0eb;
+  border-radius: 0.75rem;
+  background: #e8f1fd;
+  color: #173d6d;
+  font-size: clamp(1.125rem, 3.4vw, 1.75rem);
+  text-decoration: none;
+}
+
+.choice strong,
+.choice span {
+  display: block;
+}
+
+.choice span,
+.brand span,
+.note {
+  font-size: clamp(1rem, 2.5vw, 1.375rem);
+}
+
+.choice span {
+  margin-block-start: 0.25rem;
+}
+
+.brand span {
+  margin-inline-start: 0.5rem;
+  color: #3d5573;
+}
+
+.choice:hover,
+.actions a:hover {
+  background: #d9e9fd;
+}
+
+a:focus-visible {
+  outline: 3px solid #173d6d;
+  outline-offset: 3px;
+}
+
+.steps {
+  margin: 0;
+  padding-inline-start: 1.75rem;
+  font-size: clamp(1.125rem, 3.4vw, 1.75rem);
+}
+
+.steps li + li {
+  margin-block-start: 0.75rem;
+}
+
+.domain { white-space: normal; }
+
+.note,
+.actions {
+  margin-block: clamp(1rem, 3vw, 1.75rem) 0;
+}
+
+.note {
+  color: #3d5573;
+}
