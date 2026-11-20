@@ -99,6 +99,12 @@ try {
   if (hosted) {
     assert.equal(before.clinic.displayName, '보담의원');
     assert.deepEqual(before.treatments.map(({ displayName }) => displayName), ['물리치료', '근골격계 초음파 검사']);
+    for (const { description, priceCondition } of before.treatments) {
+      assert.ok(description);
+      assert.doesNotMatch(description, /TEST_FIXTURE/);
+      assert.match(priceCondition, /^외래 · (치료|검사) 1회 기준 · 기준일 /);
+      assert.doesNotMatch(priceCondition, /TEST_FIXTURE/);
+    }
   }
   const id = before.treatments[0].treatmentId;
   const initial = hosted ? [17000, 16000, 1000] : [15000, 14000, 1000];

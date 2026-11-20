@@ -38,7 +38,10 @@ export interface HarnessOptions {
   /** 묶음 시연 세계(치료 C 추가 + 병원 2 도 기준 묶음 사용). 생략하면 기본 세계다. */
   bundleDemo?: boolean;
   /** Display aliases for the dedicated demo. Rules, source and ids stay synthetic. */
-  treatmentNames?: { readonly first: string; readonly second: string };
+  treatmentPresentation?: {
+    readonly first: { readonly name: string; readonly description: string };
+    readonly second: { readonly name: string; readonly description: string };
+  };
 }
 
 export interface Harness {
@@ -55,11 +58,26 @@ export interface Harness {
 /** 두 병원의 세계 하나와 그 위의 공개 서비스·관리자 서비스. 같은 저장소·시계·식별자 생성기를 쓴다. */
 export function buildHarness(options: HarnessOptions = {}): Harness {
   const [first, second] = validCatalogRequest().treatmentVersions;
-  const names = options.treatmentNames ?? HARNESS_TREATMENT_NAMES;
+  const presentation = options.treatmentPresentation;
+  const [initialA, initialB] = [first!, second!];
   const { world, bundle } = buildWorld({
     treatments: [
-      { ...first!, displayName: names.first },
-      { ...second!, displayName: names.second },
+      {
+        ...initialA,
+        displayName: presentation?.first.name ?? HARNESS_TREATMENT_NAMES.first,
+        ...(presentation === undefined ? {} : {
+          description: presentation.first.description,
+          amountCondition: { ...initialA.amountCondition, patientType: '외래', assumption: '치료 1회 기준' },
+        }),
+      },
+      {
+        ...initialB,
+        displayName: presentation?.second.name ?? HARNESS_TREATMENT_NAMES.second,
+        ...(presentation === undefined ? {} : {
+          description: presentation.second.description,
+          amountCondition: { ...initialB.amountCondition, patientType: '외래', assumption: '검사 1회 기준' },
+        }),
+      },
     ],
   });
   // 표시 순서를 1, 2 로 분명히 한다(공유 시험 자료는 둘 다 1 이라 id 순으로 갈린다).

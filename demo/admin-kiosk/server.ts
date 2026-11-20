@@ -38,7 +38,12 @@ const historyPath = `/admin/${clinic}/change-history`;
 const loginPath = '/demo/login';
 const gate = createGate({ tokens: [token], ttlMs: 60 * 60_000, secure: hosted, now: Date.now });
 
-const { world } = buildHarness(hosted ? { treatmentNames: { first: '물리치료', second: '근골격계 초음파 검사' } } : {});
+const { world } = buildHarness(hosted ? {
+  treatmentPresentation: {
+    first: { name: '물리치료', description: '기본 물리치료' },
+    second: { name: '근골격계 초음파 검사', description: '관절 및 주변 조직을 확인하는 검사' },
+  },
+} : {});
 if (hosted) {
   const demoClinic = world.repo.getClinic(clinic);
   if (demoClinic === null) throw new Error('Demo clinic is missing');
