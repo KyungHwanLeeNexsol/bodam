@@ -34,11 +34,90 @@
 
 .patient-entry-links a:hover { background: var(--kiosk-accent-soft); }
 .patient-entry-links strong { font-size: var(--kiosk-fs-card); }
-.patient-entry-links span,
-.patient-guide-status {
+.patient-entry-links span {
   color: var(--kiosk-text-body);
   font-size: var(--kiosk-fs-label);
 }
+
+.patient-estimate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-5);
+  width: min(100%, 1000px);
+  font-size: var(--kiosk-fs-label);
+  color: var(--kiosk-text-body);
+}
+
+.patient-estimate-fields {
+  display: grid;
+  width: min(100%, 620px);
+  gap: var(--kiosk-sp-3);
+}
+
+.patient-estimate-fields label,
+.patient-estimate-checks legend { font-weight: 700; }
+
+.patient-estimate-fields :is(select, input) {
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 2px solid var(--kiosk-border);
+  border-radius: 12px;
+  background: var(--kiosk-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.patient-estimate-checks {
+  display: grid;
+  min-width: 0;
+  width: 100%;
+  gap: var(--kiosk-sp-2);
+  padding: var(--kiosk-sp-3);
+  border: 2px solid var(--kiosk-border);
+  border-radius: 12px;
+}
+
+.patient-estimate-checks label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--kiosk-sp-3);
+  padding: 8px;
+}
+
+.patient-estimate-checks input {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-top: 3px;
+  accent-color: var(--kiosk-accent-dark);
+}
+
+.patient-estimate-message { color: var(--kiosk-accent-dark); font-weight: 700; }
+
+.patient-estimate-result {
+  width: 100%;
+  padding: var(--kiosk-sp-4);
+  border-radius: 12px;
+  background: var(--kiosk-accent-soft);
+}
+
+.patient-estimate-result h2 { font-size: var(--kiosk-fs-card); }
+.patient-estimate-result dl { margin-block: var(--kiosk-sp-3); }
+.patient-estimate-result dl > div,
+.patient-estimate-sources,
+.patient-estimate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px var(--kiosk-sp-4);
+}
+
+.patient-estimate-result dd { margin: 0; font-weight: 700; }
+.patient-estimate-sources { justify-content: flex-start; }
+.patient-estimate-sources a { color: var(--kiosk-accent-dark); text-decoration: underline; }
 
 @media (max-width: 640px) {
   [data-patient-entry] .kiosk-header {
