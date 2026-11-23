@@ -92,3 +92,45 @@ test('turning a tablet sideways keeps the patient selection', async ({ page }) =
   await expect(page.getByRole('button', { name: '다음', exact: true })).toBeEnabled();
   await expectNoHorizontalOverflow(page);
 });
+
+async function selectPatientTreatment(page: Page, generation: string, cause = /아파서 왔어요/) {
+  await page.goto('/');
+  await page.getByRole('button', { name: '시작하기', exact: true }).click();
+  await page.getByRole('radio', { name: generation, exact: true }).check();
+  const next = page.getByRole('button', { name: '다음', exact: true });
+  await next.click();
+  await page.getByRole('radio', { name: '손해보험사', exact: true }).check();
+  await next.click();
+  await page.getByRole('radio', { name: cause }).check();
+  await next.click();
+  await page.getByRole('checkbox', { name: '체외충격파치료', exact: true }).check();
+}
+
+test('calculates the exact C1 product only after confirming the entire outpatient expense', async ({ page }) => {
+  await selectPatientTreatment(page, '2세대(C1)');
+  const conditions = page.getByRole('group', { name: '실손보험 확인 조건' });
+  await conditions.getByRole('checkbox', { name: /Super V\(s1004\)/ }).check();
+  await conditions.getByRole('checkbox', { name: /SZ084/ }).check();
+  await page.getByRole('button', { name: '예상 부담액 확인', exact: true }).click();
+  await expect(page.locator('.kiosk-amounts').getByText('확인 필요', { exact: true })).toHaveCount(2);
+  await page.getByRole('button', { name: '치료 다시 선택', exact: true }).click();
+  const shockwave = page.getByRole('checkbox', { name: '체외충격파치료', exact: true });
+  if (!(await shockwave.isChecked())) await shockwave.check();
+  await conditions.getByRole('checkbox', { name: /Super V\(s1004\)/ }).check();
+  await conditions.getByRole('checkbox', { name: /SZ084/ }).check();
+  await conditions.getByRole('checkbox', { name: /이번 외래에서 보상 대상 비용은 이 치료비뿐이에요.*90,000원/ }).check();
+  await page.getByRole('button', { name: '예상 부담액 확인', exact: true }).click();
+  const amounts = page.locator('.kiosk-amounts');
+  await expect(amounts.getByText('90,000원', { exact: true })).toBeVisible();
+  await expect(amounts.getByText('10,000원', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '계산 근거 보기', exact: true }).click();
+  await expect(page.getByRole('link', { name: /보험사 약관/ })).toHaveAttribute('href',
+    'https://www.samsungfire.com/publication/pdf/95903_0_20100401_file1.pdf');
+});
+
+test('does not turn a historical first-generation reference into a patient estimate', async ({ page }) => {
+  await selectPatientTreatment(page, '1세대(A·S)');
+  await expect(page.getByRole('group', { name: '실손보험 확인 조건' })).toHaveCount(0);
+  await page.getByRole('button', { name: '예상 부담액 확인', exact: true }).click();
+  await expect(page.locator('.kiosk-amounts').getByText('확인 필요', { exact: true })).toHaveCount(2);
+});

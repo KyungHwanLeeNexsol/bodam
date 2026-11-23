@@ -102,6 +102,7 @@ export interface EstimateResponseDto {
   /** PUBLIC_REFERENCE is created only by the clinic's standalone calculator, never by the public API. */
   readonly origin: Origin | 'PUBLIC_REFERENCE';
   readonly referenceHoldMessage?: string;
+  readonly referencePolicy?: { readonly id: string; readonly label: string };
   readonly result: EngineEstimateResult;
   readonly documents: DocumentsResult | null;
 }

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "kb-2017-04-msk",
+    "generation": "GEN3_C3",
+    "insurerType": "NON_LIFE",
+    "policy": "KB개인실손의료비보험(2017.04 공시본)",
+    "coverage": "비급여 도수치료·체외충격파치료·증식치료 특별약관",
+    "sourceUrl": "https://kbinsure.co.kr/CG802030003.ec?fileNm=20170401_15125_1.pdf",
+    "sourceLocation": "비급여 도수치료·체외충격파치료·증식치료 특별약관 제3조",
+    "fixedDeductibleWon": 20000,
+    "nonBenefitBasisPoints": 3000,
+    "annualLimitWon": 3500000,
+    "maxVisits": 50,
+    "scope": "TREATMENT"
+  },
+  {
+    "id": "kb-23-01-msk",
+    "generation": "GEN4_C4",
+    "insurerType": "NON_LIFE",
+    "policy": "KB손해보험 실손의료비보장보험(23.01)",
+    "coverage": "3대 비급여 특약 중 도수치료·체외충격파치료·증식치료",
+    "sourceUrl": "https://kbinsure.co.kr/CG802030003.ec?fileNm=23870_1_1.pdf",
+    "sourceLocation": "상해·질병 3대 비급여 특별약관, 77–78쪽",
+    "fixedDeductibleWon": 30000,
+    "nonBenefitBasisPoints": 3000,
+    "annualLimitWon": 3500000,
+    "maxVisits": 50,
+    "scope": "INITIAL_TEN"
+  },
+  {
+    "id": "samsung-1509-5-choice-2-outpatient",
+    "generation": "GEN2_5_C2",
+    "insurerType": "NON_LIFE",
+    "policy": "삼성화재 실손의료비보험(1509.5) 2종(선택형Ⅱ)",
+    "coverage": "상해·질병 외래 담보",
+    "sourceUrl": "https://www.samsungfire.com/publication/pdf/96058_0_21050901_file1.pdf",
+    "sourceLocation": "2종(선택형Ⅱ) 보통약관 제3조, 상해·질병 외래 및 표1",
+    "fixedDeductibleWon": 10000,
+    "nonBenefitBasisPoints": 2000,
+    "annualLimitWon": null,
+    "maxVisits": 180,
+    "scope": "VISIT"
+  },
+  {
+    "id": "samsung-super-v-s1004-outpatient",
+    "generation": "GEN2_C1",
+    "insurerType": "NON_LIFE",
+    "policy": "삼성화재 통합보험 Super V(s1004)",
+    "coverage": "갱신형 실손의료비 특별약관의 외래 담보",
+    "sourceUrl": "https://www.samsungfire.com/publication/pdf/95903_0_20100401_file1.pdf",
+    "sourceLocation": "4-1. 갱신형 실손의료비 특별약관, 제3조 및 표1",
+    "fixedDeductibleWon": 10000,
+    "nonBenefitBasisPoints": 0,
+    "annualLimitWon": null,
+    "maxVisits": 180,
+    "scope": "VISIT"
+  }
+]

@@ -5,7 +5,8 @@ import { createKioskController } from '../../src/app/kiosk/state/controller';
 import { buildResultView } from '../../src/app/kiosk/view/result-view';
 
 const checks: EstimateInput = {
-  treatmentId: 'shockwave', quotedPrice: '', matchingPolicy: true, matchingTreatment: true, availableCoverage: true,
+  policyId: 'kb-23-01-msk', treatmentId: 'shockwave', quotedPrice: '', matchingPolicy: true,
+  matchingTreatment: true, availableCoverage: true,
 };
 
 const body = {
@@ -62,6 +63,9 @@ describe('Seongjeongwon public design flow', () => {
   it.each([
     [{ generation: 'GEN3_C3' }, checks],
     [{ insurerType: 'LIFE' }, checks],
+    [{ cause: 'UNKNOWN' }, checks],
+    [{ generation: 'GEN1_AS' }, { ...checks, policyId: 'lig-wellbeing-2008-illness-30' }],
+    [{ generation: 'GEN2_C1' }, { ...checks, policyId: '' }],
     [{}, { ...checks, matchingTreatment: false }],
     [{}, { ...checks, matchingPolicy: false }],
     [{}, { ...checks, availableCoverage: false }],
@@ -69,6 +73,20 @@ describe('Seongjeongwon public design flow', () => {
     expect(referenceResponse({ ...body, ...diff }, form)?.result).toMatchObject({
       state: 'ON_HOLD',
       amounts: { hospitalPayment: 100_000, expectedInsurancePayout: null, expectedOutOfPocketAfterPayout: null },
+    });
+  });
+
+  it.each([
+    ['GEN2_C1', 'samsung-super-v-s1004-outpatient', 90_000, 10_000],
+    ['GEN2_5_C2', 'samsung-1509-5-choice-2-outpatient', 80_000, 20_000],
+    ['GEN3_C3', 'kb-2017-04-msk', 70_000, 30_000],
+    ['GEN4_C4', 'kb-23-01-msk', 70_000, 30_000],
+  ])('estimates %s only with its exact matching policy', (generation, policyId, payout, patient) => {
+    expect(referenceResponse({ ...body, generation }, { ...checks, policyId })).toMatchObject({
+      referencePolicy: { id: policyId },
+      result: { state: 'ESTIMATED', amounts: {
+        hospitalPayment: 100_000, expectedInsurancePayout: payout, expectedOutOfPocketAfterPayout: patient,
+      } },
     });
   });
 

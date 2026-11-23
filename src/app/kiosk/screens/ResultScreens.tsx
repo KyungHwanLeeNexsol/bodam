@@ -57,7 +57,7 @@ function ResultScreen({ kind }: { readonly kind: ResultKind }) {
 
   // 정상·보장 제외는 결과 문구 원칙 + 공통 안내, 보류는 개인 계약 조건 문장 하나(DD-07). 세 금액의 이름·보조 설명은 모든 결과 화면에서 같다(기획서 §4).
   const notice = kind === 'HOLD' ? [COPY.result.personalContract] : view.publicReference
-    ? ['KB손해보험 실손의료비보장보험(23.01)의 3대 비급여 특약과 화면에서 확인한 조건을 기준으로 계산했습니다.', COPY.result.personalContract]
+    ? [`적용 약관: ${state.derived.estimate?.response?.referencePolicy?.label ?? '화면에서 확인한 보험 조건'}.`, COPY.result.personalContract]
     : [COPY.result.principle, `${COPY.result.commonLead} ${COPY.result.personalContract}`];
 
   return (
