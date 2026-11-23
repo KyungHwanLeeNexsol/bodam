@@ -1,0 +1,337 @@
+/* Browser layout for the public site only; the dedicated kiosk keeps its original dimensions. */
+#patient-entry {
+  --web-frame-inset: clamp(0px, (100vw - 48rem) / 24, 24px);
+  min-block-size: 100%;
+  padding: var(--web-frame-inset);
+  background: #eef3fa;
+}
+#patient-entry .kiosk-root {
+  --web-gutter: clamp(14px, 3vw, 36px);
+  --web-gap: clamp(10px, 1.5vw, 18px);
+  --web-frame-radius: min(var(--web-frame-inset), 24px);
+  --web-heading: clamp(25px, 2.7vw, 38px);
+  --web-card-title: clamp(17px, 1.8vw, 23px);
+  --kiosk-touch-min: 48px;
+  --kiosk-h-btn: calc(49px * var(--kiosk-scale));
+  --kiosk-fs-caption: calc(0.875rem * var(--kiosk-scale));
+  --kiosk-fs-label: calc(0.9375rem * var(--kiosk-scale));
+  --kiosk-fs-body: calc(1rem * var(--kiosk-scale));
+  --kiosk-fs-card: calc(var(--web-card-title) * var(--kiosk-scale));
+  --kiosk-fs-title: calc(var(--web-heading) * var(--kiosk-scale));
+  --kiosk-r-card: 16px;
+  --kiosk-r-btn: 12px;
+  max-inline-size: 1200px;
+  block-size: auto;
+  margin-inline: auto;
+  overflow: visible;
+  border: 1px solid #dbe3ef;
+  border-radius: var(--web-frame-radius);
+  background: var(--kiosk-bg);
+  line-height: 1.5;
+}
+#patient-entry .kiosk-root:has(.kiosk-k00) {
+  min-block-size: calc(100vh - 2 * var(--web-frame-inset));
+  min-block-size: calc(100dvh - 2 * var(--web-frame-inset));
+}
+#patient-entry .kiosk-underlay { border-radius: inherit; }
+#patient-entry .kiosk-header {
+  gap: 12px;
+  padding: 12px var(--web-gutter);
+  border-radius: inherit;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+  border-bottom-width: 1px;
+}
+#patient-entry .kiosk-header__right { flex-flow: row wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; }
+#patient-entry .kiosk-wordmark { min-inline-size: 0; gap: 10px; }
+#patient-entry .kiosk-brand-mark { inline-size: 40px; block-size: 40px; border-radius: 12px; }
+#patient-entry .kiosk-brand-mark .kiosk-icon { inline-size: 25px; block-size: 25px; }
+#patient-entry .kiosk-wordmark__name { font-size: calc(1.55rem * var(--kiosk-scale)); }
+#patient-entry .kiosk-wordmark__desc,
+#patient-entry .kiosk-hospital__name { font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-hospital { gap: 5px; }
+#patient-entry .kiosk-hospital .kiosk-icon,
+#patient-entry .kiosk-toggle .kiosk-icon { inline-size: 19px; block-size: 19px; }
+#patient-entry .kiosk-toggle {
+  padding-inline: 12px;
+  min-block-size: var(--kiosk-touch-min);
+  border-width: 1px;
+  font-size: var(--kiosk-fs-caption);
+}
+#patient-entry .kiosk-toggle[aria-pressed='true'] { box-shadow: inset 0 0 0 1px var(--kiosk-accent); }
+
+#patient-entry .kiosk-button {
+  min-block-size: max(var(--kiosk-h-btn), var(--kiosk-touch-min));
+  min-inline-size: 0;
+  padding: 10px clamp(9px, 1.45vw, 18px);
+  gap: 6px;
+  font-size: var(--kiosk-fs-label);
+}
+#patient-entry .kiosk-button > .kiosk-icon { inline-size: 20px; block-size: 20px; }
+#patient-entry .kiosk-badge { padding: 3px 8px; font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-scroll-cue { display: none; }
+
+/* Home has a fixed reading order and reflows without horizontal scrolling. */
+#patient-entry .kiosk-k00__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-items: center;
+  align-content: center;
+  gap: clamp(18px, 3vw, 40px);
+  padding: clamp(22px, 5vw, 68px) var(--web-gutter);
+  overflow: visible;
+}
+#patient-entry .kiosk-k00__hero { margin: 0; padding: 0; gap: 10px; }
+#patient-entry .kiosk-brand-mark--hero { inline-size: 76px; block-size: 76px; border-radius: 22px; }
+#patient-entry .kiosk-brand-mark--hero .kiosk-icon { inline-size: 49px; block-size: 49px; }
+#patient-entry .kiosk-k00__wordmark { font-size: calc(clamp(3rem, 6vw, 4.25rem) * var(--kiosk-scale)); }
+#patient-entry .kiosk-k00__service { font-size: var(--kiosk-fs-card); }
+#patient-entry .kiosk-k00__divider { inline-size: 54px; block-size: 3px; }
+#patient-entry .kiosk-k00__hospital { font-size: var(--kiosk-fs-body); }
+#patient-entry .kiosk-k00__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--web-gap);
+  inline-size: min(100%, 552px);
+  max-inline-size: none;
+  padding: clamp(14px, 3vw, 28px);
+  border: 1px solid var(--kiosk-border);
+  border-radius: var(--kiosk-r-card);
+  background: var(--kiosk-surface);
+}
+#patient-entry .kiosk-k00__guide { padding: 0; font-size: var(--kiosk-fs-body); }
+#patient-entry .kiosk-k00__flow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 6px;
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+}
+#patient-entry .kiosk-k00__chip {
+  gap: 6px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  font-size: var(--kiosk-fs-caption);
+}
+#patient-entry .kiosk-k00__arrow { display: none; }
+#patient-entry .kiosk-k00__actions { gap: 8px; padding: 0; border: 0; }
+#patient-entry .kiosk-k00__start { font-size: var(--kiosk-fs-card); }
+#patient-entry .kiosk-k00__hint { font-size: var(--kiosk-fs-caption); }
+
+/* One page scrollbar. Choice lists and help grow naturally with their content. */
+#patient-entry .kiosk-steps { padding: 8px var(--web-gutter); border-bottom-width: 1px; gap: 8px; }
+#patient-entry .kiosk-steps__list { min-inline-size: 0; flex-wrap: wrap; gap: 4px; }
+#patient-entry .kiosk-steps__entry { gap: 4px; }
+#patient-entry .kiosk-steps__item { padding: 4px 7px; gap: 6px; font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-steps__num { inline-size: 26px; block-size: 26px; font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-steps__counter { font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-steps__connector { inline-size: 10px; block-size: 2px; }
+
+#patient-entry .kiosk-input .kiosk-input__body {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--web-gap);
+  padding: clamp(16px, 3vw, 30px) var(--web-gutter);
+  overflow: visible;
+}
+#patient-entry .kiosk-input__title { order: 1; gap: 5px; }
+#patient-entry .kiosk-input__notice { order: 2; }
+#patient-entry .kiosk-input__choices { order: 3; }
+#patient-entry .kiosk-input__aside { order: 4; }
+#patient-entry .kiosk-input__heading,
+#patient-entry .kiosk-result__title,
+#patient-entry .kiosk-sheet__title,
+#patient-entry .kiosk-status__title { font-size: var(--kiosk-fs-title); }
+#patient-entry .kiosk-input__subtitle,
+#patient-entry .kiosk-input__reason,
+#patient-entry .kiosk-result__condition-line,
+#patient-entry .kiosk-sheet__subtitle,
+#patient-entry .kiosk-status__body { font-size: var(--kiosk-fs-body); }
+#patient-entry .kiosk-input__aside,
+#patient-entry .kiosk-input .kiosk-input__choices,
+#patient-entry .kiosk-input .kiosk-input__list {
+  flex: none;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  gap: 9px;
+}
+#patient-entry .kiosk-input .kiosk-input__list { flex-direction: column; }
+#patient-entry .kiosk-input .kiosk-choice {
+  --kiosk-choice-pad-y: 11px;
+  --kiosk-choice-pad-x: clamp(10px, 1.8vw, 18px);
+  flex: 0 1 auto;
+  gap: 10px;
+  min-block-size: max(58px, var(--kiosk-touch-min));
+}
+#patient-entry .kiosk-input .kiosk-choice__name { font-size: var(--kiosk-fs-card); }
+#patient-entry .kiosk-input .kiosk-choice__desc { font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-choice__body,
+#patient-entry .kiosk-choice__top { gap: 4px 7px; }
+#patient-entry .kiosk-input .kiosk-choice__chip {
+  inline-size: clamp(40px, 6vw, 58px);
+  min-block-size: 38px;
+  border-radius: 9px;
+  font-size: var(--kiosk-fs-label);
+}
+#patient-entry .kiosk-input .kiosk-choice__ring,
+#patient-entry .kiosk-input .kiosk-choice__check,
+#patient-entry .kiosk-input .kiosk-choice__box { inline-size: 24px; block-size: 24px; border-width: 2px; }
+#patient-entry .kiosk-choice__box { border-radius: 7px; }
+#patient-entry :is(.kiosk-choice__check, .kiosk-choice__box) .kiosk-icon { inline-size: 17px; block-size: 17px; }
+#patient-entry .kiosk-choice__mark-label { font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-choice__price { font-size: var(--kiosk-fs-card); }
+#patient-entry .kiosk-choice__caption { font-size: var(--kiosk-fs-caption); }
+
+#patient-entry .kiosk-help,
+#patient-entry .kiosk-notice { padding: clamp(12px, 2vw, 20px); gap: 9px; }
+#patient-entry .kiosk-help__title .kiosk-icon,
+#patient-entry .kiosk-notice .kiosk-icon { inline-size: 23px; block-size: 23px; }
+#patient-entry .kiosk-help__heading { font-size: var(--kiosk-fs-card); }
+#patient-entry .kiosk-help__body,
+#patient-entry .kiosk-notice--result .kiosk-notice__text { font-size: var(--kiosk-fs-label); }
+#patient-entry .patient-checks { margin-block: 0; }
+#patient-entry .patient-checks label { align-items: flex-start; min-block-size: 44px; }
+#patient-entry .patient-quote { margin-block: 4px; padding: 6px 0; }
+
+/* Keep footers flexible; the single treatment total never competes for a button column. */
+#patient-entry :is(.kiosk-bottom-actions, .kiosk-result-actions, .kiosk-status__actions) {
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px var(--web-gutter);
+  border-end-start-radius: var(--web-frame-radius);
+  border-end-end-radius: var(--web-frame-radius);
+}
+#patient-entry .kiosk-bottom-actions,
+#patient-entry .kiosk-sheet .kiosk-bottom-actions--sheet {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+#patient-entry .kiosk-bottom-actions > .kiosk-button:is(.kiosk-button--secondary, .kiosk-button--primary),
+#patient-entry .kiosk-sheet .kiosk-bottom-actions--sheet > .kiosk-button {
+  flex: 0 1 auto;
+  inline-size: auto;
+  order: 0;
+}
+#patient-entry .kiosk-bottom-actions > .kiosk-button--primary { min-inline-size: min(155px, 100%); }
+#patient-entry .kiosk-summary--bar,
+#patient-entry .patient-pending-price { padding: 10px var(--web-gutter); gap: 5px; }
+#patient-entry .kiosk-summary__row { gap: 3px 10px; flex-wrap: wrap; }
+#patient-entry .kiosk-summary__count,
+#patient-entry .kiosk-summary__total-label,
+#patient-entry .kiosk-summary__breakdown { font-size: var(--kiosk-fs-label); }
+#patient-entry .kiosk-summary__total { font-size: var(--kiosk-fs-card); white-space: nowrap; }
+
+/* Results and sheets retain the same actions with cards that can fit real browser widths. */
+#patient-entry .kiosk-result-bar { padding: 8px var(--web-gutter); border-bottom-width: 1px; }
+#patient-entry .kiosk-result-bar__label { font-size: var(--kiosk-fs-label); }
+#patient-entry :is(.kiosk-result__body, .kiosk-sheet__body, .kiosk-status) {
+  overflow: visible;
+  gap: var(--web-gap);
+  padding: clamp(14px, 2.5vw, 30px) var(--web-gutter);
+}
+#patient-entry .kiosk-result__head { flex-direction: column; align-items: flex-start; gap: 5px; }
+#patient-entry .kiosk-result__condition-line { text-align: start; }
+#patient-entry .kiosk-conditions { gap: 6px; padding: 12px 14px; }
+#patient-entry .kiosk-conditions__row { gap: 6px 12px; }
+#patient-entry .kiosk-conditions dt { inline-size: auto; flex: 0 1 12rem; }
+#patient-entry .kiosk-conditions :is(dt, dd) { font-size: var(--kiosk-fs-label); }
+#patient-entry .kiosk-amounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+#patient-entry .kiosk-amounts__row { display: contents; }
+#patient-entry .kiosk-amount--hospital { grid-column: 1 / -1; }
+#patient-entry .kiosk-amount { gap: 7px; padding: clamp(12px, 2vw, 24px); border-width: 2px; }
+#patient-entry .kiosk-amount__label { font-size: var(--kiosk-fs-label); }
+#patient-entry .kiosk-amount__value { font-size: min(calc(clamp(1.55rem, 3.4vw, 2.5rem) * var(--kiosk-scale)), calc(100cqw / (var(--kiosk-chars, 8) * 0.62))); }
+#patient-entry .kiosk-amount__note { font-size: var(--kiosk-fs-caption); }
+#patient-entry .kiosk-result__panels,
+#patient-entry .kiosk-result__panels > .kiosk-notice:only-child .kiosk-notice__text--paragraphs { flex-direction: column; gap: 7px; }
+#patient-entry .kiosk-result__panels > * { inline-size: 100%; }
+#patient-entry .kiosk-result-actions,
+#patient-entry .kiosk-result-actions[data-actions='4'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+#patient-entry .kiosk-result-actions > .kiosk-button { grid-column: auto; }
+#patient-entry .kiosk-basis__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--web-gap); }
+#patient-entry .kiosk-basis__grid > * { grid-column: auto; }
+#patient-entry .kiosk-status__icon { inline-size: 70px; block-size: 70px; }
+#patient-entry .kiosk-status__icon .kiosk-icon { inline-size: 38px; block-size: 38px; }
+
+#patient-entry .kiosk-overlay { padding: 12px; }
+#patient-entry .kiosk-dialog {
+  inline-size: min(100%, 540px);
+  max-block-size: calc(100dvh - 24px);
+  overflow-y: auto;
+  gap: 12px;
+  padding: clamp(14px, 3.5vw, 28px);
+}
+#patient-entry .kiosk-dialog__icon { inline-size: 60px; block-size: 60px; }
+#patient-entry .kiosk-dialog__icon .kiosk-icon { inline-size: 34px; block-size: 34px; }
+#patient-entry .kiosk-dialog__title { font-size: var(--kiosk-fs-card); }
+#patient-entry .kiosk-dialog__body,
+#patient-entry .kiosk-dialog__note { font-size: var(--kiosk-fs-body); }
+#patient-entry .kiosk-dialog__actions { gap: 8px; flex-wrap: wrap; }
+
+@media (min-width: 50rem) {
+  #patient-entry .kiosk-k00__body { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  #patient-entry .kiosk-k00__panel { justify-self: stretch; }
+  #patient-entry .kiosk-amounts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #patient-entry .kiosk-amount--hospital { grid-column: auto; }
+  #patient-entry .kiosk-basis__grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+}
+@media (min-width: 64rem) {
+  #patient-entry .kiosk-input .kiosk-input__body {
+    display: grid;
+    grid-template-areas: 'title choices' 'aside choices';
+    grid-template-columns: minmax(230px, 1fr) minmax(0, 1.65fr);
+    grid-template-rows: auto 1fr;
+    align-items: start;
+  }
+  #patient-entry .kiosk-input__title { grid-area: title; }
+  #patient-entry .kiosk-input__aside { grid-area: aside; }
+  #patient-entry .kiosk-input__choices { grid-area: choices; }
+  #patient-entry .kiosk-input__notice { grid-area: notice; }
+  #patient-entry .kiosk-input .kiosk-input__body[data-has-notice] {
+    grid-template-areas: 'notice notice' 'title choices' 'aside choices';
+    grid-template-rows: auto auto 1fr;
+  }
+  #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--documents { grid-column: span 2; }
+  #patient-entry .kiosk-result-actions,
+  #patient-entry .kiosk-result-actions[data-actions='4'] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--complete { grid-column: span 2; }
+  #patient-entry .kiosk-result-actions[data-actions='4'] > .kiosk-result-actions__button--complete { grid-column: auto; }
+}
+@media (max-width: 39.99rem) {
+  #patient-entry .kiosk-header { align-items: flex-start; }
+  #patient-entry .kiosk-header__right { flex-direction: column; align-items: flex-end; flex-wrap: nowrap; gap: 4px; }
+  #patient-entry .kiosk-steps__list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); inline-size: 100%; }
+  #patient-entry .kiosk-steps__entry { min-inline-size: 0; }
+  #patient-entry .kiosk-steps__item { inline-size: 100%; flex-direction: column; align-items: center; text-align: center; padding-inline: 2px; }
+  #patient-entry .kiosk-steps__connector { display: none; }
+  #patient-entry .kiosk-steps__counter { align-self: start; margin-top: 7px; }
+  #patient-entry .kiosk-choice__mark-label { display: none; }
+  #patient-entry .kiosk-choice--treatment { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  #patient-entry .kiosk-choice__amount { grid-column: 2; flex-flow: row wrap; align-items: baseline; gap: 5px 8px; }
+  #patient-entry .kiosk-amounts { grid-template-columns: minmax(0, 1fr); }
+  #patient-entry .kiosk-result-actions,
+  #patient-entry .kiosk-result-actions[data-actions='4'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--documents,
+  #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--complete { grid-column: 1 / -1; }
+  #patient-entry .kiosk-bottom-actions > .kiosk-button:is(.kiosk-button--secondary, .kiosk-button--primary),
+  #patient-entry .kiosk-sheet .kiosk-bottom-actions--sheet > .kiosk-button { flex: 1 1 max-content; }
+}
+@media (max-width: 26.99rem) {
+  #patient-entry .kiosk-steps__item { font-size: calc(.75rem * var(--kiosk-scale)); }
+  #patient-entry .kiosk-steps__counter { display: none; }
+  #patient-entry .kiosk-conditions__row { display: grid; gap: 3px; }
+  #patient-entry .kiosk-bottom-actions > .kiosk-button--primary { flex-basis: 100%; }
+}
+@media (pointer: coarse) {
+  #patient-entry .kiosk-root { --kiosk-touch-min: 54px; }
+  #patient-entry .patient-checks label { min-block-size: 48px; }
+}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { TreatmentCard } from '../src/app/kiosk/components/ChoiceCards';
 import { HelpPanel } from '../src/app/kiosk/components/HelpPanel';
 import { InputScreen } from '../src/app/kiosk/components/InputScreen';
-import { SelectionSummaryBar, SelectionSummaryPanel, SelectionTotalLine } from '../src/app/kiosk/components/SelectionSummary';
+import { SelectionSummaryBar } from '../src/app/kiosk/components/SelectionSummary';
 import { useKiosk } from '../src/app/kiosk/runtime/kiosk-context';
 import { StepFooter } from '../src/app/kiosk/screens/StepFooter';
 import { COPY } from '../src/app/kiosk/view/copy';
@@ -21,7 +21,6 @@ export function TreatmentStep({ submit }: { readonly submit: (checks: EstimateIn
   const supported = supportsPolicy(state.inputs.generation, state.inputs.insurerType);
   const price = treatmentId ? treatmentPrice(treatmentId, quotedPrice) : 0;
   const totals = price === null ? null : { selectedCount: treatmentId ? 1 : 0, benefit: 0, nonBenefit: price, total: price };
-  const landscape = state.display.orientation === 'LANDSCAPE';
   const unavailableReason = treatmentId === '' ? COPY.input.treatments.emptyHint
     : price === null ? '병원에서 확인한 한 부위 치료비를 50,000원~100,000원 사이의 숫자로 입력해 주세요.' : '';
   const pendingPrice = <p className="kiosk-summary patient-pending-price">총 예상 결제액: 금액 입력 필요</p>;
@@ -39,17 +38,15 @@ export function TreatmentStep({ submit }: { readonly submit: (checks: EstimateIn
       subtitle="비급여 치료 한 부위의 1회 금액을 확인할 수 있어요."
       aside={
         <>
-          {landscape ? totals === null ? pendingPrice : <SelectionSummaryPanel totals={totals} /> : null}
           {unavailableReason ? <p id="patient-treatment-incomplete" className="kiosk-input__reason">{unavailableReason}</p> : null}
           <p className="kiosk-input__hint">진찰료·검사료와 다른 치료비는 포함되지 않습니다.</p>
         </>
       }
       footer={
         <>
-          {landscape ? null : totals === null ? pendingPrice : <SelectionSummaryBar totals={totals} />}
+          {totals === null ? pendingPrice : <SelectionSummaryBar totals={totals} />}
           <StepFooter primaryLabel={COPY.input.treatments.confirm} primaryDisabled={!treatmentId || price === null}
             describedBy={unavailableReason ? 'patient-treatment-incomplete' : undefined}
-            lead={landscape && totals !== null ? <SelectionTotalLine totals={totals} /> : undefined}
             onPrimary={() => {
               if (!treatmentId || price === null) return;
               submit({ treatmentId, quotedPrice, matchingPolicy, matchingTreatment, availableCoverage });

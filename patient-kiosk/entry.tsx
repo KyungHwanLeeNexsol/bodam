@@ -12,6 +12,7 @@ import '../src/app/kiosk/styles/inputs.css';
 import '../src/app/kiosk/styles/results.css';
 import '../src/app/kiosk/styles/sheets.css';
 import './entry.css';
+import './responsive.css';
 
 const root = document.getElementById('patient-entry');
 if (root !== null) {
@@ -26,6 +27,13 @@ if (root !== null) {
       return { status: response === null ? 400 : 200, json: async () => response };
     },
   }, { catalog: clinicCatalog, options: clinicOptions });
+
+  let displayedScreen = controller.getState().screen;
+  controller.subscribe(({ screen }) => {
+    if (screen === displayedScreen) return;
+    displayedScreen = screen;
+    window.scrollTo(0, 0);
+  });
 
   createRoot(root).render(<LiveKiosk controller={controller} renderScreen={(screen) => {
     switch (screen) {
