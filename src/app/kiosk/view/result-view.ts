@@ -130,6 +130,7 @@ export function buildResultView(state: KioskState, expected: ResultKind): Result
       : response.origin === 'PUBLIC_REFERENCE' && response.referenceHoldMessage
         ? [{ key: 'SETUP', phrase: response.referenceHoldMessage, items: treatmentNames }]
         : groupHoldReasons(list(result.holdReasons), nameOf),
-    actions: ACTIONS[expected],
+    // The public site has separate ways to edit selections; only completion ends the visit here.
+    actions: response.origin === 'PUBLIC_REFERENCE' ? ACTIONS[expected].filter((action) => action !== 'HOME') : ACTIONS[expected],
   };
 }

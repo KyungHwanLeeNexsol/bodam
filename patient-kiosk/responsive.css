@@ -228,7 +228,7 @@
 #patient-entry .kiosk-summary__breakdown { font-size: var(--kiosk-fs-label); }
 #patient-entry .kiosk-summary__total { font-size: var(--kiosk-fs-card); white-space: nowrap; }
 
-/* Results and sheets retain the same actions with cards that can fit real browser widths. */
+/* Results and sheets fit real browser widths without adding a second way to end the visit. */
 #patient-entry .kiosk-result-bar { padding: 8px var(--web-gutter); border-bottom-width: 1px; }
 #patient-entry .kiosk-result-bar__label { font-size: var(--kiosk-fs-label); }
 #patient-entry :is(.kiosk-result__body, .kiosk-sheet__body, .kiosk-status) {
@@ -252,11 +252,9 @@
 #patient-entry .kiosk-result__panels,
 #patient-entry .kiosk-result__panels > .kiosk-notice:only-child .kiosk-notice__text--paragraphs { flex-direction: column; gap: 7px; }
 #patient-entry .kiosk-result__panels > * { inline-size: 100%; }
-#patient-entry .kiosk-result-actions,
-#patient-entry .kiosk-result-actions[data-actions='4'] {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
+#patient-entry .kiosk-result-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 #patient-entry .kiosk-result-actions > .kiosk-button { grid-column: auto; }
+#patient-entry .kiosk-result-actions[data-actions='5'] > .kiosk-result-actions__button--complete { grid-column: span 2; }
 #patient-entry .kiosk-basis__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--web-gap); }
 #patient-entry .kiosk-basis__grid > * { grid-column: auto; }
 #patient-entry .kiosk-status__icon { inline-size: 70px; block-size: 70px; }
@@ -300,11 +298,9 @@
     grid-template-areas: 'notice notice' 'title choices' 'aside choices';
     grid-template-rows: auto auto 1fr;
   }
+  #patient-entry .kiosk-result-actions[data-actions='5'] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--documents { grid-column: span 2; }
-  #patient-entry .kiosk-result-actions,
-  #patient-entry .kiosk-result-actions[data-actions='4'] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--complete { grid-column: span 2; }
-  #patient-entry .kiosk-result-actions[data-actions='4'] > .kiosk-result-actions__button--complete { grid-column: auto; }
+  #patient-entry .kiosk-result-actions[data-actions='5'] > .kiosk-result-actions__button--complete { grid-column: auto; }
 }
 @media (max-width: 39.99rem) {
   #patient-entry .kiosk-header { align-items: flex-start; }
@@ -318,10 +314,10 @@
   #patient-entry .kiosk-choice--treatment { display: grid; grid-template-columns: auto minmax(0, 1fr); }
   #patient-entry .kiosk-choice__amount { grid-column: 2; flex-flow: row wrap; align-items: baseline; gap: 5px 8px; }
   #patient-entry .kiosk-amounts { grid-template-columns: minmax(0, 1fr); }
-  #patient-entry .kiosk-result-actions,
-  #patient-entry .kiosk-result-actions[data-actions='4'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #patient-entry .kiosk-result-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--documents,
-  #patient-entry .kiosk-result-actions > .kiosk-result-actions__button--complete { grid-column: 1 / -1; }
+  #patient-entry .kiosk-result-actions[data-actions='3'] > .kiosk-result-actions__button--complete { grid-column: 1 / -1; }
+  #patient-entry .kiosk-result-actions[data-actions='5'] > .kiosk-result-actions__button--complete { grid-column: auto; }
   #patient-entry .kiosk-bottom-actions > .kiosk-button:is(.kiosk-button--secondary, .kiosk-button--primary),
   #patient-entry .kiosk-sheet .kiosk-bottom-actions--sheet > .kiosk-button { flex: 1 1 max-content; }
 }

@@ -42,6 +42,7 @@ describe('Seongjeongwon public design flow', () => {
       await viWaitForResult();
       expect(buildResultView(kiosk.getState(), 'NORMAL')).toMatchObject({
         testData: false, publicReference: true,
+        actions: ['DOCUMENTS', 'BASIS', 'RESELECT', 'EDIT_INSURANCE', 'COMPLETE'],
         hospital: { text: '100,000원' }, payout: { text: '70,000원' }, afterPayout: { text: '30,000원' },
       });
       kiosk.dispatch({ type: 'OPEN_BASIS' });

@@ -54,6 +54,10 @@ for (const size of sizes) {
         await checkbox.check();
       }
       await page.getByRole('button', { name: '예상 부담액 확인', exact: true }).click();
+      const resultActions = page.locator('.kiosk-result-actions');
+      await expect(resultActions.getByRole('button', { name: '처음으로', exact: true })).toHaveCount(0);
+      await expect(resultActions.getByRole('button', { name: '치료 다시 선택', exact: true })).toBeVisible();
+      await expect(resultActions.getByRole('button', { name: '보험 조건 수정', exact: true })).toBeVisible();
       const amountCards = page.locator('.kiosk-amounts');
       await expect(amountCards.getByText('30,000원', { exact: true })).toBeVisible();
       await expect(amountCards.getByText('70,000원', { exact: true })).toBeVisible();
@@ -66,6 +70,13 @@ for (const size of sizes) {
       await page.getByRole('button', { name: '보험 청구에 필요한 서류 확인', exact: true }).click();
       await expect(page.getByRole('heading', { name: '보험사에 필요한 서류를 확인해 주세요' })).toBeVisible();
       await expectNoHorizontalOverflow(page);
+      await page.getByRole('button', { name: '결과로 돌아가기', exact: true }).click();
+      await resultActions.getByRole('button', { name: '이용 완료', exact: true }).click();
+      await expect(page.getByRole('heading', { name: '이용해 주셔서 감사합니다', exact: true })).toBeVisible();
+      await expect(amountCards).toHaveCount(0);
+      await page.getByRole('button', { name: '처음 화면으로', exact: true }).click();
+      await page.getByRole('button', { name: '시작하기', exact: true }).click();
+      await expect(page.getByRole('radio', { name: '4세대(C4)', exact: true })).not.toBeChecked();
     });
   });
 }
