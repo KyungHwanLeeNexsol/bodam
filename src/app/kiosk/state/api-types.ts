@@ -99,7 +99,9 @@ export interface EstimateResponseDto {
     readonly ruleBundleStatus: 'ACTIVE' | 'SUSPENDED' | null;
     readonly profile: { readonly id: string; readonly version: string; readonly origin: Origin } | null;
   };
-  readonly origin: Origin;
+  /** PUBLIC_REFERENCE is created only by the clinic's standalone calculator, never by the public API. */
+  readonly origin: Origin | 'PUBLIC_REFERENCE';
+  readonly referenceHoldMessage?: string;
   readonly result: EngineEstimateResult;
   readonly documents: DocumentsResult | null;
 }

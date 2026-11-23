@@ -45,6 +45,7 @@ export interface ResultView {
   readonly kind: ResultKind;
   /** 운영이 아닌 자료(origin !== OPERATING)로 계산한 결과인가 (AC-010e). */
   readonly testData: boolean;
+  readonly publicReference?: boolean;
   /** "2세대(C1) · 손해보험사". options 응답의 label 이고, 찾지 못한 부분은 코드를 보이지 않고 빠진다. */
   readonly insuranceLabel: string | null;
   readonly treatmentNames: readonly string[];
@@ -114,17 +115,21 @@ export function buildResultView(state: KioskState, expected: ResultKind): Result
 
   return {
     kind: expected,
-    testData: response.origin !== 'OPERATING',
+    testData: response.origin !== 'OPERATING' && response.origin !== 'PUBLIC_REFERENCE',
+    ...(response.origin === 'PUBLIC_REFERENCE' ? { publicReference: true } : {}),
     insuranceLabel,
     treatmentNames,
     treatmentSummary,
     compactCondition: [...(insuranceLabel === null ? [] : [insuranceLabel]), `치료 ${treatmentNames.length}개`].join(' · '),
-    hospital: { ...amountOf(COPY.result.hospital.label, COPY.result.hospital.note, result.amounts.hospitalPayment), split },
+    hospital: { ...amountOf(COPY.result.hospital.label, response.origin === 'PUBLIC_REFERENCE' ? '고른 치료 1회 금액입니다. 진찰료·검사료와 다른 치료비는 포함하지 않았습니다.' : COPY.result.hospital.note, result.amounts.hospitalPayment), split },
     payout: amountOf(COPY.result.payout.label, COPY.result.payout.note, result.amounts.expectedInsurancePayout),
     afterPayout: amountOf(COPY.result.afterPayout.label, COPY.result.afterPayout.note, result.amounts.expectedOutOfPocketAfterPayout),
     exclusions,
     exclusionNotes,
-    holdGroups: expected === 'HOLD' ? groupHoldReasons(list(result.holdReasons), nameOf) : [],
+    holdGroups: expected !== 'HOLD' ? []
+      : response.origin === 'PUBLIC_REFERENCE' && response.referenceHoldMessage
+        ? [{ key: 'SETUP', phrase: response.referenceHoldMessage, items: treatmentNames }]
+        : groupHoldReasons(list(result.holdReasons), nameOf),
     actions: ACTIONS[expected],
   };
 }

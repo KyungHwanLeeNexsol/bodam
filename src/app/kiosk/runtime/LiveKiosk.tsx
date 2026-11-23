@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useSyncExternalStore } from 'react';
+import type { ReactElement } from 'react';
+import type { ScreenState } from '../state/session-store';
 import { KioskFrame } from '../components/KioskFrame';
 import { KioskHeader } from '../components/KioskHeader';
 import { OverlayHost } from '../overlays/OverlayHost';
@@ -16,7 +18,7 @@ import { interactionHandlers, useBrowserBindings } from './use-browser-bindings'
 // 루트는 방향·큰 글자 보기를 상태에서 받고(단일 출처), 포착 단계에서 터치·키 입력을 INTERACTION 으로 보낸다(버튼 자신의 사건보다 먼저).
 // 겹침창이 열려 있으면 밑 화면(상단 + 화면)은 inert 이고 겹침창은 그 형제다. 밑 화면은 겹침창이 열려 있는 동안에도 계속 다시 그려진다(요청·갱신의 결말이 도착한다, DD-07 표 1·2).
 
-export function LiveKiosk({ controller }: { readonly controller: KioskController }) {
+export function LiveKiosk({ controller, renderScreen }: { readonly controller: KioskController; readonly renderScreen?: ((screen: ScreenState) => ReactElement | undefined) | undefined }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
   const value = useMemo<KioskContextValue>(() => ({ state, send: controller.dispatch, read: controller.select }), [state, controller]);
   useBrowserBindings(controller);
@@ -39,7 +41,7 @@ export function LiveKiosk({ controller }: { readonly controller: KioskController
             }}
           />
           <main className="kiosk-screen">
-            <ScreenRouter />
+            <ScreenRouter renderScreen={renderScreen} />
           </main>
         </div>
         <OverlayHost />

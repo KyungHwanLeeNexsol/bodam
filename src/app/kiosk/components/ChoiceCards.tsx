@@ -50,7 +50,7 @@ export function TypeCard({ group, label, help, selected, onSelect }: { readonly 
   );
 }
 
-export function TreatmentCard({ treatment, selected, locked, onToggle }: { readonly treatment: CatalogTreatmentDto; readonly selected: boolean; readonly locked: boolean; readonly onToggle: () => void }) {
+export function TreatmentCard({ treatment, selected, locked, onToggle, priceLabel }: { readonly treatment: CatalogTreatmentDto; readonly selected: boolean; readonly locked: boolean; readonly onToggle: () => void; readonly priceLabel?: string | undefined }) {
   const id = useId();
   return (
     <ChoiceCard type="checkbox" variant="treatment" selected={selected} locked={locked} onChange={onToggle} labelledBy={`${id}-name`} describedBy={`${id}-desc ${id}-price`}>
@@ -69,7 +69,7 @@ export function TreatmentCard({ treatment, selected, locked, onToggle }: { reado
         </span>
       </span>
       <span className="kiosk-choice__amount" id={`${id}-price`}>
-        <span className="kiosk-choice__price">{formatWon(treatment.patientAmount)}</span>
+        <span className="kiosk-choice__price">{priceLabel ?? formatWon(treatment.patientAmount)}</span>
         <span className="kiosk-choice__caption">{COPY.input.treatments.priceCaption}</span>
       </span>
     </ChoiceCard>

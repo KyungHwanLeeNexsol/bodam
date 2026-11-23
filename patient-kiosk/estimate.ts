@@ -15,7 +15,7 @@ type Confirmations = {
   availableCoverage: boolean;
 };
 
-type EstimateInput = Confirmations & { treatmentId: TreatmentId | ''; quotedPrice: string };
+export type EstimateInput = Confirmations & { treatmentId: TreatmentId | ''; quotedPrice: string };
 type EstimateResult =
   | { state: 'unavailable'; message: string }
   | { state: 'estimated'; paidWon: number; insuranceWon: number; patientWon: number };
@@ -25,16 +25,19 @@ const rule = {
   deductiblePercent: 30,
 };
 
+export function treatmentPrice(treatmentId: TreatmentId, quotedPrice: string): number | null {
+  const price = treatments[treatmentId];
+  if (price.minWon === price.maxWon) return price.minWon;
+  const amount = /^[0-9]{5,6}$/.test(quotedPrice) ? Number(quotedPrice) : NaN;
+  return amount >= price.minWon && amount <= price.maxWon ? amount : null;
+}
+
 export function estimateOneTreatment(input: EstimateInput): EstimateResult {
   if (input.treatmentId === '' || !Object.hasOwn(treatments, input.treatmentId)) {
     return { state: 'unavailable', message: '계산할 치료를 선택해 주세요.' };
   }
-  const price = treatments[input.treatmentId];
-  const fixedPrice = price.minWon === price.maxWon;
-  const paidWon = fixedPrice
-    ? price.minWon
-    : /^[0-9]{5,6}$/.test(input.quotedPrice) ? Number(input.quotedPrice) : NaN;
-  if (!Number.isSafeInteger(paidWon) || paidWon < price.minWon || paidWon > price.maxWon) {
+  const paidWon = treatmentPrice(input.treatmentId, input.quotedPrice);
+  if (paidWon === null) {
     return { state: 'unavailable', message: '병원에서 확인한 한 부위 금액을 50,000원~100,000원 사이의 숫자로 입력해 주세요.' };
   }
   if (!input.matchingPolicy || !input.matchingTreatment || !input.availableCoverage) {

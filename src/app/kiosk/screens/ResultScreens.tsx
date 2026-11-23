@@ -39,11 +39,11 @@ function ConditionRows({ view }: { readonly view: ResultView }) {
   );
 }
 
-function ResultBadges({ kind }: { readonly kind: ResultKind }) {
+function ResultBadges({ kind, publicReference }: { readonly kind: ResultKind; readonly publicReference: boolean }) {
   if (kind === 'HOLD') return <Badge tone="warn">{COPY.result.badgeHold}</Badge>;
   return (
     <>
-      <Badge tone="warn">{COPY.result.badgeExample}</Badge>
+      <Badge tone="warn">{publicReference ? '예상 계산' : COPY.result.badgeExample}</Badge>
       {kind === 'NOT_COVERED' ? <Badge>{COPY.result.badgePartlyExcluded}</Badge> : null}
     </>
   );
@@ -56,12 +56,14 @@ function ResultScreen({ kind }: { readonly kind: ResultKind }) {
   if (view === null) return <ResultUnavailable />;
 
   // 정상·보장 제외는 결과 문구 원칙 + 공통 안내, 보류는 개인 계약 조건 문장 하나(DD-07). 세 금액의 이름·보조 설명은 모든 결과 화면에서 같다(기획서 §4).
-  const notice = kind === 'HOLD' ? [COPY.result.personalContract] : [COPY.result.principle, `${COPY.result.commonLead} ${COPY.result.personalContract}`];
+  const notice = kind === 'HOLD' ? [COPY.result.personalContract] : view.publicReference
+    ? ['KB손해보험 실손의료비보장보험(23.01)의 3대 비급여 특약과 화면에서 확인한 조건을 기준으로 계산했습니다.', COPY.result.personalContract]
+    : [COPY.result.principle, `${COPY.result.commonLead} ${COPY.result.personalContract}`];
 
   return (
     <div className="kiosk-result" data-result={kind === 'NORMAL' ? 'normal' : kind === 'NOT_COVERED' ? 'not-covered' : 'hold'}>
       {view.testData ? <TestDataNotice /> : null}
-      <ResultBar label={COPY.result.barLabel} badge={<ResultBadges kind={kind} />} />
+      <ResultBar label={COPY.result.barLabel} badge={<ResultBadges kind={kind} publicReference={view.publicReference === true} />} />
       <ScrollRegion className="kiosk-result__body">
         <div className="kiosk-result__head">
           <h1 className="kiosk-result__title" tabIndex={-1} data-kiosk-primary>

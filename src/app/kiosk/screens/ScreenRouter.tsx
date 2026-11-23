@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import type { ReactElement } from 'react';
+import type { ScreenState } from '../state/session-store';
 import { useKiosk } from '../runtime/kiosk-context';
 import { K04BasisCalculation } from './BasisScreen';
 import { CalculatingScreen } from './CalculatingScreen';
@@ -18,7 +20,7 @@ import { K04Result, K04ResultHold, K04ResultNotCovered } from './ResultScreens';
 // 화면이 바뀌면(단계 이동·시작·초기화) 초점을 새 화면의 대표 제목으로 옮긴다: 누른 버튼이 사라져 초점이 문서 처음으로 돌아가면 키보드 사용자가 머리글부터 다시 지나가야 한다.
 // 겹침창이 열려 있는 동안 밑 화면이 바뀌어도(요청·갱신 결말) 초점을 빼앗지 않는다: 겹침창이 닫힐 때 OverlayHost 가 초점을 돌려준다.
 
-export function ScreenRouter() {
+export function ScreenRouter({ renderScreen }: { readonly renderScreen?: ((screen: ScreenState) => ReactElement | undefined) | undefined } = {}) {
   const { state } = useKiosk();
   const previous = useRef(state.screen);
   const overlayOpen = state.overlay.kind !== 'NONE';
@@ -27,6 +29,9 @@ export function ScreenRouter() {
     previous.current = state.screen;
     if (!overlayOpen) document.querySelector<HTMLElement>('[data-kiosk-primary]')?.focus();
   }, [state.screen, overlayOpen]);
+
+  const custom = renderScreen?.(state.screen);
+  if (custom !== undefined) return custom;
 
   switch (state.screen) {
     case 'K00_Start':

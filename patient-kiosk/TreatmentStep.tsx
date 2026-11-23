@@ -1,0 +1,97 @@
+import { useState } from 'react';
+import { TreatmentCard } from '../src/app/kiosk/components/ChoiceCards';
+import { HelpPanel } from '../src/app/kiosk/components/HelpPanel';
+import { InputScreen } from '../src/app/kiosk/components/InputScreen';
+import { SelectionSummaryBar, SelectionSummaryPanel, SelectionTotalLine } from '../src/app/kiosk/components/SelectionSummary';
+import { useKiosk } from '../src/app/kiosk/runtime/kiosk-context';
+import { StepFooter } from '../src/app/kiosk/screens/StepFooter';
+import { COPY } from '../src/app/kiosk/view/copy';
+import { supportsPolicy } from './clinic';
+import { formatWon, treatmentPrice, treatments } from './estimate';
+import type { EstimateInput, TreatmentId } from './estimate';
+
+export function TreatmentStep({ submit }: { readonly submit: (checks: EstimateInput) => void }) {
+  const { state, send } = useKiosk();
+  const [quotedPrice, setQuotedPrice] = useState('');
+  const [matchingPolicy, setMatchingPolicy] = useState(false);
+  const [matchingTreatment, setMatchingTreatment] = useState(false);
+  const [availableCoverage, setAvailableCoverage] = useState(false);
+  const chosen = state.inputs.treatmentIds[0];
+  const treatmentId = chosen === 'shockwave' || chosen === 'prolotherapy' ? chosen : '';
+  const supported = supportsPolicy(state.inputs.generation, state.inputs.insurerType);
+  const price = treatmentId ? treatmentPrice(treatmentId, quotedPrice) : 0;
+  const totals = price === null ? null : { selectedCount: treatmentId ? 1 : 0, benefit: 0, nonBenefit: price, total: price };
+  const landscape = state.display.orientation === 'LANDSCAPE';
+  const unavailableReason = treatmentId === '' ? COPY.input.treatments.emptyHint
+    : price === null ? '병원에서 확인한 한 부위 치료비를 50,000원~100,000원 사이의 숫자로 입력해 주세요.' : '';
+  const pendingPrice = <p className="kiosk-summary patient-pending-price">총 예상 결제액: 금액 입력 필요</p>;
+
+  function choose(id: string) {
+    if (chosen) send({ type: 'TOGGLE_TREATMENT', treatmentId: chosen });
+    if (chosen !== id) send({ type: 'TOGGLE_TREATMENT', treatmentId: id });
+    setQuotedPrice('');
+    setMatchingTreatment(false);
+    setAvailableCoverage(false);
+  }
+
+  return (
+    <InputScreen step={4} kind="treatments" title={COPY.input.treatments.title}
+      subtitle="비급여 치료 한 부위의 1회 금액을 확인할 수 있어요."
+      aside={
+        <>
+          {landscape ? totals === null ? pendingPrice : <SelectionSummaryPanel totals={totals} /> : null}
+          {unavailableReason ? <p id="patient-treatment-incomplete" className="kiosk-input__reason">{unavailableReason}</p> : null}
+          <p className="kiosk-input__hint">진찰료·검사료와 다른 치료비는 포함되지 않습니다.</p>
+        </>
+      }
+      footer={
+        <>
+          {landscape ? null : totals === null ? pendingPrice : <SelectionSummaryBar totals={totals} />}
+          <StepFooter primaryLabel={COPY.input.treatments.confirm} primaryDisabled={!treatmentId || price === null}
+            describedBy={unavailableReason ? 'patient-treatment-incomplete' : undefined}
+            lead={landscape && totals !== null ? <SelectionTotalLine totals={totals} /> : undefined}
+            onPrimary={() => {
+              if (!treatmentId || price === null) return;
+              submit({ treatmentId, quotedPrice, matchingPolicy, matchingTreatment, availableCoverage });
+            }} />
+        </>
+      }
+    >
+      <div className="kiosk-input__list" role="group" aria-label={COPY.input.treatments.title}>
+        {state.clinic.catalog.treatments.map((card) => (
+          <TreatmentCard key={card.treatmentId} treatment={card} selected={card.treatmentId === chosen} locked={false}
+            priceLabel={card.treatmentId === 'prolotherapy' ? '5만~10만 원' : undefined}
+            onToggle={() => choose(card.treatmentId)} />
+        ))}
+      </div>
+      {treatmentId === 'prolotherapy' ? (
+        <label className="patient-quote">
+          <span>병원에서 확인한 한 부위 치료비(원)</span>
+          <input inputMode="numeric" pattern="[0-9]*" maxLength={6} value={quotedPrice} onChange={({ currentTarget }) => {
+            setQuotedPrice(currentTarget.value);
+            setMatchingTreatment(false);
+          }} />
+        </label>
+      ) : null}
+      {treatmentId ? (
+        <HelpPanel title="보험금 계산 전 확인" lines={supported
+          ? ['아래 조건을 확인하면 보험금 수령 후 남는 금액을 계산해요. 모르는 조건이 있으면 고르지 않고 계속할 수 있어요.']
+          : ['선택한 보험 조건은 아직 실손보험금을 계산할 수 없어요. 치료 금액만 안내해 드려요.']}>
+          {supported ? (
+            <div className="patient-checks" role="group" aria-label="실손보험 확인 조건">
+              <label><input type="checkbox" checked={matchingPolicy} onChange={({ currentTarget }) => setMatchingPolicy(currentTarget.checked)} />
+                <span>KB손해보험 4세대 실손의료비보장보험(23.01)의 유효한 3대 비급여 특약에 가입했어요.</span>
+              </label>
+              <label><input type="checkbox" checked={matchingTreatment} onChange={({ currentTarget }) => setMatchingTreatment(currentTarget.checked)} />
+                <span>{`병원에 ‘${treatments[treatmentId].billing}’로 청구되는지와 한 부위의 실제 치료비를 확인했어요.`}</span>
+              </label>
+              <label><input type="checkbox" checked={availableCoverage} onChange={({ currentTarget }) => setAvailableCoverage(currentTarget.checked)} />
+                <span>보험사에 보장 대상임을 확인했고, 계약연도 기준 도수·체외충격파·증식 합산 첫 10회 이내이며 남은 한도가 7만 원 이상이에요.</span>
+              </label>
+            </div>
+          ) : null}
+        </HelpPanel>
+      ) : null}
+    </InputScreen>
+  );
+}

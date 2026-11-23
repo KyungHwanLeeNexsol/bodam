@@ -1,68 +1,15 @@
-.patient-guide-screen {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--kiosk-sp-6);
-  padding: clamp(24px, 6vw, 80px);
-  overflow-y: auto;
-}
-
-.patient-guide-screen h1 { font-size: var(--kiosk-fs-title); }
-
-.patient-entry-links {
+.patient-quote,
+.patient-checks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  width: min(100%, 1050px);
-  gap: var(--kiosk-sp-4);
-}
-
-.patient-entry-links a {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   gap: var(--kiosk-sp-2);
-  min-height: 72px;
-  padding: var(--kiosk-sp-6);
-  border: 2px solid var(--kiosk-border);
-  border-radius: var(--kiosk-r-card);
-  color: var(--kiosk-accent-dark);
-  background: var(--kiosk-surface);
-  text-decoration: none;
-}
-
-.patient-entry-links a:hover { background: var(--kiosk-accent-soft); }
-.patient-entry-links strong { font-size: var(--kiosk-fs-card); }
-.patient-entry-links span {
-  color: var(--kiosk-text-body);
+  margin-block: var(--kiosk-sp-3);
   font-size: var(--kiosk-fs-label);
 }
 
-.patient-estimate {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--kiosk-sp-5);
-  width: min(100%, 1000px);
-  font-size: var(--kiosk-fs-label);
-  color: var(--kiosk-text-body);
-}
-
-.patient-estimate-fields {
-  display: grid;
-  width: min(100%, 620px);
-  gap: var(--kiosk-sp-3);
-}
-
-.patient-estimate-fields label,
-.patient-estimate-checks legend { font-weight: 700; }
-
-.patient-estimate-fields :is(select, input) {
-  width: 100%;
-  min-width: 0;
-  min-height: 56px;
-  padding: 10px 14px;
+.patient-quote input {
+  width: min(100%, 380px);
+  min-height: 54px;
+  padding: 0 12px;
   border: 2px solid var(--kiosk-border);
   border-radius: 12px;
   background: var(--kiosk-surface);
@@ -70,65 +17,34 @@
   font: inherit;
 }
 
-.patient-estimate-checks {
-  display: grid;
-  min-width: 0;
-  width: 100%;
-  gap: var(--kiosk-sp-2);
-  padding: var(--kiosk-sp-3);
-  border: 2px solid var(--kiosk-border);
-  border-radius: 12px;
-}
-
-.patient-estimate-checks label {
+.patient-checks label {
   display: flex;
   align-items: flex-start;
-  gap: var(--kiosk-sp-3);
-  padding: 8px;
+  gap: var(--kiosk-sp-2);
+  padding: 6px 0;
 }
 
-.patient-estimate-checks input {
+.patient-checks input {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  margin-top: 3px;
+  margin: 4px 0 0;
   accent-color: var(--kiosk-accent-dark);
 }
 
-.patient-estimate-message { color: var(--kiosk-accent-dark); font-weight: 700; }
-
-.patient-estimate-result {
-  width: 100%;
-  padding: var(--kiosk-sp-4);
-  border-radius: 12px;
-  background: var(--kiosk-accent-soft);
+.patient-pending-price {
+  padding: var(--kiosk-sp-3);
+  font-weight: 700;
 }
 
-.patient-estimate-result h2 { font-size: var(--kiosk-fs-card); }
-.patient-estimate-result dl { margin-block: var(--kiosk-sp-3); }
-.patient-estimate-result dl > div,
-.patient-estimate-sources,
-.patient-estimate-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px var(--kiosk-sp-4);
+.patient-reference-links {
+  display: grid;
+  align-content: start;
+  gap: var(--kiosk-sp-2);
+  font-size: var(--kiosk-fs-label);
 }
 
-.patient-estimate-result dd { margin: 0; font-weight: 700; }
-.patient-estimate-sources { justify-content: flex-start; }
-.patient-estimate-sources a { color: var(--kiosk-accent-dark); text-decoration: underline; }
-
-@media (max-width: 640px) {
-  [data-patient-entry] .kiosk-header {
-    flex-wrap: wrap;
-    padding-inline: 16px;
-  }
-
-  [data-patient-entry] .kiosk-header__right { align-items: flex-start; }
-
-  [data-patient-entry] .kiosk-k00__hero,
-  [data-patient-entry] .kiosk-k00__guide,
-  [data-patient-entry] .kiosk-k00__flow,
-  [data-patient-entry] .kiosk-k00__actions { padding-inline: 16px; }
+.patient-reference-links a {
+  color: var(--kiosk-accent-dark);
+  text-decoration: underline;
 }
